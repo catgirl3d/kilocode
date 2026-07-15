@@ -118,6 +118,23 @@
       "problemMatcher": []
     },
     {
+      "label": "VSCode - Package VSIX (Windows x64)",
+      "type": "shell",
+      "command": "bun",
+      "args": [
+        "-e",
+        "await Bun.$`bun run package`; await Bun.mkdir('out', { recursive: true }); await Bun.$`bunx vsce package --no-dependencies --skip-license --target win32-x64 -o out/kilo-vscode-win32-x64.vsix`"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "always"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/packages/kilo-vscode"
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "VSCode - Tests",
       "type": "shell",
       "command": "bun",
