@@ -432,6 +432,23 @@ describe("Assistant transcript spacing contract (source)", () => {
       /\.vscode-session-turn\[data-row="assistant"\]:has\(> \.vscode-session-turn-assistant:empty\)\s*\{\s*padding-bottom: 0;/,
     )
   })
+
+  it("uses one shared card for direct tool and reasoning parts", () => {
+    const card = css.match(/\/\* AssistantMessage emits an outer wrapper[\s\S]*?\n}\n/)?.[0] ?? ""
+    expect(card).toContain(
+      '> [data-component="tool-part-wrapper"]:is([data-part-type="tool"], [data-part-type="reasoning"])',
+    )
+    expect(card).toContain("display: flex;")
+    expect(card).toContain("flex-direction: column;")
+    expect(card).toContain("justify-content: center;")
+    expect(card).toContain("min-height: 36px;")
+    expect(card).toContain("padding: 4px 6px;")
+    expect(card).toContain("border: 1px solid var(--border-weak-base);")
+    expect(card).toContain("border-radius: var(--radius-sm);")
+    expect(card).toContain('[data-component="question-dock"]')
+    expect(card).toContain('[data-component="suggest-bar"]')
+    expect(card).toContain('[data-component="plan-exit-card"]')
+  })
 })
 
 describe("BasicTool export contract (runtime)", () => {
