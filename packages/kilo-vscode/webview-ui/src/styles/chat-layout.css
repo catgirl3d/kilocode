@@ -434,6 +434,22 @@
   width: 100%;
 }
 
+/* AssistantMessage emits an outer wrapper for every part; tool renderers can
+   emit another wrapper inside it. Styling only direct children avoids nesting
+   two cards around the same tool. */
+.vscode-session-turn-assistant
+  > [data-component="tool-part-wrapper"]:is([data-part-type="tool"], [data-part-type="reasoning"]):not(
+    :has(:is([data-component="question-dock"], [data-component="suggest-bar"], [data-component="plan-exit-card"]))
+  ) {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 36px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-sm);
+}
+
 [data-component="assistant-throughput"] {
   /* Plain-text generation-speed value shown beside the copy/feedback buttons
    * on an assistant message. Renders as muted metadata — no icon, no
