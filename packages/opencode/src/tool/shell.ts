@@ -25,9 +25,9 @@ import { unparsed } from "@/kilocode/tool/shell-unparsed" // kilocode_change
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { ShellPrompt, type Parameters } from "./shell/prompt"
-import { BashArity } from "@/permission/arity"
 import { mutates as mutatesGit } from "@/kilocode/sandbox/git" // kilocode_change
 import * as SandboxPolicy from "@/kilocode/sandbox/policy" // kilocode_change
+import { BashHierarchy } from "@/kilocode/bash-hierarchy" // kilocode_change
 
 export { Parameters } from "./shell/prompt"
 
@@ -405,7 +405,7 @@ export const ShellPermission = Effect.gen(function* () {
 
       if (tokens.length && (!cmd || !CWD.has(cmd))) {
         scan.patterns.add(source(node))
-        scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
+        scan.always.add(BashHierarchy.always(tokens, source(node))) // kilocode_change
       }
     }
 
