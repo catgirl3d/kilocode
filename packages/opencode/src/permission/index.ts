@@ -60,6 +60,7 @@ export const AllowEverythingInput = z.object({
   enable: z.boolean(),
   requestID: zod(PermissionV1.ID).optional(),
   sessionID: zod(SessionID).optional(),
+  runtime: z.boolean().optional(),
 })
 // kilocode_change end
 
@@ -183,6 +184,7 @@ const layer = Layer.effect(
         return state
       }),
     )
+    let runtime = false // kilocode_change - VS Code shield spans directory-scoped instance state
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
@@ -211,11 +213,12 @@ const layer = Layer.effect(
             Effect.catch(() => Effect.succeed(false)),
           ))
         : false
+      const saved = runtime ? [...approved, { permission: "*", pattern: "*", action: "allow" } as const] : approved
       // kilocode_change end
 
       const forceAsk = request.metadata?.["skillShell"] === true || request.metadata?.["sandboxEscalation"] === true // kilocode_change
       for (const pattern of request.patterns) {
-        const rule = resolve(request.permission, pattern, ruleset, approved, local) // kilocode_change — include session-scoped rules
+        const rule = resolve(request.permission, pattern, ruleset, saved, local) // kilocode_change — include session-scoped rules
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         // kilocode_change start — saved/session approvals cannot override hard Ask/Plan denials
         if (veto(request.permission, pattern, hardRuleset)) {
@@ -415,6 +418,25 @@ const layer = Layer.effect(
       input: z.infer<typeof AllowEverythingInput>,
     ) {
       const s = yield* InstanceState.get(state)
+
+      if (input.runtime) {
+        runtime = input.enable
+        const approved = input.enable
+          ? [...s.approved, { permission: "*", pattern: "*", action: "allow" } as const]
+          : s.approved
+
+        for (const [id, entry] of s.pending) {
+          if (!covered(entry, approved, s.session[entry.info.sessionID] ?? [])) continue
+          s.pending.delete(id)
+          yield* events.publish(Event.Replied, {
+            sessionID: entry.info.sessionID,
+            requestID: entry.info.id,
+            reply: "once",
+          })
+          yield* Deferred.succeed(entry.deferred, undefined)
+        }
+        return
+      }
 
       if (!input.enable) {
         if (input.sessionID) {

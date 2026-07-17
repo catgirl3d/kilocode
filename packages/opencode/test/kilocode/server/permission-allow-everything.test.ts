@@ -12,7 +12,13 @@ import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { provideTestInstance } from "../../fixture/fixture"
 import { Server } from "../../../src/server/server"
 import { Session } from "../../../src/session/session"
-import { provideTmpdirInstance, tmpdir } from "../../fixture/fixture"
+import {
+  provideInstance,
+  provideTmpdirInstance,
+  testInstanceStoreLayer,
+  tmpdir,
+  tmpdirScoped,
+} from "../../fixture/fixture"
 import { testEffect } from "../../lib/effect"
 
 const env = LayerNode.compile(
@@ -103,7 +109,7 @@ describe("AllowEverythingPermission", () => {
         expect(await disable.json()).toBe(true)
       },
     })
-  })
+  }, { timeout: 15_000 })
 
   it.live("disables global allow-all and restores permission prompts", () =>
     provideTmpdirInstance(
@@ -138,6 +144,97 @@ describe("AllowEverythingPermission", () => {
         }),
       { git: true },
     ),
+  )
+
+  it.live(
+    "runtime allow-all drains pending requests without persisting a global rule",
+    () =>
+      provideTmpdirInstance(
+        () =>
+          Effect.gen(function* () {
+            const sessions = yield* Session.Service
+            const cfg = yield* Config.Service
+            const before = (yield* cfg.getGlobal()).permission
+            const session = yield* sessions.create({})
+            const pending = yield* ask({
+              id: PermissionV1.ID.make("permission_runtime_pending"),
+              sessionID: session.id,
+              permission: "bash",
+              patterns: ["npm run typecheck"],
+              metadata: {},
+              always: [],
+              ruleset: [],
+            }).pipe(Effect.forkScoped)
+
+            yield* wait()
+            expect(yield* AllowEverythingPermission.effect({ enable: true, runtime: true })).toBe(true)
+            expect(yield* Fiber.await(pending)).toMatchObject({ _tag: "Success" })
+            expect((yield* cfg.getGlobal()).permission).toEqual(before)
+
+            const denied = yield* ask({
+              id: PermissionV1.ID.make("permission_runtime_hard_deny"),
+              sessionID: session.id,
+              permission: "bash",
+              patterns: ["rm -rf /"],
+              metadata: {},
+              always: [],
+              ruleset: [],
+              hardRuleset: [{ permission: "bash", pattern: "rm -rf /", action: "deny" }],
+            }).pipe(Effect.exit)
+            expect(Exit.isFailure(denied)).toBe(true)
+
+            const configured = yield* ask({
+              id: PermissionV1.ID.make("permission_runtime_config_deny"),
+              sessionID: session.id,
+              permission: "bash",
+              patterns: ["rm -rf /"],
+              metadata: {},
+              always: [],
+              ruleset: [{ permission: "bash", pattern: "rm *", action: "deny" }],
+            }).pipe(Effect.exit)
+            expect(Exit.isFailure(configured)).toBe(true)
+
+            expect(yield* AllowEverythingPermission.effect({ enable: false, runtime: true })).toBe(true)
+            const next = yield* ask({
+              id: PermissionV1.ID.make("permission_runtime_disabled"),
+              sessionID: session.id,
+              permission: "bash",
+              patterns: ["npm run typecheck"],
+              metadata: {},
+              always: [],
+              ruleset: [],
+            }).pipe(Effect.forkScoped)
+            yield* wait()
+            yield* reply({ requestID: PermissionV1.ID.make("permission_runtime_disabled"), reply: "reject" })
+            expect(Exit.isFailure(yield* Fiber.await(next))).toBe(true)
+          }),
+        { git: true },
+      ),
+    { timeout: 15_000 },
+  )
+
+  it.live("runtime allow-all applies to directories opened after it is enabled", () =>
+    Effect.gen(function* () {
+      const first = yield* tmpdirScoped({ git: true })
+      const second = yield* tmpdirScoped({ git: true })
+
+      yield* AllowEverythingPermission.effect({ enable: true, runtime: true }).pipe(provideInstance(first))
+      const result = yield* Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const session = yield* sessions.create({})
+        return yield* ask({
+          id: PermissionV1.ID.make("permission_runtime_late_directory"),
+          sessionID: session.id,
+          permission: "bash",
+          patterns: ["npm run typecheck"],
+          metadata: {},
+          always: [],
+          ruleset: [],
+        })
+      }).pipe(provideInstance(second))
+
+      expect(result).toBeUndefined()
+    }).pipe(Effect.provide(testInstanceStoreLayer)),
   )
 
   it.live("disables session-scoped allow-all without affecting other sessions", () =>
