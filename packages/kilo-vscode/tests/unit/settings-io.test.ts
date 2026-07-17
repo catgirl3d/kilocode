@@ -362,6 +362,7 @@ describe("round-trip", () => {
       mcp: { gh: { command: "npx", env: { TOKEN: "secret" } } },
       permission: { read: "allow" },
       instructions: ["rules.md"],
+      instructions_disabled: ["rules.md"],
     }
     const exported = buildExport(original)
     const json = JSON.stringify(exported)
@@ -376,6 +377,7 @@ describe("round-trip", () => {
       expect(result.config.mcp?.gh?.env?.TOKEN).toBe("secret")
       expect(result.config.permission).toEqual({ read: "allow" })
       expect(result.config.instructions).toEqual(["rules.md"])
+      expect(result.config.instructions_disabled).toEqual(["rules.md"])
     }
   })
 })

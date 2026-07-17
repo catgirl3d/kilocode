@@ -2673,6 +2673,7 @@ export type Config = {
             }
       }
   instructions?: Array<string>
+  instructions_disabled?: Array<string>
   layout?: LayoutConfig
   permission?: PermissionConfig
   tools?: {

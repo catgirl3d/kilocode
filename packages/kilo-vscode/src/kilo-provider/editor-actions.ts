@@ -1,7 +1,10 @@
 import * as vscode from "vscode"
+import path from "path"
+import os from "os"
 import { buildPreviewPath, getPreviewCommand, getPreviewDir, parseImage, trimEntries } from "../image-preview"
 import { escapeGlob, isAbsolutePath } from "../path-utils"
 import { validateFiles } from "./file-links"
+import { validate as validateInstruction } from "./instruction-path"
 import type { DiffVirtualFile, DiffVirtualProvider } from "../DiffVirtualProvider"
 
 type EditorOpenMessage = {
@@ -12,6 +15,10 @@ type EditorOpenMessage = {
   content?: string
   language?: string
   sessionID?: string
+  requestId?: string
+  path?: string
+  scope?: "global" | "project"
+  bindingId?: string
 }
 
 function openExternal(url: unknown): void {
@@ -107,6 +114,20 @@ export function handleEditorAction(
     }
     return true
   }
+  if (message.type === "validateInstructionPath") {
+    const id = message.requestId
+    const path = message.path
+    const scope = message.scope
+    const binding = message.bindingId
+    if (id && path && scope && opts.post) {
+      const post = opts.post
+      validateInstruction(opts.dir(), path, scope).then(
+        (valid) => post({ type: "validateInstructionPathResult", requestId: id, path, valid, bindingId: binding }),
+        (err) => console.error("[Kilo New] KiloProvider: instruction path validation failed:", err),
+      )
+    }
+    return true
+  }
   if (message.type === "openExternal") {
     openExternal(message.url)
     return true
@@ -180,7 +201,13 @@ function findFallback(dir: string, filePath: string, line?: number, column?: num
 }
 
 function openFile(dir: string, filePath: string, line?: number, column?: number): void {
-  const uri = isAbsolutePath(filePath) ? vscode.Uri.file(filePath) : vscode.Uri.joinPath(vscode.Uri.file(dir), filePath)
+  if (/^https?:\/\//i.test(filePath)) {
+    openExternal(filePath)
+    return
+  }
+
+  const next = filePath.startsWith("~/") ? path.join(os.homedir(), filePath.slice(2)) : filePath
+  const uri = isAbsolutePath(next) ? vscode.Uri.file(next) : vscode.Uri.joinPath(vscode.Uri.file(dir), next)
   vscode.workspace.fs.stat(uri).then(
     (stat) => {
       if (stat.type & vscode.FileType.Directory) {
