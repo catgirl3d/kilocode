@@ -148,6 +148,7 @@ export interface Config {
   mcp?: Record<string, McpConfig>
   command?: Record<string, CommandConfig>
   instructions?: string[]
+  instructions_disabled?: string[]
   skills?: SkillsConfig
   snapshot?: boolean
   remote_control?: boolean
