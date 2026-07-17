@@ -610,6 +610,14 @@ export interface FilePickerResultMessage {
   requestId: string
 }
 
+export interface ValidateInstructionPathResultMessage {
+  type: "validateInstructionPathResult"
+  requestId: string
+  path: string
+  valid: boolean
+  bindingId?: string
+}
+
 export interface TerminalContextResultMessage {
   type: "terminalContextResult"
   requestId: string
@@ -713,6 +721,7 @@ export interface ConfigLoadedMessage {
   type: "configLoaded"
   config: Config
   globalConfig?: Config
+  globalEffectiveConfig?: Config
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
   collections?: ConfigCollections
@@ -724,6 +733,7 @@ export interface ConfigUpdatedMessage {
   type: "configUpdated"
   config: Config
   globalConfig?: Config
+  globalEffectiveConfig?: Config
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
   collections?: ConfigCollections
@@ -738,6 +748,7 @@ export interface ConfigUpdateFailedMessage {
   completedScopes?: Array<"global" | "project">
   config?: Config
   globalConfig?: Config
+  globalEffectiveConfig?: Config
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
 }
@@ -1562,6 +1573,7 @@ export type ExtensionMessage =
   | FileSearchResultMessage
   | SessionSearchResultMessage
   | FilePickerResultMessage
+  | ValidateInstructionPathResultMessage
   | TerminalContextResultMessage
   | TerminalContextErrorMessage
   | GitChangesContextResultMessage
