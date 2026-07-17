@@ -34150,6 +34150,12 @@
               "type": "string"
             }
           },
+          "instructions_disabled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "layout": {
             "$ref": "#/components/schemas/LayoutConfig"
           },
