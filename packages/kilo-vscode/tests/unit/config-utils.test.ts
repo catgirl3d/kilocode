@@ -308,6 +308,27 @@ describe("ConfigState", () => {
     expect(s.config.snapshot).toBe(false)
   })
 
+  it("blocks a dirty draft from applying after the selected project changes", () => {
+    const s = new ConfigState()
+    s.handleConfigLoaded({ instructions: ["./a.md"] })
+    s.updateConfig({ instructions_disabled: ["./a.md"] })
+
+    s.expireConfig()
+    s.handleConfigLoaded({ instructions: ["./b.md"] })
+    s.saveConfig()
+
+    expect(s.config).toEqual({ instructions: ["./a.md"], instructions_disabled: ["./a.md"] })
+    expect(s.saving).toBe(false)
+    expect(s.blocked).toBe(true)
+
+    s.discardConfig()
+    expect(s.blocked).toBe(false)
+    s.handleConfigLoaded({ instructions: ["./b.md"] })
+
+    expect(s.config).toEqual({ instructions: ["./b.md"] })
+    expect(s.blocked).toBe(false)
+  })
+
   it("discardConfig restores server state", () => {
     const s = new ConfigState()
     s.handleConfigLoaded({ snapshot: true, username: "alice" })

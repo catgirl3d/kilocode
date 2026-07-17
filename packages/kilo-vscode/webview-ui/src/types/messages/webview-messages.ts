@@ -202,6 +202,14 @@ export interface ValidateFilesRequest {
   paths: string[]
 }
 
+export interface ValidateInstructionPathRequest {
+  type: "validateInstructionPath"
+  requestId: string
+  path: string
+  scope: "global" | "project"
+  bindingId?: string
+}
+
 export interface CancelLoginRequest {
   type: "cancelLogin"
 }
@@ -1578,6 +1586,7 @@ export type WebviewMessage =
   | RequestFileSearchMessage
   | RequestSessionSearchMessage
   | RequestFilePickerMessage
+  | ValidateInstructionPathRequest
   | RequestTerminalContextMessage
   | RequestGitChangesContextMessage
   | ChatCompletionAcceptedMessage

@@ -123,7 +123,18 @@ const legacyPatched = legacySource.includes(sandbox)
 if (!legacyPatched.includes(sandbox)) {
   throw new Error(`Legacy Config sandbox patch did not apply (${legacyTypesPath})`)
 }
-await Bun.write(legacyTypesPath, legacyPatched)
+const instructions = `  /**
+   * Instruction entries disabled in this config scope
+   */
+  instructions_disabled?: Array<string>
+`
+const legacyNext = legacyPatched.includes(instructions)
+  ? legacyPatched
+  : legacyPatched.replace("  instructions?: Array<string>\n", "  instructions?: Array<string>\n" + instructions)
+if (!legacyNext.includes(instructions)) {
+  throw new Error(`Legacy Config instructions_disabled patch did not apply (${legacyTypesPath})`)
+}
+await Bun.write(legacyTypesPath, legacyNext)
 
 await $`bun prettier --write src/gen src/v2`
 await $`rm -rf dist tsconfig.tsbuildinfo`

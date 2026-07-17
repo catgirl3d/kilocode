@@ -418,6 +418,39 @@ describe("config overlay routes", () => {
     })
   })
 
+  test("includes instructions_disabled in overlay field inventory", async () => {
+    await using project = await tmpdir({
+      config: { instructions: ["./local.md"], instructions_disabled: ["./local.md"] },
+    })
+
+    const body = await KilocodeConfigOverlay.resolve({
+      directory: project.path,
+      scope: "project",
+      effective: {
+        instructions: ["./global.md", "./local.md"],
+        instructions_disabled: ["./global.md", "./local.md"],
+      },
+      global: {
+        instructions: ["./global.md"],
+        instructions_disabled: ["./global.md"],
+      },
+      sources: [],
+    })
+
+    expect(body.fields.instructions).toMatchObject({
+      source: "project",
+      local: ["./local.md"],
+      overridden: true,
+      value: ["./global.md", "./local.md"],
+    })
+    expect(body.fields.instructions_disabled).toMatchObject({
+      source: "project",
+      local: ["./local.md"],
+      overridden: true,
+      value: ["./global.md", "./local.md"],
+    })
+  })
+
   test.serial("resolves prompt-training model visibility across scopes", async () => {
     await using global = await tmpdir()
     await using project = await tmpdir({ config: { hide_prompt_training_models: false } })

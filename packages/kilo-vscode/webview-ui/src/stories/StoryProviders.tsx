@@ -349,13 +349,16 @@ const ConfigWrapper: ParentComponent<{
       config: createMemo(() => cfg()),
       globalConfig: createMemo(() => (scoped ? global() : cfg())),
       globalDraft: () => ({}),
+      globalEffectiveConfig: createMemo(() => (scoped ? global() : cfg())),
       projectConfig: createMemo(() => (scoped ? project() : cfg())),
+      projectBinding: () => undefined,
       collections: () => ({}),
       settings,
       features,
       loading: () => false,
       isDirty: dirty,
       saving: () => false,
+      blocked: () => false,
       saveError: () => null,
       updateConfig: (partial: Partial<Config>) => {
         setCfg((prev) => {
