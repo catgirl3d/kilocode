@@ -2,19 +2,17 @@ import { describe, expect, it } from "bun:test"
 import * as vscode from "vscode"
 import { registerToggleAutoApprove, type AutoApproveController } from "../../src/commands/toggle-auto-approve"
 import { createAutoApproveBridge } from "../../src/kilo-provider/auto-approve"
-import type { Event, KiloClient } from "@kilocode/sdk/v2/client"
+import type { KiloClient } from "@kilocode/sdk/v2/client"
 import type { KiloConnectionService } from "../../src/services/cli-backend/connection-service"
 
 type ConfigEvent = { affectsConfiguration(key: string): boolean }
-type Permission = { id: string }
 
 function defer<T>() {
-  const state = {} as { resolve: (value: T) => void; reject: (err: unknown) => void }
-  const promise = new Promise<T>((resolve, reject) => {
+  const state = {} as { resolve: (value: T) => void }
+  const promise = new Promise<T>((resolve) => {
     state.resolve = resolve
-    state.reject = reject
   })
-  return { promise, resolve: state.resolve, reject: state.reject }
+  return { promise, resolve: state.resolve }
 }
 
 function config(initial: boolean, info: Record<string, unknown> = {}) {
@@ -79,65 +77,76 @@ function context() {
   return { subscriptions: [] as Array<{ dispose(): void }> } as vscode.ExtensionContext
 }
 
-function connection(client: KiloClient | null, dirs = new Map<string, string>()) {
+function connection(client: KiloClient | null) {
+  const listeners = new Set<(state: "connected" | "disconnected") => void>()
   const svc = {
     getClient: () => {
       if (!client) throw new Error("not connected")
       return client
     },
-    getPermissionDirectory: (id: string) => dirs.get(id),
+    onStateChange: (listener: (state: "connected" | "disconnected") => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
   } as unknown as KiloConnectionService
 
-  return { svc }
+  return {
+    svc,
+    connect() {
+      for (const listener of listeners) listener("connected")
+    },
+  }
 }
 
 function client(opts: {
-  list?: (dir: string) => Promise<{ data: Permission[] }>
-  reply?: (
-    args: { requestID: string; directory: string; reply: "once" },
+  allowEverything?: (
+    args: { enable: boolean; runtime: boolean; directory: string },
     options?: { throwOnError?: boolean },
   ) => Promise<unknown>
 }) {
   return {
     permission: {
-      list: async (args: { directory: string }) => opts.list?.(args.directory) ?? { data: [] },
-      reply: async (
-        args: { requestID: string; directory: string; reply: "once" },
+      allowEverything: async (
+        args: { enable: boolean; runtime: boolean; directory: string },
         options?: { throwOnError?: boolean },
-      ) => opts.reply?.(args, options),
+      ) => opts.allowEverything?.(args, options),
     },
   } as unknown as KiloClient
-}
-
-function asked(id: string, sessionID = "ses_1") {
-  return { type: "permission.asked", properties: { id, sessionID } } as Extract<Event, { type: "permission.asked" }>
 }
 
 describe("registerToggleAutoApprove", () => {
   it("restores persisted state, follows config changes, and persists toggles to the closest configured scope", async () => {
     const env = config(true, { workspaceValue: false })
-    const replies: unknown[] = []
-    const conn = connection(client({ reply: async (args) => replies.push(args) }))
-    const ctrl = registerToggleAutoApprove(
-      context(),
-      conn.svc,
-      (session) => `/repo/${session}`,
-      () => ["/repo"],
+    const enabled = defer<void>()
+    const disabled = defer<void>()
+    const requests: unknown[] = []
+    const conn = connection(
+      client({
+        allowEverything: async (args) => {
+          requests.push(args)
+          if (args.enable) enabled.resolve()
+          if (!args.enable) disabled.resolve()
+        },
+      }),
     )
+    const ctrl = registerToggleAutoApprove(context(), conn.svc, () => ["/repo"])
     const changes: boolean[] = []
     ctrl.onChange((active) => changes.push(active))
+    await enabled.promise
 
     expect(ctrl.active()).toBe(true)
-    expect(await ctrl.approve(asked("perm_1"))).toBe(true)
-    expect(replies).toEqual([{ requestID: "perm_1", directory: "/repo/ses_1", reply: "once" }])
+    expect(requests).toEqual([{ enable: true, runtime: true, directory: "/repo" }])
 
     env.active = false
     env.emit()
+    await disabled.promise
     expect(ctrl.active()).toBe(false)
     expect(changes).toEqual([false])
 
-    expect(await ctrl.approve(asked("perm_2"))).toBe(false)
-    expect(replies).toHaveLength(1)
+    expect(requests).toEqual([
+      { enable: true, runtime: true, directory: "/repo" },
+      { enable: false, runtime: true, directory: "/repo" },
+    ])
 
     await ctrl.toggle()
     expect(ctrl.active()).toBe(true)
@@ -146,102 +155,68 @@ describe("registerToggleAutoApprove", () => {
     expect(env.messages).toContain("Auto-approve enabled")
   })
 
-  it("uses the SSE directory for worktree permissions before session mappings are available", async () => {
+  it("applies the shield to every tracked worktree and reapplies it after reconnect", async () => {
     config(true)
-    const replies: unknown[] = []
-    const conn = connection(client({ reply: async (args) => replies.push(args) }))
-    const ctrl = registerToggleAutoApprove(
-      context(),
-      conn.svc,
-      () => "/workspace",
-      () => ["/workspace"],
-    )
-
-    await ctrl.approve(asked("perm_worktree", "ses_worktree"), "/workspace/.kilo/worktrees/feature")
-    await ctrl.approve(asked("perm_child", "ses_child"), "/workspace/.kilo/worktrees/feature")
-
-    expect(replies).toEqual([
-      { requestID: "perm_worktree", directory: "/workspace/.kilo/worktrees/feature", reply: "once" },
-      { requestID: "perm_child", directory: "/workspace/.kilo/worktrees/feature", reply: "once" },
-    ])
-  })
-
-  it("uses the shared permission directory before falling back to session mappings", async () => {
-    config(true)
-    const replies: unknown[] = []
-    const conn = connection(
-      client({ reply: async (args) => replies.push(args) }),
-      new Map([["perm_shared", "/workspace/.kilo/worktrees/shared"]]),
-    )
-    const ctrl = registerToggleAutoApprove(
-      context(),
-      conn.svc,
-      () => "/workspace",
-      () => ["/workspace"],
-    )
-
-    await ctrl.approve(asked("perm_shared", "ses_child"))
-
-    expect(replies).toEqual([
-      { requestID: "perm_shared", directory: "/workspace/.kilo/worktrees/shared", reply: "once" },
-    ])
-  })
-
-  it("returns unhandled when an automatic reply fails", async () => {
-    config(true)
+    const reconnected = defer<void>()
+    const requests: unknown[] = []
     const conn = connection(
       client({
-        reply: async (_args, options) => {
-          expect(options).toEqual({ throwOnError: true })
-          throw new Error("offline")
+        allowEverything: async (args) => {
+          requests.push(args)
+          if (requests.length === 4) reconnected.resolve()
         },
       }),
     )
-    const ctrl = registerToggleAutoApprove(
-      context(),
-      conn.svc,
-      () => "/workspace",
-      () => ["/workspace"],
-    )
+    const ctrl = registerToggleAutoApprove(context(), conn.svc, () => [
+      "/workspace",
+      "/workspace/.kilo/worktrees/feature",
+    ])
 
-    expect(await ctrl.approve(asked("perm_1"))).toBe(false)
+    conn.connect()
+    await reconnected.promise
+
+    expect(ctrl.active()).toBe(true)
+    expect(requests).toHaveLength(4)
+    expect(requests.filter((item) => (item as { directory: string }).directory === "/workspace")).toHaveLength(2)
+    expect(
+      requests.filter((item) => (item as { directory: string }).directory === "/workspace/.kilo/worktrees/feature"),
+    ).toHaveLength(2)
   })
 
-  it("cancels pending permission drains when disabled during an enable generation", async () => {
+  it("does not enable the shield while the backend is unavailable", async () => {
+    config(true)
+    const conn = connection(null)
+    const ctrl = registerToggleAutoApprove(context(), conn.svc, () => ["/workspace"])
+
+    expect(ctrl.active()).toBe(true)
+  })
+
+  it("serializes rapid toggles so a stale enable cannot win", async () => {
     config(false)
-    const gate = defer<{ data: Permission[] }>()
+    const gate = defer<void>()
     const started = defer<void>()
-    const dirs: string[] = []
-    const replies: unknown[] = []
+    const requests: Array<{ enable: boolean }> = []
     const conn = connection(
       client({
-        list: async (dir) => {
-          dirs.push(dir)
-          if (dir === "/one") {
+        allowEverything: async (args) => {
+          requests.push(args)
+          if (args.enable) {
             started.resolve()
-            return gate.promise
+            await gate.promise
           }
-          return { data: [{ id: "perm_other" }] }
         },
-        reply: async (args) => replies.push(args),
       }),
     )
-    const ctrl = registerToggleAutoApprove(
-      context(),
-      conn.svc,
-      () => "/repo",
-      () => ["/one", "/two"],
-    )
+    const ctrl = registerToggleAutoApprove(context(), conn.svc, () => ["/workspace"])
 
     const enable = ctrl.toggle()
     await started.promise
     const disable = ctrl.toggle()
-    gate.resolve({ data: [{ id: "perm_1" }] })
+    gate.resolve()
     await Promise.all([enable, disable])
 
     expect(ctrl.active()).toBe(false)
-    expect(dirs).toEqual(["/one"])
-    expect(replies).toEqual([])
+    expect(requests.map((item) => item.enable)).toEqual([true, false])
   })
 })
 
@@ -253,7 +228,6 @@ describe("createAutoApproveBridge", () => {
     const state = { active: false }
     const ctrl: AutoApproveController = {
       active: () => state.active,
-      approve: async () => false,
       toggle: async () => {
         state.active = !state.active
         for (const listener of listeners) listener(state.active)
