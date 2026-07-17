@@ -75,6 +75,18 @@ function mergeConfigConcatArrays(target: Info, source: Info, trusted = true): In
   if (target.instructions && source.instructions) {
     merged.instructions = Array.from(new Set([...target.instructions, ...source.instructions]))
   }
+  // kilocode_change start - let the higher-precedence source control duplicate instruction state
+  if (target.instructions_disabled || source.instructions_disabled) {
+    const disabled = new Set(target.instructions_disabled ?? [])
+    const next = new Set(source.instructions_disabled ?? [])
+    for (const item of source.instructions ?? []) {
+      if (next.has(item)) disabled.add(item)
+      else disabled.delete(item)
+    }
+    const active = new Set(merged.instructions ?? [])
+    merged.instructions_disabled = [...disabled].filter((item) => active.has(item))
+  }
+  // kilocode_change end
   return merged
 }
 

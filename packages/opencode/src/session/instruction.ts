@@ -157,8 +157,11 @@ const layer: Layer.Layer<
         }
       }
 
+      const disabled = new Set(config.instructions_disabled ?? [])
+
       if (config.instructions) {
         for (const raw of config.instructions) {
+          if (disabled.has(raw)) continue
           if (raw.startsWith("https://") || raw.startsWith("http://")) continue
           const instruction = raw.startsWith("~/") ? path.join(global.home, raw.slice(2)) : raw
           const matches = yield* (
@@ -189,9 +192,13 @@ const layer: Layer.Layer<
       const config = yield* cfg.get()
       const sources = yield* systemSources() // kilocode_change
       const paths = Array.from(sources.keys()) // kilocode_change
-      const urls = (config.instructions ?? []).filter(
-        (item) => item.startsWith("https://") || item.startsWith("http://"),
-      )
+      // kilocode_change start - honor disabled explicit remote instructions
+      const disabled = new Set(config.instructions_disabled ?? [])
+      const urls = (config.instructions ?? []).filter((item) => {
+        if (disabled.has(item)) return false
+        return item.startsWith("https://") || item.startsWith("http://")
+      })
+      // kilocode_change end
 
       // kilocode_change start
       const files = yield* Effect.forEach(Array.from(sources.entries()), (item) => read(item[0], item[1]), {
