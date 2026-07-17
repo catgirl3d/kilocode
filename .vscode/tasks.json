@@ -123,7 +123,7 @@
       "command": "bun",
       "args": [
         "-e",
-        "await Bun.$`bun run package`; await Bun.mkdir('out', { recursive: true }); await Bun.$`bunx vsce package --no-dependencies --skip-license --target win32-x64 -o out/kilo-vscode-win32-x64.vsix`"
+        "const { mkdir } = await import(\"node:fs/promises\"); await Bun.$`bun run package`; await mkdir(\"out\", { recursive: true }); await Bun.$`bunx vsce package --no-dependencies --skip-license --target win32-x64 -o out/kilo-vscode-win32-x64.vsix`"
       ],
       "group": "build",
       "presentation": {

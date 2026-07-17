@@ -1058,6 +1058,7 @@ export const dict = {
   "settings.agentBehaviour.pushFixes.title": "Отправлять исправления пул-реквеста",
   "settings.agentBehaviour.pushFixes.description":
     "Когда вы отправляете агенту ошибки CI или комментарии ревью из пул-реквеста либо обновляете worktree из базовой ветки, попросить его сделать коммит и push, чтобы пул-реквест обновился. Запросы разрешений по-прежнему действуют. Отключите, чтобы делать коммиты вручную.",
+  "settings.agentBehaviour.instructionFiles.notFound": "Файл инструкций не существует: {{path}}",
   "settings.agentBehaviour.claudeCompat.heading": "Совместимость с Claude Code",
   "settings.agentBehaviour.claudeCompat.title": "Загружать файлы Claude Code",
   "settings.agentBehaviour.claudeCompat.description":
