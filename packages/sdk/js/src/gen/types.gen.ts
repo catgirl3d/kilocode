@@ -1322,6 +1322,10 @@ export type Config = {
    * Additional instruction files or patterns to include
    */
   instructions?: Array<string>
+  /**
+   * Instruction entries disabled in this config scope
+   */
+  instructions_disabled?: Array<string>
   layout?: LayoutConfig
   permission?: {
     edit?: "ask" | "allow" | "deny"
