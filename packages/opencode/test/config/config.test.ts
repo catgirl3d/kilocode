@@ -361,6 +361,21 @@ it.instance("loads JSON config file", () =>
   }),
 )
 
+it.instance("parses disabled instruction entries from config", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    yield* writeConfigEffect(test.directory, {
+      $schema: "https://app.kilo.ai/config.json",
+      instructions: ["./docs.md"],
+      instructions_disabled: ["./docs.md"],
+    })
+
+    const config = yield* Config.use.get()
+    expect(config.instructions).toEqual(["./docs.md"])
+    expect(config.instructions_disabled).toEqual(["./docs.md"])
+  }),
+)
+
 // kilocode_change start
 it.instance("preserves Kilo provider free model metadata", () =>
   Effect.gen(function* () {
@@ -1291,6 +1306,44 @@ it.effect("deduplicates duplicate instructions from global and local configs", (
     },
     Effect.gen(function* () {
       expect((yield* Config.use.get()).instructions).toEqual(["duplicate.md", "global-only.md", "local-only.md"])
+    }),
+  ),
+)
+
+it.effect("uses the higher-precedence state for duplicate instruction entries", () =>
+  withConfigTree(
+    {
+      global: {
+        instructions: ["duplicate.md", "local-off.md", "global-off.md"],
+        instructions_disabled: ["duplicate.md", "global-off.md"],
+      },
+      local: {
+        instructions: ["duplicate.md", "local-off.md"],
+        instructions_disabled: ["local-off.md"],
+      },
+    },
+    Effect.gen(function* () {
+      expect((yield* Config.use.get()).instructions_disabled).toEqual(["global-off.md", "local-off.md"])
+    }),
+  ),
+)
+
+it.effect("merges instructions and disabled instruction entries together across scopes", () =>
+  withConfigTree(
+    {
+      global: {
+        instructions: ["global.md", "shared.md"],
+        instructions_disabled: ["shared.md"],
+      },
+      local: {
+        instructions: ["local.md", "shared.md", "local-off.md"],
+        instructions_disabled: ["local-off.md"],
+      },
+    },
+    Effect.gen(function* () {
+      const config = yield* Config.use.get()
+      expect(config.instructions).toEqual(["global.md", "shared.md", "local.md", "local-off.md"])
+      expect(config.instructions_disabled).toEqual(["local-off.md"])
     }),
   ),
 )
