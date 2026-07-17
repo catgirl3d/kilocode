@@ -280,7 +280,6 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   )
   const attention = new AttentionService(connectionService, {
-    approve: (event, directory) => autoApprove.approve(event, directory),
     details: async (sessionID, directory) => {
       provider.rememberSession(sessionID, directory)
       const session = await provider.getSessionInfo(sessionID)
