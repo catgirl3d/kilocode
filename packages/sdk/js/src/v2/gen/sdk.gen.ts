@@ -3883,6 +3883,7 @@ export class Permission extends HeyApiClient {
       enable?: boolean
       requestID?: string
       sessionID?: string
+      runtime?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3896,6 +3897,7 @@ export class Permission extends HeyApiClient {
             { in: "body", key: "enable" },
             { in: "body", key: "requestID" },
             { in: "body", key: "sessionID" },
+            { in: "body", key: "runtime" },
           ],
         },
       ],
