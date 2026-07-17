@@ -12775,6 +12775,7 @@ export type PermissionAllowEverythingData = {
     enable: boolean
     requestID?: string
     sessionID?: string
+    runtime?: boolean
   }
   path?: never
   query?: {

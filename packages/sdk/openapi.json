@@ -5494,6 +5494,9 @@
                   },
                   "sessionID": {
                     "type": "string"
+                  },
+                  "runtime": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["enable"],
