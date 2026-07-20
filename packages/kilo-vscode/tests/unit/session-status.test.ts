@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test"
-import { seedSessionStatuses } from "../../src/session-status"
+import { reconcileSessionStatus, seedSessionStatuses } from "../../src/session-status"
 import type { SessionStatus } from "@kilocode/sdk/v2/client"
 
 /**
@@ -194,5 +194,18 @@ describe("seedSessionStatuses", () => {
     // confirmed: updated to busy from server
     expect(map.get("confirmed")).toBe("busy")
     expect(msgs).toEqual([{ type: "sessionStatus", sessionID: "confirmed", status: "busy" }])
+  })
+})
+
+describe("reconcileSessionStatus", () => {
+  it("does not overwrite a newer SSE status with an older HTTP response", async () => {
+    const client = createClient({ data: {} })
+    const map = new Map<string, SessionStatus["type"]>([["s1", "busy"]])
+    const { msgs, post } = collect()
+
+    await reconcileSessionStatus(client, "/repo", map, post, "s1", () => false)
+
+    expect(map.get("s1")).toBe("busy")
+    expect(msgs).toEqual([])
   })
 })
