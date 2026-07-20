@@ -45,3 +45,33 @@ export async function seedSessionStatuses(
     console.error("[Kilo New] KiloProvider: Failed to seed session statuses:", error)
   }
 }
+
+/**
+ * Reconcile one focused session after an SSE gap. Unlike the connect-time
+ * seed, this deliberately does not infer statuses for sessions in other
+ * provider directories.
+ */
+export async function reconcileSessionStatus(
+  client: KiloClient,
+  dir: string,
+  map: Map<string, SessionStatus["type"]>,
+  post: (msg: unknown) => void,
+  sessionID: string,
+  current: () => boolean,
+): Promise<void> {
+  try {
+    const result = await client.session.status({ directory: dir })
+    if (!result.data || !current()) return
+    const info = result.data[sessionID]
+    const status = info?.type ?? "idle"
+    map.set(sessionID, status)
+    post({
+      type: "sessionStatus",
+      sessionID,
+      status,
+      ...(info?.type === "retry" ? { attempt: info.attempt, message: info.message, next: info.next } : {}),
+    })
+  } catch (error) {
+    console.error("[Kilo New] KiloProvider: Failed to reconcile session status:", error)
+  }
+}
