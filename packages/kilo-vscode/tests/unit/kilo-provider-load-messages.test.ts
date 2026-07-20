@@ -25,11 +25,11 @@ function defer<T>(): Deferred<T> {
   return { promise, resolve, reject }
 }
 
-function mkMessage(id: string, role: "user" | "assistant", time = 0) {
+function mkMessage(id: string, role: "user" | "assistant", time = 0, sessionID = "s1") {
   return {
     info: {
       id,
-      sessionID: "s1",
+      sessionID,
       role,
       time: { created: time },
     },
@@ -77,6 +77,7 @@ function createClient(options?: {
   sandboxDeferred?: Deferred<{ data: unknown }>
   sandboxStarted?: Deferred<void>
   createSession?: (params: Record<string, unknown>, index: number) => Promise<{ data: unknown }>
+  statusData?: Record<string, unknown>
 }) {
   const calls: { before?: string; limit?: number }[] = []
   const stopped: { sessionID: string; directory?: string }[] = []
@@ -117,7 +118,8 @@ function createClient(options?: {
         if (options?.sessionGet) return options.sessionGet(params)
         return { data: options?.sessionData ?? null }
       },
-      status: async (params: { directory?: string }) => options?.status?.(params) ?? { data: {} },
+      status: async (params: { directory?: string }) =>
+        options?.status?.(params) ?? { data: options?.statusData ?? {} },
       revert: async (params: Record<string, unknown>) => {
         reverted.push(params)
         if (options?.revertDeferred) return options.revertDeferred.promise
@@ -235,6 +237,8 @@ function createConnection(client: ReturnType<typeof createClient> | null) {
 
 type ProviderInternals = {
   connectionState: State
+  hasConnected: boolean
+  isWebviewReady: boolean
   webview: { postMessage: (message: unknown) => Promise<unknown> } | null
   currentSession: { id: string; directory?: string; cost?: number; revert?: { messageID: string } } | null
   contextSessionID: string | undefined
@@ -246,6 +250,8 @@ type ProviderInternals = {
   draftSessions: Map<string, { sid: string; dir: string; expires: number }>
   checkpoints: Map<string, Promise<void>>
   revisions: Map<string, { id: string; seq: number }>
+  sessionStatusMap: Map<string, "idle" | "busy" | "retry" | "offline">
+  statusRevisions: Map<string, number>
   streams: { push: (msg: PartUpdate) => void }
   checkpoint: (sid: string, run: () => Promise<void>) => void
   gatherEditorContext: () => Promise<Record<string, never>>
@@ -265,7 +271,15 @@ type ProviderInternals = {
   handleSetSandboxDefault: (enabled: boolean, requestID: string, directory?: string) => Promise<void>
   handleToggleSandbox: (input: { sessionID: string; requestID: string }) => Promise<void>
   refreshGitStatus: (directory?: string, sessionID?: string) => Promise<void>
-  handleLoadMessages: (sid: string, opts?: { mode?: string; before?: string; limit?: number }) => Promise<void>
+  handleLoadMessages: (
+    sid: string,
+    opts?: { mode?: string; before?: string; limit?: number; preserveStream?: boolean },
+  ) => Promise<void>
+  handleConnectionState: (state: State) => Promise<void>
+  checkConfigWarnings: (from: string) => Promise<void>
+  syncWebviewState: (reason: string) => Promise<void>
+  recoverCurrentSessionAfterReconnect: () => Promise<void>
+  recoverPendingPrompts: () => void
   handleDeleteSession: (sid: string) => Promise<void>
   handleDeleteMessage: (sid: string, mid: string, rid?: string) => Promise<void>
 }
@@ -1170,6 +1184,161 @@ describe("KiloProvider.handleLoadMessages / focus mode freshness", () => {
   })
 })
 
+describe("KiloProvider SSE reconnect recovery", () => {
+  it("reconciles a missed completed response and clears its stale busy status", async () => {
+    const client = createClient({
+      messagesData: [mkMessage("m1", "user", 1), mkMessage("m2", "assistant", 2)],
+      statusData: {},
+    })
+    const { internal, sent } = makeProvider(client)
+    internal.currentSession = mkSession()
+    internal.contextSessionID = "s1"
+    internal.trackedSessionIds.add("s1")
+    internal.sessionStatusMap.set("s1", "busy")
+
+    await internal.recoverCurrentSessionAfterReconnect()
+
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "messagesLoaded",
+        sessionID: "s1",
+        mode: "reconcile",
+        messages: expect.arrayContaining([expect.objectContaining({ id: "m2", role: "assistant" })]),
+      }),
+    )
+    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "s1", status: "idle" })
+    expect(internal.sessionStatusMap.get("s1")).toBe("idle")
+  })
+
+  it("keeps a session busy when the backend confirms it remains active", async () => {
+    const client = createClient({
+      messagesData: [mkMessage("m1", "user", 1)],
+      statusData: { s1: { type: "busy" } },
+    })
+    const { internal, sent } = makeProvider(client)
+    internal.currentSession = mkSession()
+    internal.contextSessionID = "s1"
+    internal.trackedSessionIds.add("s1")
+    internal.sessionStatusMap.set("s1", "busy")
+
+    await internal.recoverCurrentSessionAfterReconnect()
+
+    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "s1", status: "busy" })
+    expect(sent).not.toContainEqual({ type: "sessionStatus", sessionID: "s1", status: "idle" })
+    expect(internal.sessionStatusMap.get("s1")).toBe("busy")
+  })
+
+  it("reconciles the context session while currentSession is still stale", async () => {
+    const client = createClient({
+      messagesData: [mkMessage("m2", "assistant", 2, "s2")],
+      statusData: { s2: { type: "busy" } },
+    })
+    const { internal, sent } = makeProvider(client)
+    internal.currentSession = mkSession()
+    internal.contextSessionID = "s2"
+    internal.trackedSessionIds.add("s1")
+    internal.trackedSessionIds.add("s2")
+
+    await internal.recoverCurrentSessionAfterReconnect()
+
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        type: "messagesLoaded",
+        sessionID: "s2",
+        messages: expect.arrayContaining([expect.objectContaining({ id: "m2", sessionID: "s2" })]),
+      }),
+    )
+    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "s2", status: "busy" })
+    expect(sent).not.toContainEqual(expect.objectContaining({ type: "messagesLoaded", sessionID: "s1" }))
+  })
+
+  it("uses reconcile rather than a destructive transcript replacement", async () => {
+    const client = createClient({ messagesData: [mkMessage("m1", "user", 1)] })
+    const { internal, sent } = makeProvider(client)
+    internal.currentSession = mkSession()
+    internal.contextSessionID = "s1"
+    internal.trackedSessionIds.add("s1")
+
+    await internal.recoverCurrentSessionAfterReconnect()
+
+    const loads = sent.filter(
+      (msg): msg is { type: "messagesLoaded"; mode?: string } =>
+        typeof msg === "object" && msg !== null && (msg as { type?: string }).type === "messagesLoaded",
+    )
+    expect(loads).toHaveLength(1)
+    expect(loads[0]?.mode).toBe("reconcile")
+  })
+
+  it("flushes streamed parts buffered during the reconnect snapshot", async () => {
+    const messages = defer<{ data: unknown[]; response: { headers: Headers } }>()
+    const client = createClient({ messagesDeferred: messages })
+    const { internal, sent } = makeProvider(client)
+    internal.currentSession = mkSession()
+    internal.contextSessionID = "s1"
+    internal.trackedSessionIds.add("s1")
+
+    const recovery = internal.recoverCurrentSessionAfterReconnect()
+    internal.streams.push({
+      type: "partUpdated",
+      sessionID: "s1",
+      messageID: "m2",
+      part: { id: "p2", sessionID: "s1", messageID: "m2", type: "text", text: "resumed" },
+    })
+    messages.resolve(mkResult([mkMessage("m2", "assistant", 2)]))
+    await recovery
+
+    const types = sent.map((msg) => (typeof msg === "object" && msg ? (msg as { type?: string }).type : undefined))
+    const snapshot = types.indexOf("messagesLoaded")
+    const update = types.findIndex((type) => type === "partUpdated" || type === "partsUpdated")
+    expect(snapshot).toBeGreaterThanOrEqual(0)
+    expect(update).toBeGreaterThan(snapshot)
+  })
+
+  it("does not recover on first connect but does after disconnects and errors", async () => {
+    const client = createClient()
+    const { internal } = makeProvider(client)
+    const sync: string[] = []
+    let recoveries = 0
+    internal.checkConfigWarnings = async () => {}
+    internal.syncWebviewState = async (reason: string) => {
+      sync.push(reason)
+    }
+    internal.recoverCurrentSessionAfterReconnect = async () => {
+      recoveries += 1
+    }
+
+    await internal.handleConnectionState("connected")
+    await internal.handleConnectionState("disconnected")
+    await internal.handleConnectionState("connected")
+    await internal.handleConnectionState("error")
+    await internal.handleConnectionState("connected")
+
+    expect(sync).toEqual(["sse-connected", "sse-reconnected", "sse-reconnected"])
+    expect(recoveries).toBe(2)
+  })
+
+  it("reconciles the context session without publishing a stale session status after reconnect", async () => {
+    const client = createClient({
+      messagesData: [mkMessage("m2", "assistant", 2, "s2")],
+      statusData: { s1: { type: "busy" }, s2: { type: "idle" } },
+    })
+    const { internal, sent } = makeProvider(client)
+    internal.isWebviewReady = true
+    internal.hasConnected = true
+    internal.currentSession = mkSession()
+    internal.contextSessionID = "s2"
+    internal.trackedSessionIds.add("s1")
+    internal.trackedSessionIds.add("s2")
+    internal.checkConfigWarnings = async () => {}
+    internal.recoverPendingPrompts = () => {}
+
+    await internal.handleConnectionState("connected")
+
+    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "s2", status: "idle" })
+    expect(sent).not.toContainEqual({ type: "sessionStatus", sessionID: "s1", status: "busy" })
+  })
+})
+
 describe("KiloProvider.handleDeleteSession / background processes", () => {
   it("stops session background processes in the session directory before deletion", async () => {
     const client = createClient()
@@ -1199,6 +1368,16 @@ describe("KiloProvider.handleDeleteSession / background processes", () => {
     expect(internal.removedSessionIds.has("s1")).toBe(true)
     expect(internal.sessionStatusMap.has("s1")).toBe(false)
     expect(sent).toHaveLength(count)
+  })
+
+  it("prunes the session status revision", async () => {
+    const client = createClient()
+    const { internal } = makeProvider(client)
+    internal.statusRevisions.set("s1", 3)
+
+    await internal.handleDeleteSession("s1")
+
+    expect(internal.statusRevisions.has("s1")).toBe(false)
   })
 })
 

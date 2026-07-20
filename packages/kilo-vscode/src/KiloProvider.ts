@@ -54,7 +54,7 @@ import { GitStatsPoller, type LocalStats } from "./agent-manager/GitStatsPoller"
 import { createMarketplaceRemover, removeMcp } from "./kilo-provider/remove-config-item"
 import type { RemoteStatusService } from "./services/RemoteStatusService"
 import { resolveProjectDirectory } from "./project-directory"
-import { seedSessionStatuses } from "./session-status"
+import { reconcileSessionStatus, seedSessionStatuses } from "./session-status"
 import { normalizeEnhancePromptErrorMessage } from "./enhance-prompt-error"
 import { retry } from "./services/cli-backend/retry"
 import { removeAgent } from "./services/agent-removal"
@@ -351,6 +351,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private contextSessionID: string | undefined
   private connectionState: "connecting" | "connected" | "disconnected" | "error" = "connecting"
   private connectionGeneration = 0
+  private hasConnected = false
   private loginAttempt = 0
   private isWebviewReady = false
   private readonly extensionVersion =
@@ -409,6 +410,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private readonly draftSessions = new Map<string, { sid: string; dir: string; expires: number }>()
   private readonly sandboxTransitions = new Map<string, Promise<void>>()
   private readonly revisions = new Map<string, { id: string; seq: number }>()
+  private readonly statusRevisions = new Map<string, number>()
   private readonly refreshes = new Map<string, number>()
   private readonly anacondaDesktop = new AnacondaDesktopBridge()
   private sessionStatusMap = new Map<string, SessionStatus["type"]>() // Latest status used for destructive config warnings.
@@ -745,7 +747,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         data: profileData,
       })
 
-      if (this.currentSession) {
+      if (this.currentSession && reason !== "sse-reconnected") {
         this.refreshSessionDetails(this.currentSession.id, this.getWorkspaceDirectory(this.currentSession.id))
       }
 
@@ -753,7 +755,18 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (this.cachedStats) this.postMessage(this.cachedStats)
       this.postMessage({ type: "gitStatus", repo: this.cachedGitRepo })
 
-      void this.seedSessionStatusMap()
+      // fork_change start
+      // Seed session status map so the Settings panel knows about already-running sessions.
+      // Must run after webview is ready (postMessage is a no-op before that).
+      // Only reconcile (reset missing busy→idle) when the map is empty, i.e.
+      // on the very first seed before any real-time SSE events have arrived.
+      // On SSE reconnects the focused session is reconciled separately with an
+      // SSE revision guard; do not broadly reset statuses from this sync.
+      if (reason !== "sse-reconnected") {
+        const reconcile = this.sessionStatusMap.size === 0
+        void this.seedSessionStatusMap(reconcile)
+      }
+      // fork_change end
 
       this.sendRemoteStatus()
     }
@@ -1683,8 +1696,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       dir: (sessionID) =>
         sessionID
           ? this.getWorkspaceDirectory(sessionID)
-          : (this.getProjectDirectory(this.currentSession?.id) ??
-            this.getWorkspaceDirectory(this.currentSession?.id)),
+          : (this.getProjectDirectory(this.currentSession?.id) ?? this.getWorkspaceDirectory(this.currentSession?.id)),
       diff: this.diffVirtualProvider,
       openMarkdown: (file, sessionID) => {
         if (!this.documentViewerProvider) return false
@@ -1842,38 +1854,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       )
 
       // Subscribe to connection state changes
-      this.unsubscribeState = this.connectionService.onStateChange(async (state, error) => {
-        if (this.connectionState !== state) {
-          this.connectionGeneration++
-          this.configBindings.clear()
-        }
-        this.connectionState = state
-        this.postConnectionState(error)
-
-        if (state === "connected") {
-          this.flushPendingKiloModel()
-          // Fire config warnings independently so a failure in the
-          // sequential await chain doesn't prevent warnings from being shown
-          void this.checkConfigWarnings("state")
-          try {
-            // Profile fetch is best-effort — returns 401 when user isn't logged into gateway.
-            const sdkClient = this.client
-            if (sdkClient) {
-              const profileResult = await sdkClient.kilo.profile()
-              this.postMessage({ type: "profileData", data: profileResult.data ?? null })
-            }
-            await this.syncWebviewState("sse-connected")
-            await this.flushPendingSessionRefresh("sse-connected")
-            this.recoverPendingPrompts()
-          } catch (error) {
-            console.error("[Kilo New] KiloProvider: ❌ Failed during connected state handling:", error)
-            this.postMessage({
-              type: "error",
-              message: getErrorMessage(error) || "Failed to sync after connecting",
-            })
-          }
-        }
-      })
+      // fork_change start
+      this.unsubscribeState = this.connectionService.onStateChange((state, error) =>
+        this.handleConnectionState(state, error),
+      )
+      // fork_change end
 
       // Subscribe to notification dismiss broadcast from other KiloProvider instances
       this.unsubscribeNotificationDismiss = this.connectionService.onNotificationDismissed(() => {
@@ -1913,6 +1898,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       // Get current state and push to webview
       const serverInfo = this.connectionService.getServerInfo()
       this.connectionState = this.connectionService.getConnectionState()
+      if (this.connectionState === "connected") this.hasConnected = true
 
       if (serverInfo) {
         const langConfig = vscode.workspace.getConfiguration("kilo-code.new")
@@ -2396,6 +2382,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.lastReconciledAt.delete(sessionID)
     this.checkpoints.delete(sessionID)
     this.revisions.delete(sessionID)
+    // fork_change start
+    this.statusRevisions.delete(sessionID)
+    // fork_change end
     this.refreshes.delete(sessionID)
     this.epochs.delete(sessionID)
     this.sessionStatusMap.delete(sessionID)
@@ -3073,6 +3062,66 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       reconcile,
       (sessionID, status) => this.latest(dir, request) && this.accept(sessionID, status, dir, epoch),
     )
+  }
+
+  private async handleConnectionState(
+    state: "connecting" | "connected" | "disconnected" | "error",
+    error?: Error,
+  ): Promise<void> {
+    if (this.connectionState !== state) {
+      this.connectionGeneration++
+      this.configBindings.clear()
+    }
+    this.connectionState = state
+    this.postConnectionState(error)
+    if (state !== "connected") return
+
+    const reconnect = this.hasConnected
+    this.hasConnected = true
+    this.flushPendingKiloModel()
+    // Fire config warnings independently so a failure in the sequential await chain doesn't prevent warnings from being shown.
+    void this.checkConfigWarnings("state")
+    try {
+      // Profile fetch is best-effort — returns 401 when user isn't logged into gateway.
+      const client = this.client
+      if (client) {
+        const profile = await client.kilo.profile()
+        this.postMessage({ type: "profileData", data: profile.data ?? null })
+      }
+      await this.syncWebviewState(reconnect ? "sse-reconnected" : "sse-connected")
+      if (reconnect) await this.recoverCurrentSessionAfterReconnect()
+      await this.flushPendingSessionRefresh("sse-connected")
+      this.recoverPendingPrompts()
+    } catch (error) {
+      console.error("[Kilo New] KiloProvider: ❌ Failed during connected state handling:", error)
+      this.postMessage({
+        type: "error",
+        message: getErrorMessage(error) || "Failed to sync after connecting",
+      })
+    }
+  }
+
+  /** Recover the focused transcript and status after this provider misses SSE events. */
+  private async recoverCurrentSessionAfterReconnect(): Promise<void> {
+    const client = this.client
+    const sid = this.contextSessionID ?? this.currentSession?.id
+    if (!sid || !client || !this.trackedSessionIds.has(sid)) return
+
+    const dir = this.getWorkspaceDirectory(sid)
+    const revision = this.statusRevisions.get(sid) ?? 0
+    await Promise.all([
+      this.handleLoadMessages(sid, { mode: "reconcile", limit: MESSAGE_PAGE_LIMIT, preserveStream: true }),
+      reconcileSessionStatus(
+        client,
+        dir,
+        this.sessionStatusMap,
+        (msg) => this.postMessage(msg),
+        sid,
+        () => {
+          return (this.statusRevisions.get(sid) ?? 0) === revision
+        },
+      ),
+    ])
   }
 
   /**
@@ -4827,6 +4876,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (event.type === "session.status") {
       const sid = event.properties.sessionID
       if (this.removedSessionIds.has(sid)) return
+      // fork_change start
+      this.statusRevisions.set(sid, (this.statusRevisions.get(sid) ?? 0) + 1)
+      // fork_change end
       const status = event.properties.status
       this.mark(sid, directory)
       this.aborts.observe(sid, status.type, directory)
