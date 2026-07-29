@@ -4,7 +4,7 @@ import type { ExtensionMessage, ModelSelection } from "../../webview-ui/src/type
 
 const model: ModelSelection = { providerID: "anthropic", modelID: "claude-sonnet-4" }
 
-function setup(session?: string) {
+function setup(session?: string, preferred?: string) {
   const selections: Record<string, string> = {}
   const messages: Array<{ type: string; key?: string; value?: string }> = []
   const order: string[] = []
@@ -18,6 +18,7 @@ function setup(session?: string) {
     session: () => session,
     agent: () => "code",
     find: () => ({ variants: { low: {}, high: {} } }),
+    preferred: () => preferred,
     post: (message) => {
       order.push("post")
       messages.push(message)
@@ -65,7 +66,7 @@ describe("session variants", () => {
   })
 
   it("persists an explicit default selection", () => {
-    const state = setup()
+    const state = setup(undefined, "high")
     state.variants.select(undefined)
     expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "" })
     expect(state.variants.current()).toBeUndefined()
@@ -76,5 +77,20 @@ describe("session variants", () => {
     const state = setup()
     state.variants.carry(model, undefined, "code")
     expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "" })
+  })
+
+  it("uses the preferred variant when no explicit selection exists", () => {
+    const state = setup("session-a", "high")
+
+    expect(state.variants.current()).toBe("high")
+    expect(state.variants.agent("ask", model)).toBe("high")
+  })
+
+  it("keeps an explicit selection over the preferred variant", () => {
+    const state = setup("session-a", "high")
+
+    state.variants.select("low")
+
+    expect(state.variants.current()).toBe("low")
   })
 })

@@ -1040,6 +1040,15 @@ export interface RequestVariantsMessage {
   type: "requestVariants"
 }
 
+export interface PersistPreferredVariantRequest {
+  type: "persistPreferredVariant"
+  value?: string
+}
+
+export interface RequestPreferredVariantMessage {
+  type: "requestPreferredVariant"
+}
+
 // Enhance prompt request (webview → extension)
 export interface EnhancePromptRequest {
   type: "enhancePrompt"
@@ -1543,6 +1552,8 @@ export type WebviewMessage =
   | SetReviewMarkdownRenderRequest
   | PersistVariantRequest
   | RequestVariantsMessage
+  | PersistPreferredVariantRequest
+  | RequestPreferredVariantMessage
   | RequestCloudSessionDataMessage
   | ImportAndSendMessage
   | RequestBranchesMessage
