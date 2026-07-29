@@ -862,6 +862,9 @@ export const dict = {
     "Включите провайдер Kilo и выполните вход, чтобы использовать Speech to Text. В настоящее время Speech to Text поддерживается только с Kilo Gateway.",
   "settings.models.speechToTextModel.title": "Модель речи в текст",
   "settings.models.speechToTextModel.description": "Выберите модель транскрипции Kilo Gateway для голосового ввода.",
+  "settings.models.preferredReasoning.title": "Предпочтительный уровень рассуждений",
+  "settings.models.preferredReasoning.description":
+    "Использовать этот уровень для моделей без сохранённого выбора, если он поддерживается.",
   "settings.experimental.nativeNotebookTools.title": "Нативные инструменты блокнотов",
   "settings.experimental.nativeNotebookTools.description":
     "Включить экспериментальные инструменты для чтения, редактирования и выполнения блокнотов VS Code",

@@ -974,6 +974,11 @@ export interface VariantsLoadedMessage {
   variants: Record<string, string>
 }
 
+export interface PreferredVariantLoadedMessage {
+  type: "preferredVariantLoaded"
+  value?: string
+}
+
 export interface RecentsLoadedMessage {
   type: "recentsLoaded"
   recents: ModelSelection[]
@@ -1548,6 +1553,7 @@ export type ExtensionMessage =
   | AnacondaDesktopExtensionMessage
   | CustomProviderModelsFetchedMessage
   | RecentsLoadedMessage
+  | PreferredVariantLoadedMessage
   | ModelSelectorExpandedLoadedMessage
   | FavoritesLoadedMessage
   | ModelSelectionsLoadedMessage

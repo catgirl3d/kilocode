@@ -230,6 +230,8 @@ interface SessionContextValue {
   currentVariant: (sessionID?: string) => string | undefined
   variantForAgent: (agent: string, model: ModelSelection | null) => string | undefined
   selectVariant: (value: string | undefined, sessionID?: string) => void
+  preferredVariant: Accessor<string | undefined>
+  setPreferredVariant: (value?: string) => void
 
   // Model favorites
   recentModels: Accessor<ModelSelection[]>
@@ -662,6 +664,7 @@ export const SessionProvider: ParentComponent = (props) => {
     })
   }
 
+  const [preferredVariant, setPreferred] = createSignal<string>()
   const variants = createSessionVariants({
     selections: () => store.variantSelections,
     set: (key, value) => setStore("variantSelections", key, value),
@@ -669,6 +672,7 @@ export const SessionProvider: ParentComponent = (props) => {
     session: currentSessionID,
     agent: agentForScope,
     find: provider.findModel,
+    preferred: preferredVariant,
     post: vscode.postMessage,
     listen: vscode.onMessage,
   })
@@ -685,6 +689,10 @@ export const SessionProvider: ParentComponent = (props) => {
     hide: hideErrors,
   })
   const selectModel = models.select
+  const setPreferredVariant = (value?: string) => {
+    setPreferred(value)
+    vscode.postMessage({ type: "persistPreferredVariant", value })
+  }
 
   function selectKiloModel(modelID?: string, agent?: string) {
     if (!modelID && !agent) return
@@ -929,6 +937,14 @@ export const SessionProvider: ParentComponent = (props) => {
   })
 
   onCleanup(variants.load())
+
+  const unsubPreferredVariant = vscode.onMessage((message: ExtensionMessage) => {
+    if (message.type !== "preferredVariantLoaded") return
+    setPreferred(message.value)
+  })
+  vscode.postMessage({ type: "requestPreferredVariant" })
+
+  onCleanup(unsubPreferredVariant)
 
   // Load persisted per-mode model selections from model.json via extension host.
   // Uses replace semantics so a reset (empty payload) clears old entries.
@@ -3052,6 +3068,8 @@ export const SessionProvider: ParentComponent = (props) => {
     currentVariant,
     variantForAgent,
     selectVariant,
+    preferredVariant,
+    setPreferredVariant,
     revert,
     revertedCount,
     summary,

@@ -54,12 +54,16 @@ describe("per-session variant selection", () => {
 
   it("uses the model default when no variant is selected", () => {
     expect(getVariant({}, model, variants, "code")).toBeUndefined()
-    expect(getVariant({ [variantKey(model, "code")]: "" }, model, variants, "code")).toBeUndefined()
+    expect(getVariant({ [variantKey(model, "code")]: "" }, model, variants, "code", undefined, "high")).toBeUndefined()
   })
 
   it("preserves a provider variant named default", () => {
     const store = { [variantKey(model, "code")]: "default" }
     expect(getVariant(store, model, ["default", "thinking"], "code")).toBe("default")
+  })
+
+  it("uses the preferred variant for an agent without a saved selection", () => {
+    expect(getAgentVariant({}, model, { variants: { low: {}, high: {} } }, "ask", "high")).toBe("high")
   })
 
   it("carries the pre-submit agent variant into a newly created session", () => {
@@ -83,6 +87,26 @@ describe("per-session variant selection", () => {
     const store: Record<string, string> = { "anthropic/claude-sonnet-4": "medium" }
 
     expect(getVariant(store, model, variants, "code", "session-a")).toBe("medium")
+  })
+
+  it("uses the preferred variant when the model has no saved selection", () => {
+    expect(getVariant({}, model, variants, "code", "session-a", "high")).toBe("high")
+  })
+
+  it("keeps a saved model selection over the preferred variant", () => {
+    const store: Record<string, string> = { [variantKey(model, "code", "session-a")]: "low" }
+
+    expect(getVariant(store, model, variants, "code", "session-a", "high")).toBe("low")
+  })
+
+  it("preserves a saved effort before falling back to the preferred variant", () => {
+    const store: Record<string, string> = { [variantKey(model, "code", "session-a")]: "high" }
+
+    expect(getVariant(store, model, ["low", "medium"], "code", "session-a", "low")).toBe("medium")
+  })
+
+  it("ignores an unsupported preferred variant", () => {
+    expect(getVariant({}, model, variants, "code", "session-a", "xhigh")).toBeUndefined()
   })
 
   it("transfers a pending local tab variant to the created session", () => {

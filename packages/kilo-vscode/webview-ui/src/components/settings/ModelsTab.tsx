@@ -18,6 +18,8 @@ import { speechToTextModelOptions } from "../speech-to-text/model-selector"
 import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autocomplete-model-selector"
 import { preserveVariant } from "../../context/session-variant-store"
 
+const REASONING_VARIANTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting } = useConfig()
   const language = useLanguage()
@@ -132,6 +134,21 @@ const ModelsTab: Component = () => {
             clearLabel={language.t("settings.providers.notSet")}
             label={language.t("settings.providers.defaultModel.title")}
             description={language.t("settings.providers.defaultModel.description")}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title={language.t("settings.models.preferredReasoning.title")}
+          description={language.t("settings.models.preferredReasoning.description")}
+        >
+          <ThinkingSelectorBase
+            variants={REASONING_VARIANTS}
+            value={session.preferredVariant()}
+            onSelect={(value) => session.setPreferredVariant(value)}
+            onClear={() => session.setPreferredVariant()}
+            allowClear
+            clearLabel={language.t("common.default")}
+            placement="bottom-start"
+            globalTrigger={false}
           />
         </SettingsRow>
         <SettingsRow
