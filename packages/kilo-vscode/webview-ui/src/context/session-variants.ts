@@ -15,6 +15,7 @@ interface Options {
   session: Accessor<string | undefined>
   agent: (sessionID?: string) => string
   find: (selection: ModelSelection) => Model | undefined
+  preferred: Accessor<string | undefined>
   post: (message: Message) => void
   listen: (handler: (message: ExtensionMessage) => void) => () => void
 }
@@ -28,7 +29,7 @@ export function createSessionVariants(options: Options) {
 
   const agent = (name: string, selection: ModelSelection | null) => {
     if (!selection) return undefined
-    return getAgentVariant(options.selections(), selection, options.find(selection), name)
+    return getAgentVariant(options.selections(), selection, options.find(selection), name, options.preferred())
   }
 
   const current = (sessionID?: string) => {
@@ -37,7 +38,7 @@ export function createSessionVariants(options: Options) {
     if (!selection) return undefined
     const variants = list(sid)
     if (variants.length === 0) return undefined
-    return getVariant(options.selections(), selection, variants, options.agent(sid), sid)
+    return getVariant(options.selections(), selection, variants, options.agent(sid), sid, options.preferred())
   }
 
   const select = (value: string | undefined, sessionID?: string) => {

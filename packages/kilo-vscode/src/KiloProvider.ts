@@ -1064,7 +1064,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       ) {
         return
       }
-      if (await this.handleModelSelectorExpandedMessage(message)) return
+      if (await this.handleModelPreferenceMessage(message)) return
       this.handleWebviewFocusMessage(message)
       this.visibleTaskStreams.handle(message)
       this.handleStreamVisibilityMessage(message)
@@ -1606,7 +1606,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     })
   }
 
-  private async handleModelSelectorExpandedMessage(message: TypedWebviewMessage): Promise<boolean> {
+  private async handleModelPreferenceMessage(message: TypedWebviewMessage): Promise<boolean> {
     if (message.type === "persistModelSelectorExpanded") {
       if (typeof message.value !== "boolean") return true
       await this.extensionContext?.globalState.update("modelSelectorExpanded", message.value)
@@ -1616,6 +1616,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (message.type === "requestModelSelectorExpanded") {
       const value = this.extensionContext?.globalState.get("modelSelectorExpanded", true) ?? true
       this.postMessage({ type: "modelSelectorExpandedLoaded", value })
+      return true
+    }
+    if (message.type === "persistPreferredVariant") {
+      if (message.value !== undefined && typeof message.value !== "string") return true
+      await this.extensionContext?.globalState.update("preferredVariant", message.value)
+      return true
+    }
+    if (message.type === "requestPreferredVariant") {
+      const value = this.extensionContext?.globalState.get<string>("preferredVariant")
+      this.postMessage({ type: "preferredVariantLoaded", value })
       return true
     }
     return false
@@ -4175,6 +4185,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
     // Clear globalState items that are not part of the configuration
     await this.extensionContext?.globalState.update("variantSelections", undefined)
+    await this.extensionContext?.globalState.update("preferredVariant", undefined)
     await this.extensionContext?.globalState.update("recentModels", undefined)
     await this.extensionContext?.globalState.update("modelUsage", undefined)
     await this.extensionContext?.globalState.update("kilo.dismissedNotificationIds", undefined)
@@ -4194,6 +4205,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
     // Re-send globalState items to the webview
     this.postMessage({ type: "variantsLoaded", variants: {} })
+    this.postMessage({ type: "preferredVariantLoaded" })
     this.postMessage({ type: "recentsLoaded", recents: [] })
     this.postMessage({ type: "modelUsageLoaded", usage: {} })
 
