@@ -370,9 +370,10 @@ describe("AssistantMessage visible row contract (source)", () => {
     expect(src).toContain("if (!planExitInfo(part)) return")
   })
 
-  it("uses the native recall tool without a separate memory badge", () => {
+  it("shows recalled memory with a separate badge", () => {
     const tools = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
-    expect(src).not.toContain("assistant-memory-badge")
+    expect(src).toContain("assistant-memory-badge")
+    expect(src).toContain("MemoryMarkerMeta.fromParts")
     expect(tools).toContain("ToolRegistry.render(part.tool) ?? McpTool")
   })
 })
@@ -400,9 +401,14 @@ describe("Memory control placement contract (source)", () => {
   const settings = fs.readFileSync(CONTEXT_TAB_FILE, "utf-8")
   const prompt = fs.readFileSync(PROMPT_INPUT_FILE, "utf-8")
 
-  it("keeps memory controls out of the task header", () => {
-    expect(header).not.toContain("useMemory")
-    expect(header).not.toContain('name="memory"')
+  it("keeps the last Context memory popover separate from the direct compact action", () => {
+    expect(header).toContain("useMemory")
+    expect(header).toContain('name="server"')
+    expect(header).toContain('name="memory"')
+    expect(header).toContain("memory.enable()")
+    expect(header).toContain("memory.disable()")
+    expect(header).toContain('icon="compress"')
+    expect(header).not.toContain('settings.context.compaction.title')
   })
 
   it("shows storage inspection in settings without a manual rebuild action", () => {
