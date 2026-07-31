@@ -106,6 +106,31 @@ describe("memory TUI command parser", () => {
     expect(calls).toEqual([{ autoConsolidate: false }, { confirm: true }])
   })
 
+  test("verbose command configures memory details", async () => {
+    const shown: string[] = []
+    const calls: unknown[] = []
+    const client = {
+      memory: {
+        configure: async (input: unknown) => {
+          calls.push(input)
+          return { data: { state: { verbose: true } } }
+        },
+      },
+    } as unknown as KiloClient
+
+    await runMemoryCommand({
+      text: "/memory verbose on",
+      client,
+      toast: { show: (input) => shown.push(input.message) },
+      show() {},
+      status() {},
+      usage() {},
+    })
+
+    expect(calls).toEqual([{ verbose: true }])
+    expect(shown).toEqual(["Memory verbose on"])
+  })
+
   test("status opens overview dialog", async () => {
     const shown: string[] = []
     const opened: string[] = []
