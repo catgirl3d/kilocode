@@ -11,7 +11,7 @@ import type { WorkStyle, WorkStyleState } from "../../../../src/shared/work-styl
 import type { RefreshProviderUsageMessage, RequestProviderUsageMessage } from "./provider-usage"
 import type { AnacondaDesktopWebviewMessage } from "../../../../src/shared/anaconda-desktop-messages"
 import type { RequestMigrationDataMessage, StartMigrationMessage } from "./migration"
-import type { MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } from "./memory"
+import type { MemoryPromptMessage, MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } from "./memory"
 import type { RequestSessionBoardMessage, ResetSessionBoardMessage } from "./board"
 import type { Activity } from "../../utils/session-activity"
 import type { PRReactionContent } from "../../../agent-manager/pr/pr-types"
@@ -1831,6 +1831,7 @@ export type WebviewMessage =
   | RequestMemoryMessage
   | MemoryShowMessage
   | MemoryOperationMessage
+  | MemoryPromptMessage
   | CreateSectionRequest
   | RenameSectionRequest
   | DeleteSectionRequest
