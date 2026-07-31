@@ -89,6 +89,7 @@ const mockVscode = {
     showTextDocument: async () => {},
     showInformationMessage: async () => undefined,
     showQuickPick: async () => undefined,
+    showInputBox: async () => undefined,
     showErrorMessage: async () => undefined,
     showWarningMessage: async () => undefined,
     createTerminal: () => ({ show: noop, sendText: noop, dispose: noop }),
