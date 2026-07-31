@@ -71,7 +71,12 @@ export async function transcribeSpeech(
       return {
         ok: false,
         error: errorMessage(body, raw) ?? `Speech to text failed with status ${res.status}`,
-        code: res.status === 401 ? "not_authenticated" : undefined,
+        code:
+          res.status === 401
+            ? model.providerID === "kilo"
+              ? "not_authenticated"
+              : "provider_not_authenticated"
+            : undefined,
       }
     }
 

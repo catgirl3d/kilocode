@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import {
   DEFAULT_SPEECH_TO_TEXT_MODEL,
+  mergeSpeechToTextModels,
   SPEECH_TO_TEXT_MODELS,
   getSpeechToTextModel,
 } from "../../src/speech-to-text/models"
@@ -24,5 +25,37 @@ describe("speech-to-text model catalog", () => {
       provider: "NVIDIA",
     })
     expect(model.verbatim).toBeUndefined()
+  })
+
+  it("includes direct Groq Whisper models", () => {
+    expect(getSpeechToTextModel("groq/whisper-large-v3-turbo")).toMatchObject({
+      id: "groq/whisper-large-v3-turbo",
+      label: "Whisper Large V3 Turbo",
+      provider: "Groq",
+      providerID: "groq",
+    })
+    expect(getSpeechToTextModel("groq/whisper-large-v3")).toMatchObject({
+      id: "groq/whisper-large-v3",
+      label: "Whisper Large V3",
+      provider: "Groq",
+      providerID: "groq",
+    })
+  })
+
+  it("keeps direct Groq models when the Kilo catalog refreshes", () => {
+    const models = mergeSpeechToTextModels([
+      {
+        id: "fish-audio/transcribe-1",
+        label: "Transcribe 1",
+        provider: "Fish Audio",
+        providerID: "kilo",
+      },
+    ])
+
+    expect(models.map((model) => model.id)).toEqual([
+      "fish-audio/transcribe-1",
+      "groq/whisper-large-v3-turbo",
+      "groq/whisper-large-v3",
+    ])
   })
 })
