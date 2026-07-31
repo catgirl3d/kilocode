@@ -30,7 +30,7 @@ function expected(item: Case): ParsedMemoryCommand | undefined {
     if (!item.query) throw new Error(`Missing query for fixture: ${item.name}`)
     return { kind: "operation", operation: item.operation, query: item.query }
   }
-  if (item.operation === "auto") {
+  if (item.operation === "auto" || item.operation === "verbose") {
     if (!item.mode) throw new Error(`Missing mode for fixture: ${item.name}`)
     return { kind: "operation", operation: item.operation, mode: item.mode }
   }
@@ -42,11 +42,11 @@ function expected(item: Case): ParsedMemoryCommand | undefined {
 }
 
 describe("memory commands", () => {
-  test("does not expose verbose mode", () => {
-    expect(MEMORY_USAGE).not.toContain("verbose")
-    expect(parseMemoryCommand("/memory verbose on")).toEqual({
+  test("exposes verbose mode", () => {
+    expect(MEMORY_USAGE).toContain("verbose on|off")
+    expect(parseMemoryCommand("/memory verbose")).toEqual({
       kind: "usage",
-      reason: "Unknown memory action: verbose.",
+      reason: "Missing verbose mode. Run /memory verbose on or /memory verbose off.",
     })
   })
 

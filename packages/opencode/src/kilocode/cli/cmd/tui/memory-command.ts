@@ -103,6 +103,18 @@ export async function runMemoryCommand(input: {
       input.toast.show({ variant: "info", message: auto(result.state.autoConsolidate) })
       return true
     }
+    // kilocode_change start
+    if (parsed.operation === "verbose") {
+      const result = read(
+        await input.client.memory.configure({
+          ...route(input),
+          verbose: parsed.mode === "on",
+        }),
+      )
+      input.toast.show({ variant: "info", message: `Memory verbose ${result.state.verbose ? "on" : "off"}` })
+      return true
+    }
+    // kilocode_change end
     if (parsed.operation === "disable") {
       read(await input.client.memory.disable(route(input)))
       input.toast.show({ variant: "info", message: `${name} disabled` })
