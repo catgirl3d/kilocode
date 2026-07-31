@@ -89,3 +89,9 @@ export interface MemoryOperationMessage {
   file?: MemorySourceFile
   section?: string
 }
+
+export interface MemoryPromptMessage {
+  type: "memoryPrompt"
+  operation: "remember" | "forget"
+  sessionID?: string
+}
