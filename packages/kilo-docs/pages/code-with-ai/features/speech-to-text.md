@@ -35,13 +35,13 @@ Download from [ffmpeg.org/download.html](https://ffmpeg.org/download.html) and a
 
 ### Sign in
 
-Enable and sign in to the Kilo provider to use voice input in prompt fields. Requests use your Kilo account through Kilo Gateway, so no separate OpenAI provider profile or API key is needed.
+Enable and sign in to the Kilo provider to use Kilo Gateway transcription models in prompt fields. These requests use your Kilo account, so no separate OpenAI provider profile or API key is needed. You can instead configure the Groq provider with an API key and select a Groq Whisper model.
 
 ---
 
 ## Choose a model
 
-You can optionally choose a transcription model in **Settings** > **Models** > **Speech to Text Model**. Kilo stores this choice as `experimental.speech_to_text_model` in your global Kilo CLI config (`~/.config/kilo/kilo.jsonc`).
+You can optionally choose a transcription model in **Settings** > **Models** > **Speech to Text Model**. Kilo Gateway models route through your Kilo account; Groq Whisper models send audio directly to Groq with the configured Groq API key. Kilo stores this choice as `experimental.speech_to_text_model` in your global Kilo CLI config (`~/.config/kilo/kilo.jsonc`).
 
 The model list is discovered from the Kilo Gateway and reflects the transcription models available to your account or organization, so newly available models appear automatically.
 
@@ -49,7 +49,7 @@ The model list is discovered from the Kilo Gateway and reflects the transcriptio
 
 ## Record prompts
 
-When you are signed in to the enabled Kilo provider, a microphone button appears in prompt fields:
+When the selected transcription provider is enabled and authenticated, a microphone button appears in prompt fields:
 
 1. Click the microphone button to start recording
 2. Speak your message clearly
