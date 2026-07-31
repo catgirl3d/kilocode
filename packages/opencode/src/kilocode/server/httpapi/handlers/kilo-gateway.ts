@@ -24,6 +24,7 @@ import {
 import { DIRECT_FIM_ENV, requestMistralFim, resolveFimTarget } from "@kilocode/kilo-gateway/fim"
 import { DIRECT_EDIT_ENV, extractFencedBody, resolveEditTarget } from "@kilocode/kilo-gateway/edit"
 import { buildMercuryEditPrompt } from "@kilocode/kilo-gateway/edit-prompt"
+import { GROQ_TRANSCRIPTIONS_URL, resolveGroqTranscriptionModel } from "@kilocode/kilo-gateway/speech-to-text"
 import { buildKiloHeaders } from "@kilocode/kilo-gateway"
 import { Effect, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -43,6 +44,7 @@ import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 import { AudioTranscriptionsBody, ClawStatus, CloudSessionImportError, EditBody, FimBody } from "../groups/kilo-gateway"
 
 const FIM_TIMEOUT_MS = 30_000
+const GROQ_AUDIO_LIMIT = 25 * 1024 * 1024
 const log = Log.create({ service: "kilo-gateway" })
 
 function jsonError(error: string, status: number) {
@@ -284,6 +286,44 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
     const audioTranscriptions = Effect.fn("KiloGatewayHttpApi.audioTranscriptions")(function* (ctx: {
       payload: typeof AudioTranscriptionsBody.Type
     }) {
+      const model = resolveGroqTranscriptionModel(ctx.payload.model)
+      if (model) {
+        const item = yield* auth.get("groq").pipe(Effect.mapError(() => new HttpApiError.Unauthorized({})))
+        const token = item?.type === "api" ? item.key : process.env.GROQ_API_KEY
+        if (!token) return jsonError("Groq API key is not configured", 401)
+        if (ctx.payload.input_audio.format !== "wav") {
+          return jsonError("Only WAV audio input is supported for Groq transcription", 400)
+        }
+
+        const audio = Buffer.from(ctx.payload.input_audio.data, "base64")
+        if (!audio.byteLength) return jsonError("No audio was provided", 400)
+        if (audio.byteLength > GROQ_AUDIO_LIMIT) return jsonError("Audio exceeds Groq's 25 MB upload limit", 413)
+
+        const form = new FormData()
+        form.set("file", new Blob([audio], { type: "audio/wav" }), "recording.wav")
+        form.set("model", model)
+        form.set("response_format", "json")
+        if (ctx.payload.language) form.set("language", ctx.payload.language)
+        if (ctx.payload.prompt) form.set("prompt", ctx.payload.prompt)
+
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            fetch(GROQ_TRANSCRIPTIONS_URL, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+              signal: request.source instanceof Request ? request.source.signal : undefined,
+              body: form,
+            }),
+          catch: () => new HttpApiError.BadRequest({}),
+        })
+        const text = yield* Effect.promise(() => response.text())
+        return HttpServerResponse.raw(text, {
+          status: response.status,
+          contentType: response.headers.get("Content-Type") ?? "application/json",
+        })
+      }
+
       const info = yield* proxyAuth()
       if (!info.auth) return yield* Effect.fail(new HttpApiError.Unauthorized({}))
       if (!info.token) return yield* Effect.fail(new HttpApiError.Unauthorized({}))

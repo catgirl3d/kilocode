@@ -22,6 +22,7 @@
     "./edit": "./src/edit.ts",
     "./edit-prompt": "./src/edit-prompt.ts",
     "./provider-usage": "./src/provider-usage.ts",
+    "./speech-to-text": "./src/speech-to-text.ts",
     "./tui": "./src/tui.ts"
   },
   "files": [
