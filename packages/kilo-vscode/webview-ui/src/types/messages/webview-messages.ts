@@ -16,7 +16,7 @@ import type {
   SkipLegacyMigrationMessage,
   StartMigrationMessage,
 } from "./migration"
-import type { MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } from "./memory"
+import type { MemoryPromptMessage, MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } from "./memory"
 import type { Activity } from "../../utils/session-activity"
 
 // ============================================
@@ -1743,6 +1743,7 @@ export type WebviewMessage =
   | RequestMemoryMessage
   | MemoryShowMessage
   | MemoryOperationMessage
+  | MemoryPromptMessage
   | CreateSectionRequest
   | RenameSectionRequest
   | DeleteSectionRequest
