@@ -58,5 +58,6 @@ function toModel(model: CatalogModel): SpeechToTextModelDef {
     id: model.id,
     label: index === -1 ? model.name : model.name.slice(index + 1).trim(),
     provider,
+    providerID: "kilo",
   }
 }
