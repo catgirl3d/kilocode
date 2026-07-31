@@ -887,10 +887,10 @@ export const dict = {
   "settings.experimental.imageGenerationModel.placeholder": "Default (Auto Router)",
 
   "settings.models.speechToText.disabledDescription":
-    "Kilo Gateway is selected. Enable and sign in to the Kilo provider to choose a supported model, or enter a custom transcription base URL above.",
+    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.",
   "settings.models.speechToTextModel.title": "Speech to Text Model",
   "settings.models.speechToTextModel.description":
-    "Kilo Gateway is the active speech-to-text source. Choose its transcription model for voice input.",
+    "Choose the transcription model for voice input. Kilo Gateway models use your Kilo account; Groq models use your API key.",
   "settings.models.speechToTextModel.customDescription":
     "Model ID sent to your custom transcription endpoint, for example whisper-1. Voice input is unavailable until you set one.",
   "settings.models.speechToTextModel.customPlaceholder": "whisper-1",

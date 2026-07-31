@@ -42,7 +42,7 @@ const SCRIPT = `
     process.exit(2)
   }
 
-  const [config, setConfig] = createSignal({ disabled_providers: ["kilo"] })
+  const [config, setConfig] = createSignal({ experimental: { speech_to_text_model: "groq/whisper-large-v3-turbo" } })
   const [auth, setAuth] = createSignal({})
   const root = document.createElement("div")
   const dispose = render(
@@ -61,21 +61,21 @@ const SCRIPT = `
     root,
   )
 
-  if (sent.length !== 0) fail("prewarmed without Kilo access")
+  if (sent.length !== 0) fail("prewarmed without provider access")
   setAuth({ kilo: "api" })
-  if (sent.length !== 0) fail("prewarmed while Kilo was disabled")
-  setConfig({})
+  if (sent.length !== 0) fail("prewarmed with access to a different provider")
+  setAuth({ groq: "api" })
   if (sent.length !== 1 || sent[0]?.type !== "speechToTextPrewarm") {
-    fail("did not prewarm after Kilo access became available")
+    fail("did not prewarm after Groq access became available")
   }
-  setAuth({ kilo: "oauth" })
+  setConfig({ disabled_providers: ["groq"], experimental: { speech_to_text_model: "groq/whisper-large-v3-turbo" } })
   if (sent.length !== 1) fail("prewarmed more than once")
   dispose()
   console.log("${PASS}")
 `
 
 describe("speech-to-text prewarm", () => {
-  it("starts only after Kilo speech access becomes available", () => {
+  it("starts only after the selected transcription provider becomes available", () => {
     const attempts = 3
     const failures: string[] = []
 

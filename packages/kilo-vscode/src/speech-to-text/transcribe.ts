@@ -68,7 +68,26 @@ export async function transcribeSpeech(
       }),
     })
 
-    return await read(res)
+    const raw = await res.text()
+    const body = parse(raw)
+
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: errorMessage(body, raw) ?? `Speech to text failed with status ${res.status}`,
+        code:
+          res.status === 401
+            ? model.providerID === "kilo"
+              ? "not_authenticated"
+              : "provider_not_authenticated"
+            : undefined,
+      }
+    }
+
+    const text = typeof body?.text === "string" ? body.text.trim() : ""
+    if (!text) return { ok: false, error: "No speech was detected", code: "empty_transcript" }
+
+    return { ok: true, text }
   } catch (err) {
     return failure(err, signal)
   }

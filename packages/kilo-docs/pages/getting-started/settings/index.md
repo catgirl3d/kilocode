@@ -57,7 +57,7 @@ If you check config files into version control, make sure they do not contain AP
 
 ### Voice Transcription Model
 
-When the Kilo provider is enabled and you are signed in, choose the transcription model under **Models** > **Speech to Text Model**. This stores `experimental.speech_to_text_model` in your global Kilo CLI config:
+Choose the transcription model under **Models** > **Speech to Text Model**. Kilo Gateway models require a Kilo sign-in; Groq models require a configured Groq API key. This stores `experimental.speech_to_text_model` in your global Kilo CLI config:
 
 ```json
 {

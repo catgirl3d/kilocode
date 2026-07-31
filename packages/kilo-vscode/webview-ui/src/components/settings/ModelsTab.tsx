@@ -15,6 +15,7 @@ import { ThinkingSelectorBase } from "../shared/ThinkingSelector"
 import SettingsRow from "./SettingsRow"
 import { DEFAULT_SPEECH_TO_TEXT_MODEL } from "../../../../src/speech-to-text/models"
 import {
+  canConfigureSpeechToText,
   hasCustomSpeechToTextSource,
   hasSpeechToTextAccess,
   selectedSpeechToTextModel,
@@ -55,6 +56,7 @@ const ModelsTab: Component = () => {
   const speechOption = createMemo(() => speechOptions().find((item) => item.value === speechModel()))
   const kiloReady = createMemo(() => hasSpeechToTextAccess(config(), provider.authStates()))
   const customSpeech = createMemo(() => hasCustomSpeechToTextSource(config()))
+  const speechConfigurable = createMemo(() => canConfigureSpeechToText(config(), provider.authStates()))
 
   function updateSpeech(patch: Record<string, string | null>) {
     updateConfig({ experimental: { ...config().experimental, ...patch } })
@@ -266,7 +268,7 @@ const ModelsTab: Component = () => {
             <Tooltip
               value={language.t("settings.models.speechToText.disabledDescription")}
               placement="top"
-              inactive={kiloReady()}
+              inactive={speechConfigurable()}
             >
               <Select
                 options={speechOptions()}
@@ -282,7 +284,7 @@ const ModelsTab: Component = () => {
                 triggerProps={{
                   "aria-label": `${language.t("settings.models.speechToTextModel.title")}: ${speechOption()?.label}`,
                 }}
-                disabled={!kiloReady()}
+                disabled={!speechConfigurable()}
                 placeholder={DEFAULT_SPEECH_TO_TEXT_MODEL.label}
               />
             </Tooltip>
