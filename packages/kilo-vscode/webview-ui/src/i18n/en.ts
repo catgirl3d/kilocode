@@ -215,7 +215,7 @@ export const dict = {
     "Click to restrict filesystem writes. Network access remains allowed by your sandbox settings.",
   "prompt.action.enhanceDescription":
     "The 'Enhance Prompt' button helps improve your prompt by providing additional context, clarification, or rephrasing. Try typing a prompt in here and clicking the button again to see how it works.",
-  "speechToText.tooltip.start": "Start voice input with Kilo Gateway",
+  "speechToText.tooltip.start": "Start voice input",
   "speechToText.tooltip.shortcut":
     "Tap to start or stop recording. Hold while speaking, then release to transcribe and submit.",
   "speechToText.tooltip.starting": "Starting microphone... Wait to speak.",
@@ -853,9 +853,10 @@ export const dict = {
   "settings.experimental.imageGenerationModel.placeholder": "Default (Auto Router)",
 
   "settings.models.speechToText.disabledDescription":
-    "Enable and sign in to the Kilo provider to use Speech to Text. Speech to Text is currently only supported through Kilo Gateway.",
+    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.",
   "settings.models.speechToTextModel.title": "Speech to Text Model",
-  "settings.models.speechToTextModel.description": "Choose the Kilo Gateway transcription model for voice input.",
+  "settings.models.speechToTextModel.description":
+    "Choose the transcription model for voice input. Kilo Gateway models use your Kilo account; Groq models use your API key.",
   "settings.experimental.nativeNotebookTools.title": "Native Notebook Tools",
   "settings.experimental.nativeNotebookTools.description":
     "Enable experimental tools for reading, editing, and executing VS Code notebooks",

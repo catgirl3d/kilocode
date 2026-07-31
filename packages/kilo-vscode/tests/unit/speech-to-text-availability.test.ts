@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import {
+  canConfigureSpeechToText,
   canUseSpeechToText,
   selectedSpeechToTextModel,
 } from "../../webview-ui/src/components/speech-to-text/availability"
@@ -16,10 +17,32 @@ describe("speech-to-text availability", () => {
     expect(canUseSpeechToText({}, { kilo: "wellknown" })).toBe(false)
   })
 
+  it("shows direct Groq speech input only for an authenticated Groq model", () => {
+    const config = { experimental: { speech_to_text_model: "groq/whisper-large-v3-turbo" } }
+
+    expect(canUseSpeechToText(config, { groq: "api" })).toBe(true)
+    expect(canUseSpeechToText(config, { groq: "oauth" })).toBe(false)
+    expect(canUseSpeechToText(config, { kilo: "oauth" })).toBe(false)
+  })
+
   it("honors enabled and disabled provider configuration", () => {
     expect(canUseSpeechToText({ disabled_providers: ["kilo"] }, { kilo: "oauth" })).toBe(false)
     expect(canUseSpeechToText({ enabled_providers: ["openai"] }, { kilo: "oauth" })).toBe(false)
     expect(canUseSpeechToText({ enabled_providers: ["kilo"] }, { kilo: "oauth" })).toBe(true)
+  })
+
+  it("honors Groq provider configuration", () => {
+    const config = { experimental: { speech_to_text_model: "groq/whisper-large-v3" } }
+
+    expect(canUseSpeechToText({ ...config, disabled_providers: ["groq"] }, { groq: "api" })).toBe(false)
+    expect(canUseSpeechToText({ ...config, enabled_providers: ["kilo"] }, { groq: "api" })).toBe(false)
+    expect(canUseSpeechToText({ ...config, enabled_providers: ["groq"] }, { groq: "api" })).toBe(true)
+  })
+
+  it("allows configuring Groq models without Kilo credentials", () => {
+    expect(canConfigureSpeechToText({}, { groq: "api" })).toBe(true)
+    expect(canConfigureSpeechToText({}, {})).toBe(false)
+    expect(canConfigureSpeechToText({ disabled_providers: ["groq"] }, { groq: "api" })).toBe(false)
   })
 
   it("normalizes configured and unknown transcription models", () => {
