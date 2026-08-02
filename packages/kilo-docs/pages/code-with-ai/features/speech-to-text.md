@@ -45,6 +45,8 @@ You can optionally choose a transcription model in **Settings** > **Models** > *
 
 The model list is discovered from the Kilo Gateway and reflects the transcription models available to your account or organization, so newly available models appear automatically.
 
+With **Groq / Whisper Large V3**, set **Voice Input Result** to translate speech into English text instead of returning the original spoken language. This uses Groq's translation endpoint. Whisper Large V3 Turbo supports transcription only.
+
 ---
 
 ## Record prompts

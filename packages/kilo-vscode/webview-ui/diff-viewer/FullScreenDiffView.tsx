@@ -15,6 +15,8 @@ import { ResizeHandle } from "@kilocode/kilo-ui/resize-handle"
 import { TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import type { WorktreeFileDiff } from "../src/types/messages"
 import { useLanguage } from "../src/context/language"
+import { useConfig } from "../src/context/config"
+import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
 import { FileTree } from "./FileTree"
 import { treeOrder } from "./file-tree-utils"
 import type { ReviewComment } from "./review-comments"
@@ -74,7 +76,8 @@ interface FullScreenDiffViewProps {
 export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) => {
   const { t } = useLanguage()
   const noticeText = () => notice(t, props.notice)
-  const sendAllKeybind = () => reviewSendAllKeybind(t)
+  const { config } = useConfig()
+  const speechMode = () => selectedSpeechToTextMode(config())
   const localComposer = createReviewComposer()
   const composer = () => props.composer ?? localComposer
   const reviewOpen = createReviewOpenState(
@@ -129,6 +132,7 @@ export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) =>
     label: t,
     activeTerminalId: () => props.activeTerminalId,
     canComment: () => props.canComment !== false,
+    mode: speechMode,
     onSendClick: props.onSendClick,
     onSendAll: props.onSendAll,
   })

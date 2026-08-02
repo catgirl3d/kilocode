@@ -13,6 +13,7 @@ const WEBVIEW = path.resolve(import.meta.dir, "../../webview-ui")
 // the suite stays deterministic.
 const PASS = "PREWARM_PASS"
 const FAIL = "PREWARM_FAIL:"
+const opts = { timeout: 30_000 }
 
 const SCRIPT = `
   import { Window } from "happy-dom"
@@ -75,35 +76,39 @@ const SCRIPT = `
 `
 
 describe("speech-to-text prewarm", () => {
-  it("starts only after the selected transcription provider becomes available", () => {
-    const attempts = 3
-    const failures: string[] = []
+  it(
+    "starts only after the selected transcription provider becomes available",
+    () => {
+      const attempts = 3
+      const failures: string[] = []
 
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", SCRIPT], {
-        cwd: WEBVIEW,
-        stdout: "pipe",
-        stderr: "pipe",
-      })
-      const output = result.stdout.toString() + result.stderr.toString()
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", SCRIPT], {
+          cwd: WEBVIEW,
+          stdout: "pipe",
+          stderr: "pipe",
+        })
+        const output = result.stdout.toString() + result.stderr.toString()
 
-      if (output.includes(PASS)) return
+        if (output.includes(PASS)) return
 
-      const logic = output.indexOf(FAIL)
-      // A FAIL sentinel is a real assertion failure in the prewarm logic — surface it now.
-      if (logic !== -1) {
-        expect.unreachable(
-          output
-            .slice(logic + FAIL.length)
-            .split("\n")[0]
-            ?.trim(),
-        )
+        const logic = output.indexOf(FAIL)
+        // A FAIL sentinel is a real assertion failure in the prewarm logic — surface it now.
+        if (logic !== -1) {
+          expect.unreachable(
+            output
+              .slice(logic + FAIL.length)
+              .split("\n")[0]
+              ?.trim(),
+          )
+        }
+
+        // Otherwise the child died before it could run (starved/transient spawn) — retry.
+        failures.push(`attempt ${attempt} exit ${result.exitCode}: ${output.trim() || "<no output>"}`)
       }
 
-      // Otherwise the child died before it could run (starved/transient spawn) — retry.
-      failures.push(`attempt ${attempt} exit ${result.exitCode}: ${output.trim() || "<no output>"}`)
-    }
-
-    expect.unreachable(`prewarm child never reported success:\n${failures.join("\n")}`)
-  })
+      expect.unreachable(`prewarm child never reported success:\n${failures.join("\n")}`)
+    },
+    opts,
+  )
 })

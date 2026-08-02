@@ -67,6 +67,20 @@ describe("useSpeechToText", () => {
     ctx.dispose()
   })
 
+  it("sends the selected voice output mode when recording starts", () => {
+    const ctx = setup()
+
+    ctx.speech.start({ model: "groq/whisper-large-v3", mode: "translate", insert: () => {} })
+    const start = ctx.sent[0]
+
+    expect(start).toMatchObject({
+      type: "speechToTextStart",
+      model: "groq/whisper-large-v3",
+      mode: "translate",
+    })
+    ctx.dispose()
+  })
+
   it("does not stop or start another recording while the microphone is starting", () => {
     const ctx = setup()
 

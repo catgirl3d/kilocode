@@ -8,6 +8,8 @@ import { Tooltip, TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import type { WorktreeFileDiff } from "../src/types/messages"
 import { useLanguage } from "../src/context/language"
 import { DiffStyleSelect } from "../diff-viewer/InlineSelect"
+import { useConfig } from "../src/context/config"
+import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
 import type { ReviewComment } from "../diff-viewer/review-comments"
 import { createReviewComposer, type ReviewComposer } from "../diff-viewer/review-annotations"
 import {
@@ -67,6 +69,8 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   const { t } = useLanguage()
   const noticeText = () => notice(t, props.notice)
   const sendAllKeybind = () => reviewSendAllKeybind(t)
+  const { config } = useConfig()
+  const speechMode = () => selectedSpeechToTextMode(config())
   const localComposer = createReviewComposer()
   const composer = () => props.composer ?? localComposer
   const reviewOpen = createReviewOpenState(
@@ -106,6 +110,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     label: t,
     activeTerminalId: () => props.activeTerminalId,
     active: () => props.active !== false,
+    mode: speechMode,
     onSendClick: props.onSendClick,
     onSendAll: props.onSendAll,
   })

@@ -14092,6 +14092,10 @@
                   "model": {
                     "type": "string"
                   },
+                  "mode": {
+                    "type": "string",
+                    "enum": ["transcribe", "translate"]
+                  },
                   "input_audio": {
                     "type": "object",
                     "properties": {
@@ -35195,6 +35199,10 @@
               },
               "speech_to_text_model": {
                 "type": "string"
+              },
+              "speech_to_text_mode": {
+                "type": "string",
+                "enum": ["transcribe", "translate"]
               },
               "openTelemetry": {
                 "type": "boolean"

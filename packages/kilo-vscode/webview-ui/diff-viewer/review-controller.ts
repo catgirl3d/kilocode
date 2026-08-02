@@ -2,6 +2,7 @@ import { createEffect, createMemo, createRenderEffect, createSignal, on, untrack
 import type { DiffLineAnnotation, AnnotationSide, SelectedLineRange } from "@pierre/diffs"
 import type { UiI18nParams } from "@kilocode/kilo-ui/context"
 import type { WorktreeFileDiff } from "../src/types/messages"
+import type { SpeechToTextMode } from "../../src/speech-to-text/models"
 import { lineCount, sanitizeReviewComments, type ReviewComment } from "./review-comments"
 import {
   buildFileAnnotations,
@@ -32,6 +33,7 @@ type Props = {
   activeTerminalId: Accessor<string | undefined>
   active?: Accessor<boolean>
   canComment?: Accessor<boolean>
+  mode: Accessor<SpeechToTextMode>
   onSendClick?: () => void
   onSendAll?: () => void
 }
@@ -47,6 +49,7 @@ export function createReviewController(props: Props) {
     speech: voice.speech,
     enabled: voice.enabled,
     model: voice.model,
+    mode: props.mode,
     label: props.label,
     keys: speechKeys,
   })

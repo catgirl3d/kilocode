@@ -7,6 +7,7 @@ type Msg = {
   type: string
   requestId?: string
   model?: string
+  mode?: "transcribe" | "translate"
   language?: string
 }
 
@@ -27,7 +28,7 @@ export async function routeInputToolMessage(message: Msg, ctx: Ctx): Promise<boo
   if (message.type === "speechToTextStart") {
     if (!message.requestId) return true
     handleSpeechToTextStart(
-      { requestId: message.requestId, model: message.model, language: message.language },
+      { requestId: message.requestId, model: message.model, mode: message.mode, language: message.language },
       ctx.post,
     )
     return true
