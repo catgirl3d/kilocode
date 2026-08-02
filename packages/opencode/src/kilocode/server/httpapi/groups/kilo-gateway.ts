@@ -199,6 +199,7 @@ export const EditResponse = Schema.Struct({
 
 export const AudioTranscriptionsBody = Schema.Struct({
   model: Schema.String,
+  mode: Schema.optional(Schema.Literals(["transcribe", "translate"])),
   input_audio: Schema.Struct({
     data: Schema.String,
     format: Schema.String,

@@ -2684,6 +2684,7 @@ export type Config = {
     native_notebook_tools?: boolean
     task_model_selection?: boolean
     speech_to_text_model?: string
+    speech_to_text_mode?: "transcribe" | "translate"
     openTelemetry?: boolean
     shared_agent_board?: boolean
     primary_tools?: Array<string>
@@ -16158,6 +16159,7 @@ export type KiloEditResponse = KiloEditResponses[keyof KiloEditResponses]
 export type KiloAudioTranscriptionsData = {
   body?: {
     model: string
+    mode?: "transcribe" | "translate"
     input_audio: {
       data: string
       format: string

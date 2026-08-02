@@ -1,10 +1,13 @@
-import { GROQ_TRANSCRIPTION_MODELS } from "@kilocode/kilo-gateway/speech-to-text"
+import { GROQ_TRANSCRIPTION_MODELS, type SpeechToTextMode } from "@kilocode/kilo-gateway/speech-to-text"
+
+export type { SpeechToTextMode }
 
 export interface SpeechToTextModelDef {
   readonly id: string
   readonly label: string
   readonly provider: string
   readonly providerID: "kilo" | "groq"
+  readonly modes?: readonly SpeechToTextMode[]
   readonly verbatim?: boolean
 }
 
@@ -58,6 +61,7 @@ const models: SpeechToTextModelDef[] = [
     label: model.label,
     provider: "Groq",
     providerID: "groq" as const,
+    modes: model.modes,
   })),
 ]
 

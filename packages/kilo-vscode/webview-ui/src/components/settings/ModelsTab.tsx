@@ -12,12 +12,26 @@ import { parseModelString } from "../../../../src/shared/provider-model"
 import { ModelSelectorBase } from "../shared/ModelSelector"
 import { ThinkingSelectorBase } from "../shared/ThinkingSelector"
 import SettingsRow from "./SettingsRow"
-import { DEFAULT_SPEECH_TO_TEXT_MODEL } from "../../../../src/speech-to-text/models"
-import { canConfigureSpeechToText, hasSpeechToTextAccess, selectedSpeechToTextModel } from "../speech-to-text/availability"
+import {
+  DEFAULT_SPEECH_TO_TEXT_MODEL,
+  getSpeechToTextModel,
+  type SpeechToTextMode,
+} from "../../../../src/speech-to-text/models"
+import {
+  canConfigureSpeechToText,
+  hasSpeechToTextAccess,
+  canTranslateSpeechToText,
+  selectedSpeechToTextModel,
+  selectedSpeechToTextMode,
+} from "../speech-to-text/availability"
 import { speechToTextModelOptions } from "../speech-to-text/model-selector"
 import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autocomplete-model-selector"
 import { preserveVariant } from "../../context/session-variant-store"
 
+const SPEECH_MODE_OPTIONS: Array<{ value: SpeechToTextMode; label: string }> = [
+  { value: "transcribe", label: "settings.models.speechToTextResult.transcribe" },
+  { value: "translate", label: "settings.models.speechToTextResult.translate" },
+]
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting } = useConfig()
   const language = useLanguage()
@@ -48,8 +62,11 @@ const ModelsTab: Component = () => {
   const speechModel = createMemo(() => selectedSpeechToTextModel(config(), speechModels.models()))
   const speechOptions = createMemo(() => speechToTextModelOptions(speechModels.models()))
   const speechOption = createMemo(() => speechOptions().find((item) => item.value === speechModel()))
+  const speechMode = createMemo(() => selectedSpeechToTextMode(config()))
+  const speechModeOption = createMemo(() => SPEECH_MODE_OPTIONS.find((item) => item.value === speechMode()))
   const speechReady = createMemo(() => hasSpeechToTextAccess(config(), provider.authStates()))
   const speechConfigurable = createMemo(() => canConfigureSpeechToText(config(), provider.authStates()))
+  const speechTranslatable = createMemo(() => canTranslateSpeechToText(config()))
   const variantKey = createMemo(() => config().subagent_model ?? undefined)
   const subagentVariants = createMemo(() => Object.keys(provider.findModel(subagentModel())?.variants ?? {}))
   const subagentVariant = createMemo(() => {
@@ -212,14 +229,18 @@ const ModelsTab: Component = () => {
               current={speechOption()}
               value={(item) => item.value}
               label={(item) => `${item.label} (${item.provider})`}
-              onSelect={(item) =>
+              onSelect={(item) => {
+                const model = item?.value ?? DEFAULT_SPEECH_TO_TEXT_MODEL.id
                 updateConfig({
                   experimental: {
                     ...config().experimental,
-                    speech_to_text_model: item?.value ?? DEFAULT_SPEECH_TO_TEXT_MODEL.id,
+                    speech_to_text_model: model,
+                    ...(getSpeechToTextModel(model).modes?.includes("translate")
+                      ? {}
+                      : { speech_to_text_mode: "transcribe" }),
                   },
                 })
-              }
+              }}
               variant="secondary"
               size="small"
               triggerVariant="settings"
@@ -231,6 +252,34 @@ const ModelsTab: Component = () => {
             />
           </Tooltip>
         </SettingsRow>
+        <Show when={speechTranslatable()}>
+          <SettingsRow
+            title={language.t("settings.models.speechToTextResult.title")}
+            description={language.t("settings.models.speechToTextResult.description")}
+          >
+            <Select
+              options={SPEECH_MODE_OPTIONS}
+              current={speechModeOption()}
+              value={(item) => item.value}
+              label={(item) => language.t(item.label)}
+              onSelect={(item) =>
+                updateConfig({
+                  experimental: {
+                    ...config().experimental,
+                    speech_to_text_mode: item?.value ?? "transcribe",
+                  },
+                })
+              }
+              variant="secondary"
+              size="small"
+              triggerVariant="settings"
+              triggerProps={{
+                "aria-label": `${language.t("settings.models.speechToTextResult.title")}: ${language.t(speechModeOption()?.label ?? "")}`,
+              }}
+              disabled={!speechReady()}
+            />
+          </SettingsRow>
+        </Show>
         <SettingsRow
           title={language.t("settings.models.hidePromptTraining.title")}
           description={language.t("settings.models.hidePromptTraining.description")}

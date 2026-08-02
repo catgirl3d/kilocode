@@ -4,12 +4,14 @@ import { SpeechToTextButton } from "../src/components/speech-to-text/SpeechToTex
 import { insertSpacedText } from "../src/components/chat/prompt-input-utils"
 import type { SpeechState, SpeechToText } from "../src/components/speech-to-text/useSpeechToText"
 import { createSpeechShortcut } from "../src/components/speech-to-text/shortcut"
+import type { SpeechToTextMode } from "../../src/speech-to-text/models"
 import { reviewAnnotationSpeechKey, type AnnotationMeta } from "./review-annotations"
 
 type Props = {
   speech: SpeechToText
   enabled: Accessor<boolean>
   model: Accessor<string>
+  mode: Accessor<SpeechToTextMode>
   label: (key: string) => string
   keys: Accessor<Set<string>>
 }
@@ -48,10 +50,11 @@ export function createReviewAnnotationSpeechRenderer(props: Props) {
     let field = textarea
     const mine = () => owner() === key
     const state = (): SpeechState => (mine() ? props.speech.state() : "idle")
-    const start = (model: string) => {
+    const start = (model: string, mode: SpeechToTextMode) => {
       setOwner(key)
       props.speech.start({
         model,
+        mode,
         insert: (value) => insertReviewSpeechText(field, value),
       })
     }
@@ -59,7 +62,7 @@ export function createReviewAnnotationSpeechRenderer(props: Props) {
       state,
       error: () => (mine() ? props.speech.error() : undefined),
       active: () => mine() && props.speech.active(),
-      start: (opts) => start(opts.model),
+      start: (opts) => start(opts.model, opts.mode ?? "transcribe"),
       stop: (opts) => {
         if (!mine()) return
         props.speech.stop(opts)
@@ -80,7 +83,7 @@ export function createReviewAnnotationSpeechRenderer(props: Props) {
     const shortcut = createSpeechShortcut({
       speech,
       disabled: () => !props.enabled() || blocked(),
-      start: () => start(props.model()),
+      start: () => start(props.model(), props.mode()),
       finish: (send) => speech.stop(send ? { done: submit } : undefined),
     })
 
@@ -91,7 +94,7 @@ export function createReviewAnnotationSpeechRenderer(props: Props) {
             <SpeechToTextButton
               speech={speech}
               disabled={blocked()}
-              start={() => start(props.model())}
+              start={() => start(props.model(), props.mode())}
               label={props.label}
             />
           </Show>
