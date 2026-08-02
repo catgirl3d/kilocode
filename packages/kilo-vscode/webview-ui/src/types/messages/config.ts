@@ -57,6 +57,7 @@ export interface ExperimentalConfig {
   speech_to_text_model?: string
   speech_to_text_base_url?: string
   speech_to_text_api_key?: string
+  speech_to_text_mode?: "transcribe" | "translate"
   primary_tools?: string[]
   continue_loop_on_deny?: boolean
   mcp_timeout?: number

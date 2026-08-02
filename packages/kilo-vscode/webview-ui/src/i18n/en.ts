@@ -902,6 +902,11 @@ export const dict = {
   "settings.models.speechToTextApiKey.description":
     "Bearer token sent to the custom transcription base URL. Stored in your Kilo config file.",
   "settings.models.speechToTextApiKey.placeholder": "sk-...",
+  "settings.models.speechToTextResult.title": "Voice Input Result",
+  "settings.models.speechToTextResult.description":
+    "Choose whether Groq Whisper returns the original spoken language or an English translation.",
+  "settings.models.speechToTextResult.transcribe": "Original spoken language",
+  "settings.models.speechToTextResult.translate": "Translate to English",
   "settings.experimental.nativeNotebookTools.title": "Native Notebook Tools",
   "settings.experimental.nativeNotebookTools.description":
     "Enable experimental tools for reading, editing, and executing VS Code notebooks",

@@ -2699,6 +2699,7 @@ export type Config = {
     speech_to_text_model?: string
     speech_to_text_base_url?: string
     speech_to_text_api_key?: string
+    speech_to_text_mode?: "transcribe" | "translate"
     openTelemetry?: boolean
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
@@ -16375,6 +16376,7 @@ export type KiloEditResponse = KiloEditResponses[keyof KiloEditResponses]
 export type KiloAudioTranscriptionsData = {
   body?: {
     model: string
+    mode?: "transcribe" | "translate"
     input_audio: {
       data: string
       format: string

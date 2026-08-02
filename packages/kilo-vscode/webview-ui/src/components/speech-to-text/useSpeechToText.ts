@@ -2,6 +2,7 @@ import { createSignal, onCleanup } from "solid-js"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import type { Accessor } from "solid-js"
 import type { ExtensionMessage, WebviewMessage } from "../../types/messages"
+import type { SpeechToTextMode } from "../../../../src/speech-to-text/models"
 
 type VSCode = {
   postMessage: (message: WebviewMessage) => void
@@ -22,6 +23,7 @@ export type InsertTranscript = (text: string) => void
 
 type StartOptions = {
   model: string
+  mode?: SpeechToTextMode
   insert: InsertTranscript
 }
 
@@ -111,6 +113,7 @@ export function useSpeechToText(vscode: VSCode, server: Server, lang: Lang): Spe
       type: "speechToTextStart",
       requestId: request,
       model: opts.model,
+      mode: opts.mode ?? "transcribe",
       language: langCode(),
     })
   }

@@ -25,7 +25,7 @@ import { ModelSelector, ModelSelectorBase } from "../shared/ModelSelector"
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
 import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
-import { canUseSpeechToText, selectedSpeechToTextModel } from "../speech-to-text/availability"
+import { canUseSpeechToText, selectedSpeechToTextModel, selectedSpeechToTextMode } from "../speech-to-text/availability"
 import { ThinkingSelector } from "../shared/ThinkingSelector"
 import { useFileMention } from "../../hooks/useFileMention"
 import type { MentionResult, WorktreeReference } from "../../hooks/file-mention-utils"
@@ -740,6 +740,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const isDisabled = () => !server.isConnected() || locked() || goal.pending()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
+  const speechMode = () => selectedSpeechToTextMode(config())
   const hasInput = () =>
     text().trim().length > 0 ||
     imageAttach.images().length > 0 ||
@@ -1404,7 +1405,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const startSpeech = () => {
-    speech.start({ model: speechModel(), insert: insertSpeechText })
+    speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText })
   }
 
   const transcribeAndSend = () => {

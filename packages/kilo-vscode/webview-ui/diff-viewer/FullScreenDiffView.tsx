@@ -13,6 +13,10 @@ import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { ResizeHandle } from "@kilocode/kilo-ui/resize-handle"
+import { TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
+import { useLanguage } from "../src/context/language"
+import { useConfig } from "../src/context/config"
+import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
 import { FileTree } from "./FileTree"
 import {
   LONG_DIFF_MARKER_FILE_COUNT,
@@ -58,6 +62,8 @@ interface FullScreenDiffViewProps extends ReviewViewProps {
 }
 
 export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) => {
+  const { config } = useConfig()
+  const speechMode = () => selectedSpeechToTextMode(config())
   let rootRef: HTMLDivElement | undefined
   const {
     t,
@@ -87,7 +93,7 @@ export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) =>
     sendAllGithubAvailable,
     sendAllPending,
     sendAllError,
-  } = createReviewSurface(props, () => rootRef)
+  } = createReviewSurface({ ...props, mode: speechMode }, () => rootRef)
 
   const [manualActiveFile, setManualActiveFile] = createSignal<Record<string, string | null>>({})
   const activeFile = createMemo(() => {

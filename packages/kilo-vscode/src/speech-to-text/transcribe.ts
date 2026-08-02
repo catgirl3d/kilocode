@@ -1,6 +1,6 @@
 import type { KiloConnectionService } from "../services/cli-backend/connection-service"
 import { getErrorMessage } from "../kilo-provider-utils"
-import { getSpeechToTextModel } from "./models"
+import { getSpeechToTextModel, type SpeechToTextMode } from "./models"
 import { hasCustomSource, sourceHeaders, sourceUrl, type SpeechToTextSource } from "./source"
 
 const PATH = "/kilo/audio/transcriptions"
@@ -9,6 +9,7 @@ const PROMPT =
 
 type Req = {
   model?: string
+  mode?: SpeechToTextMode
   data: string
   format: string
   language?: string
@@ -59,6 +60,7 @@ export async function transcribeSpeech(
       },
       body: JSON.stringify({
         model: input.model || model.id,
+        mode: input.mode ?? "transcribe",
         input_audio: {
           data: input.data,
           format: input.format,

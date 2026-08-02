@@ -3,10 +3,12 @@ import { transcribeSpeech } from "./transcribe"
 import { cancelSpeechCapture, startSpeechCapture, stopSpeechCapture } from "./capture"
 import type { KiloConnectionService } from "../services/cli-backend/connection-service"
 import type { SpeechToTextSource } from "./source"
+import type { SpeechToTextMode } from "./models"
 
 type Msg = {
   requestId: string
   model?: string
+  mode?: SpeechToTextMode
   language?: string
 }
 
@@ -21,6 +23,7 @@ export function handleSpeechToTextStart(message: Msg, post: Post): void {
   const task = startSpeechCapture({
     requestId: message.requestId,
     model: message.model || "",
+    mode: message.mode,
     language: message.language,
   })
 

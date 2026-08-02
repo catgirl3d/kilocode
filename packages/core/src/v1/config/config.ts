@@ -329,6 +329,11 @@ export const Info = Schema.Struct({
       speech_to_text_api_key: Schema.optional(Schema.String).annotate({
         description: "API key sent as a bearer token to the custom speech-to-text base URL",
       }),
+      // fork_change start
+      speech_to_text_mode: Schema.optional(Schema.Literals(["transcribe", "translate"])).annotate({
+        description: "Whether voice input transcribes the spoken language or translates it to English when supported",
+      }),
+      // fork_change end
       openTelemetry: Schema.Boolean.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed(true))).annotate({
         description: "Enable telemetry. Set to false to opt-out.",
       }),

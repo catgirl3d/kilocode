@@ -4,6 +4,8 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { DiffStyleSelect } from "../diff-viewer/InlineSelect"
+import { useConfig } from "../src/context/config"
+import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
 import {
   LONG_DIFF_MARKER_FILE_COUNT,
   allOpenFiles,
@@ -51,6 +53,8 @@ interface DiffPanelProps extends ReviewViewProps {
 }
 
 export const DiffPanel: Component<DiffPanelProps> = (props) => {
+  const { config } = useConfig()
+  const speechMode = () => selectedSpeechToTextMode(config())
   let rootRef: HTMLDivElement | undefined
   const {
     t,
@@ -80,7 +84,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     sendAllGithubAvailable,
     sendAllPending,
     sendAllError,
-  } = createReviewSurface(props, () => rootRef)
+  } = createReviewSurface({ ...props, mode: speechMode }, () => rootRef)
 
   const handleExpandAll = () => {
     setOpen(toggleOpenFiles(props.diffs, open()))

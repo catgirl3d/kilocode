@@ -83,6 +83,8 @@ By default both the model list and the audio go to Kilo Gateway. Set **Models** 
 
 Models are read from `{base_url}/models` and audio is posted to `{base_url}/audio/transcriptions`. Leave the base URL empty to use Kilo Gateway. See [Voice Transcription](/docs/code-with-ai/features/speech-to-text) for details.
 
+When **Groq / Whisper Large V3** is selected, choose **Voice Input Result** to either transcribe the original spoken language or translate it into English. Groq Whisper Large V3 Turbo supports transcription only.
+
 ### Prompt-Training Model Visibility
 
 Enable **Hide Prompt-Training Models** under **Models** to remove Kilo Gateway models whose providers may use your prompts for training from model lists. Models from other providers and models without explicit prompt-training metadata remain visible. The setting is disabled by default.
