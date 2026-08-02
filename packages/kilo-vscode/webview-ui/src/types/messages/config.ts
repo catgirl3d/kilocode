@@ -55,6 +55,7 @@ export interface ExperimentalConfig {
   agent_requirements?: boolean
   native_notebook_tools?: boolean
   speech_to_text_model?: string
+  speech_to_text_mode?: "transcribe" | "translate"
   primary_tools?: string[]
   continue_loop_on_deny?: boolean
   mcp_timeout?: number

@@ -14,7 +14,12 @@ import { useSession } from "../../context/session"
 import { useServer } from "../../context/server"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
-import type { AgentInfo, SkillInfo } from "../../types/messages"
+import type {
+  AgentInfo,
+  FilePickerResultMessage,
+  SkillInfo,
+  ValidateInstructionPathResultMessage,
+} from "../../types/messages"
 import ModeEditView from "./ModeEditView"
 import ModeCreateView from "./ModeCreateView"
 import McpEditView from "./McpEditView"
@@ -209,31 +214,27 @@ const AgentBehaviourTab: Component = () => {
     vscode.postMessage({ type: "openFile", filePath: path })
   }
 
-  const unsub = vscode.onMessage((msg) => {
-    if (msg.type === "configBindingExpired") {
-      checks.project = undefined
-      setProjectInstructionBusy(false)
-      for (const [id, request] of picks) {
-        if (request.scope === "project") picks.delete(id)
-      }
-      return
+  const expire = () => {
+    checks.project = undefined
+    setProjectInstructionBusy(false)
+    for (const [id, request] of picks) {
+      if (request.scope === "project") picks.delete(id)
     }
-    if (msg.type === "claudeCompatSettingLoaded") {
-      setClaudeCompat(msg.enabled)
-      return
-    }
-    if (msg.type === "filePickerResult") {
-      const request = picks.get(msg.requestId)
-      if (!request) return
-      picks.delete(msg.requestId)
-      if (!msg.path) return
-      if (request.binding && request.binding !== projectBinding()?.id) return
-      setInstructionInput(request.scope, msg.path)
-      submitInstruction(request.scope, msg.path)
-      return
-    }
-    if (msg.type !== "validateInstructionPathResult") return
-    const scope = checks.global?.id === msg.requestId ? "global" : checks.project?.id === msg.requestId ? "project" : undefined
+  }
+
+  const pick = (msg: FilePickerResultMessage) => {
+    const request = picks.get(msg.requestId)
+    if (!request) return
+    picks.delete(msg.requestId)
+    if (!msg.path) return
+    if (request.binding && request.binding !== projectBinding()?.id) return
+    setInstructionInput(request.scope, msg.path)
+    submitInstruction(request.scope, msg.path)
+  }
+
+  const validate = (msg: ValidateInstructionPathResultMessage) => {
+    const scope =
+      checks.global?.id === msg.requestId ? "global" : checks.project?.id === msg.requestId ? "project" : undefined
     if (!scope) return
     const request = checks[scope]
     if (!request) return
@@ -245,6 +246,22 @@ const AgentBehaviourTab: Component = () => {
       return
     }
     setInstructionError(scope, language.t("settings.agentBehaviour.instructionFiles.notFound", { path: msg.path }))
+  }
+
+  const unsub = vscode.onMessage((msg) => {
+    if (msg.type === "configBindingExpired") {
+      expire()
+      return
+    }
+    if (msg.type === "claudeCompatSettingLoaded") {
+      setClaudeCompat(msg.enabled)
+      return
+    }
+    if (msg.type === "filePickerResult") {
+      pick(msg)
+      return
+    }
+    if (msg.type === "validateInstructionPathResult") validate(msg)
   })
   onCleanup(unsub)
 

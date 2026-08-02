@@ -828,6 +828,11 @@ export const dict = {
   "settings.models.speechToTextModel.title": "Speech to Text Model",
   "settings.models.speechToTextModel.description":
     "Choose the transcription model for voice input. Kilo Gateway models use your Kilo account; Groq models use your API key.",
+  "settings.models.speechToTextResult.title": "Voice Input Result",
+  "settings.models.speechToTextResult.description":
+    "Choose whether Groq Whisper returns the original spoken language or an English translation.",
+  "settings.models.speechToTextResult.transcribe": "Original spoken language",
+  "settings.models.speechToTextResult.translate": "Translate to English",
   "settings.models.preferredReasoning.title": "Preferred Reasoning Effort",
   "settings.models.preferredReasoning.description":
     "Use this level for models without a saved reasoning preference when supported.",

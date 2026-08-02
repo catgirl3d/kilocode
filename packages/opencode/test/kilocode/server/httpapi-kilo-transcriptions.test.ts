@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test"
 import { ConfigProvider, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HEADER_FEATURE, HEADER_ORGANIZATIONID } from "@kilocode/kilo-gateway"
-import { GROQ_TRANSCRIPTIONS_URL } from "@kilocode/kilo-gateway/speech-to-text"
+import { GROQ_TRANSCRIPTIONS_URL, GROQ_TRANSLATIONS_URL } from "@kilocode/kilo-gateway/speech-to-text"
 import * as Log from "@opencode-ai/core/util/log"
 import { KiloGatewayPaths } from "../../../src/kilocode/server/httpapi/groups/kilo-gateway"
 import * as HttpApiServer from "../../../src/server/routes/instance/httpapi/server"
@@ -18,7 +18,7 @@ const env = {
 const payload = {
   model: "groq/whisper-large-v3-turbo",
   input_audio: { data: Buffer.alloc(44).toString("base64"), format: "wav" },
-  language: "ru",
+  language: "en",
 }
 const opts = { timeout: 30_000 }
 
@@ -81,7 +81,7 @@ async function run(fn: () => Promise<void>) {
 
 describe("HttpApi Kilo audio transcriptions", () => {
   test(
-    "proxies Groq Whisper transcription with the stored Groq key",
+    "proxies Groq Whisper transcription without forcing the webview locale",
     () =>
       run(async () => {
         process.env.KILO_AUTH_CONTENT = JSON.stringify({ groq: { type: "api", key: "groq-token" } })
@@ -107,7 +107,8 @@ describe("HttpApi Kilo audio transcriptions", () => {
           expect(call.init?.body).toBeInstanceOf(FormData)
           const form = call.init?.body as FormData
           expect(form.get("model")).toBe("whisper-large-v3-turbo")
-          expect(form.get("language")).toBe("ru")
+          expect(form.get("language")).toBeNull()
+          expect(form.get("prompt")).toBeNull()
           expect(form.get("response_format")).toBe("json")
           const file = form.get("file")
           expect(file).toBeInstanceOf(Blob)
@@ -115,6 +116,97 @@ describe("HttpApi Kilo audio transcriptions", () => {
         } finally {
           mock.mockRestore()
         }
+      }),
+    opts,
+  )
+
+  test(
+    "uses Groq's English translation endpoint only for Whisper Large V3",
+    () =>
+      run(async () => {
+        process.env.KILO_AUTH_CONTENT = JSON.stringify({ groq: { type: "api", key: "groq-token" } })
+        const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+        const mock = stub(async (input, init) => {
+          if (url(input) !== GROQ_TRANSLATIONS_URL) return Response.json([])
+          calls.push({ input, init })
+          return Response.json({ text: "Translated prompt" })
+        })
+
+        try {
+          const response = await send({ ...payload, model: "groq/whisper-large-v3", mode: "translate" })
+          expect(response.status).toBe(200)
+          expect(await response.json()).toEqual({ text: "Translated prompt" })
+          const call = calls[0]
+          if (!call) throw new Error("missing Groq translation request")
+          expect(url(call.input)).toBe(GROQ_TRANSLATIONS_URL)
+          const form = call.init?.body as FormData
+          expect(form.get("model")).toBe("whisper-large-v3")
+        } finally {
+          mock.mockRestore()
+        }
+      }),
+    opts,
+  )
+
+  test(
+    "sends M4A recordings to Groq's translation endpoint with the correct file metadata",
+    () =>
+      run(async () => {
+        process.env.KILO_AUTH_CONTENT = JSON.stringify({ groq: { type: "api", key: "groq-token" } })
+        const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+        const mock = stub(async (input, init) => {
+          if (url(input) !== GROQ_TRANSLATIONS_URL) return Response.json([])
+          calls.push({ input, init })
+          return Response.json({ text: "Translated prompt" })
+        })
+
+        try {
+          const response = await send({
+            ...payload,
+            model: "groq/whisper-large-v3",
+            mode: "translate",
+            input_audio: { data: Buffer.alloc(44).toString("base64"), format: "m4a" },
+          })
+          expect(response.status).toBe(200)
+          const call = calls[0]
+          if (!call) throw new Error("missing Groq translation request")
+          const form = call.init?.body as FormData
+          const file = form.get("file") as File
+          expect(file.name).toBe("recording.m4a")
+          expect(file.type).toBe("audio/mp4")
+        } finally {
+          mock.mockRestore()
+        }
+      }),
+    opts,
+  )
+
+  test(
+    "rejects Groq Whisper Large V3 Turbo translation",
+    () =>
+      run(async () => {
+        process.env.KILO_AUTH_CONTENT = JSON.stringify({ groq: { type: "api", key: "groq-token" } })
+
+        const response = await send({ ...payload, mode: "translate" })
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({
+          error: "Groq model whisper-large-v3-turbo does not support voice translation",
+        })
+      }),
+    opts,
+  )
+
+  test(
+    "rejects translation for Kilo Gateway models without proxying it",
+    () =>
+      run(async () => {
+        process.env.KILO_AUTH_CONTENT = "{}"
+
+        const response = await send({ ...payload, model: "openai/whisper-large-v3", mode: "translate" })
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({
+          error: "Voice translation is only supported by compatible Groq models",
+        })
       }),
     opts,
   )
