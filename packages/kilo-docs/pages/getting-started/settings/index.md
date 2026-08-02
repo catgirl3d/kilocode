@@ -67,6 +67,8 @@ Choose the transcription model under **Models** > **Speech to Text Model**. Kilo
 }
 ```
 
+When **Groq / Whisper Large V3** is selected, choose **Voice Input Result** to either transcribe the original spoken language or translate it into English. Groq Whisper Large V3 Turbo supports transcription only.
+
 ### Prompt-Training Model Visibility
 
 Enable **Hide Prompt-Training Models** under **Models** to remove Kilo Gateway models whose providers may use your prompts for training from model lists. Models from other providers and models without explicit prompt-training metadata remain visible. The setting is disabled by default.

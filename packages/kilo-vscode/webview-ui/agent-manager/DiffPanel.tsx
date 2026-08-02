@@ -28,7 +28,11 @@ import { useVSCode } from "../src/context/vscode"
 import { useServer } from "../src/context/server"
 import { useProvider } from "../src/context/provider"
 import { useConfig } from "../src/context/config"
-import { canUseSpeechToText, selectedSpeechToTextModel } from "../src/components/speech-to-text/availability"
+import {
+  canUseSpeechToText,
+  selectedSpeechToTextModel,
+  selectedSpeechToTextMode,
+} from "../src/components/speech-to-text/availability"
 import { useSpeechToText } from "../src/components/speech-to-text/useSpeechToText"
 import { useSpeechToTextModels } from "../src/context/speech-to-text-models"
 import {
@@ -127,6 +131,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   const speechModels = useSpeechToTextModels()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
+  const speechMode = () => selectedSpeechToTextMode(config())
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent)
   const sendAllKeybind = () =>
     isMac ? t("agentManager.review.sendAllShortcut.mac") : t("agentManager.review.sendAllShortcut.other")
@@ -178,6 +183,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     speech,
     enabled: canUseSpeech,
     model: speechModel,
+    mode: speechMode,
     label: t,
     keys: speechKeys,
   })

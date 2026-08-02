@@ -33,12 +33,14 @@ describe("speech-to-text model catalog", () => {
       label: "Whisper Large V3 Turbo",
       provider: "Groq",
       providerID: "groq",
+      modes: ["transcribe"],
     })
     expect(getSpeechToTextModel("groq/whisper-large-v3")).toMatchObject({
       id: "groq/whisper-large-v3",
       label: "Whisper Large V3",
       provider: "Groq",
       providerID: "groq",
+      modes: ["transcribe", "translate"],
     })
   })
 
