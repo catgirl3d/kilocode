@@ -4,10 +4,12 @@ import * as os from "os"
 import * as path from "path"
 import type { ChildProcess } from "child_process"
 import { exec, spawn } from "../util/process"
+import type { SpeechToTextMode } from "./models"
 
 type Input = {
   requestId: string
   model: string
+  mode?: SpeechToTextMode
   language?: string
 }
 
@@ -26,6 +28,7 @@ type Audio = {
   data: string
   format: "m4a"
   model: string
+  mode?: SpeechToTextMode
   language?: string
 }
 
@@ -106,7 +109,7 @@ export async function stopSpeechCapture(requestId: string): Promise<Audio> {
 
   const file = await readFile(state.file)
   await removeFile(state.file)
-  return { data: file.toString("base64"), format: "m4a", model: state.model, language: state.language }
+  return { data: file.toString("base64"), format: "m4a", model: state.model, mode: state.mode, language: state.language }
 }
 
 export async function cancelSpeechCapture(requestId: string): Promise<void> {

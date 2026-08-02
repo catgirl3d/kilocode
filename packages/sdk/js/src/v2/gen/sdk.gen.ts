@@ -6828,6 +6828,7 @@ export class Audio extends HeyApiClient {
       directory?: string
       workspace?: string
       model?: string
+      mode?: "transcribe" | "translate"
       input_audio?: {
         data: string
         format: string
@@ -6846,6 +6847,7 @@ export class Audio extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "model" },
+            { in: "body", key: "mode" },
             { in: "body", key: "input_audio" },
             { in: "body", key: "language" },
             { in: "body", key: "prompt" },
