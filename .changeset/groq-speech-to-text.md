@@ -4,4 +4,4 @@
 "kilo-code": minor
 ---
 
-Support Groq Whisper models for voice input with configured Groq API keys.
+Support Groq Whisper voice input with configured Groq API keys and optional English translation.
