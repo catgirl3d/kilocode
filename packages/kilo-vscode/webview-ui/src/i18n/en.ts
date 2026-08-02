@@ -857,6 +857,11 @@ export const dict = {
   "settings.models.speechToTextModel.title": "Speech to Text Model",
   "settings.models.speechToTextModel.description":
     "Choose the transcription model for voice input. Kilo Gateway models use your Kilo account; Groq models use your API key.",
+  "settings.models.speechToTextResult.title": "Voice Input Result",
+  "settings.models.speechToTextResult.description":
+    "Choose whether Groq Whisper returns the original spoken language or an English translation.",
+  "settings.models.speechToTextResult.transcribe": "Original spoken language",
+  "settings.models.speechToTextResult.translate": "Translate to English",
   "settings.experimental.nativeNotebookTools.title": "Native Notebook Tools",
   "settings.experimental.nativeNotebookTools.description":
     "Enable experimental tools for reading, editing, and executing VS Code notebooks",
