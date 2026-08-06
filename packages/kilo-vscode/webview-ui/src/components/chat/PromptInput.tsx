@@ -22,6 +22,7 @@ import { useVSCode } from "../../context/vscode"
 import { useConfig } from "../../context/config"
 import { useProvider } from "../../context/provider"
 import { ModelSelector, ModelSelectorBase } from "../shared/ModelSelector"
+import { FavoriteModelSwitcher } from "../shared/FavoriteModelSwitcher"
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
 import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
@@ -1926,7 +1927,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       <div class="prompt-input-hint">
         <div class="prompt-input-hint-selectors">
           <ModeSwitcher sessionID={sid} blocked={props.blocked?.() ?? false} />
-          <ModelSelector sessionID={sid} blocked={props.blocked?.() ?? false} />
+          <div class="model-quick-switcher">
+            <FavoriteModelSwitcher sessionID={sid} numbered />
+            <ModelSelector sessionID={sid} compact blocked={props.blocked?.() ?? false} />
+          </div>
           <ThinkingSelector sessionID={sid} blocked={props.blocked?.() ?? false} />
         </div>
         <div class="prompt-input-hint-actions">
