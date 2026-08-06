@@ -16,6 +16,7 @@ import { ServerProvider } from "../context/server"
 import { FeedbackProvider } from "../context/feedback"
 import { ProviderContext } from "../context/provider"
 import { flattenModels, findModel as _findModel } from "../context/provider-utils"
+import type { EnrichedModel } from "../context/provider"
 import { ConfigProvider, ConfigContext } from "../context/config"
 import { DisplayProvider } from "../context/display"
 import { DataProvider, type OpenDiffFn, type OpenFileFn } from "@kilocode/kilo-ui/context/data"
@@ -101,9 +102,9 @@ const MOCK_PROVIDERS = {
 const MOCK_MODELS = flattenModels(MOCK_PROVIDERS as any)
 
 /** A synchronous mock ProviderContext — provides models without waiting for a postMessage round-trip. */
-const MockProviderProvider: ParentComponent<{ kiloAuth?: boolean; training?: boolean }> = (props) => {
+const MockProviderProvider: ParentComponent<{ kiloAuth?: boolean; training?: boolean; models?: EnrichedModel[] }> = (props) => {
   const models = createMemo(() =>
-    MOCK_MODELS.map((model) => ({
+    (props.models ?? MOCK_MODELS).map((model) => ({
       ...model,
       mayTrainOnYourPrompts: props.training === true,
     })),
@@ -261,6 +262,7 @@ export function mockSessionValue(overrides?: {
     recentModels: () => [],
     modelUsageHistory: () => ({}),
     toggleFavorite: noop,
+    moveFavorite: noop,
     variantList: () => [],
     currentVariant: () => undefined,
     variantForAgent: () => undefined,
@@ -318,6 +320,7 @@ interface StoryProvidersProps {
   onOpenFile?: OpenFileFn
   kiloAuth?: boolean
   training?: boolean
+  models?: EnrichedModel[]
   /** When true, renders children without the default 12px padding wrapper */
   noPadding?: boolean
 }
@@ -452,7 +455,7 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
             onProjectConfigChange={props.onProjectConfigChange}
           >
             <DisplayProvider>
-              <MockProviderProvider kiloAuth={props.kiloAuth} training={props.training}>
+              <MockProviderProvider kiloAuth={props.kiloAuth} training={props.training} models={props.models}>
                 <DialogProvider>
                   <LanguageContext.Provider
                     value={{
