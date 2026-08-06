@@ -1489,6 +1489,13 @@ export interface ToggleFavoriteRequest {
   modelID: string
 }
 
+export interface MoveFavoriteRequest {
+  type: "moveFavorite"
+  providerID: string
+  modelID: string
+  direction: "up" | "down"
+}
+
 export interface RequestFavoritesMessage {
   type: "requestFavorites"
 }
@@ -1821,6 +1828,7 @@ export type WebviewMessage =
   | PersistModelSelectorExpandedRequest
   | RequestModelSelectorExpandedMessage
   | ToggleFavoriteRequest
+  | MoveFavoriteRequest
   | RequestFavoritesMessage
   | PersistModelSelectionRequest
   | RequestModelSelectionsMessage
