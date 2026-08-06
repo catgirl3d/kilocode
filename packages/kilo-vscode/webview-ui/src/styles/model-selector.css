@@ -516,6 +516,51 @@
   opacity: 0.8;
 }
 
+.model-selector-favorite-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.model-selector-favorite-slot {
+  min-width: 12px;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--kilo-font-size-10);
+  text-align: center;
+}
+
+.model-selector-favorite-move {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 20px;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+}
+
+.model-selector-favorite-move:hover:not(:disabled) {
+  color: var(--vscode-list-highlightForeground);
+  background: var(--surface-interactive-hover, var(--vscode-toolbar-hoverBackground));
+}
+
+.model-selector-favorite-move:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.model-selector-favorite-move:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.model-selector-favorite-move-icon--down {
+  transform: rotate(180deg);
+}
+
 .model-selector-star {
   all: unset;
   flex-shrink: 0;

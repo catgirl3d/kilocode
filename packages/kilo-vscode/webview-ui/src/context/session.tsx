@@ -93,6 +93,7 @@ import { clearIfOn, createCloudPrune } from "./session-cloud-prune"
 import { isSameSessionTree } from "./model-usage"
 import { createDraftAgentSeed, resolvePromptAgent } from "./session-agent"
 import { createModelSelector } from "./session-model-selector"
+import { moveFavorite as move } from "../../../src/shared/model-favorites"
 
 const RECENT_LIMIT = 5
 const MESSAGE_PAGE_LIMIT = 80
@@ -239,6 +240,7 @@ interface SessionContextValue {
   modelUsageHistory: Accessor<ModelUsageMap>
   favoriteModels: Accessor<ModelSelection[]>
   toggleFavorite: (providerID: string, modelID: string) => void
+  moveFavorite: (providerID: string, modelID: string, direction: "up" | "down") => void
 
   // Revert/undo state for the current session
   revert: Accessor<SessionInfo["revert"]>
@@ -1054,6 +1056,13 @@ export const SessionProvider: ParentComponent = (props) => {
     const action = idx >= 0 ? "remove" : "add"
     setStore("favoriteModels", updated)
     vscode.postMessage({ type: "toggleFavorite", action, providerID, modelID })
+  }
+
+  function moveFavorite(providerID: string, modelID: string, direction: "up" | "down") {
+    const favorites = move(store.favoriteModels, providerID, modelID, direction)
+    if (favorites === store.favoriteModels) return
+    setStore("favoriteModels", favorites)
+    vscode.postMessage({ type: "moveFavorite", providerID, modelID, direction })
   }
 
   function handleStreamMessage(message: ExtensionMessage): boolean {
@@ -3050,6 +3059,7 @@ export const SessionProvider: ParentComponent = (props) => {
     modelUsageHistory: () => store.modelUsageHistory,
     favoriteModels: () => store.favoriteModels,
     toggleFavorite,
+    moveFavorite,
     variantList,
     currentVariant,
     variantForAgent,
