@@ -12,10 +12,13 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import { type ParentComponent } from "solid-js"
+import { createSignal, type ParentComponent } from "solid-js"
 import { StoryProviders, mockSessionValue } from "./StoryProviders"
 import { SessionContext } from "../context/session"
 import { PromptInput } from "../components/chat/PromptInput"
+import type { EnrichedModel } from "../context/provider"
+import type { ModelSelection } from "../types/messages"
+import { moveFavorite } from "../../../src/shared/model-favorites"
 import { SandboxTooltipContent } from "../components/shared/SandboxButton"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Icon } from "@kilocode/kilo-ui/icon"
@@ -29,9 +32,40 @@ const agents = [
 
 const noop = () => {}
 
-const PromptProviders: ParentComponent<{ variants?: boolean; modelOverride?: boolean; training?: boolean }> = (
-  props,
-) => {
+const FAVORITE_MODELS: EnrichedModel[] = [
+  {
+    id: "anthropic/claude-sonnet-4-6",
+    name: "Anthropic: Claude Sonnet 4.6",
+    providerID: "kilo",
+    providerName: "Kilo",
+  },
+  {
+    id: "openai/gpt-5.6-luna",
+    name: "OpenAI: GPT-5.6 Luna",
+    providerID: "kilo",
+    providerName: "Kilo",
+  },
+  {
+    id: "xai/grok-4.1-fast",
+    name: "xAI: Grok 4.1 Fast",
+    providerID: "kilo",
+    providerName: "Kilo",
+  },
+  {
+    id: "google/gemini-3-pro",
+    name: "Google: Gemini 3 Pro",
+    providerID: "kilo",
+    providerName: "Kilo",
+  },
+  {
+    id: "deepseek/deepseek-v3",
+    name: "DeepSeek: DeepSeek V3",
+    providerID: "kilo",
+    providerName: "Kilo",
+  },
+]
+
+const PromptProviders: ParentComponent<{ variants?: boolean; modelOverride?: boolean; training?: boolean }> = (props) => {
   const base = mockSessionValue({ status: "idle" })
   const session = {
     ...base,
@@ -106,6 +140,46 @@ export const WithPromptTraining200: Story = {
       <PromptInput />
     </PromptProviders>
   ),
+}
+
+const FavoriteModelsPrompt = () => {
+  const [selected, setSelected] = createSignal<ModelSelection>({
+    providerID: "kilo",
+    modelID: "anthropic/claude-sonnet-4-6",
+  })
+  const [favorites, setFavorites] = createSignal([
+    { providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" },
+    { providerID: "kilo", modelID: "openai/gpt-5.6-luna" },
+    { providerID: "kilo", modelID: "unavailable" },
+    { providerID: "kilo", modelID: "xai/grok-4.1-fast" },
+    { providerID: "kilo", modelID: "google/gemini-3-pro" },
+    { providerID: "kilo", modelID: "deepseek/deepseek-v3" },
+  ])
+  const session = {
+    ...mockSessionValue({ status: "idle" }),
+    selected,
+    selectModel: (providerID: string, modelID: string) => setSelected({ providerID, modelID }),
+    favoriteModels: favorites,
+    moveFavorite: (providerID: string, modelID: string, direction: "up" | "down") => {
+      setFavorites((items) => moveFavorite(items, providerID, modelID, direction))
+    },
+  }
+
+  return (
+    <StoryProviders noPadding models={FAVORITE_MODELS}>
+      <SessionContext.Provider value={session as any}>
+        <div style={{ overflow: "hidden" }}>
+          <PromptInput />
+          <output data-testid="favorite-model-value">{selected().modelID}</output>
+        </div>
+      </SessionContext.Provider>
+    </StoryProviders>
+  )
+}
+
+export const WithFavoriteModels420: Story = {
+  name: "With favorite models — 420px",
+  render: () => <FavoriteModelsPrompt />,
 }
 
 export const SandboxTooltipEnabled: Story = {

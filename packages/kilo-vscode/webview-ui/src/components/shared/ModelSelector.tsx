@@ -138,6 +138,8 @@ export interface ModelSelectorBaseProps {
   description?: string
   /** Only respond to picker events from this prompt scope. */
   trigger?: string
+  /** Render an icon-only trigger for compact chat controls. */
+  compact?: boolean
 }
 
 export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
@@ -806,7 +808,13 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           {props.description}
         </span>
       </Show>
-      <Tooltip value={activeModel()?.id ?? ""} placement="top" openDelay={0} inactive={!activeModel()}>
+      <Tooltip
+        value={props.compact ? controlLabel() : activeModel()?.id ?? ""}
+        placement="top"
+        openDelay={0}
+        inactive={!props.compact && !activeModel()}
+        contentClass={props.compact ? "model-quick-switcher-tooltip" : undefined}
+      >
         <PopupSelector
           expanded={expanded()}
           preferredWidth={350}
@@ -823,6 +831,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           triggerProps={{
             variant: "secondary",
             size: "normal",
+            class: props.compact ? "model-selector-quick-open" : undefined,
             get disabled() {
               return !canOpen()
             },
@@ -834,25 +843,29 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
             },
           }}
           trigger={
-            <>
-              <span class="model-selector-trigger-label">{triggerLabel()}</span>
-              <Show when={activeCollectsData()}>
-                <Tooltip value={dataLabel()} placement="top" openDelay={0}>
-                  <span class="model-selector-trigger-free-data" aria-label={dataLabel()}>
-                    <Icon name="book-open-check" size="small" />
-                  </span>
-                </Tooltip>
-              </Show>
-              <svg
-                class="model-selector-trigger-chevron"
-                width="10"
-                height="10"
-                viewBox="0 0 16 16"
-                fill="currentColor"
-              >
-                <path d="M8 4l4 5H4l4-5z" />
-              </svg>
-            </>
+            <Show when={props.compact} fallback={
+              <>
+                <span class="model-selector-trigger-label">{triggerLabel()}</span>
+                <Show when={activeCollectsData()}>
+                  <Tooltip value={dataLabel()} placement="top" openDelay={0}>
+                    <span class="model-selector-trigger-free-data" aria-label={dataLabel()}>
+                      <Icon name="book-open-check" size="small" />
+                    </span>
+                  </Tooltip>
+                </Show>
+                <svg
+                  class="model-selector-trigger-chevron"
+                  width="10"
+                  height="10"
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                >
+                  <path d="M8 4l4 5H4l4-5z" />
+                </svg>
+              </>
+            }>
+              <Icon name="models" size="small" />
+            </Show>
           }
           class={`model-selector-popover${expanded() ? " model-selector-popover--expanded" : ""}`}
         >
@@ -1011,6 +1024,17 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           const preActive = () => isPreActive(row.key)
                           const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
                           const showSelect = () => expanded() && preActive() && !isActive(model)
+                          const index = () =>
+                            session?.favoriteModels().findIndex((item) => item.providerID === model.providerID && item.modelID === model.id) ?? -1
+                          const moveUp = () => index() > 0
+                          const moveDown = () => {
+                            const idx = index()
+                            return !!session && idx >= 0 && idx < session.favoriteModels().length - 1
+                          }
+                          const shift = (direction: "up" | "down") => {
+                            if (!session) return
+                            session.moveFavorite(model.providerID, model.id, direction)
+                          }
                           const starLabel = () =>
                             `${starred() ? language.t("model.favorite.remove") : language.t("model.favorite.add")}: ${sanitizeName(model.name)}`
                           return (
@@ -1083,6 +1107,37 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   <span class="model-selector-item-provider-tag">{model.providerName}</span>
                                 </div>
                               </div>
+                              <Show when={row.kind === "favorite" && session && props.favorites !== false && index() >= 0}>
+                                <div class="model-selector-favorite-actions">
+                                  <span class="model-selector-favorite-slot">{index() + 1}</span>
+                                  <button
+                                    type="button"
+                                    class="model-selector-favorite-move"
+                                    aria-label={`↑ ${index() + 1}: ${sanitizeName(model.name)}`}
+                                    disabled={!moveUp()}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      shift("up")
+                                    }}
+                                  >
+                                    <Icon name="arrow-up" size="small" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="model-selector-favorite-move"
+                                    aria-label={`↓ ${index() + 1}: ${sanitizeName(model.name)}`}
+                                    disabled={!moveDown()}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      shift("down")
+                                    }}
+                                  >
+                                    <Icon name="arrow-up" size="small" class="model-selector-favorite-move-icon--down" />
+                                  </button>
+                                </div>
+                              </Show>
                               <Show when={session && props.favorites !== false}>
                                 <button
                                   type="button"
@@ -1145,6 +1200,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
 interface ModelSelectorProps {
   sessionID?: Accessor<string | undefined>
+  compact?: boolean
 }
 
 export const ModelSelector: Component<ModelSelectorProps> = (props) => {
@@ -1163,6 +1219,7 @@ export const ModelSelector: Component<ModelSelectorProps> = (props) => {
       onCancel={() => {
         requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } })))
       }}
+      compact={props.compact}
     />
   )
 }
