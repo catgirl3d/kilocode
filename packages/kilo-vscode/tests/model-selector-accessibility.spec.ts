@@ -201,6 +201,62 @@ test("selected favorite remains selected when its duplicate group is collapsed",
   await expect(combobox).toHaveAttribute("aria-activedescendant", await favorites.getAttribute("id"))
 })
 
+test("favorite model strips preserve pinned slots and switch the selected model", async ({ page }) => {
+  await load(page, "prompt-input--with-favorite-models-420")
+
+  const strips = page.locator(".favorite-model-switcher-slot")
+  await expect(strips).toHaveCount(4)
+  await expect(page.locator(".model-quick-switcher .favorite-model-switcher-slot")).toHaveCount(4)
+  await expect(page.locator(".prompt-input-hint-actions .favorite-model-switcher-slot")).toHaveCount(0)
+  await expect(page.locator(".model-selector-quick-open")).toBeVisible()
+  await expect(page.getByRole("button", { name: "1: Anthropic: Claude Sonnet 4.6" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  )
+  await expect(page.getByRole("button", { name: "4: xAI: Grok 4.1 Fast" })).toBeVisible()
+  await expect(page.getByRole("button", { name: /outside-the-quick-slots/ })).toHaveCount(0)
+
+  const target = page.getByRole("button", { name: "2: OpenAI: GPT-5.6 Luna" })
+  await target.hover()
+  const tooltip = page.locator(".model-quick-switcher-tooltip[data-component='tooltip']")
+  await expect(tooltip).toBeVisible()
+  expect(await tooltip.evaluate((node) => parseFloat(getComputedStyle(node).borderTopLeftRadius))).toBeGreaterThan(0)
+  await target.click()
+
+  await expect(page.getByTestId("favorite-model-value")).toHaveText("openai/gpt-5.6-luna")
+  await expect(target).toHaveAttribute("aria-pressed", "true")
+  await expect(page.getByRole("button", { name: "1: Anthropic: Claude Sonnet 4.6" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  )
+})
+
+test("favorite model arrows update the quick slot order", async ({ page }) => {
+  await load(page, "prompt-input--with-favorite-models-420")
+
+  await page.getByRole("button", { name: /Select model:/ }).click()
+  const up = page.getByRole("button", { name: "↑ 2: OpenAI: GPT-5.6 Luna" })
+  await expect(up).toBeEnabled()
+  await up.click()
+
+  await expect(page.locator('.favorite-model-switcher-slot[aria-label="1: OpenAI: GPT-5.6 Luna"]')).toBeVisible()
+  await expect(page.locator('.favorite-model-switcher-slot[aria-label="2: Anthropic: Claude Sonnet 4.6"]')).toBeVisible()
+  await expect(page.getByRole("button", { name: "↑ 1: OpenAI: GPT-5.6 Luna" })).toBeDisabled()
+})
+
+test("model selector segment is active for a model outside quick slots", async ({ page }) => {
+  await load(page, "prompt-input--with-favorite-models-420")
+
+  const trigger = page.locator(".model-selector-quick-open")
+  await expect(trigger).toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
+  await trigger.click()
+  await page.getByRole("treeitem", { name: "DeepSeek DeepSeek V3 Kilo" }).click()
+  await page.getByRole("button", { name: "Select: DeepSeek: DeepSeek V3" }).click()
+
+  await expect(page.getByTestId("favorite-model-value")).toHaveText("deepseek/deepseek-v3")
+  await expect.poll(() => trigger.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)")
+})
+
 test("large catalogs keep the rendered tree bounded and navigate to distant models", async ({ page }) => {
   await load(page, "shared--model-selector-large-catalog")
 
