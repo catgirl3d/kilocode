@@ -6,7 +6,7 @@
  * Used during development so the VS Code extension always has an up-to-date
  * CLI backend without manual rebuild steps.
  */
-import { watch, chmodSync } from "node:fs"
+import { watch, chmodSync, copyFileSync, mkdirSync } from "node:fs"
 import { join, relative } from "node:path"
 import { $ } from "bun"
 import { copySandboxResources, copyTreeSitterResources } from "../src/services/cli-backend/cli-resources"
@@ -16,7 +16,8 @@ const packagesDir = join(kiloVscodeDir, "..")
 const opencodeDir = join(packagesDir, "opencode")
 const opencodeSrcDir = join(opencodeDir, "src")
 const targetBinDir = join(kiloVscodeDir, "bin")
-const targetBinPath = join(targetBinDir, "kilo")
+const binName = process.platform === "win32" ? "kilo.exe" : "kilo"
+const targetBinPath = join(targetBinDir, binName)
 
 let building = false
 let pending = false
@@ -27,7 +28,8 @@ function log(msg: string) {
 }
 
 function sourceBinaryPath(): string {
-  return join(opencodeDir, "dist", `@kilocode/cli-${process.platform}-${process.arch}`, "bin", "kilo")
+  const os = process.platform === "win32" ? "windows" : process.platform
+  return join(opencodeDir, "dist", `@kilocode/cli-${os}-${process.arch}`, "bin", binName)
 }
 
 async function rebuild() {
@@ -56,8 +58,8 @@ async function rebuild() {
       return
     }
 
-    await $`mkdir -p ${targetBinDir}`
-    await $`cp ${source} ${targetBinPath}`
+    mkdirSync(targetBinDir, { recursive: true })
+    copyFileSync(source, targetBinPath)
     await copyTreeSitterResources(source, targetBinPath)
     await copySandboxResources(source, targetBinPath)
     chmodSync(targetBinPath, 0o755)
