@@ -11,5 +11,68 @@
     "packages/kilo-vscode/out": true,
     "packages/kilo-vscode/dist": true
   },
-  "typescript.tsc.autoDetect": "off"
+  "typescript.tsc.autoDetect": "off",
+  "actionButtons": {
+    "commands": [
+      {
+        "name": "DEV",
+        "color": "#e0f7fa",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}",
+        "command": "bun run dev"
+      },
+      {
+        "name": "EXT",
+        "color": "#e1bee7",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}",
+        "command": "bun run extension"
+      },
+      {
+        "name": "WATCH",
+        "color": "#b3e5fc",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}/packages/kilo-vscode",
+        "command": "bun run watch"
+      },
+      {
+        "name": "VSIX",
+        "color": "#b2ebd9",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}/packages/kilo-vscode",
+        "command": "bun -e \"const { mkdir } = require('node:fs/promises'); (async () => { await Bun.$`bun run package`; await mkdir('out', { recursive: true }); await Bun.$`bunx vsce package --no-dependencies --skip-license --target win32-x64 -o out/kilo-vscode-win32-x64.vsix`; })()\""
+      },
+      {
+        "name": "TYPECHECK",
+        "color": "#fff59d",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}",
+        "command": "bun run typecheck"
+      },
+      {
+        "name": "LINT",
+        "color": "#ffcdd2",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}",
+        "command": "bun run lint"
+      },
+      {
+        "name": "TEST CLI",
+        "color": "#c8e6c9",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}/packages/opencode",
+        "command": "bun test"
+      },
+      {
+        "name": "DIFF",
+        "color": "white",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}",
+        "command": "git diff --staged > staged_diff_output.txt"
+      }
+    ],
+    "defaultColor": "white",
+    "reloadButton": "↻",
+    "loadNpmCommands": false
+  }
 }
