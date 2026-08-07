@@ -362,6 +362,18 @@ describe("PromptInput send origin contract", () => {
   })
 })
 
+describe("PromptInput empty-chat continue contract", () => {
+  const source = readFile(PROMPT_FILE)
+
+  it("allows an empty prompt to be sent regardless of chat history", () => {
+    expect(source).toContain('(speech.state() === "recording" || !speech.active())')
+  })
+
+  it("uses continue only for empty input without attachments or review comments", () => {
+    expect(source).toContain("resolvePrompt(draft, pending.length > 0, imgs.length > 0)")
+  })
+})
+
 describe("SessionContext userClearedSession contract", () => {
   const source = readFile(SESSION_FILE)
 

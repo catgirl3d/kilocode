@@ -53,6 +53,7 @@ import {
   isPromptBusy,
   isPathMention,
   applySandboxStates,
+  resolvePrompt,
   type SandboxDefaultState,
   type SandboxState,
 } from "./prompt-input-utils"
@@ -527,7 +528,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     !terminal.pending() &&
     !git.pending() &&
     !props.blocked?.() &&
-    (speech.state() === "recording" || (hasInput() && !speech.active()))
+    (speech.state() === "recording" || !speech.active())
   const sendLabel = () => {
     const reason = props.blockedReason?.()
     if (reason) return reason
@@ -1127,7 +1128,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const handleSend = async () => {
-    const draft = text().trim()
+    let draft = text().trim()
 
     const memory = parseMemoryCommand(draft)
     if (memory) {
@@ -1174,6 +1175,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     const imgs = imageAttach.images()
     const pending = reviewComments()
+    draft = resolvePrompt(draft, pending.length > 0, imgs.length > 0)
     const review = pending.length > 0 ? formatReviewCommentsMarkdown(pending) : ""
     const message = draft && review ? `${review}\n\n${draft}` : draft || review
     const data = review ? { version: 1 as const, comments: pending } : undefined
