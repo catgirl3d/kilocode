@@ -35,7 +35,7 @@ export async function ensureFfmpegForTarget(target: string, bin: string): Promis
     const name = packed.text().trim().split(/\s+/).pop()
     if (!name) throw new Error(`npm pack did not return a tarball for ${spec}`)
 
-    await $`tar -xzf ${join(tmp, name)} -C ${tmp}`.quiet()
+    await $`tar -xzf ${name}`.cwd(tmp).quiet()
     copyFileSync(join(tmp, "package", exe), dest)
     if (!target.startsWith("win32")) chmodSync(dest, 0o755)
     await Bun.write(marker, `${target}\n`)
