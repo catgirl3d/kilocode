@@ -1,8 +1,61 @@
-// See https://go.microsoft.com/fwlink/?LinkId=733558
-// for the documentation about the tasks.json format
 {
   "version": "2.0.0",
   "tasks": [
+    {
+      "label": "Kilo: Start Dev CLI",
+      "type": "shell",
+      "command": "bun run dev",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Kilo: Launch Extension",
+      "type": "shell",
+      "command": "bun run extension",
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Kilo: Run Typecheck",
+      "type": "shell",
+      "command": "bun run typecheck",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Kilo: Run Lint",
+      "type": "shell",
+      "command": "bun run lint",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Kilo: Run CLI Tests",
+      "type": "shell",
+      "command": "bun test",
+      "options": { "cwd": "${workspaceFolder}/packages/opencode" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Kilo: Run Extension Unit Tests",
+      "type": "shell",
+      "command": "bun run test:unit",
+      "options": { "cwd": "${workspaceFolder}/packages/kilo-vscode" },
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Kilo: Generate Staged Diff",
+      "type": "shell",
+      "command": "git diff --staged > staged_diff_output.txt",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "none",
+      "problemMatcher": []
+    },
     {
       "label": "VSCode - Watch",
       "dependsOn": ["VSCode - TSC", "VSCode - ESBuild", "VSCode - CLI Watch"],
@@ -12,9 +65,6 @@
       "group": {
         "kind": "build",
         "isDefault": true
-      },
-      "runOptions": {
-        "runOn": "folderOpen"
       }
     },
     {
