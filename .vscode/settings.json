@@ -17,58 +17,58 @@
       {
         "name": "DEV",
         "color": "#e0f7fa",
-        "singleInstance": true,
-        "cwd": "${workspaceFolder}",
-        "command": "bun run dev"
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Start Dev CLI"]
       },
       {
         "name": "EXT",
         "color": "#e1bee7",
-        "singleInstance": true,
-        "cwd": "${workspaceFolder}",
-        "command": "bun run extension"
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Launch Extension"]
       },
       {
         "name": "WATCH",
         "color": "#b3e5fc",
-        "singleInstance": true,
-        "cwd": "${workspaceFolder}/packages/kilo-vscode",
-        "command": "bun run watch"
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["VSCode - Watch"]
       },
       {
         "name": "VSIX",
         "color": "#b2ebd9",
-        "singleInstance": true,
-        "cwd": "${workspaceFolder}/packages/kilo-vscode",
-        "command": "bun -e \"const { mkdir } = require('node:fs/promises'); (async () => { await Bun.$`bun run package`; await mkdir('out', { recursive: true }); await Bun.$`bunx vsce package --no-dependencies --skip-license --target win32-x64 -o out/kilo-vscode-win32-x64.vsix`; })()\""
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["VSCode - Package VSIX (Windows x64)"]
       },
       {
         "name": "TYPECHECK",
         "color": "#fff59d",
-        "singleInstance": true,
-        "cwd": "${workspaceFolder}",
-        "command": "bun run typecheck"
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Run Typecheck"]
       },
       {
         "name": "LINT",
         "color": "#ffcdd2",
-        "singleInstance": true,
-        "cwd": "${workspaceFolder}",
-        "command": "bun run lint"
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Run Lint"]
       },
       {
         "name": "TEST CLI",
         "color": "#c8e6c9",
-        "singleInstance": true,
-        "cwd": "${workspaceFolder}/packages/opencode",
-        "command": "bun test"
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Run CLI Tests"]
       },
       {
         "name": "DIFF",
         "color": "white",
-        "singleInstance": true,
-        "cwd": "${workspaceFolder}",
-        "command": "git diff --staged > staged_diff_output.txt"
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Generate Staged Diff"]
       }
     ],
     "defaultColor": "white",

@@ -13,6 +13,7 @@ import {
   applySandboxState,
   applySandboxStates,
   memoryRest,
+  resolvePrompt,
 } from "../../webview-ui/src/components/chat/prompt-input-utils"
 import { parseMemoryCommand } from "../../webview-ui/src/utils/memory-command"
 
@@ -56,6 +57,18 @@ describe("applySandboxState", () => {
       ses_2: state(false, 1, "ses_2"),
     })
     expect(applySandboxStates(second, state(false, 4, "ses_1"))).toBe(second)
+  })
+})
+
+describe("resolvePrompt", () => {
+  it("uses continue for an empty input", () => {
+    expect(resolvePrompt("", false, false)).toBe("continue")
+  })
+
+  it("preserves prompt content and review attachments", () => {
+    expect(resolvePrompt("hello", false, false)).toBe("hello")
+    expect(resolvePrompt("", true, false)).toBe("")
+    expect(resolvePrompt("", false, true)).toBe("")
   })
 })
 
