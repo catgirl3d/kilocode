@@ -14,7 +14,7 @@ export interface SlashCommandInfo {
   agent?: string
   model?: string
   variant?: string
-  source?: "command" | "mcp" | "skill"
+  source?: "builtin" | "command" | "mcp" | "skill"
   hints: string[]
 }
 

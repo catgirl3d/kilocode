@@ -40,6 +40,7 @@ export type RunPrompt = {
   command?: {
     name: string
     arguments: string
+    source?: "builtin" // kilocode_change
   }
 }
 
