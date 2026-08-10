@@ -57,6 +57,13 @@
         "args": ["Kilo: Run Lint"]
       },
       {
+        "name": "TEST EXT",
+        "color": "#d1c4e9",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}/packages/kilo-vscode",
+        "command": "bun run test:unit"
+      },
+      {
         "name": "TEST CLI",
         "color": "#c8e6c9",
         "useVsCodeApi": true,
