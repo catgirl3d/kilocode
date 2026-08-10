@@ -1075,6 +1075,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           backgroundJobs: (sessionID, requestID) => this.fetchAndSendBackgroundJobs(sessionID, requestID),
           cancelBackgroundJob: (jobID, sessionID, requestID) => this.cancelBackgroundJob(jobID, sessionID, requestID),
           promoteBackgroundJob: (jobID, sessionID) => this.promoteBackgroundJob(jobID, sessionID),
+          shake: (sessionID) => this.handleShake(sessionID),
         })
       ) {
         return
@@ -4404,6 +4405,32 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.postMessage({
         type: "error",
         message: getErrorMessage(error) || "Failed to compact session",
+      })
+    }
+  }
+
+  private async handleShake(sessionID?: string): Promise<void> {
+    const target = sessionID || this.currentSession?.id
+    if (!this.client) {
+      if (target) this.postMessage({ type: "sessionShakeFailed", sessionID: target, error: "Not connected to CLI backend" })
+      return
+    }
+
+    if (!target) return
+
+    try {
+      const workspaceDir = this.getWorkspaceDirectory(target)
+      const result = await this.client.session.shake(
+        { sessionID: target, directory: workspaceDir },
+        { throwOnError: true },
+      )
+      this.postMessage({ type: "sessionShakeCompleted", sessionID: target, ...result.data })
+    } catch (error) {
+      console.error("[Kilo New] KiloProvider: Failed to shake session:", error)
+      this.postMessage({
+        type: "sessionShakeFailed",
+        sessionID: target,
+        error: getErrorMessage(error) || "Failed to clear tool output",
       })
     }
   }

@@ -22,6 +22,7 @@ type Response = {
 }
 
 type Operation = {
+  tags?: string[]
   parameters?: Parameter[]
   requestBody?: {
     content?: Record<string, { schema?: Schema }>
@@ -39,6 +40,8 @@ type Spec = {
 export function matchLegacyKiloOpenApi(input: Record<string, unknown>) {
   rebrand(input)
   const spec = input as Spec
+  const shake = spec.paths?.["/session/{sessionID}/shake"]?.post
+  if (shake) shake.tags = ["session"]
   const rules = spec.paths?.["/config/rules"]?.get?.parameters?.find(
     (param) => param.in === "query" && param.name === "scope",
   )

@@ -406,6 +406,8 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
+  SessionShakeErrors,
+  SessionShakeResponses,
   SessionShareErrors,
   SessionShareResponses,
   SessionShellErrors,
@@ -5263,6 +5265,38 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Clear tool output
+   *
+   * Clear all eligible tool output in the current context without invoking an LLM.
+   */
+  public shake<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionShakeResponses, SessionShakeErrors, ThrowOnError>({
+      url: "/session/{sessionID}/shake",
+      ...options,
+      ...params,
     })
   }
 }

@@ -90,6 +90,8 @@ const WithSessions: ParentComponent<{ sessions?: typeof mockSessions }> = (props
     sendMessage: noop,
     abort: noop,
     compact: noop,
+    shake: noop,
+    shaking: () => false,
     respondToPermission: noop,
     replyToQuestion: noop,
     rejectQuestion: noop,

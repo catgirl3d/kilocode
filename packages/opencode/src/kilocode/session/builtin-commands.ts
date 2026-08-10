@@ -4,7 +4,22 @@
 //
 // Kept in a side-effect-free module so it can be imported from the server
 // (`session/prompt.ts`) without pulling in CLI dependencies.
-export const BUILTIN_COMMANDS = ["compact", "summarize"] as const
+export const BUILTIN_COMMANDS = ["compact", "summarize", "shake"] as const
+
+export const BUILTIN_COMMAND_DESCRIPTIONS: Record<BuiltinCommand, string> = {
+  compact: "compact the session",
+  summarize: "summarize the session",
+  shake: "clear eligible tool output without invoking an LLM",
+}
+
+export const BUILTIN_COMMAND_CATALOG = [
+  {
+    name: "shake",
+    description: BUILTIN_COMMAND_DESCRIPTIONS.shake,
+    source: "builtin" as const,
+    kind: "action" as const,
+  },
+]
 
 export type BuiltinCommand = (typeof BUILTIN_COMMANDS)[number]
 

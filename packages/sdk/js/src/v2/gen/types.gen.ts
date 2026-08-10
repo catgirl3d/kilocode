@@ -3061,6 +3061,15 @@ export type Command = {
   hints: Array<string>
 }
 
+export type BuiltinAction = {
+  name: string
+  description?: string
+  source: "builtin"
+  kind: "action"
+}
+
+export type CommandCatalog = Command | BuiltinAction
+
 export type Agent = {
   name: string
   displayName?: string
@@ -11725,7 +11734,7 @@ export type CommandListResponses = {
   /**
    * List of commands
    */
-  200: Array<Command>
+  200: Array<CommandCatalog>
 }
 
 export type CommandListResponse = CommandListResponses[keyof CommandListResponses]
@@ -17367,6 +17376,52 @@ export type AnacondaDesktopSyncResponses = {
 }
 
 export type AnacondaDesktopSyncResponse = AnacondaDesktopSyncResponses[keyof AnacondaDesktopSyncResponses]
+
+export type SessionShakeData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/shake"
+}
+
+export type SessionShakeErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionShakeError = SessionShakeErrors[keyof SessionShakeErrors]
+
+export type SessionShakeResponses = {
+  /**
+   * Cleared historical tool output
+   */
+  200: {
+    parts: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    tokens: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    diagnostics?: {
+      rawMessages: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      projectionMessages: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      tools: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      completed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      protected: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      compacted: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      candidates: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+  }
+}
+
+export type SessionShakeResponse = SessionShakeResponses[keyof SessionShakeResponses]
 
 export type NetworkListData = {
   body?: never

@@ -610,6 +610,9 @@ describe("HttpApi SDK", () => {
         const all = yield* capture(() => sdk.session.list({ roots: false, limit: 10 }))
         const children = yield* capture(() => sdk.session.children({ sessionID: parentID }))
         const todo = yield* capture(() => sdk.session.todo({ sessionID: parentID }))
+        // kilocode_change start - exercise the extracted endpoint and compatibility errors
+        const shake = yield* capture(() => sdk.session.shake({ sessionID: parentID }))
+        // kilocode_change end
         const status = yield* capture(() => sdk.session.status())
         const messages = yield* capture(() => sdk.session.messages({ sessionID: parentID }))
         const missingGet = yield* capture(() => sdk.session.get({ sessionID: "ses_missing" }))
@@ -619,6 +622,9 @@ describe("HttpApi SDK", () => {
         )
         const deleted = yield* capture(() => sdk.session.delete({ sessionID: childID }))
         const getDeleted = yield* capture(() => sdk.session.get({ sessionID: childID }))
+        // kilocode_change start
+        const missingShake = yield* capture(() => sdk.session.shake({ sessionID: "ses_missing" }))
+        // kilocode_change end
 
         return {
           statuses: statuses({
@@ -630,6 +636,7 @@ describe("HttpApi SDK", () => {
             all,
             children,
             todo,
+            shake, // kilocode_change
             status,
             messages,
             missingGet,
@@ -637,6 +644,7 @@ describe("HttpApi SDK", () => {
             invalidCursor,
             deleted,
             getDeleted,
+            missingShake, // kilocode_change
           }),
           getTitle: record(get.data).title,
           updatedTitle: record(update.data).title,
