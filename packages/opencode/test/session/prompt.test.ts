@@ -1016,7 +1016,7 @@ it.instance("failed subtask preserves metadata on error tool state", () =>
     const msg = yield* user(chat.id, "hello")
     yield* addSubtask(chat.id, msg.id)
 
-    const result = yield* prompt.loop({ sessionID: chat.id })
+    const result = yield* prompt.loop({ sessionID: chat.id, snapshotInitialization: "wait" })
     expect(result.info.role).toBe("assistant")
     expect(yield* llm.calls).toBe(2)
 
@@ -1036,6 +1036,7 @@ it.instance("failed subtask preserves metadata on error tool state", () =>
       modelID: ModelV2.ID.make("missing-model"),
     })
   }),
+  30_000,
 )
 
 it.instance("subtask child inherits parent session external_directory allow", () =>
@@ -1051,7 +1052,7 @@ it.instance("subtask child inherits parent session external_directory allow", ()
     const msg = yield* user(chat.id, "hello")
     yield* addSubtask(chat.id, msg.id)
 
-    yield* prompt.loop({ sessionID: chat.id })
+    yield* prompt.loop({ sessionID: chat.id, snapshotInitialization: "wait" })
 
     const kids = yield* sessions.children(chat.id)
     expect(kids).toHaveLength(1)
@@ -1063,6 +1064,7 @@ it.instance("subtask child inherits parent session external_directory allow", ()
     expect(Permission.evaluate("external_directory", "/tmp/allowed/file", rules).action).toBe("allow")
     expect(Permission.evaluate("task", "anything", rules).action).toBe("deny")
   }),
+  30_000,
 )
 
 noLLMServer.instance("prompt tools replace matching rules and preserve existing restrictions", () =>
