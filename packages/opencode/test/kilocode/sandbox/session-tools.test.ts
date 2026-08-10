@@ -35,6 +35,7 @@ import { TestConfig } from "../../fixture/config"
 import { tmpdirScoped } from "../../fixture/fixture"
 import { ProviderTest } from "../../fake/provider"
 import { testEffect } from "../../lib/effect"
+import type { Hooks } from "@kilocode/plugin"
 
 const projectID = ProjectV2.ID.make("sandbox-session-tools")
 const sessionID = SessionID.make("ses_sandbox-session-tools")
@@ -46,6 +47,8 @@ const agent: Agent.Info = {
   options: {},
 }
 const approvals: Permission.AskInput[] = []
+const hooks: Hooks[] = []
+const pluginEvents: string[] = []
 
 function session(directory: string): Session.Info {
   return {
@@ -108,7 +111,18 @@ const permission = Layer.mock(Permission.Service)({
     }),
 })
 const plugin = Layer.mock(Plugin.Service)({
-  trigger: (_name, _input, output) => Effect.succeed(output),
+  list: () => Effect.succeed(hooks),
+  trigger: (name, input, output) =>
+    Effect.promise(async () => {
+      if (name === "shell.env") {
+        for (const hook of hooks)
+          await hook["shell.env"]?.(
+            input as { cwd: string; sessionID?: string; callID?: string },
+            output as { env: Record<string, string> },
+          )
+      }
+      return output
+    }),
 })
 const mcp = Layer.mock(MCP.Service)({
   tools: () => Effect.succeed({}),
@@ -159,13 +173,18 @@ const registry = Layer.effect(
 const it = testEffect(registry)
 const mac = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") ? it.live : it.live.skip
 
-function resolve(ctx: InstanceContext, metadataCalls: { toolCallID: string; value: Record<string, any> }[] = []) {
+function resolve(
+  ctx: InstanceContext,
+  metadataCalls: { toolCallID: string; value: Record<string, any> }[] = [],
+  events: string[] = pluginEvents,
+) {
   return SessionTools.resolve({
     agent,
     model,
     session: session(ctx.directory),
     processor: {
       message: message(ctx),
+      ensureSnapshot: () => Effect.sync(() => void events.push("snapshot")),
       // capture metadata writes so tests can assert on recorded approval provenance
       metadata: (toolCallID, value) => Effect.sync(() => void metadataCalls.push({ toolCallID, value })),
       completeToolCall: () => Effect.void,
@@ -382,5 +401,71 @@ it.live("records why a denied tool call was refused on the tool part's metadata"
       source: "project",
       rule: { permission: "bash", pattern: "*", action: "deny" },
     })
+  }),
+)
+
+it.live("snapshots before native MCP resource delegates without plugin hooks", () =>
+  Effect.gen(function* () {
+    const dirs = yield* fixture()
+    const events: string[] = []
+    const client = { getServerCapabilities: () => ({ resources: {} }) }
+    const overrides = Layer.mergeAll(
+      TestConfig.layer({ get: () => Effect.succeed({ sandbox: { enabled: false } }) }),
+      Layer.mock(MCP.Service)({
+        tools: () => Effect.succeed({}),
+        clients: () => Effect.sync(() => (events.push("clients"), { server: client as any })),
+        resources: () =>
+          Effect.sync(() => {
+            events.push("resources")
+            return { one: { name: "one", uri: "test://one", client: "server" } }
+          }),
+        resourceTemplates: () =>
+          Effect.sync(() => {
+            events.push("resourceTemplates")
+            return { one: { name: "one", uriTemplate: "test://one/{id}", client: "server" } }
+          }),
+        readResource: () =>
+          Effect.sync(() => {
+            events.push("readResource")
+            return { contents: [{ uri: "test://one", text: "one" }] }
+          }),
+      }),
+    )
+    const tools = yield* resolve(dirs.ctx, [], events).pipe(Effect.provide(overrides))
+
+    const calls = [
+      { tool: tools.list_mcp_resources, args: {}, delegate: "resources" },
+      { tool: tools.list_mcp_resource_templates, args: {}, delegate: "resourceTemplates" },
+      { tool: tools.read_mcp_resource, args: { server: "server", uri: "test://one" }, delegate: "readResource" },
+    ] as const
+    for (const item of calls) {
+      if (!item.tool) yield* Effect.die(new Error("MCP resource tool is missing"))
+      events.length = 0
+      yield* call(item.tool, item.args, "mcp-resource")
+      expect(events).toEqual(["snapshot", "clients", item.delegate])
+    }
+  }),
+)
+
+it.live("snapshots bash before a shell.env-only plugin hook", () =>
+  Effect.gen(function* () {
+    const dirs = yield* fixture()
+    hooks.length = 0
+    pluginEvents.length = 0
+    hooks.push({
+      "shell.env": async () => {
+        pluginEvents.push("shell.env")
+      },
+    })
+    const tools = yield* resolve(dirs.ctx).pipe(
+      Effect.provide(TestConfig.layer({ get: () => Effect.succeed({ sandbox: { enabled: false } }) })),
+    )
+    const shell = tools.bash
+    if (!shell) yield* Effect.die(new Error("bash tool is missing"))
+
+    yield* call(shell, { command: "rg --no-config snapshot", workdir: dirs.a }, "shell-env-hook")
+
+    expect(pluginEvents).toEqual(["snapshot", "shell.env"])
+    hooks.length = 0
   }),
 )

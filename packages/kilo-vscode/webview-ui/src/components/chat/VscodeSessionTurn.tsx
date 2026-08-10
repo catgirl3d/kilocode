@@ -29,8 +29,10 @@ import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { useFeedback } from "../../context/feedback"
 import { visibleError } from "../../context/session-errors"
+import { snapshotStatus, type SnapshotPart } from "../../context/session-utils"
 import type { ErrorDisplayProps } from "./ErrorDisplay"
 import type { Message as WebMessage } from "../../types/messages"
+import { SnapshotBadge } from "./SnapshotBadge"
 
 export interface VscodeTurn {
   id: string
@@ -71,6 +73,12 @@ export const VscodeSessionTurn: Component<VscodeSessionTurnProps> = (props) => {
   })
 
   const assistantMessages = createMemo(() => props.turn.assistant as SDKAssistantMessage[])
+
+  const snapshot = createMemo(() =>
+    snapshotStatus(
+      assistantMessages().flatMap((amsg) => (data.store.part?.[amsg.id] ?? []) as unknown as SnapshotPart[]),
+    ),
+  )
 
   const interrupted = createMemo(() => assistantMessages().some((m) => m.error?.name === "MessageAbortedError"))
 
@@ -176,26 +184,29 @@ export const VscodeSessionTurn: Component<VscodeSessionTurnProps> = (props) => {
             </div>
           </Show>
 
-          {/* Diff summary — shown after completion. Click opens the changes view. */}
-          <Show when={diffs().length > 0 && server.gitInstalled()}>
-            <div class="vscode-session-turn-diffs" data-component="session-turn">
-              <button
-                type="button"
-                class="vscode-session-turn-diffs-trigger"
-                onClick={openChanges}
-                aria-label={i18n.t("ui.sessionReview.change.modified")}
-              >
-                <span data-slot="session-turn-diffs-label">{i18n.t("ui.sessionReview.change.modified")}</span>
-                <span data-slot="session-turn-diffs-count">
-                  {diffs().length} {i18n.t(diffs().length === 1 ? "ui.common.file.one" : "ui.common.file.other")}
-                </span>
-                <span data-slot="session-turn-diffs-meta">
-                  <DiffChanges changes={diffs()} variant="bars" />
-                </span>
-                <span data-slot="session-turn-diffs-chevron" aria-hidden="true">
-                  <Icon name="chevron-right" size="small" />
-                </span>
-              </button>
+          {/* Diff and snapshot metadata stay in the turn footer. */}
+          <Show when={(diffs().length > 0 && server.gitInstalled()) || snapshot()}>
+            <div class="vscode-session-turn-footer" data-component="session-turn">
+              <Show when={diffs().length > 0 && server.gitInstalled()}>
+                <button
+                  type="button"
+                  class="vscode-session-turn-diffs-trigger"
+                  onClick={openChanges}
+                  aria-label={i18n.t("ui.sessionReview.change.modified")}
+                >
+                  <span data-slot="session-turn-diffs-label">{i18n.t("ui.sessionReview.change.modified")}</span>
+                  <span data-slot="session-turn-diffs-count">
+                    {diffs().length} {i18n.t(diffs().length === 1 ? "ui.common.file.one" : "ui.common.file.other")}
+                  </span>
+                  <span data-slot="session-turn-diffs-meta">
+                    <DiffChanges changes={diffs()} variant="bars" />
+                  </span>
+                  <span data-slot="session-turn-diffs-chevron" aria-hidden="true">
+                    <Icon name="chevron-right" size="small" />
+                  </span>
+                </button>
+              </Show>
+              <Show when={snapshot()}>{(status) => <SnapshotBadge status={status()} />}</Show>
             </div>
           </Show>
 
