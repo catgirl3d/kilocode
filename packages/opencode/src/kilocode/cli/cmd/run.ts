@@ -7,11 +7,26 @@ import { Provider } from "@/provider/provider"
 import { Filesystem } from "@/util/filesystem"
 
 export namespace KiloRun {
+  // Shared by headless JSON output and its deterministic contract tests.
+  export function jsonRecord(
+    type: string,
+    sessionID: string,
+    data: Record<string, unknown>,
+    timestamp = Date.now(),
+  ): Record<string, unknown> {
+    return { type, timestamp, sessionID, ...data }
+  }
+
+  export function builtinCompletion(command: BuiltinCommand, result: { data?: unknown }) {
+    if (command !== "shake" || !result.data || typeof result.data !== "object" || Array.isArray(result.data)) return
+    return result.data as Record<string, unknown>
+  }
+
   export async function resolveBuiltin(sdk: KiloClient, command?: string, directory?: string) {
     if (!isBuiltinCommand(command)) return
     const result = await sdk.command.list({ directory })
-    if (result.error) return
-    if (result.data?.some((item) => item.name === command)) return
+    if (result.error) return command
+    if (result.data?.some((item) => item.name === command && item.source !== "builtin")) return
     return command
   }
 
@@ -30,21 +45,23 @@ export namespace KiloRun {
     current?: { id: string; providerID: string },
     directory?: string,
   ) {
-    const selected = resolve(model, current)
-    if (!selected) {
-      UI.error("No model specified and session has no model")
-      process.exit(1)
-    }
-
     switch (command) {
       case "compact":
       case "summarize":
+        const selected = resolve(model, current)
+        if (!selected) {
+          UI.error("No model specified and session has no model")
+          process.exit(1)
+        }
+
         return sdk.session.summarize({
           sessionID,
           directory,
           providerID: selected.providerID,
           modelID: selected.modelID,
         })
+      case "shake":
+        return sdk.session.shake({ sessionID, directory })
     }
   }
 }

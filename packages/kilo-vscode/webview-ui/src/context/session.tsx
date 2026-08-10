@@ -470,6 +470,8 @@ interface SessionContextValue {
   ) => void
   abort: () => void
   compact: () => void
+  shake: () => void
+  shaking: () => boolean
   respondToPermission: (
     permissionId: string,
     response: "once" | "always" | "reject",
@@ -521,6 +523,7 @@ export const SessionProvider: ParentComponent = (props) => {
   }
   const [draftSessionID, setDraftSessionID] = createSignal<string | undefined>()
   const [userClearedSession, setUserClearedSession] = createSignal(false)
+  const [shaking, setShaking] = createSignal<string>()
 
   // Per-session status map — keyed by sessionID
   const [statusMap, setStatusMap] = createStore<Record<string, SessionStatusInfo>>({})
@@ -1186,6 +1189,43 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function handleStreamMessage(message: ExtensionMessage): boolean {
+    if (message.type === "sessionShakeCompleted") {
+      if (shaking() === message.sessionID) setShaking(undefined)
+      if (message.sessionID !== currentSessionID()) return true
+      showToast({
+        variant: "success",
+        title: language.t(
+          message.parts > 0
+            ? message.tokens > 0
+              ? "command.session.shake.cleared"
+              : "command.session.shake.clearedParts"
+            : "command.session.shake.empty",
+          message.parts > 0 && message.tokens > 0
+            ? { tokens: message.tokens.toLocaleString(language.locale()) }
+            : undefined,
+        ),
+        description: message.diagnostics
+          ? language.t("command.session.shake.diagnostics", {
+              sessionID: message.sessionID,
+              raw: message.diagnostics.rawMessages,
+              projection: message.diagnostics.projectionMessages,
+              tools: message.diagnostics.tools,
+              completed: message.diagnostics.completed,
+              protected: message.diagnostics.protected,
+              compacted: message.diagnostics.compacted,
+              candidates: message.diagnostics.candidates,
+              tokens: message.tokens.toLocaleString(language.locale()),
+            })
+          : undefined,
+      })
+      return true
+    }
+    if (message.type === "sessionShakeFailed") {
+      if (shaking() === message.sessionID) setShaking(undefined)
+      if (message.sessionID !== currentSessionID()) return true
+      showToast({ variant: "error", title: language.t("command.session.shake.failed"), description: message.error })
+      return true
+    }
     if (message.type === "partUpdated") {
       handlePartUpdated(message.sessionID, message.messageID, message.part, message.delta)
       return true
@@ -2747,6 +2787,24 @@ export const SessionProvider: ParentComponent = (props) => {
     })
   }
 
+  function shake() {
+    if (!server.isConnected()) {
+      console.warn("[Kilo New] Cannot shake: not connected")
+      return
+    }
+
+    const sessionID = currentSessionID()
+    if (!sessionID) {
+      console.warn("[Kilo New] Cannot shake: no current session")
+      return
+    }
+
+    if (shaking() === sessionID) return
+    setShaking(sessionID)
+
+    vscode.postMessage({ type: "shake", sessionID })
+  }
+
   function respondToPermission(
     permissionId: string,
     response: "once" | "always" | "reject",
@@ -3325,6 +3383,8 @@ export const SessionProvider: ParentComponent = (props) => {
     sendCommand,
     abort,
     compact,
+    shake,
+    shaking: () => shaking() === currentSessionID(),
     respondToPermission,
     replyToQuestion,
     rejectQuestion,

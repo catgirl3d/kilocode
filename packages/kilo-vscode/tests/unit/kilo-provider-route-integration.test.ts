@@ -36,6 +36,8 @@ function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs
       },
       list: async () => ({ data: [] }),
       status: async () => ({ data: {} }),
+      shake: async (_p: { sessionID: string; directory: string }) => ({ data: { parts: 0, tokens: 0, diagnostics: {} } }),
+      command: async (_p: unknown) => ({ data: {} }),
     },
     project: {
       current: async (p: { directory: string }) => {
@@ -126,6 +128,7 @@ type ProviderInternals = {
     context?: string,
     contextDirectory?: string,
   ) => Promise<void>
+  handleShake: (sessionID?: string) => Promise<void>
 }
 
 /**
@@ -519,5 +522,81 @@ describe("KiloProvider route integration", () => {
     expect(commandCalls[0]!.command).toBe("share")
     // No fallback to the active root anywhere.
     expect(calls.every((c) => c.directory !== "/active/root")).toBe(true)
+  })
+
+  it("forwards shake result data to the webview completion boundary", async () => {
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      session: { shake: (input: { sessionID: string; directory: string }) => Promise<unknown> }
+    }
+    client.session.shake = async () => ({
+      data: {
+        parts: 3,
+        tokens: 42,
+        diagnostics: {
+          rawMessages: 10,
+          projectionMessages: 8,
+          tools: 6,
+          completed: 5,
+          protected: 1,
+          compacted: 1,
+          candidates: 4,
+        },
+      },
+    })
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo/project",
+    })
+    const internal = provider as unknown as ProviderInternals
+    connect(internal)
+    const posted: unknown[] = []
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    await internal.handleShake("ses-shake")
+
+    expect(posted).toEqual([
+      {
+        type: "sessionShakeCompleted",
+        sessionID: "ses-shake",
+        parts: 3,
+        tokens: 42,
+        diagnostics: {
+          rawMessages: 10,
+          projectionMessages: 8,
+          tools: 6,
+          completed: 5,
+          protected: 1,
+          compacted: 1,
+          candidates: 4,
+        },
+      },
+    ])
+  })
+
+  it("keeps a configured shake command on the generic provider command boundary", async () => {
+    const { connection } = mockConnection()
+    const commandCalls: unknown[] = []
+    const client = connection.getClient() as unknown as { session: { command: (input: unknown) => Promise<unknown> } }
+    client.session.command = async (input) => {
+      commandCalls.push(input)
+      return { data: {} }
+    }
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo/project",
+    })
+    const internal = provider as unknown as ProviderInternals
+    connect(internal)
+    internal.webview = { postMessage: async () => undefined }
+
+    await internal.handleSendCommand("shake", "arg", "message-1", "ses-shake")
+
+    expect(commandCalls).toContainEqual(
+      expect.objectContaining({
+        command: "shake",
+        arguments: "arg",
+        sessionID: "ses-shake",
+        directory: "/repo/project",
+      }),
+    )
   })
 })
