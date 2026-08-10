@@ -118,16 +118,46 @@ export function revertPromptState(parts: readonly Part[]): RevertPromptState {
   }
 }
 
-type SnapshotPart = {
+export const SNAPSHOT_RUNNING_KEY = "kilo.snapshot.running"
+
+export interface SnapshotEvent {
+  phase: "baseline" | "final"
+  hash: string
+}
+
+export interface SnapshotStatus {
+  running: boolean
+  events: SnapshotEvent[]
+}
+
+export type SnapshotPart = {
   type?: string
   text?: string
+  snapshot?: string
   synthetic?: boolean
+  metadata?: Record<string, unknown>
+}
+
+export function snapshotStatus(parts: SnapshotPart[]): SnapshotStatus | undefined {
+  const events: SnapshotEvent[] = []
+  let running = false
+
+  for (const part of parts) {
+    if (part.type === "text" && part.synthetic && part.metadata?.[SNAPSHOT_RUNNING_KEY] === true) {
+      running = true
+    }
+    if (part.type === "step-start" && part.snapshot) events.push({ phase: "baseline", hash: part.snapshot })
+    if (part.type === "step-finish" && part.snapshot) events.push({ phase: "final", hash: part.snapshot })
+  }
+
+  if (!running && events.length === 0) return undefined
+  return { running, events }
 }
 
 export function snapshotProgress(part: SnapshotPart | undefined): boolean {
   if (part?.type !== "text") return false
   if (!part.synthetic) return false
-  return (part.text ?? "").includes("Initializing snapshot")
+  return part.metadata?.[SNAPSHOT_RUNNING_KEY] === true || (part.text ?? "").includes("Initializing snapshot")
 }
 
 type ParentSession = { parentID?: string | null }

@@ -25,6 +25,9 @@ import {
   recentSessions,
   optimistic,
   revertPromptState,
+  messageParts,
+  SNAPSHOT_RUNNING_KEY,
+  snapshotStatus,
 } from "../../webview-ui/src/context/session-utils"
 import type { Message, Part, ToolPart } from "../../webview-ui/src/types/messages"
 import { formatBrowserFeedback } from "../../src/shared/browser-feedback"
@@ -98,6 +101,34 @@ describe("computeStatus", () => {
   it("maps synthetic snapshot progress to snapshot status", () => {
     const part: Part = { type: "text", id: "p1", text: "⠋ Initializing snapshot…", synthetic: true }
     expect(computeStatus(part, t)).toBe("Initializing snapshot...")
+  })
+})
+
+describe("session part and snapshot helpers", () => {
+  it("keeps only hydrated message parts during reconciliation", () => {
+    const parts: Part[] = [{ id: "part_1", type: "text", text: "ready" }]
+    const messages = [
+      { id: "msg_parts", parts } as Message,
+      { id: "msg_empty", parts: [] } as Message,
+    ]
+
+    expect(messageParts(messages)).toEqual({ msg_parts: parts })
+  })
+
+  it("reports running, baseline, and final snapshot states", () => {
+    expect(
+      snapshotStatus([
+        { type: "text", synthetic: true, metadata: { [SNAPSHOT_RUNNING_KEY]: true } },
+        { type: "step-start", snapshot: "baseline-hash" },
+        { type: "step-finish", snapshot: "final-hash" },
+      ]),
+    ).toEqual({
+      running: true,
+      events: [
+        { phase: "baseline", hash: "baseline-hash" },
+        { phase: "final", hash: "final-hash" },
+      ],
+    })
   })
 })
 
