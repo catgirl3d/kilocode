@@ -7,12 +7,64 @@ import {
   pushPromptHistory,
 } from "@/cli/cmd/run/prompt.shared"
 import type { RunPrompt } from "@/cli/cmd/run/types"
+import { parseSlashCommand, selectedCommand } from "@/cli/cmd/run/footer.prompt" // kilocode_change
 
 function prompt(text: string, parts: RunPrompt["parts"] = []): RunPrompt {
   return { text, parts }
 }
 
 describe("run prompt shared", () => {
+  // kilocode_change start
+  test("parses a backend-discovered builtin slash command with its action source", () => {
+    expect(
+      parseSlashCommand("/shake", [
+        {
+          name: "shake",
+          description: "clear eligible tool output without invoking an LLM",
+          source: "builtin",
+          kind: "action",
+        },
+      ]),
+    ).toEqual({ type: "command", command: { name: "shake", arguments: "", source: "builtin" } })
+  })
+
+  test("restores builtin source when synchronizing a selected slash command", () => {
+    expect(
+      selectedCommand(
+        "/shake",
+        { name: "shake", arguments: "" },
+        [
+          {
+            name: "shake",
+            description: "clear eligible tool output without invoking an LLM",
+            source: "builtin",
+            kind: "action",
+          },
+        ],
+      ),
+    ).toEqual({ name: "shake", arguments: "", source: "builtin" })
+  })
+
+  test("keeps a configured shake slash command generic", () => {
+    const command = {
+      name: "shake",
+      description: "configured shake",
+      source: "command" as const,
+      hints: [],
+      template: "configured shake",
+    }
+
+    expect(parseSlashCommand("/shake", [command])).toEqual({
+      type: "command",
+      command: { name: "shake", arguments: "" },
+    })
+    expect(selectedCommand("/shake", { name: "shake", arguments: "" }, [command])).toEqual({
+      name: "shake",
+      arguments: "",
+    })
+  })
+  // kilocode_change end
+
   test("filters blank prompts and dedupes consecutive history", () => {
     const out = createPromptHistory([prompt("   "), prompt("one"), prompt("one"), prompt("two"), prompt("one")])
 
