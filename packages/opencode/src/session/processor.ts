@@ -28,6 +28,7 @@ import { KiloSessionOverflow } from "@/kilocode/session/overflow"
 import { KiloRoutedModel } from "@/kilocode/session/routed-model"
 import { KiloResponseMetadata } from "@/kilocode/session/response-metadata"
 import { Suggestion } from "@/kilocode/suggestion"
+import { KiloSnapshotGate } from "@/kilocode/snapshot/gate" // kilocode_change
 // kilocode_change end
 import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
@@ -49,6 +50,7 @@ export interface Handle {
     toolCallID: string,
     input: { title?: string; metadata?: Record<string, any> },
   ) => Effect.Effect<void>
+  readonly ensureSnapshot: () => Effect.Effect<string | undefined> // kilocode_change
   // kilocode_change end
   readonly completeToolCall: (
     toolCallID: string,
@@ -124,16 +126,6 @@ const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service // kilocode_change
 
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
-      // Pre-capture snapshot before the LLM stream starts. The AI SDK
-      // may execute tools internally before emitting start-step events,
-      // so capturing inside the event handler can be too late.
-      // kilocode_change start - pass turn context for slow-snapshot UI/policy handling
-      const initialSnapshot = yield* snapshot.track({
-        sessionID: input.sessionID,
-        messageID: input.assistantMessage.id,
-        snapshotInitialization: input.snapshotInitialization,
-      })
-      // kilocode_change end
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
@@ -141,7 +133,7 @@ const layer = Layer.effect(
         toolcalls: {},
         toolmeta: {}, // kilocode_change
         shouldBreak: false,
-        snapshot: initialSnapshot,
+        snapshot: undefined,
         blocked: false,
         needsCompaction: false,
         compactionError: undefined, // kilocode_change
@@ -154,6 +146,15 @@ const layer = Layer.effect(
         step: { reasoning: false, text: false, tool: false },
         // kilocode_change end
       }
+      // kilocode_change start - capture only at a tool mutation boundary
+      const gate = KiloSnapshotGate.make({
+        sessionID: input.sessionID,
+        messageID: input.assistantMessage.id,
+        snapshotInitialization: input.snapshotInitialization,
+        track: (opts) => snapshot.track(opts),
+        updatePart: (part) => session.updatePart(part),
+      })
+      // kilocode_change end
       let aborted = false
       const ac = new AbortController() // kilocode_change — abort controller for offline handler
       let attempt = KiloSessionProcessor.attempt() // kilocode_change
@@ -568,21 +569,14 @@ const layer = Layer.effect(
             ctx.stepStart = performance.now()
             ctx.stepStartDate = Date.now()
             ctx.step = { reasoning: false, text: false, tool: false }
-            if (!ctx.snapshot)
-              ctx.snapshot = yield* snapshot.track({
-                sessionID: ctx.sessionID,
-                messageID: ctx.assistantMessage.id,
-                snapshotInitialization: input.snapshotInitialization,
-              })
-            // kilocode_change end
-            yield* session.updatePart({
+            yield* gate.startStep({
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.sessionID,
-              snapshot: ctx.snapshot,
               type: "step-start",
-              time: { start: ctx.stepStartDate }, // kilocode_change
+              time: { start: ctx.stepStartDate },
             })
+            // kilocode_change end
             return
 
           case "step-finish": {
@@ -600,12 +594,10 @@ const layer = Layer.effect(
                 new KiloSessionProcessor.IncompleteResponseError(KiloResponseMetadata.read(value.providerMetadata)),
               )
             // kilocode_change end
-            // kilocode_change start - pass turn context for slow-snapshot UI/policy handling
-            const completedSnapshot = yield* snapshot.track({
-              sessionID: ctx.sessionID,
-              messageID: ctx.assistantMessage.id,
-              snapshotInitialization: input.snapshotInitialization,
-            })
+            // kilocode_change start - finish only steps that acquired a baseline
+            const finished = yield* gate.finishStep()
+            ctx.snapshot = finished.baseline
+            const completedSnapshot = finished.finish
             // kilocode_change end
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             const usage = Session.getUsage({
@@ -785,8 +777,10 @@ const layer = Layer.effect(
       })
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
-        if (ctx.snapshot) {
-          const patch = yield* snapshot.patch(ctx.snapshot)
+        const finished = yield* gate.finishStep() // kilocode_change - close lazy snapshot before cleanup patch
+        const baseline = ctx.snapshot ?? finished.baseline // kilocode_change
+        if (baseline) { // kilocode_change
+          const patch = yield* snapshot.patch(baseline) // kilocode_change
           if (patch.files.length) {
             yield* session.updatePart({
               id: PartID.ascending(),
@@ -1043,6 +1037,7 @@ const layer = Layer.effect(
         },
         updateToolCall,
         metadata, // kilocode_change
+        ensureSnapshot: () => gate.ensure(), // kilocode_change
         completeToolCall,
         ...output, // kilocode_change
         process,
