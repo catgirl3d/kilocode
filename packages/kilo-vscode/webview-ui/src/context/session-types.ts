@@ -193,6 +193,8 @@ export interface SessionContextValue {
   ) => boolean
   abort: () => void
   compact: () => void
+  shake: () => void // fork_change
+  shaking: () => boolean // fork_change
   respondToPermission: (
     permissionId: string,
     response: "once" | "always" | "reject",

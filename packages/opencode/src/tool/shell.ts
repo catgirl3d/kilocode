@@ -471,7 +471,73 @@ export const ShellPermission = Effect.gen(function* () {
   })
   // kilocode_change end
 
-  return { ask: check, resolve, decompose } // kilocode_change - decompose for skill-shell
+  // kilocode_change start - classify shell access only for snapshot policy
+  const snapshotAccess = Effect.fn("ShellTool.snapshotAccess")(function* (input: {
+    command: string
+    cwd: string
+    shell: string
+  }) {
+    const instance = yield* InstanceState.context
+    const ps = Shell.ps(input.shell)
+    const kind = ShellID.toKind(Shell.name(input.shell))
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        // The active grammar omits some shell redirects, so reject them before parsing.
+        if (input.command.includes(">")) return "unknown" as const
+        const tree = yield* Effect.acquireRelease(parse(input.command, ps), (tree) => Effect.sync(() => tree.delete()))
+        const root = tree.rootNode
+        const nodes = commands(root)
+        const scan = yield* collect(root, input.cwd, ps, input.shell, instance)
+        if (!containsPath(input.cwd, instance) || scan.dirs.size > 0) return "unknown" as const
+        if (root.descendantsOfType("file_redirect").length > 0 || unparsed(root, nodes.length).length > 0)
+          return "unknown" as const
+        if (nodes.length !== 1) return "unknown" as const
+
+        for (const node of nodes) {
+          const tokens = parts(node).map((item) => item.text)
+          const cmd = ps || kind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
+          if (cmd === "rg") {
+            if (
+              !tokens.includes("--no-config") ||
+              tokens.some(
+                (token) =>
+                  token === "--pre" ||
+                  token.startsWith("--pre=") ||
+                  token === "--pre-glob" ||
+                  token.startsWith("--pre-glob=") ||
+                  token === "--hostname-bin" ||
+                  token.startsWith("--hostname-bin=") ||
+                  token === "--search-zip",
+              )
+            )
+              return "unknown" as const
+            continue
+          }
+          if (cmd !== "git") return "unknown" as const
+          if (tokens[1] === "status") {
+            if (tokens.length !== 2) return "unknown" as const
+            continue
+          }
+          if (tokens[1] !== "diff" || !tokens.includes("--no-ext-diff")) return "unknown" as const
+          if (
+            tokens.some(
+              (token) =>
+                token === "--ext-diff" ||
+                token === "--textconv" ||
+                token === "--output" ||
+                token.startsWith("--output=") ||
+                token === "-o",
+            )
+          )
+            return "unknown" as const
+        }
+        return "read" as const
+      }),
+    )
+  })
+  // kilocode_change end
+
+  return { ask: check, resolve, decompose, snapshotAccess } // kilocode_change
 })
 // kilocode_change end
 
