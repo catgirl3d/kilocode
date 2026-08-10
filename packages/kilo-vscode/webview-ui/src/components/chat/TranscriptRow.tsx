@@ -13,6 +13,7 @@ import { useFeedback } from "../../context/feedback"
 import { AssistantMessage } from "./AssistantMessage"
 import { ErrorDisplay, type ErrorDisplayProps } from "./ErrorDisplay"
 import { VscodeUserMessage } from "./VscodeUserMessage"
+import { SnapshotBadge } from "./SnapshotBadge"
 
 interface TranscriptRowViewProps {
   row: TranscriptRow
@@ -113,8 +114,8 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
 
       <Show when={props.row.type === "diff" ? props.row : undefined}>
         {(row) => (
-          <Show when={server.gitInstalled()}>
-            <div class="vscode-session-turn-diffs" data-component="session-turn">
+          <div class="vscode-session-turn-footer" data-component="session-turn">
+            <Show when={server.gitInstalled() && row().diffs.length > 0}>
               <button
                 type="button"
                 class="vscode-session-turn-diffs-trigger"
@@ -133,8 +134,9 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
                   <Icon name="chevron-right" size="small" />
                 </span>
               </button>
-            </div>
-          </Show>
+            </Show>
+            <Show when={row().snapshot}>{(status) => <SnapshotBadge status={status()} />}</Show>
+          </div>
         )}
       </Show>
 
