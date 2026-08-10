@@ -21,6 +21,7 @@ type Ctx = {
   openSessions: (ids: string[]) => void
   speechToTextModels: () => Promise<void>
   modelUsage: (message: ModelUsageMessage) => Promise<void>
+  shake: (sessionID: string) => Promise<void>
 }
 
 export async function routeEarlyMessage(
@@ -47,6 +48,11 @@ export async function routeEarlyMessage(
   }
   if (message.type === "recordModelUsage" || message.type === "requestModelUsage") {
     await ctx.modelUsage(message as ModelUsageMessage)
+    return true
+  }
+  if (message.type === "shake") {
+    const input = message as { sessionID?: unknown }
+    if (typeof input.sessionID === "string") await ctx.shake(input.sessionID)
     return true
   }
   await routeSuggestionWebviewMessage(ctx.question, message)

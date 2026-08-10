@@ -13,6 +13,7 @@ import {
   applySandboxState,
   applySandboxStates,
   resolvePrompt,
+  commandAction,
 } from "../../webview-ui/src/components/chat/prompt-input-utils"
 
 describe("applySandboxState", () => {
@@ -67,6 +68,26 @@ describe("resolvePrompt", () => {
     expect(resolvePrompt("hello", false, false)).toBe("hello")
     expect(resolvePrompt("", true, false)).toBe("")
     expect(resolvePrompt("", false, true)).toBe("")
+  })
+})
+
+describe("commandAction", () => {
+  it("routes builtin shake to the session action", () => {
+    const calls: string[] = []
+    commandAction({ name: "shake", source: "builtin" }, () => calls.push("shake"))?.()
+    expect(calls).toEqual(["shake"])
+  })
+
+  it("does not hijack a configured shake command", () => {
+    const calls: string[] = []
+    expect(commandAction({ name: "shake", source: "command" }, () => calls.push("shake"))).toBeUndefined()
+    expect(calls).toEqual([])
+  })
+
+  it("preserves explicit command actions", () => {
+    const calls: string[] = []
+    commandAction({ name: "shake", source: "command", action: () => calls.push("command") })?.()
+    expect(calls).toEqual(["command"])
   })
 })
 

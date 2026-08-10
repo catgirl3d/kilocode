@@ -166,7 +166,8 @@ function slashQuery(text: string, cursor: number) {
   return head.name
 }
 
-function parseSlashCommand(text: string, commands: RunCommand[] | undefined) {
+// kilocode_change start - preserve builtin source through parser dispatch
+export function parseSlashCommand(text: string, commands: RunCommand[] | undefined) {
   const head = slashHead(text)
   if (!head || head.name.length === 0) {
     return { type: "none" as const }
@@ -176,15 +177,23 @@ function parseSlashCommand(text: string, commands: RunCommand[] | undefined) {
     return { type: "pending" as const }
   }
 
-  if (!commands.some((item) => slashMatches(item, head.name))) {
+  const item = commands.find((candidate) => slashMatches(candidate, head.name))
+  if (!item) {
     // kilocode_change
     return { type: "none" as const }
   }
 
-  return { type: "command" as const, command: { name: head.name, arguments: head.arguments } }
+  return {
+    type: "command" as const,
+    command: {
+      name: head.name,
+      arguments: head.arguments,
+      ...(item.source === "builtin" ? { source: "builtin" as const } : {}),
+    },
+  }
 }
 
-function selectedCommand(text: string, command: RunPrompt["command"]) {
+export function selectedCommand(text: string, command: RunPrompt["command"], commands: RunCommand[] | undefined) {
   if (!command) {
     return
   }
@@ -197,8 +206,12 @@ function selectedCommand(text: string, command: RunPrompt["command"]) {
   return {
     name: command.name,
     arguments: head.arguments,
+    ...(commands?.find((item) => slashMatches(item, command.name))?.source === "builtin"
+      ? { source: "builtin" as const }
+      : {}),
   }
 }
+// kilocode_change end
 
 export function RunPromptBody(props: {
   theme: () => RunFooterTheme
@@ -724,7 +737,7 @@ export function createPromptState(input: PromptInput): PromptState {
     }
 
     syncParts()
-    const command = shell() ? undefined : selectedCommand(area.plainText, draft.command)
+    const command = shell() ? undefined : selectedCommand(area.plainText, draft.command, input.commands()) // kilocode_change
     draft = shell()
       ? {
           text: area.plainText,
@@ -1181,7 +1194,9 @@ export function createPromptState(input: PromptInput): PromptState {
       return
     }
 
-    const command = next.mode === "shell" ? undefined : selectedCommand(next.text, next.command)
+    // kilocode_change start
+    const command = next.mode === "shell" ? undefined : selectedCommand(next.text, next.command, input.commands())
+    // kilocode_change end
     if (!command && next.mode !== "shell" && isExitCommand(next.text)) {
       input.onExit()
       return
