@@ -6,7 +6,7 @@ import type {
   Part,
   Config,
   Todo,
-  Command,
+  CommandCatalog,
   PermissionRequest,
   QuestionRequest,
   SuggestionRequest, // kilocode_change
@@ -81,7 +81,7 @@ export const {
       }
       provider_auth: Record<string, ProviderAuthMethod[]>
       agent: Agent[]
-      command: Command[]
+      command: CommandCatalog[]
       permission: {
         [sessionID: string]: PermissionRequest[]
       }

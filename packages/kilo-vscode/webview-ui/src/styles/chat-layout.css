@@ -474,10 +474,44 @@
   width: 100%;
 }
 
+.vscode-session-turn-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.snapshot-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-weak);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-large);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.snapshot-badge[data-running] {
+  color: var(--vscode-descriptionForeground);
+}
+
+.snapshot-badge [data-component="spinner"] {
+  width: 12px;
+  height: 12px;
+}
+
+.snapshot-badge-tooltip {
+  text-align: left;
+  white-space: nowrap;
+}
+
 /* Treat every chat host as a readable document. User messages, assistant
    prose, tool calls, diffs, and the composer all share one centered lane. */
 .chat-view .vscode-session-turn-user,
 .chat-view .vscode-session-turn-diffs,
+.chat-view .vscode-session-turn-footer,
 .chat-view .error-card,
 .chat-view [data-component="tool-part-wrapper"] {
   width: 100%;

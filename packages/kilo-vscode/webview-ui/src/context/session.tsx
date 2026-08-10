@@ -182,7 +182,7 @@ interface SessionContextValue {
   isErrorHidden: (messageID: string) => boolean
 
   // Move stashed parts into the reactive store for the given message IDs.
-  // Called by VscodeSessionTurn when the virtualizer renders a turn.
+  // Called by TranscriptRowView when the virtualizer renders a turn.
   hydrateParts: (messageIDs: string[]) => void
 
   // Todos for current session
@@ -366,7 +366,7 @@ interface SessionContextValue {
   isErrorHidden: (messageID: string) => boolean
 
   // Move stashed parts into the reactive store for the given message IDs.
-  // Called by VscodeSessionTurn when the virtualizer renders a turn.
+  // Called by TranscriptRowView when the virtualizer renders a turn.
   hydrateParts: (messageIDs: string[]) => void
 
   // Todos for current session

@@ -29,6 +29,11 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { Config } from "@/config/config"
 import { PermissionProvenance } from "@/kilocode/permission/provenance"
 import { McpApps } from "@/kilocode/mcp/apps"
+import { KiloSnapshotMutation } from "@/kilocode/snapshot/mutation" // kilocode_change
+import { ShellPermission } from "@/tool/shell" // kilocode_change
+import { Shell } from "@opencode-ai/core/shell" // kilocode_change
+import { InstanceState } from "@/effect/instance-state" // kilocode_change
+import path from "path" // kilocode_change
 // kilocode_change end
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -51,7 +56,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "metadata" | "completeToolCall"> // kilocode_change
+  processor: Pick<SessionProcessor.Handle, "message" | "metadata" | "completeToolCall" | "ensureSnapshot"> // kilocode_change
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
@@ -63,6 +68,11 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
+  const hooks = yield* plugin.list()
+  const hooked = hooks.some(
+    (hook) => typeof hook["tool.execute.before"] === "function" || typeof hook["tool.execute.after"] === "function",
+  ) // kilocode_change
+  const shellEnvHooked = hooks.some((hook) => typeof hook["shell.env"] === "function") // kilocode_change
   const permission = yield* Permission.Service
   // kilocode_change start
   const agents = yield* Agent.Service
@@ -93,6 +103,21 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const flags = yield* RuntimeFlags.Service
   const restricted = yield* SandboxPolicy.networkRestricted(input.session.id) // kilocode_change
   const sandboxed = (yield* SandboxPolicy.status(input.session.id)).enabled // kilocode_change
+
+  const shell = Shell.acceptable(cfg.shell) // kilocode_change
+
+  const mutates = Effect.fn("SessionTools.mutates")(function* (toolID: string, args: Record<string, unknown>) {
+    const access = yield* Effect.gen(function* () {
+      if (toolID !== "bash" || typeof args.command !== "string") return undefined
+      const instance = yield* InstanceState.context
+      const cwd = path.resolve(instance.directory, typeof args.workdir === "string" ? args.workdir : ".")
+      return yield* ShellPermission.pipe(
+        Effect.flatMap((permission) => permission.snapshotAccess({ command: args.command as string, cwd, shell })),
+      )
+    }).pipe(Effect.catchCause(() => Effect.succeed("unknown" as const)))
+    return KiloSnapshotMutation.mayMutate({ tool: toolID, args, shell: access })
+  })
+
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => {
     const extra = {
       model: input.model,
@@ -184,6 +209,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
+            if (hooked || (item.id === "bash" && shellEnvHooked) || (yield* mutates(item.id, args)))
+              yield* input.processor.ensureSnapshot() // kilocode_change
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
@@ -239,6 +266,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts)
+            // kilocode_change start
+            if (hooked || KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.list, args: toRecord(args) }))
+              yield* input.processor.ensureSnapshot() // kilocode_change
+            // kilocode_change end
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -319,6 +350,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts)
+            // kilocode_change start
+            if (
+              hooked ||
+              KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.listTemplates, args: toRecord(args) })
+            )
+              yield* input.processor.ensureSnapshot() // kilocode_change
+            // kilocode_change end
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -403,6 +441,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseReadMcpResourceArgs(args)
             const ctx = context(toRecord(args), opts)
+            // kilocode_change start
+            if (hooked || KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.read, args: toRecord(args) }))
+              yield* input.processor.ensureSnapshot() // kilocode_change
+            // kilocode_change end
             const clients = yield* mcp.clients()
             const client = clients[parsed.server]
             if (!client) {
@@ -479,6 +521,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             yield* input.processor.metadata(opts.toolCallId, { metadata: mcpAppMeta })
           }
           // kilocode_change end
+          yield* input.processor.ensureSnapshot() // kilocode_change
           yield* plugin.trigger(
             "tool.execute.before",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },
