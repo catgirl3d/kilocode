@@ -35,7 +35,7 @@ import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
-import { useSlashCommand } from "../../hooks/useSlashCommand"
+import { useSlashCommand, type SlashCommandEntry } from "../../hooks/useSlashCommand"
 import { useGoalComposer } from "./goal/useGoalComposer"
 import { GoalHeader } from "./goal/GoalHeader"
 import { useGhostText } from "../../hooks/useGhostText"
@@ -59,6 +59,7 @@ import {
   isPromptBusy,
   isPathMention,
   memoryRest,
+  commandAction,
   type SandboxDefaultState,
   type SandboxState,
 } from "./prompt-input-utils"
@@ -1571,9 +1572,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const cmdMatch = parsed.match
     const matched = parsed.entry
 
-    // Client-side slash command — runs locally without a backend round-trip
-    if (matched?.action) {
-      if (matched.enabled && !matched.enabled()) return
+    // Builtin actions use dedicated session endpoints; configured commands retain precedence.
+    const action = commandAction(matched, () => session.shake())
+    if (action) {
+      if (matched?.enabled && !matched.enabled()) return
       setText("")
       clearReviewComments()
       clear()
@@ -1587,8 +1589,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       imageDrafts.delete(draftKey())
       mentionDrafts.delete(draftKey())
       scrollDrafts.delete(draftKey())
-      if (textareaRef) textareaRef.style.height = "auto"
-      matched.action()
+      textareaRef?.style.setProperty("height", "auto")
+      action()
       return
     }
 

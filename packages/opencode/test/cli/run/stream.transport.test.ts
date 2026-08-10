@@ -438,6 +438,7 @@ function sdk(
     globalStream?: GlobalEventStream
     globalEvent?: KiloClient["global"]["event"]
     promptAsync?: KiloClient["session"]["promptAsync"]
+    shake?: KiloClient["session"]["shake"]
     status?: KiloClient["session"]["status"]
     messages?: KiloClient["session"]["messages"]
     children?: KiloClient["session"]["children"]
@@ -450,6 +451,9 @@ function sdk(
   const globalEvent: KiloClient["global"]["event"] =
     input.globalEvent ?? (() => globalSse(input.globalStream ?? wrapGlobalStream(input.stream ?? emptyStream())))
   const promptAsync: KiloClient["session"]["promptAsync"] = input.promptAsync ?? (() => ok(undefined))
+  const shake: KiloClient["session"]["shake"] =
+    input.shake ??
+    ((() => ok({ parts: 0, tokens: 0, diagnostics: {} })) as unknown as KiloClient["session"]["shake"])
   const status: KiloClient["session"]["status"] = input.status ?? (() => ok({}))
   const messages: KiloClient["session"]["messages"] = input.messages ?? (() => ok([]))
   const children: KiloClient["session"]["children"] = input.children ?? (() => ok([]))
@@ -458,6 +462,7 @@ function sdk(
 
   spyOn(client.global, "event").mockImplementation(globalEvent)
   spyOn(client.session, "promptAsync").mockImplementation(promptAsync)
+  spyOn(client.session, "shake").mockImplementation(shake)
   spyOn(client.session, "status").mockImplementation(status)
   spyOn(client.session, "messages").mockImplementation(messages)
   spyOn(client.session, "children").mockImplementation(children)
@@ -2391,4 +2396,93 @@ describe("run stream transport", () => {
       await transport.close()
     }
   })
+
+  test("routes interactive shake directly to the session endpoint", async () => {
+    const ui = footer()
+    const calls: unknown[] = []
+    const client = sdk({
+      shake: async (input) => {
+        calls.push(input)
+        return ok({ parts: 3, tokens: 42, diagnostics: {} }) as never
+      },
+    })
+    const command = spyOn(client.session, "command")
+    const prompt = spyOn(client.session, "promptAsync")
+    const transport = await createSessionTransport({
+      sdk: client,
+      directory: "/tmp/project",
+      sessionID: "session-1",
+      thinking: true,
+      limits: () => ({}),
+      footer: ui.api,
+    })
+
+    try {
+      await transport.runPromptTurn({
+        agent: undefined,
+        model: undefined,
+        variant: undefined,
+        prompt: { text: "/shake", parts: [], command: { name: "shake", arguments: "", source: "builtin" } },
+        files: [],
+        includeFiles: false,
+      })
+    } finally {
+      await transport.close()
+    }
+
+    expect(calls).toEqual([{ sessionID: "session-1", directory: "/tmp/project" }])
+    expect(command).not.toHaveBeenCalled()
+    expect(prompt).not.toHaveBeenCalled()
+    expect(ui.commits).toContainEqual(
+      expect.objectContaining({
+        kind: "system",
+        text: "shake: cleared 3 tool outputs (~42 tokens)",
+      }),
+    )
+  })
+
+  test("keeps configured interactive shake on the generic command endpoint", async () => {
+    const src = eventFeed()
+    const ui = footer()
+    const calls: unknown[] = []
+    const client = sdk({ stream: src.stream })
+    const command = spyOn(client.session, "command").mockImplementation(async (input) => {
+      calls.push(input)
+      return ok({}) as never
+    })
+    const shake = spyOn(client.session, "shake")
+    const transport = await createSessionTransport({
+      sdk: client,
+      directory: "/tmp/project",
+      sessionID: "session-1",
+      thinking: true,
+      limits: () => ({}),
+      footer: ui.api,
+    })
+
+    try {
+      await transport.runPromptTurn({
+        agent: undefined,
+        model: undefined,
+        variant: undefined,
+        prompt: { text: "/shake", parts: [], command: { name: "shake", arguments: "arg" } },
+        files: [],
+        includeFiles: false,
+      })
+    } finally {
+      src.close()
+      await transport.close()
+    }
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        sessionID: "session-1",
+        command: "shake",
+        arguments: "arg",
+      }),
+    ])
+    expect(command).toHaveBeenCalledTimes(1)
+    expect(shake).not.toHaveBeenCalled()
+  })
+
 })

@@ -30,6 +30,7 @@ type Ctx = {
   cancelBackgroundJob: (jobID: string, sessionID: string, requestID: string) => Promise<void>
   promoteBackgroundJob: (jobID: string, sessionID: string) => Promise<void>
   caffeination: () => void
+  shake: (sessionID: string) => Promise<void>
 }
 
 async function routeBackgroundMessage(
@@ -107,6 +108,11 @@ export async function routeEarlyMessage(
   }
   if (message.type === "recordModelUsage" || message.type === "requestModelUsage") {
     await ctx.modelUsage(message as ModelUsageMessage)
+    return true
+  }
+  if (message.type === "shake") {
+    const input = message as { sessionID?: unknown }
+    if (typeof input.sessionID === "string") await ctx.shake(input.sessionID)
     return true
   }
   await routeSuggestionWebviewMessage(ctx.question, message)
