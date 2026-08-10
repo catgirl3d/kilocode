@@ -775,12 +775,7 @@ export const RunCommand = effectCmd({
         function emit(type: string, data: Record<string, unknown>) {
           if (args.format === "json") {
             process.stdout.write(
-              JSON.stringify({
-                type,
-                timestamp: Date.now(),
-                sessionID,
-                ...data,
-              }) + EOL,
+              JSON.stringify(KiloRun.jsonRecord(type, sessionID, data)) + EOL, // kilocode_change
             )
             return true
           }
@@ -1050,7 +1045,10 @@ export const RunCommand = effectCmd({
             if (result.error) {
               if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
               process.exitCode = 1
+              return
             }
+            const data = KiloRun.builtinCompletion(builtin, result) // kilocode_change
+            if (data) emit("shake", data) // kilocode_change
             return
           }
           // kilocode_change end
