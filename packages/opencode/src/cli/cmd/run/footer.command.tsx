@@ -97,15 +97,21 @@ function countLabel(count: number, total: number, query: string) {
 }
 
 function categoryRank(category: string) {
-  if (category === "Project Commands") {
+  // kilocode_change start - order endpoint-backed builtin actions separately
+  if (category === "Builtin Actions") {
     return 0
   }
 
-  if (category === "MCP Commands") {
+  if (category === "Project Commands") {
     return 1
   }
 
-  return 2
+  if (category === "MCP Commands") {
+    return 2
+  }
+
+  return 3
+  // kilocode_change end
 }
 
 function subagentStatusLabel(status: FooterSubagentTab["status"]) {
@@ -449,13 +455,20 @@ export function RunCommandMenuBody(props: {
           ]
         : []),
     ]
+    // kilocode_change start - show backend builtin actions as a distinct footer category
     const commands = (props.commands() ?? [])
       .filter((item) => item.source !== "skill" && !builtins.includes(item.name))
       .map(
         (item) =>
           ({
             action: "slash",
-            category: item.source === "mcp" ? "MCP Commands" : "Project Commands",
+            // kilocode_change
+            category:
+              item.source === "builtin"
+                ? "Builtin Actions"
+                : item.source === "mcp"
+                  ? "MCP Commands"
+                  : "Project Commands",
             name: item.name,
             display: item.name,
             footer: `/${item.name}`,
@@ -465,6 +478,7 @@ export function RunCommandMenuBody(props: {
                 : `/${item.name} ${item.name} ${item.description ?? ""}`,
           }) satisfies CommandEntry,
       )
+    // kilocode_change end
       .sort((a, b) => categoryRank(a.category) - categoryRank(b.category) || a.display.localeCompare(b.display))
 
     return [
