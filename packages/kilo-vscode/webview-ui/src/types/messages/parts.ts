@@ -68,6 +68,7 @@ export interface StepStartPart extends BasePart {
   time?: {
     start: number
   }
+  snapshot?: string
 }
 
 // Tokens-per-second throughput metrics reported by the backend on step-finish.
@@ -108,6 +109,7 @@ export interface StepFinishPart extends BasePart {
     cache?: { read: number; write: number }
   }
   metrics?: StepThroughputMetrics
+  snapshot?: string
 }
 
 export interface CompactionPart extends BasePart {
