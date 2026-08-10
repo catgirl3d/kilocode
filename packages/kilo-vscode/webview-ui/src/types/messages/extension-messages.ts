@@ -219,6 +219,28 @@ export interface SessionUpdatedMessage {
   session: SessionUpdate
 }
 
+export interface SessionShakeCompletedMessage {
+  type: "sessionShakeCompleted"
+  sessionID: string
+  parts: number
+  tokens: number
+  diagnostics?: {
+    rawMessages: number
+    projectionMessages: number
+    tools: number
+    completed: number
+    protected: number
+    compacted: number
+    candidates: number
+  }
+}
+
+export interface SessionShakeFailedMessage {
+  type: "sessionShakeFailed"
+  sessionID: string
+  error: string
+}
+
 export interface SessionDeletedMessage {
   type: "sessionDeleted"
   sessionID: string
@@ -1405,6 +1427,8 @@ export type ExtensionMessage =
   | SessionCreatedMessage
   | SessionForkedMessage
   | SessionUpdatedMessage
+  | SessionShakeCompletedMessage
+  | SessionShakeFailedMessage
   | SessionDeletedMessage
   | MessageRemovedMessage
   | MessagesLoadedMessage
