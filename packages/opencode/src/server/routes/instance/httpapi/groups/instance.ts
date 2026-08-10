@@ -1,5 +1,5 @@
 import { Agent } from "@/agent/agent"
-import { Command } from "@/command"
+import { Command } from "@/command" // kilocode_change
 import { Format } from "@/format"
 import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
@@ -14,6 +14,7 @@ import {
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+import { Catalog as CommandCatalog } from "@/kilocode/command/catalog" // kilocode_change
 
 const PathInfo = Schema.Struct({
   home: Schema.String,
@@ -137,7 +138,7 @@ export const InstanceApi = HttpApi.make("instance")
         ),
         HttpApiEndpoint.get("command", InstancePaths.command, {
           query: WorkspaceRoutingQuery,
-          success: described(Schema.Array(Command.Info), "List of commands"),
+          success: described(Schema.Array(CommandCatalog), "List of commands"), // kilocode_change
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "command.list",

@@ -239,6 +239,11 @@ export interface CompactRequest {
   modelID?: string
 }
 
+export interface ShakeRequest {
+  type: "shake"
+  sessionID: string
+}
+
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
   tab?: string
@@ -1560,6 +1565,7 @@ export type WebviewMessage =
   | SelectSourceRequest
   | RequestProvidersMessage
   | CompactRequest
+  | ShakeRequest
   | RequestAgentsMessage
   | RequestSkillsMessage
   | RequestCommandsMessage

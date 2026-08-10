@@ -33,6 +33,7 @@ const ASSISTANT_MESSAGE_FILE = path.join(
   "packages/kilo-vscode/webview-ui/src/components/chat/AssistantMessage.tsx",
 )
 const TASK_HEADER_FILE = path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/components/chat/TaskHeader.tsx")
+const SESSION_CONTEXT_FILE = path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/context/session.tsx")
 const CONTEXT_TAB_FILE = path.join(
   MONOREPO_ROOT,
   "packages/kilo-vscode/webview-ui/src/components/settings/ContextTab.tsx",
@@ -408,6 +409,19 @@ describe("Memory control placement contract (source)", () => {
     expect(header).toContain("memory.enable()")
     expect(header).toContain("memory.disable()")
     expect(header).toContain('icon="compress"')
+    expect(header).toContain('icon="collapse"')
+    expect(header).toContain('session.shake()')
+    expect(header).toContain('command.session.shake')
+    expect(header).toContain("!session.shaking()")
+    const context = fs.readFileSync(SESSION_CONTEXT_FILE, "utf-8")
+    expect(context).toContain("setShaking(sessionID)")
+    expect(context).toContain('message.type === "sessionShakeFailed"')
+    expect(context).toContain('"command.session.shake.cleared"')
+    expect(context).toContain("message.parts > 0")
+    expect(context).toContain('"command.session.shake.clearedParts"')
+    expect(context).toContain('"command.session.shake.empty"')
+    expect(context).toContain("message.diagnostics")
+    expect(context).toContain('"command.session.shake.diagnostics"')
     expect(header).not.toContain('settings.context.compaction.title')
   })
 

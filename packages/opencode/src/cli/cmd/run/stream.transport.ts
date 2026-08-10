@@ -17,6 +17,7 @@
 // delayed idle from an older turn cannot complete a newer busy turn.
 import type { Event, GlobalEvent, KiloClient } from "@kilocode/sdk/v2" // kilocode_change - revert to upstream native Event type
 import { Context, Deferred, Effect, Exit, Layer, Scope, Stream } from "effect"
+import * as DirectAction from "@/kilocode/cli/cmd/run/direct-action" // kilocode_change
 import { makeRuntime } from "@/effect/run-service"
 import {
   blockerStatus,
@@ -1282,67 +1283,93 @@ function createLayer(input: StreamInput) {
                       ),
                   ),
                 )
-              : command
+              : DirectAction.matches(command)
                 ? Effect.sync(() => {
-                    input.trace?.write("send.command", { sessionID: input.sessionID, command: command.name })
+                    input.trace?.write("send.shake", { sessionID: input.sessionID })
                   }).pipe(
                     Effect.andThen(
-                      Effect.promise(() =>
-                        input.sdk.session.command(
-                          {
-                            sessionID: input.sessionID,
-                            messageID: next.prompt.messageID,
-                            agent: next.agent,
-                            model: next.model ? `${next.model.providerID}/${next.model.modelID}` : undefined,
-                            variant: next.variant,
-                            command: command.name,
-                            arguments: command.arguments,
-                            parts: [
-                              ...(next.includeFiles ? next.files : []),
-                              ...next.prompt.parts.filter(
-                                (item): item is Extract<RunPromptPart, { type: "file" }> => item.type === "file",
-                              ),
-                            ],
-                          },
-                          { signal: turn.signal },
-                        ),
-                      ).pipe(
-                        Effect.tap(() =>
-                          Effect.sync(() => {
-                            input.trace?.write("send.command.ok", {
-                              sessionID: input.sessionID,
-                              command: command.name,
-                            })
-                            item.armed = true
-                            item.live = true
-                          }),
-                        ),
-                        Effect.flatMap(() => Deferred.succeed(item.done, undefined).pipe(Effect.ignore)),
-                        Effect.catch((error) => Deferred.fail(item.done, error).pipe(Effect.ignore)),
-                        Effect.forkIn(scope, { startImmediately: true }),
-                        Effect.asVoid,
-                      ),
-                    ),
-                  )
-                : Effect.sync(() => {
-                    input.trace?.write("send.prompt", req)
-                  }).pipe(
-                    Effect.andThen(
-                      Effect.promise(() =>
-                        input.sdk.session.promptAsync(req, {
-                          signal: turn.signal,
-                        }),
-                      ),
+                      DirectAction.run({
+                        sdk: input.sdk,
+                        sessionID: input.sessionID,
+                        directory: input.directory,
+                        signal: turn.signal,
+                        footer: input.footer,
+                        trace: input.trace,
+                      }),
                     ),
                     Effect.tap(() =>
                       Effect.sync(() => {
-                        input.trace?.write("send.prompt.ok", {
-                          sessionID: input.sessionID,
-                        })
                         item.armed = true
+                        item.live = true
                       }),
                     ),
+                    Effect.flatMap(() => Deferred.succeed(item.done, undefined).pipe(Effect.ignore)),
+                    Effect.catch((error) => Deferred.fail(item.done, error).pipe(Effect.ignore)),
+                    Effect.forkIn(scope, { startImmediately: true }),
+                    Effect.asVoid,
                   )
+                : command
+                  ?
+                    Effect.sync(() => {
+                      input.trace?.write("send.command", { sessionID: input.sessionID, command: command.name })
+                    }).pipe(
+                      Effect.andThen(
+                        Effect.promise(() =>
+                          input.sdk.session.command(
+                            {
+                              sessionID: input.sessionID,
+                              messageID: next.prompt.messageID,
+                              agent: next.agent,
+                              model: next.model ? `${next.model.providerID}/${next.model.modelID}` : undefined,
+                              variant: next.variant,
+                              command: command.name,
+                              arguments: command.arguments,
+                              parts: [
+                                ...(next.includeFiles ? next.files : []),
+                                ...next.prompt.parts.filter(
+                                  (item): item is Extract<RunPromptPart, { type: "file" }> => item.type === "file",
+                                ),
+                              ],
+                            },
+                            { signal: turn.signal },
+                          ),
+                        ).pipe(
+                          Effect.tap(() =>
+                            Effect.sync(() => {
+                              input.trace?.write("send.command.ok", {
+                                sessionID: input.sessionID,
+                                command: command.name,
+                              })
+                              item.armed = true
+                              item.live = true
+                            }),
+                          ),
+                          Effect.flatMap(() => Deferred.succeed(item.done, undefined).pipe(Effect.ignore)),
+                          Effect.catch((error) => Deferred.fail(item.done, error).pipe(Effect.ignore)),
+                          Effect.forkIn(scope, { startImmediately: true }),
+                          Effect.asVoid,
+                        ),
+                      ),
+                    )
+                  : Effect.sync(() => {
+                      input.trace?.write("send.prompt", req)
+                    }).pipe(
+                      Effect.andThen(
+                        Effect.promise(() =>
+                          input.sdk.session.promptAsync(req, {
+                            signal: turn.signal,
+                          }),
+                        ),
+                      ),
+                      Effect.tap(() =>
+                        Effect.sync(() => {
+                          input.trace?.write("send.prompt.ok", {
+                            sessionID: input.sessionID,
+                          })
+                          item.armed = true
+                        }),
+                      ),
+                    )
 
           yield* send.pipe(
             Effect.flatMap(() => {
