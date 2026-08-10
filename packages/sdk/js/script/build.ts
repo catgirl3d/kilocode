@@ -13,6 +13,24 @@ const opencode = path.resolve(dir, "../../opencode")
 
 await $`bun dev generate > ${dir}/openapi.json`.cwd(opencode)
 
+// kilocode_change start
+const retry = async <T>(label: string, fn: () => Promise<T>) => {
+  if (process.platform !== "win32") return fn()
+  const waits = [50, 100, 200, 400]
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn()
+    } catch (error) {
+      const wait = waits[attempt]
+      if (wait === undefined) {
+        throw new Error(`${label} failed after ${attempt + 1} attempts`, { cause: error })
+      }
+      await Bun.sleep(wait)
+    }
+  }
+}
+// kilocode_change end
+
 const document = (await Bun.file("./openapi.json").json()) as {
   components?: { schemas?: Record<string, unknown> }
   [key: string]: unknown
@@ -71,28 +89,32 @@ await createClient({
   ],
 })
 
-const generatedTypes = await Bun.file("./src/v2/gen/types.gen.ts").text()
-if (/export type SessionNext\w+1 =/.test(generatedTypes)) {
-  throw new Error("Session history generated duplicate Session event variants")
-}
-const historyTypesPatched = generatedTypes.replace(
-  /(export type V2SessionHistoryData = \{[\s\S]*?query\?: \{\s*limit\?: )string([;,]\s*after\?: )string/,
-  "$1number$2number",
-)
-if (historyTypesPatched === generatedTypes) {
-  throw new Error("Session history numeric query patch did not apply")
-}
-await Bun.write("./src/v2/gen/types.gen.ts", historyTypesPatched)
+await retry("Session history types patch", async () => {
+  const generatedTypes = await Bun.file("./src/v2/gen/types.gen.ts").text()
+  if (/export type SessionNext\w+1 =/.test(generatedTypes)) {
+    throw new Error("Session history generated duplicate Session event variants")
+  }
+  const historyTypesPatched = generatedTypes.replace(
+    /(export type V2SessionHistoryData = \{[\s\S]*?query\?: \{\s*limit\?: )string([;,]\s*after\?: )string/,
+    "$1number$2number",
+  )
+  if (historyTypesPatched === generatedTypes) {
+    throw new Error("Session history numeric query patch did not apply")
+  }
+  await Bun.write("./src/v2/gen/types.gen.ts", historyTypesPatched)
+})
 
-const generatedSdk = await Bun.file("./src/v2/gen/sdk.gen.ts").text()
-const historySdkPatched = generatedSdk.replace(
-  /(Get session history[\s\S]*?parameters: \{\s*sessionID: string[;,]\s*limit\?: )string([;,]\s*after\?: )string/,
-  "$1number$2number",
-)
-if (historySdkPatched === generatedSdk) {
-  throw new Error("Session history numeric SDK patch did not apply")
-}
-await Bun.write("./src/v2/gen/sdk.gen.ts", historySdkPatched)
+await retry("Session history SDK patch", async () => {
+  const generatedSdk = await Bun.file("./src/v2/gen/sdk.gen.ts").text()
+  const historySdkPatched = generatedSdk.replace(
+    /(Get session history[\s\S]*?parameters: \{\s*sessionID: string[;,]\s*limit\?: )string([;,]\s*after\?: )string/,
+    "$1number$2number",
+  )
+  if (historySdkPatched === generatedSdk) {
+    throw new Error("Session history numeric SDK patch did not apply")
+  }
+  await Bun.write("./src/v2/gen/sdk.gen.ts", historySdkPatched)
+})
 
 // The legacy SDK generator is retired, but this public Config type remains exported.
 // Keep Kilo's released sandbox settings aligned with the current generated client.
@@ -136,7 +158,7 @@ if (!legacyNext.includes(instructions)) {
 }
 await Bun.write(legacyTypesPath, legacyNext)
 
-await $`bun prettier --write src/gen src/v2`
+await retry("Prettier", () => $`bun prettier --write src/gen src/v2`)
 await $`rm -rf dist tsconfig.tsbuildinfo`
 await $`bun tsc`
 await $`rm openapi.json`

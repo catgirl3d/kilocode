@@ -363,8 +363,9 @@ export const layer = Layer.effect(
       sessionID: SessionID
       session: Session.Info
       msgs: SessionV1.WithParts[]
+      snapshotInitialization?: "wait" // kilocode_change
     }) {
-      const { task, model, lastUser, sessionID, session, msgs } = input
+      const { task, model, lastUser, sessionID, session, msgs, snapshotInitialization } = input
       const ctx = yield* InstanceState.context
       const promptOps = yield* ops()
       const { task: taskTool } = yield* registry.named()
@@ -409,6 +410,13 @@ export const layer = Layer.effect(
         subagent_type: task.agent,
         command: task.command,
       }
+      const handle = yield* processor.create({
+        assistantMessage,
+        sessionID,
+        model,
+        snapshotInitialization, // kilocode_change - queued tasks bypass SessionTools
+      })
+      yield* handle.ensureSnapshot() // kilocode_change - baseline before queued task hooks
       yield* plugin.trigger(
         "tool.execute.before",
         { tool: TaskTool.id, sessionID, callID: part.id },
@@ -1577,7 +1585,15 @@ export const layer = Layer.effect(
         const task = tasks.pop()
 
         if (task?.type === "subtask") {
-          yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+          yield* handleSubtask({
+            task,
+            model,
+            lastUser,
+            sessionID,
+            session,
+            msgs,
+            snapshotInitialization: input.snapshotInitialization,
+          })
           continue
         }
 
