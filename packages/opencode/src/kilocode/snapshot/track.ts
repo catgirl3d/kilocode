@@ -20,10 +20,9 @@
 //        - Dismissed / no sessionID: interrupt and skip. Mark the active
 //          Snapshot.Service guard so later calls through it do not prompt again.
 //
-// While the snapshot is running, we inject a synthetic text part into the
-// live assistant message so the user sees an "Initializing snapshot…" line
-// in the chat — the same place bash/edit tool calls render. The part is
-// removed when the snapshot finishes, so the chat history stays clean.
+// While the snapshot is running, we inject a transient synthetic text part
+// into the live assistant message. Kilo clients render it as a status badge,
+// not as assistant text, and remove it when the snapshot finishes.
 //
 // Design notes:
 //   - `state.asked` is scoped to the active Snapshot.Service closure, not the
@@ -254,21 +253,15 @@ export namespace KiloSnapshotTrack {
     /** Override the 10s default for tests. */
     readonly timeoutMs?: number
     /**
-     * Override the 500ms delay before the indicator appears. Tests set a
-     * tiny value so the delay is actually observable within a test run.
+     * Override the delay before the indicator appears.
      */
     readonly progressDelayMs?: number
     /** Override the progress removal timeout for tests. */
     readonly progressCleanupTimeoutMs?: number
   }
 
-  /**
-   * Delay in ms before we inject the "Initializing snapshot…" part. Snapshots
-   * on normal-sized repos finish well under this, so the chat stays clean
-   * without a one-frame flash of the indicator. Big repos blow past this and
-   * the user gets a clear in-chat reason for the wait.
-   */
-  const PROGRESS_DELAY_MS = 500
+  /** Delay in ms before we inject the live snapshot status part. */
+  const PROGRESS_DELAY_MS = 0
   const PROGRESS_CLEANUP_TIMEOUT_MS = 1_000
   const PROGRESS_CLEANUP_RETRY_MS = 50
   const PROGRESS_CLEANUP_ATTEMPTS = 3
@@ -534,7 +527,8 @@ export namespace KiloSnapshotTrack {
     type: "text",
     text: input.text,
     synthetic: true,
-    metadata: { [KiloPartLifecycle.key]: "transient" },
+    ignored: true,
+    metadata: { [KiloPartLifecycle.key]: "transient", "kilo.snapshot.running": true },
   })
 
   export const defaultHooks: Hooks = {
