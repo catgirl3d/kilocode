@@ -183,6 +183,100 @@ describe("partial assistant revert", () => {
   )
 })
 
+describe("chronological revert boundaries", () => {
+  it.live(
+    "does not remove historical messages when the latest read-only turn has a smaller ID",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const revert = yield* SessionRevert.Service
+          const session = yield* sessions.create({})
+          const providerID = ProviderV2.ID.make("test")
+          const model = { providerID, modelID: ModelV2.ID.make("test") }
+          const makeUser = (id: string, created: number) =>
+            sessions.updateMessage({
+              id: MessageID.ascending(id),
+              sessionID: session.id,
+              role: "user",
+              agent: "default",
+              model,
+              time: { created },
+            })
+          const makeAssistant = (id: string, parentID: string, created: number) =>
+            sessions.updateMessage({
+              id: MessageID.ascending(id),
+              sessionID: session.id,
+              role: "assistant",
+              parentID: MessageID.ascending(parentID),
+              mode: "default",
+              agent: "default",
+              path: { cwd: dir, root: dir },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              modelID: model.modelID,
+              providerID,
+              time: { created, completed: created + 1 },
+              finish: "end_turn",
+            })
+
+          const old = yield* makeUser("msg_f0000000000000000000000000", 1)
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: old.id,
+            sessionID: session.id,
+            type: "text",
+            text: "old history",
+          })
+          const oldAssistant = yield* makeAssistant("msg_f0000000000000000000000001", old.id, 2)
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: oldAssistant.id,
+            sessionID: session.id,
+            type: "text",
+            text: "old answer",
+          })
+
+          const target = yield* makeUser("msg_0000000000000000000000000", 3)
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: target.id,
+            sessionID: session.id,
+            type: "text",
+            text: "read-only question",
+          })
+          const targetAssistant = yield* makeAssistant("msg_0000000000000000000000001", target.id, 4)
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: targetAssistant.id,
+            sessionID: session.id,
+            type: "step-start",
+            time: { start: 4 },
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: targetAssistant.id,
+            sessionID: session.id,
+            type: "step-finish",
+            reason: "stop",
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+
+          const result = yield* revert.revert({ sessionID: session.id, messageID: target.id })
+          expect(result.revert?.messageID).toBe(target.id)
+          expect(result.summary?.diffs).toEqual([])
+
+          yield* revert.cleanup(result)
+          const remaining = yield* sessions.messages({ sessionID: session.id })
+          expect(remaining.map((message) => message.info.id)).toEqual([old.id, oldAssistant.id])
+        }),
+      { git: true, config: { snapshot: false } },
+    ),
+    { timeout: 30000 },
+  )
+})
+
 describe("workspace revert status", () => {
   it.live(
     "reports disabled snapshots when conversation-only revert leaves files unchanged",

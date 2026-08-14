@@ -73,7 +73,8 @@ const layer = Layer.effect(
       // kilocode_change start
       // A fresh snapshot only preserves the state needed for redo. File restoration
       // is possible only when the historical turn retained checkpoint data.
-      const range = all.filter((msg) => msg.info.id >= rev.messageID)
+      const index = all.findIndex((msg) => msg.info.id === rev.messageID)
+      const range = index < 0 ? [] : all.slice(index)
       const checkpoint = patches.length > 0
       rev.workspace = checkpoint
         ? "restored"
@@ -155,21 +156,11 @@ const layer = Layer.effect(
       if (!session.revert) return
       const sessionID = session.id
       const msgs = yield* sessions.messages({ sessionID }).pipe(Effect.orDie)
-      const messageID = session.revert.messageID
-      const remove = [] as SessionV1.WithParts[]
-      let target: SessionV1.WithParts | undefined
-      for (const msg of msgs) {
-        if (msg.info.id < messageID) continue
-        if (msg.info.id > messageID) {
-          remove.push(msg)
-          continue
-        }
-        if (session.revert.partID) {
-          target = msg
-          continue
-        }
-        remove.push(msg)
-      }
+      // kilocode_change start - persisted IDs may use different sortable formats
+      const index = msgs.findIndex((msg) => msg.info.id === session.revert?.messageID)
+      const target = session.revert.partID && index >= 0 ? msgs[index] : undefined
+      const remove = index < 0 ? [] : msgs.slice(index + (session.revert.partID ? 1 : 0))
+      // kilocode_change end
       for (const msg of remove) {
         yield* sessions.removeMessage({ sessionID, messageID: msg.info.id })
       }

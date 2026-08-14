@@ -58,14 +58,9 @@ function target(messages: Message[], index: number, id: string, parts?: (msg: Me
   return id
 }
 
-function visibleMessage(id: string, revert?: RevertBoundary) {
-  if (!revert || id < revert.messageID) return true
-  return id === revert.messageID && !!revert.partID
-}
-
 export function visibleParts(id: string, parts: Part[], revert?: RevertBoundary) {
-  if (!revert || id < revert.messageID) return parts
-  if (id !== revert.messageID || !revert.partID) return []
+  if (!revert || id !== revert.messageID) return parts
+  if (!revert.partID) return []
   const idx = parts.findIndex((part) => part.id === revert.partID)
   return idx < 0 ? [] : parts.slice(0, idx)
 }
@@ -79,10 +74,22 @@ export function messageTurns(
   const lead: Message[] = []
   const by = new Map<string, { turn: MessageTurn; index: number }>()
   const projected = (msg: Message) => visibleParts(msg.id, parts?.(msg) ?? msg.parts ?? [], revert)
+  const index = revert ? messages.findIndex((msg) => msg.id === revert.messageID) : -1
+  const boundary = revert?.partID ? messages[index] : undefined
+  const items = revert?.partID
+    ? messages.filter((msg) => {
+        if (msg.id === revert.messageID) return true
+        if (!boundary) return msg.id < revert.messageID
+        const created = Date.parse(msg.createdAt)
+        const target = Date.parse(boundary.createdAt)
+        return created < target || (created === target && msg.id < boundary.id)
+      })
+    : index < 0
+      ? messages
+      : messages.slice(0, index)
   let compact: { turn: MessageTurn; index: number } | undefined
 
-  for (const msg of messages) {
-    if (!visibleMessage(msg.id, revert)) continue
+  for (const msg of items) {
     if (msg.role === "user") {
       const turn = { id: msg.id, user: msg, assistant: [] }
       const item = { turn, index: result.length }
