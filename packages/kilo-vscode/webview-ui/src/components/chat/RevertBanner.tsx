@@ -22,12 +22,12 @@ export const RevertBanner: Component = () => {
   const diffs = () => session.summary()?.diffs
   const workspace = () => info()?.workspace
 
-  const users = () => session.userMessages()
-
   const handleRedo = () => {
     const boundary = info()?.messageID
     if (!boundary) return
-    const next = users().find((m) => m.id > boundary)
+    const messages = session.messages()
+    const index = messages.findIndex((message) => message.id === boundary)
+    const next = index < 0 ? undefined : messages.slice(index + 1).find((message) => message.role === "user")
     if (!next) {
       session.unrevertSession()
       return
