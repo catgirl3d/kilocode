@@ -34,20 +34,22 @@ export function items(part: Part): TodoItem[] | undefined {
   return todos as TodoItem[]
 }
 
-function active(input: Input, msg: Message) {
+function active(input: Input, index: number) {
+  const msg = input.messages[index]!
   const parts = list(input.parts, msg.id)
   const revert = input.revert
   if (!revert) return parts
-  if (msg.id < revert.messageID) return parts
-  if (msg.id > revert.messageID) return []
+  const boundary = input.messages.findIndex((item) => item.id === revert.messageID)
+  if (boundary < 0 || index < boundary) return parts
+  if (index > boundary) return []
   if (!revert.partID) return []
-  const partID = revert.partID
-  return parts.filter((part) => part.id < partID)
+  const part = parts.findIndex((item) => item.id === revert.partID)
+  return part < 0 ? [] : parts.slice(0, part)
 }
 
 export function writes(input: Input): Write[] {
-  return input.messages.flatMap((msg) =>
-    active(input, msg).flatMap((part) => {
+  return input.messages.flatMap((_msg, index) =>
+    active(input, index).flatMap((part) => {
       const todos = items(part)
       return todos ? [{ part: part as TodoPart, todos }] : []
     }),

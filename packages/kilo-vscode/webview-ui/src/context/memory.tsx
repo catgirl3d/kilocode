@@ -8,7 +8,7 @@ import { showToast } from "@kilocode/kilo-ui/toast"
 import type { MemoryStatusResponse } from "@kilocode/sdk/v2"
 import type { ExtensionMessage, Message, Part } from "../types/messages"
 import { addMemoryActivity, markerActivity, type MemoryActivity } from "../utils/memory-activity"
-import { visibleParts } from "./session-queue"
+import { visibleMessages, visibleParts } from "./session-queue"
 
 export interface MemoryContextValue {
   status: Accessor<MemoryStatusResponse | undefined>
@@ -270,11 +270,13 @@ export const MemoryProvider: ParentComponent = (props) => {
 
   const activity = createMemo(() => {
     const revert = session.currentSession()?.revert ?? undefined
+    const visible = new Set(visibleMessages(session.messages(), revert, (message) => session.getParts(message.id)).map((message) => message.id))
     const items = Object.entries(markers()).flatMap(([mid, entry]) => {
-      if (!revert || mid < revert.messageID) return [entry.item]
-      if (mid !== revert.messageID || !revert.partID) return []
-      const visible = visibleParts(mid, session.getParts(mid), revert)
-      return visible.some((part) => part.id === entry.part) ? [entry.item] : []
+      if (!revert) return [entry.item]
+      if (!visible.has(mid)) return []
+      if (mid !== revert.messageID || !revert.partID) return [entry.item]
+      const parts = visibleParts(mid, session.getParts(mid), revert)
+      return parts.some((part) => part.id === entry.part) ? [entry.item] : []
     })
     return [...items, ...saved()]
   })

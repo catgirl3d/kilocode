@@ -3157,7 +3157,10 @@ export const SessionProvider: ParentComponent = (props) => {
   const revertedCount = createMemo(() => {
     const boundary = revert()?.messageID
     if (!boundary) return 0
-    return userMessages().filter((m) => m.id >= boundary).length
+    const list = messages()
+    const index = list.findIndex((message) => message.id === boundary)
+    if (index < 0) return 0
+    return list.slice(index).filter((message) => message.role === "user").length
   })
 
   const summary = createMemo(() => {
