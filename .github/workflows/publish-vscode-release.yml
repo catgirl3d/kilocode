@@ -97,17 +97,28 @@ jobs:
             packages/kilo-vscode/out/kilo-vscode-win32-x64.vsix
           retention-days: 30
 
-      - name: Create or update GitHub Release
+      - name: Create or recreate GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "$TAG (Fork)" --notes-file release_notes.md --repo "$GITHUB_REPOSITORY"
-          else
-            gh release edit "$TAG" --notes-file release_notes.md --repo "$GITHUB_REPOSITORY"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Removing existing release and tag for $TAG to recreate clean release..."
+            gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
           fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG" --force
+
+          gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG (Fork)" \
+            --notes-file release_notes.md \
+            --repo "$GITHUB_REPOSITORY"
+
           gh release upload "$TAG" \
             packages/kilo-vscode/out/kilo-vscode-linux-x64.vsix \
             packages/kilo-vscode/out/kilo-vscode-win32-x64.vsix \
