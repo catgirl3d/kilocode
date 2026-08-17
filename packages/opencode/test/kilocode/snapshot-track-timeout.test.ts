@@ -8,11 +8,14 @@ import { describe, expect, test } from "bun:test"
 import { Deferred, Duration, Effect, Fiber } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import path from "path"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { PartID, type MessageID, type SessionID } from "../../src/session/schema"
+import { MessageV2 } from "../../src/session/message-v2"
 import { KiloSnapshotTrack } from "../../src/kilocode/snapshot/track"
 import { KiloPartLifecycle } from "../../src/kilocode/session/part-lifecycle"
 import { TestInstance } from "../fixture/fixture"
 import { awaitWithTimeout, it } from "../lib/effect"
+import { ProviderTest } from "../fake/provider"
 
 const SESSION = "ses_test" as SessionID
 const MESSAGE = "msg_test" as MessageID
@@ -571,7 +574,56 @@ describe("KiloSnapshotTrack progress indicator", () => {
     })
 
     expect(part.synthetic).toBe(true)
+    expect(part.ignored).toBe(true)
+    expect(part.metadata).toEqual({
+      [KiloPartLifecycle.key]: "transient",
+      "kilo.snapshot.running": true,
+    })
     expect(KiloPartLifecycle.transient(part)).toBe(true)
+  })
+
+  test("excludes running progress text from model context but keeps ordinary assistant text", async () => {
+    const model = ProviderTest.model()
+    const assistant: SessionV1.Assistant = {
+      id: MESSAGE,
+      sessionID: SESSION,
+      role: "assistant",
+      parentID: "msg_parent" as MessageID,
+      mode: "build",
+      agent: "build",
+      path: { cwd: "/", root: "/" },
+      modelID: model.id,
+      providerID: model.providerID,
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: 0 },
+    }
+    const progress = KiloSnapshotTrack.progressPart({
+      sessionID: SESSION,
+      messageID: MESSAGE,
+      partID: PartID.make("prt_progress"),
+      text: "Initializing snapshot…",
+    })
+    const messages: SessionV1.WithParts[] = [
+      {
+        info: assistant,
+        parts: [
+          progress,
+          {
+            id: PartID.make("prt_text"),
+            sessionID: SESSION,
+            messageID: MESSAGE,
+            type: "text",
+            text: "ordinary assistant text",
+          },
+        ],
+      },
+    ]
+
+    const modelMessages = await MessageV2.toModelMessages(messages, model)
+    const text = JSON.stringify(modelMessages)
+    expect(text).toContain("ordinary assistant text")
+    expect(text).not.toContain("Initializing snapshot")
   })
 
   // Strip the braille spinner frame (first Unicode codepoint, plus the
