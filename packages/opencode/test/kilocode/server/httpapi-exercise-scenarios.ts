@@ -495,6 +495,21 @@ export const kiloScenarios: Scenario[] = [
       check(typeof body.available === "boolean", "sandbox toggle should report backend availability")
       check(typeof body.version === "number", "sandbox toggle should report its revision")
     }),
+  http.protected
+    .post("/session/{sessionID}/shake", "session.shake")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Shake session" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/shake", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.parts === 0, "shake should leave a session without tool output unchanged")
+      check(body.tokens === 0, "shake should report no reclaimed tokens without tool output")
+      object(body.diagnostics)
+      check(body.diagnostics.candidates === 0, "shake should report no eligible tool output")
+    }),
   http.protected.get("/remote/status", "remote.status").json(200, (body) => {
     object(body)
     check(body.enabled === false && body.connected === false, "remote should start disabled")

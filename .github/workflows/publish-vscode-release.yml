@@ -1,0 +1,114 @@
+# kilocode_change - new file
+name: publish-vscode-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version override (leave empty to use package.json version)"
+        required: false
+        type: string
+        default: ""
+      notes:
+        description: "Release notes override (leave empty to use CHANGELOG-FORK.md)"
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: publish-vscode-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Build and Release VSIX
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Determine version, tag, and release notes
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_NOTES: ${{ inputs.notes }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="$(bun -e 'console.log((await Bun.file("packages/kilo-vscode/package.json").json()).version)')"
+          fi
+          TAG="v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building VSIX for version: $VERSION (tag: $TAG)"
+
+          if [ -n "$INPUT_NOTES" ]; then
+            echo "$INPUT_NOTES" > release_notes.md
+          elif [ -f "CHANGELOG-FORK.md" ]; then
+            cp CHANGELOG-FORK.md release_notes.md
+          else
+            echo "Kilo Code Fork VSIX Build ($VERSION)" > release_notes.md
+          fi
+
+      - name: Install VSIX packager
+        run: bun install -g @vscode/vsce
+
+      - name: Setup Zig for Linux sandbox helpers
+        run: |
+          curl --fail --location --retry 3 \
+            https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz \
+            --output "$RUNNER_TEMP/zig.tar.xz"
+          echo "473ec26806133cf4d1918caf1a410f8403a13d979726a9045b421b685031a982  $RUNNER_TEMP/zig.tar.xz" | sha256sum --check --status
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-linux-x86_64-0.14.0" >> "$GITHUB_PATH"
+
+      - name: Build CLI binaries
+        env:
+          KILO_VERSION: ${{ steps.meta.outputs.version }}
+        run: ./packages/opencode/script/build.ts
+
+      - name: Build VSIX
+        working-directory: packages/kilo-vscode
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          KILO_VERSION: ${{ steps.meta.outputs.version }}
+          CLI_DIST_DIR: ../../packages/opencode/dist
+        run: |
+          bun run script/build.ts
+
+      - name: Upload VSIX to Actions Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: kilo-code-${{ steps.meta.outputs.version }}-vsix
+          path: |
+            packages/kilo-vscode/out/kilo-vscode-linux-x64.vsix
+            packages/kilo-vscode/out/kilo-vscode-win32-x64.vsix
+          retention-days: 30
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG (Fork)" --notes-file release_notes.md --repo "$GITHUB_REPOSITORY"
+          else
+            gh release edit "$TAG" --notes-file release_notes.md --repo "$GITHUB_REPOSITORY"
+          fi
+          gh release upload "$TAG" \
+            packages/kilo-vscode/out/kilo-vscode-linux-x64.vsix \
+            packages/kilo-vscode/out/kilo-vscode-win32-x64.vsix \
+            --clobber --repo "$GITHUB_REPOSITORY"

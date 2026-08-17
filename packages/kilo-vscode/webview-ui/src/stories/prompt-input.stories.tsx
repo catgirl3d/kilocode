@@ -65,7 +65,9 @@ const FAVORITE_MODELS: EnrichedModel[] = [
   },
 ]
 
-const PromptProviders: ParentComponent<{ variants?: boolean; modelOverride?: boolean; training?: boolean }> = (props) => {
+const PromptProviders: ParentComponent<{ variants?: boolean; modelOverride?: boolean; training?: boolean }> = (
+  props,
+) => {
   const base = mockSessionValue({ status: "idle" })
   const session = {
     ...base,
