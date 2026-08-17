@@ -447,7 +447,15 @@
    two cards around the same tool. */
 .vscode-session-turn-assistant
   > [data-component="tool-part-wrapper"]:is([data-part-type="tool"], [data-part-type="reasoning"]):not(
-    :has(:is([data-component="question-dock"], [data-component="suggest-bar"], [data-component="plan-exit-card"]))
+    :has(
+      :is(
+        [data-component="question-dock"],
+        [data-component="suggest-bar"],
+        [data-component="plan-exit-card"],
+        [data-component="card"],
+        [data-component="tool-error"]
+      )
+    )
   ) {
   display: flex;
   flex-direction: column;
