@@ -1,6 +1,16 @@
 # Releasing Kilo Code
 
-Kilo Code uses a fully automated CI pipeline triggered via GitHub Actions `workflow_dispatch`. A single workflow handles version bumping, building all artifacts, publishing to every distribution channel, and updating package registries.
+Upstream Kilo Code uses a fully automated CI pipeline triggered via GitHub Actions `workflow_dispatch`. A single workflow handles version bumping, building all artifacts, publishing to every distribution channel, and updating package registries.
+
+## Fork VSIX Releases
+
+This fork publishes custom VSIX packages through `publish-vscode-release.yml`. The workflow runs on standard GitHub-hosted `ubuntu-24.04`, requires only the default `contents: write` token permission, and does not publish to npm, VS Code Marketplace, Open VSX, or external package registries.
+
+1. Maintain fork modifications and notes in `CHANGELOG-FORK.md`.
+2. In GitHub Actions, go to **publish-vscode-release** -> **Run workflow**.
+3. (Optional) Provide a custom version or release note override, or leave them empty to build the current version (`7.4.22`) with notes from `CHANGELOG-FORK.md`.
+
+The workflow builds Linux x64 and Windows x64 VSIX packages, uploads both to Actions Artifacts (for immediate direct download), and creates/updates a GitHub Release in your fork with both `.vsix` assets attached.
 
 ## How to Trigger a Release
 
