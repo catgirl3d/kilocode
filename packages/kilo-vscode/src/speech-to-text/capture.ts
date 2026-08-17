@@ -109,7 +109,13 @@ export async function stopSpeechCapture(requestId: string): Promise<Audio> {
 
   const file = await readFile(state.file)
   await removeFile(state.file)
-  return { data: file.toString("base64"), format: "m4a", model: state.model, mode: state.mode, language: state.language }
+  return {
+    data: file.toString("base64"),
+    format: "m4a",
+    model: state.model,
+    mode: state.mode,
+    language: state.language,
+  }
 }
 
 export async function cancelSpeechCapture(requestId: string): Promise<void> {

@@ -270,7 +270,11 @@ export const MemoryProvider: ParentComponent = (props) => {
 
   const activity = createMemo(() => {
     const revert = session.currentSession()?.revert ?? undefined
-    const visible = new Set(visibleMessages(session.messages(), revert, (message) => session.getParts(message.id)).map((message) => message.id))
+    const visible = new Set(
+      visibleMessages(session.messages(), revert, (message) => session.getParts(message.id)).map(
+        (message) => message.id,
+      ),
+    )
     const items = Object.entries(markers()).flatMap(([mid, entry]) => {
       if (!revert) return [entry.item]
       if (!visible.has(mid)) return []
