@@ -182,20 +182,28 @@ describe("KiloProvider indexing refresh", () => {
     expect(calls.includes("indexing")).toBe(true)
   })
 
-  it("handleUpdateConfig no longer eagerly fetches indexing status", async () => {
+  it("writes a valid config update without eagerly fetching indexing status", async () => {
     const conn = createConnection()
     const provider = new KiloProvider({} as never, conn.service as never)
     const internal = provider as unknown as Internals
 
+    const global = binding(internal, "global")
     let indexing = 0
     internal.connectionState = "connected"
     internal.fetchAndSendIndexingStatus = async () => {
       indexing += 1
     }
 
-    await internal.handleUpdateConfig({})
+    await internal.handleUpdateConfig({ model: "test/global" }, {}, [], [], global.id)
 
-    expect(conn.drains()).toBe(0)
+    expect(conn.drains()).toBe(1)
+    expect(conn.patches()).toEqual([
+      expect.objectContaining({
+        scope: "global",
+        expected: { path: "/config/kilo.jsonc", revision: "global-revision" },
+        set: { model: "test/global" },
+      }),
+    ])
     expect(indexing).toBe(0)
   })
 
@@ -285,6 +293,37 @@ describe("KiloProvider indexing refresh", () => {
         expected: { path: "/repo/.kilo/kilo.jsonc", revision: "project-revision" },
         set: { indexing: { searchMinScore: undefined } },
         unset: [["indexing", "searchMinScore"]],
+      }),
+    ])
+  })
+
+  it("persists disabled instructions independently in global and project scopes", async () => {
+    const conn = createConnection()
+    const provider = new KiloProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    internal.connectionState = "connected"
+    const global = binding(internal, "global")
+    const project = binding(internal, "project")
+
+    await internal.handleUpdateConfig(
+      { instructions_disabled: ["global.md"] },
+      { instructions_disabled: ["project.md"] },
+      [],
+      [],
+      global.id,
+      project.id,
+    )
+
+    expect(conn.patches()).toEqual([
+      expect.objectContaining({
+        scope: "global",
+        expected: { path: "/config/kilo.jsonc", revision: "global-revision" },
+        set: { instructions_disabled: ["global.md"] },
+      }),
+      expect.objectContaining({
+        scope: "project",
+        expected: { path: "/repo/.kilo/kilo.jsonc", revision: "project-revision" },
+        set: { instructions_disabled: ["project.md"] },
       }),
     ])
   })
