@@ -120,7 +120,9 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       ...(recalled > 0
         ? [language.t("chat.memory.activity.recalled", { count: recalled.toLocaleString(language.locale()) })]
         : []),
-      ...(saved > 0 ? [language.t("chat.memory.activity.saved", { count: saved.toLocaleString(language.locale()) })] : []),
+      ...(saved > 0
+        ? [language.t("chat.memory.activity.saved", { count: saved.toLocaleString(language.locale()) })]
+        : []),
     ]
   })
   const activityItems = createMemo(() =>

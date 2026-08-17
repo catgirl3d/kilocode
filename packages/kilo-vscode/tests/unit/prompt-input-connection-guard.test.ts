@@ -137,8 +137,8 @@ describe("PromptInput sandbox toggle", () => {
   })
 
   it("preserves the draft when the sandbox control is disabled", () => {
-    const start = src.indexOf("if (matched?.action)")
-    const guard = src.indexOf("if (matched.enabled && !matched.enabled()) return", start)
+    const start = src.indexOf("const action = commandAction(matched")
+    const guard = src.indexOf("if (matched?.enabled && !matched.enabled()) return", start)
     const clear = src.indexOf('setText("")', start)
 
     expect(start).toBeGreaterThan(-1)

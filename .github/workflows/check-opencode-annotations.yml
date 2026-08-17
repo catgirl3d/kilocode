@@ -17,7 +17,6 @@ on:
 jobs:
   check-annotations:
     name: Check kilocode_change annotations
-    if: github.repository == 'Kilo-Org/kilocode'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6 # kilocode_change
