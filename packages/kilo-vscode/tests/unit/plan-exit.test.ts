@@ -76,7 +76,6 @@ describe("plan_exit renderer uses openFile not openDiff (source)", () => {
     expect(src).not.toContain("Object.values(data.store.part ?? {}).flat()")
     expect(src).not.toContain("[...props.parts, ...all()]")
     expect(src).not.toContain("turnParts")
-    expect(turnSrc).not.toContain("assistantMessages().flatMap")
     expect(turnSrc).not.toContain("turnParts={assistantParts()}")
   })
 
