@@ -18,6 +18,8 @@ if (process.versions.bun !== expectedBunVersion) {
 }
 '
 
+bun run --cwd packages/kilo-vscode format:check
+
 # kilocode_change start
 jetbrains=0
 zero=0000000000000000000000000000000000000000
