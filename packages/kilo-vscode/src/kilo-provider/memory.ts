@@ -337,7 +337,8 @@ export class KiloProviderMemory {
       entries.push(
         {
           label: "Stored memory",
-          description: shown.length < items.length ? `${shown.length} of ${items.length} shown` : `${shown.length} shown`,
+          description:
+            shown.length < items.length ? `${shown.length} of ${items.length} shown` : `${shown.length} shown`,
         },
         ...shown.map((label) => ({ label })),
       )

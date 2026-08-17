@@ -100,7 +100,9 @@ const MOCK_PROVIDERS = {
 const MOCK_MODELS = flattenModels(MOCK_PROVIDERS as any)
 
 /** A synchronous mock ProviderContext — provides models without waiting for a postMessage round-trip. */
-const MockProviderProvider: ParentComponent<{ kiloAuth?: boolean; training?: boolean; models?: EnrichedModel[] }> = (props) => {
+const MockProviderProvider: ParentComponent<{ kiloAuth?: boolean; training?: boolean; models?: EnrichedModel[] }> = (
+  props,
+) => {
   const models = createMemo(() =>
     (props.models ?? MOCK_MODELS).map((model) => ({
       ...model,
