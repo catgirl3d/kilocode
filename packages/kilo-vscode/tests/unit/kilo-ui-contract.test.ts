@@ -468,6 +468,8 @@ describe("Assistant transcript spacing contract (source)", () => {
     expect(card).toContain('[data-component="question-dock"]')
     expect(card).toContain('[data-component="suggest-bar"]')
     expect(card).toContain('[data-component="plan-exit-card"]')
+    expect(card).toContain('[data-component="card"]')
+    expect(card).toContain('[data-component="tool-error"]')
   })
 })
 
