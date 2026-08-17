@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import path from "path"
 import { Effect, FileSystem, Layer } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 
 import { Instruction } from "../../src/session/instruction"
@@ -215,7 +216,41 @@ describe("Instruction.resolve", () => {
     ),
   )
 
-  test.todo("fetches remote instructions from config URLs via HttpClient", () => {})
+  it.live("fetches enabled remote instructions and skips disabled URLs", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+      const enabled = "https://example.test/enabled.md"
+      const disabled = "http://example.test/disabled.md"
+      const requests: string[] = []
+      const client = HttpClient.make((request) => {
+        requests.push(request.url)
+        return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("# Remote Enabled")))
+      })
+      const cfg = TestConfig.layer({
+        get: () =>
+          Effect.succeed({
+            instructions: [enabled, disabled],
+            instructions_disabled: [disabled],
+          }),
+      })
+      const layer = AppNodeBuilder.build(Instruction.node, [
+        [Config.node, cfg],
+        [Global.node, Global.layerWith({ home: globalTmp, config: globalTmp })],
+        [RuntimeFlags.node, RuntimeFlags.layer()],
+        [LayerNodePlatform.httpClient, Layer.succeed(HttpClient.HttpClient, client)],
+      ])
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const out = yield* svc.system()
+
+        expect(requests).toEqual([enabled])
+        expect(out).toEqual([`Instructions from: ${enabled}\n# Remote Enabled`])
+        expect(out.join("\n")).not.toContain(disabled)
+      }).pipe(provideInstance(projectTmp), Effect.provide(layer))
+    }),
+  )
 })
 
 describe("Instruction.system", () => {
