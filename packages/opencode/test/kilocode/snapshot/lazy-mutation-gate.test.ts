@@ -41,27 +41,6 @@ describe("lazy snapshot mutation gate", () => {
     expect(tracks).toBe(0)
   })
 
-  it("shares one in-flight baseline between concurrent tools", async () => {
-    let tracks = 0
-    const gate = makeGate({
-      sessionID: "ses_test" as never,
-      messageID: "msg_test" as never,
-      track: () =>
-        Effect.promise(async () => {
-          await Promise.resolve()
-          tracks += 1
-          return "baseline"
-        }),
-      updatePart: (part) => Effect.succeed(part),
-    })
-
-    expect(await run(Effect.all([gate.ensure(), gate.ensure()], { concurrency: "unbounded" }))).toEqual([
-      "baseline",
-      "baseline",
-    ])
-    expect(tracks).toBe(1)
-  })
-
   it("updates a step part captured after the tool race", async () => {
     const parts: Array<{ snapshot?: string }> = []
     const gate = makeGate({
@@ -166,18 +145,102 @@ describe("lazy snapshot mutation gate", () => {
     expect(result.ensured).toBe("baseline")
   })
 
-  it("fails closed after an unsuccessful baseline", async () => {
+  it("retries an unsuccessful baseline only after a real step reset", async () => {
     let tracks = 0
     const gate = makeGate({
       sessionID: "ses_test" as never,
       messageID: "msg_test" as never,
-      track: () => Effect.sync(() => (++tracks, undefined)),
+      track: () => Effect.sync(() => (++tracks === 1 ? undefined : "baseline-2")),
+      updatePart: (part) => Effect.succeed(part),
+    })
+    const step = (id: string) => ({
+      id: id as never,
+      messageID: "msg_test" as never,
+      sessionID: "ses_test" as never,
+      type: "step-start" as const,
+      time: { start: 1 },
+    })
+
+    await run(gate.startStep(step("part-1")))
+    expect(await run(gate.ensure())).toBeUndefined()
+    expect(await run(gate.ensure())).toBeUndefined()
+    await run(gate.finishStep())
+    await run(gate.startStep(step("part-2")))
+    expect(await run(gate.ensure())).toBe("baseline-2")
+    expect(await run(gate.ensure())).toBe("baseline-2")
+    expect(tracks).toBe(2)
+  })
+
+  it("resets the complete baseline and terminal lifecycle between sequential mutating steps", async () => {
+    let tracks = 0
+    const gate = makeGate({
+      sessionID: "ses_test" as never,
+      messageID: "msg_test" as never,
+      track: () => Effect.sync(() => `snapshot-${++tracks}`),
+      updatePart: (part) => Effect.succeed(part),
+    })
+    const step = (id: string) => ({
+      id: id as never,
+      messageID: "msg_test" as never,
+      sessionID: "ses_test" as never,
+      type: "step-start" as const,
+      time: { start: 1 },
+    })
+
+    await run(gate.startStep(step("part-1")))
+    expect(await run(gate.ensure())).toBe("snapshot-1")
+    expect(await run(gate.finishStep())).toEqual({ baseline: "snapshot-1", finish: "snapshot-2" })
+    await run(gate.startStep(step("part-2")))
+    expect(await run(gate.ensure())).toBe("snapshot-3")
+    expect(await run(gate.finishStep())).toEqual({ baseline: "snapshot-3", finish: "snapshot-4" })
+    expect(tracks).toBe(4)
+  })
+
+  it("shares concurrent ensure and performs exactly one terminal track", async () => {
+    let tracks = 0
+    const gate = makeGate({
+      sessionID: "ses_test" as never,
+      messageID: "msg_test" as never,
+      track: () => Effect.promise(async () => `snapshot-${++tracks}`),
       updatePart: (part) => Effect.succeed(part),
     })
 
-    expect(await run(gate.ensure())).toBeUndefined()
-    expect(await run(gate.ensure())).toBeUndefined()
-    expect(tracks).toBe(1)
+    const [first, second] = await run(Effect.all([gate.ensure(), gate.ensure()], { concurrency: "unbounded" }))
+    const finish = await run(gate.finishStep())
+
+    expect(first).toBe("snapshot-1")
+    expect(second).toBe("snapshot-1")
+    expect(finish).toEqual({ baseline: "snapshot-1", finish: "snapshot-2" })
+    expect(tracks).toBe(2)
+  })
+
+  it("resets after a terminal track failure and allows the next step to retry", async () => {
+    let tracks = 0
+    const gate = makeGate({
+      sessionID: "ses_test" as never,
+      messageID: "msg_test" as never,
+      track: () =>
+        Effect.sync(() => {
+          tracks += 1
+          if (tracks === 2) return undefined
+          return `snapshot-${tracks}`
+        }),
+      updatePart: (part) => Effect.succeed(part),
+    })
+    const step = (id: string) => ({
+      id: id as never,
+      messageID: "msg_test" as never,
+      sessionID: "ses_test" as never,
+      type: "step-start" as const,
+      time: { start: 1 },
+    })
+
+    await run(gate.startStep(step("part-1")))
+    await run(gate.ensure())
+    expect(await run(gate.finishStep())).toEqual({ baseline: "snapshot-1", finish: undefined })
+    await run(gate.startStep(step("part-2")))
+    expect(await run(gate.ensure())).toBe("snapshot-3")
+    expect(tracks).toBe(3)
   })
   // Keep classifier cases in this serial suite because Effect's test runtime
   // owns shared fibers while the gate tests exercise concurrency.
