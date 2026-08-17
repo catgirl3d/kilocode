@@ -86,7 +86,8 @@ export const dict = {
   "command.session.shake.cleared": "Cleared ~{{tokens}} tokens",
   "command.session.shake.clearedParts": "Cleared tool output",
   "command.session.shake.empty": "Nothing to clear",
-  "command.session.shake.diagnostics": "Debug: session {{sessionID}}; raw {{raw}} -> context {{projection}}; tools {{tools}}, completed {{completed}}, protected {{protected}}, already cleared {{compacted}}, candidates {{candidates}}, ~{{tokens}} tokens",
+  "command.session.shake.diagnostics":
+    "Debug: session {{sessionID}}; raw {{raw}} -> context {{projection}}; tools {{tools}}, completed {{completed}}, protected {{protected}}, already cleared {{compacted}}, candidates {{candidates}}, ~{{tokens}} tokens",
   "command.session.shake.failed": "Failed to clear tool output",
   "command.session.export": "Export session transcript",
 

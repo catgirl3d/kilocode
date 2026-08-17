@@ -927,10 +927,10 @@ describe("KiloProvider — pending session refresh on reconnect", () => {
   })
 
   it("connected state handler flushes deferred session refresh", () => {
-    // Find the onStateChange callback that handles "connected"
-    const connectedIdx = provider.indexOf('state === "connected"')
+    const connectedIdx = provider.indexOf("private async handleConnectionState(")
     expect(connectedIdx, '"connected" state handler must exist').toBeGreaterThan(-1)
-    const snippet = provider.slice(connectedIdx, connectedIdx + 800)
+    const endIdx = provider.indexOf("\n  private ", connectedIdx + 1)
+    const snippet = provider.slice(connectedIdx, endIdx === -1 ? undefined : endIdx)
     expect(snippet, "must call flushPendingSessionRefresh from connected handler").toContain(
       'this.flushPendingSessionRefresh("sse-connected")',
     )

@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   check-paths:
+    if: github.repository == 'Kilo-Org/kilocode'
     name: Check changed paths
     runs-on: ubuntu-latest # kilocode_change
     outputs:
@@ -57,7 +58,7 @@ jobs:
 
   visual-regression:
     needs: check-paths
-    if: needs.check-paths.outputs.matched == 'true'
+    if: github.repository == 'Kilo-Org/kilocode' && needs.check-paths.outputs.matched == 'true'
     name: Visual Regression (kilo-ui) # kilocode_change
     runs-on: ${{ github.repository == 'Kilo-Org/kilocode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }} # kilocode_change
     timeout-minutes: 15
@@ -221,7 +222,7 @@ jobs:
     needs: check-paths
     if: needs.check-paths.outputs.matched == 'true'
     name: Visual Regression (kilo-vscode webview) # kilocode_change
-    runs-on: ${{ github.repository == 'Kilo-Org/kilocode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }} # kilocode_change
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       NODE_OPTIONS: --max-old-space-size=4096

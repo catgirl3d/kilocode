@@ -28,10 +28,10 @@ type Internals = {
   fetchAndSendNotifications: () => Promise<void>
   fetchAndSendIndexingStatus: () => Promise<void>
   connectionGeneration: number
-    configBindings: {
-      create: (input: unknown) => { id: string }
-      get: (id: string, connection: number, valid: (project: unknown) => boolean) => unknown
-    }
+  configBindings: {
+    create: (input: unknown) => { id: string }
+    get: (id: string, connection: number, valid: (project: unknown) => boolean) => unknown
+  }
 }
 
 function binding(internal: Internals, scope: "global" | "project") {
@@ -420,7 +420,11 @@ describe("KiloProvider indexing refresh", () => {
       const headers = new Headers(calls[0]?.init?.headers)
       const auth = Buffer.from("kilo:secret").toString("base64")
       expect(headers.get("Authorization")).toBe(`Basic ${auth}`)
-      expect(headers.get("x-kilo-directory")).toBe(worktree)
+      const dir = headers
+        .get("x-kilo-directory")
+        ?.replaceAll("\\", "/")
+        .replace(/^[a-z]:/i, "")
+      expect(dir).toBe(worktree)
       expect(calls[0]?.init?.method).toBe("PUT")
       expect(String(calls[0]?.input)).toBe("http://127.0.0.1:9999/indexing/consent")
       expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ enabled: false })
