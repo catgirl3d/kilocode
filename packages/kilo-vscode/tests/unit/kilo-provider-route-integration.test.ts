@@ -36,7 +36,9 @@ function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs
       },
       list: async () => ({ data: [] }),
       status: async () => ({ data: {} }),
-      shake: async (_p: { sessionID: string; directory: string }) => ({ data: { parts: 0, tokens: 0, diagnostics: {} } }),
+      shake: async (_p: { sessionID: string; directory: string }) => ({
+        data: { parts: 0, tokens: 0, diagnostics: {} },
+      }),
       command: async (_p: unknown) => ({ data: {} }),
     },
     project: {

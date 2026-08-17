@@ -46,10 +46,7 @@ describe("routeEarlyMessage clipboard handling", () => {
   it("dispatches manual session shake without routing it as a prompt", async () => {
     const shaken: string[] = []
 
-    const handled = await routeEarlyMessage(
-      { type: "shake", sessionID: "ses_shake" },
-      context([], [], false, shaken),
-    )
+    const handled = await routeEarlyMessage({ type: "shake", sessionID: "ses_shake" }, context([], [], false, shaken))
 
     expect(handled).toBe(true)
     expect(shaken).toEqual(["ses_shake"])

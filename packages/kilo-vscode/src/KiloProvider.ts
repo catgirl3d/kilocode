@@ -1639,8 +1639,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       dir: (sessionID) =>
         sessionID
           ? this.getWorkspaceDirectory(sessionID)
-          : (this.getProjectDirectory(this.currentSession?.id) ??
-            this.getWorkspaceDirectory(this.currentSession?.id)),
+          : (this.getProjectDirectory(this.currentSession?.id) ?? this.getWorkspaceDirectory(this.currentSession?.id)),
       diff: this.diffVirtualProvider,
       openMarkdown: (file, sessionID) => {
         if (!this.documentViewerProvider) return false
@@ -1844,7 +1843,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       )
 
       // Subscribe to connection state changes
-      this.unsubscribeState = this.connectionService.onStateChange((state, error) => this.handleConnectionState(state, error))
+      this.unsubscribeState = this.connectionService.onStateChange((state, error) =>
+        this.handleConnectionState(state, error),
+      )
 
       // Subscribe to notification dismiss broadcast from other KiloProvider instances
       this.unsubscribeNotificationDismiss = this.connectionService.onNotificationDismissed(() => {
@@ -3027,9 +3028,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const revision = this.statusRevisions.get(sid) ?? 0
     await Promise.all([
       this.handleLoadMessages(sid, { mode: "reconcile", limit: MESSAGE_PAGE_LIMIT, preserveStream: true }),
-      reconcileSessionStatus(client, dir, this.sessionStatusMap, (msg) => this.postMessage(msg), sid, () => {
-        return (this.statusRevisions.get(sid) ?? 0) === revision
-      }),
+      reconcileSessionStatus(
+        client,
+        dir,
+        this.sessionStatusMap,
+        (msg) => this.postMessage(msg),
+        sid,
+        () => {
+          return (this.statusRevisions.get(sid) ?? 0) === revision
+        },
+      ),
     ])
   }
 
@@ -4205,7 +4213,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private async handleShake(sessionID?: string): Promise<void> {
     const target = sessionID || this.currentSession?.id
     if (!this.client) {
-      if (target) this.postMessage({ type: "sessionShakeFailed", sessionID: target, error: "Not connected to CLI backend" })
+      if (target)
+        this.postMessage({ type: "sessionShakeFailed", sessionID: target, error: "Not connected to CLI backend" })
       return
     }
 

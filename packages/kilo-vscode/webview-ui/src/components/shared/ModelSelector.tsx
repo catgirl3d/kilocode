@@ -809,7 +809,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         </span>
       </Show>
       <Tooltip
-        value={props.compact ? controlLabel() : activeModel()?.id ?? ""}
+        value={props.compact ? controlLabel() : (activeModel()?.id ?? "")}
         placement="top"
         openDelay={0}
         inactive={!props.compact && !activeModel()}
@@ -843,27 +843,30 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
             },
           }}
           trigger={
-            <Show when={props.compact} fallback={
-              <>
-                <span class="model-selector-trigger-label">{triggerLabel()}</span>
-                <Show when={activeCollectsData()}>
-                  <Tooltip value={dataLabel()} placement="top" openDelay={0}>
-                    <span class="model-selector-trigger-free-data" aria-label={dataLabel()}>
-                      <Icon name="book-open-check" size="small" />
-                    </span>
-                  </Tooltip>
-                </Show>
-                <svg
-                  class="model-selector-trigger-chevron"
-                  width="10"
-                  height="10"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                >
-                  <path d="M8 4l4 5H4l4-5z" />
-                </svg>
-              </>
-            }>
+            <Show
+              when={props.compact}
+              fallback={
+                <>
+                  <span class="model-selector-trigger-label">{triggerLabel()}</span>
+                  <Show when={activeCollectsData()}>
+                    <Tooltip value={dataLabel()} placement="top" openDelay={0}>
+                      <span class="model-selector-trigger-free-data" aria-label={dataLabel()}>
+                        <Icon name="book-open-check" size="small" />
+                      </span>
+                    </Tooltip>
+                  </Show>
+                  <svg
+                    class="model-selector-trigger-chevron"
+                    width="10"
+                    height="10"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                  >
+                    <path d="M8 4l4 5H4l4-5z" />
+                  </svg>
+                </>
+              }
+            >
               <Icon name="models" size="small" />
             </Show>
           }
@@ -1025,7 +1028,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
                           const showSelect = () => expanded() && preActive() && !isActive(model)
                           const index = () =>
-                            session?.favoriteModels().findIndex((item) => item.providerID === model.providerID && item.modelID === model.id) ?? -1
+                            session
+                              ?.favoriteModels()
+                              .findIndex((item) => item.providerID === model.providerID && item.modelID === model.id) ??
+                            -1
                           const moveUp = () => index() > 0
                           const moveDown = () => {
                             const idx = index()
@@ -1107,7 +1113,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   <span class="model-selector-item-provider-tag">{model.providerName}</span>
                                 </div>
                               </div>
-                              <Show when={row.kind === "favorite" && session && props.favorites !== false && index() >= 0}>
+                              <Show
+                                when={row.kind === "favorite" && session && props.favorites !== false && index() >= 0}
+                              >
                                 <div class="model-selector-favorite-actions">
                                   <span class="model-selector-favorite-slot">{index() + 1}</span>
                                   <button
@@ -1134,7 +1142,11 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                       shift("down")
                                     }}
                                   >
-                                    <Icon name="arrow-up" size="small" class="model-selector-favorite-move-icon--down" />
+                                    <Icon
+                                      name="arrow-up"
+                                      size="small"
+                                      class="model-selector-favorite-move-icon--down"
+                                    />
                                   </button>
                                 </div>
                               </Show>

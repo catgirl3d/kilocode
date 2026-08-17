@@ -410,8 +410,8 @@ describe("Memory control placement contract (source)", () => {
     expect(header).toContain("memory.disable()")
     expect(header).toContain('icon="compress"')
     expect(header).toContain('icon="collapse"')
-    expect(header).toContain('session.shake()')
-    expect(header).toContain('command.session.shake')
+    expect(header).toContain("session.shake()")
+    expect(header).toContain("command.session.shake")
     expect(header).toContain("!session.shaking()")
     const context = fs.readFileSync(SESSION_CONTEXT_FILE, "utf-8")
     expect(context).toContain("setShaking(sessionID)")
@@ -422,7 +422,7 @@ describe("Memory control placement contract (source)", () => {
     expect(context).toContain('"command.session.shake.empty"')
     expect(context).toContain("message.diagnostics")
     expect(context).toContain('"command.session.shake.diagnostics"')
-    expect(header).not.toContain('settings.context.compaction.title')
+    expect(header).not.toContain("settings.context.compaction.title")
   })
 
   it("shows storage inspection in settings without a manual rebuild action", () => {

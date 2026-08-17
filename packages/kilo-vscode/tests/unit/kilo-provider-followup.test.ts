@@ -196,7 +196,7 @@ describe("KiloProvider follow-up sessions", () => {
     )
 
     await refreshed.promise
-    expect(dirs).toEqual(["/workspace/frontend/src"])
+    expect(dirs.map((dir) => dir.replaceAll("\\", "/"))).toEqual(["/workspace/frontend/src"])
   })
 
   it("ignores completed tool paths outside the active project", async () => {
