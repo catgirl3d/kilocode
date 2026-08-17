@@ -105,10 +105,7 @@ describe("computeStatus", () => {
 describe("session part and snapshot helpers", () => {
   it("keeps only hydrated message parts during reconciliation", () => {
     const parts: Part[] = [{ id: "part_1", type: "text", text: "ready" }]
-    const messages = [
-      { id: "msg_parts", parts } as Message,
-      { id: "msg_empty", parts: [] } as Message,
-    ]
+    const messages = [{ id: "msg_parts", parts } as Message, { id: "msg_empty", parts: [] } as Message]
 
     expect(messageParts(messages)).toEqual({ msg_parts: parts })
   })
