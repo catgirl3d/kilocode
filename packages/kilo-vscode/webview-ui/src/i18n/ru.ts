@@ -87,7 +87,8 @@ export const dict = {
   "command.session.shake.cleared": "Освобождено примерно {{tokens}} токенов",
   "command.session.shake.clearedParts": "Вывод инструментов очищен",
   "command.session.shake.empty": "Очищать нечего",
-  "command.session.shake.diagnostics": "Диагностика: сессия {{sessionID}}; raw {{raw}} -> context {{projection}}; tools {{tools}}, completed {{completed}}, protected {{protected}}, уже очищено {{compacted}}, кандидатов {{candidates}}, примерно {{tokens}} токенов",
+  "command.session.shake.diagnostics":
+    "Диагностика: сессия {{sessionID}}; raw {{raw}} -> context {{projection}}; tools {{tools}}, completed {{completed}}, protected {{protected}}, уже очищено {{compacted}}, кандидатов {{candidates}}, примерно {{tokens}} токенов",
   "command.session.shake.failed": "Не удалось очистить вывод инструментов",
   "command.session.export": "Экспортировать запись сеанса",
 

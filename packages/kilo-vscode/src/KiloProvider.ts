@@ -4500,7 +4500,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private async handleShake(sessionID?: string): Promise<void> {
     const target = sessionID || this.currentSession?.id
     if (!this.client) {
-      if (target) this.postMessage({ type: "sessionShakeFailed", sessionID: target, error: "Not connected to CLI backend" })
+      if (target)
+        this.postMessage({ type: "sessionShakeFailed", sessionID: target, error: "Not connected to CLI backend" })
       return
     }
 

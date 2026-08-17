@@ -32,10 +32,10 @@ type Internals = {
   setIndexingConsent: (projectId: string, enabled: boolean) => Promise<void>
   initializeConnection: () => Promise<void>
   connectionGeneration: number
-    configBindings: {
-      create: (input: unknown) => { id: string }
-      get: (id: string, connection: number, valid: (project: unknown) => boolean) => unknown
-    }
+  configBindings: {
+    create: (input: unknown) => { id: string }
+    get: (id: string, connection: number, valid: (project: unknown) => boolean) => unknown
+  }
 }
 
 function binding(internal: Internals, scope: "global" | "project") {

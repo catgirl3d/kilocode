@@ -240,7 +240,9 @@ test("favorite model arrows update the quick slot order", async ({ page }) => {
   await up.click()
 
   await expect(page.locator('.favorite-model-switcher-slot[aria-label="1: OpenAI: GPT-5.6 Luna"]')).toBeVisible()
-  await expect(page.locator('.favorite-model-switcher-slot[aria-label="2: Anthropic: Claude Sonnet 4.6"]')).toBeVisible()
+  await expect(
+    page.locator('.favorite-model-switcher-slot[aria-label="2: Anthropic: Claude Sonnet 4.6"]'),
+  ).toBeVisible()
   await expect(page.getByRole("button", { name: "↑ 1: OpenAI: GPT-5.6 Luna" })).toBeDisabled()
 })
 
@@ -254,7 +256,9 @@ test("model selector segment is active for a model outside quick slots", async (
   await page.getByRole("button", { name: "Select: DeepSeek: DeepSeek V3" }).click()
 
   await expect(page.getByTestId("favorite-model-value")).toHaveText("deepseek/deepseek-v3")
-  await expect.poll(() => trigger.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)")
+  await expect
+    .poll(() => trigger.evaluate((node) => getComputedStyle(node).backgroundColor))
+    .not.toBe("rgba(0, 0, 0, 0)")
 })
 
 test("large catalogs keep the rendered tree bounded and navigate to distant models", async ({ page }) => {

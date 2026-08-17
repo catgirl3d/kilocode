@@ -23,6 +23,7 @@ env:
 jobs:
   # kilocode_change start
   changes:
+    if: github.repository == 'Kilo-Org/kilocode'
     name: detect general unit test changes
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
@@ -72,6 +73,7 @@ jobs:
   # kilocode_change end
   unit:
     # kilocode_change start
+    if: github.repository == 'Kilo-Org/kilocode'
     name: ${{ !matrix.settings.run && 'unit (unchanged)' || matrix.settings.total > 1 && format('unit ({0}, {1}/{2})', matrix.settings.os, matrix.settings.index, matrix.settings.total) || format('unit ({0})', matrix.settings.os) }}
     needs: changes
     # kilocode_change end
@@ -267,7 +269,7 @@ jobs:
   httpapi:
     name: HttpApi exerciser
     needs: changes
-    if: needs.changes.outputs.general == 'true'
+    if: github.repository == 'Kilo-Org/kilocode' && needs.changes.outputs.general == 'true'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     defaults:
@@ -311,6 +313,7 @@ jobs:
 
   # kilocode_change start
   jetbrains:
+    if: github.repository == 'Kilo-Org/kilocode'
     name: jetbrains
     permissions:
       contents: read
@@ -325,7 +328,7 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     needs:
       - unit
-    if: always()
+    if: always() && github.repository == 'Kilo-Org/kilocode'
     steps:
       - name: Verify unit matrix passed
         run: |
@@ -341,7 +344,7 @@ jobs:
       - unit
       - httpapi
       - jetbrains
-    if: always()
+    if: always() && github.repository == 'Kilo-Org/kilocode'
     steps:
       - name: Verify upstream test jobs passed # kilocode_change
         run: |
