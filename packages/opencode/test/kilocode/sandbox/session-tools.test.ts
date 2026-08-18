@@ -22,14 +22,18 @@ import { Permission } from "@/permission"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import type { InstanceContext } from "@/project/instance-context"
 import { Plugin } from "@/plugin"
+import { Question } from "@/question"
 import { MessageV2 } from "@/session/message-v2"
 import { Session } from "@/session/session"
 import { SessionTools } from "@/session/tools"
 import { MessageID, SessionID } from "@/session/schema"
+import { Todo } from "@/session/todo"
 import { ShellTool } from "@/tool/shell"
 import * as Tool from "@/tool/tool"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
+import { QuestionTool } from "@/tool/question"
+import { TodoWriteTool } from "@/tool/todo"
 import { WriteTool } from "@/tool/write"
 import { TestConfig } from "../../fixture/config"
 import { tmpdirScoped } from "../../fixture/fixture"
@@ -153,6 +157,13 @@ const truncate = Layer.mock(Truncate.Service)({
   output: (text: string) => Effect.succeed({ content: text, truncated: false as const }),
   limits: () => Effect.succeed({ maxLines: Truncate.MAX_LINES, maxBytes: Truncate.MAX_BYTES }),
 })
+const question = Layer.mock(Question.Service)({
+  ask: () => Effect.succeed([]),
+})
+const todo = Layer.mock(Todo.Service)({
+  get: () => Effect.succeed([]),
+  update: () => Effect.void,
+})
 const base = Layer.mergeAll(
   config,
   agents,
@@ -163,6 +174,8 @@ const base = Layer.mergeAll(
   lsp,
   format,
   truncate,
+  question,
+  todo,
   Bus.layer,
   AppNodeBuilder.build(EventV2Bridge.node),
   AppNodeBuilder.build(Database.node),
@@ -175,7 +188,14 @@ const registry = Layer.effect(
   Effect.gen(function* () {
     const write = yield* WriteTool.pipe(Effect.flatMap(Tool.init))
     const shell = yield* ShellTool.pipe(Effect.flatMap(Tool.init))
-    const list = [ToolNetwork.builtin(write), ToolNetwork.builtin(shell)]
+    const ask = yield* QuestionTool.pipe(Effect.flatMap(Tool.init))
+    const todos = yield* TodoWriteTool.pipe(Effect.flatMap(Tool.init))
+    const list = [
+      ToolNetwork.builtin(write),
+      ToolNetwork.builtin(shell),
+      ToolNetwork.builtin(ask),
+      ToolNetwork.builtin(todos),
+    ]
     return ToolRegistry.Service.of({
       ids: () => Effect.succeed(list.map((item) => item.id)),
       all: () => Effect.succeed(list),
@@ -513,5 +533,47 @@ it.live("snapshots bash before a shell.env-only plugin hook", () =>
 
     expect(pluginEvents).toEqual(["snapshot", "shell.env"])
     hooks.length = 0
+  }),
+)
+
+it.live("does not snapshot question and todowrite without hooks but protects their hooks", () =>
+  Effect.gen(function* () {
+    const dirs = yield* fixture()
+    const args = {
+      question: {
+        questions: [{ header: "Continue", question: "Continue?", options: [], multiple: false }],
+      },
+      todowrite: {
+        todos: [{ content: "Test todo", status: "pending", priority: "high" }],
+      },
+    }
+    const events: string[] = []
+    hooks.length = 0
+    pluginEvents.length = 0
+    yield* Effect.addFinalizer(() => Effect.sync(() => void (hooks.length = 0)))
+    const plainLayer = TestConfig.layer({ get: () => Effect.succeed({ sandbox: { enabled: false } }) })
+
+    const plain = yield* resolve(dirs.ctx, [], events).pipe(Effect.provide(plainLayer))
+    for (const [id, input] of Object.entries(args)) {
+      const tool = plain[id]
+      if (!tool) yield* Effect.die(new Error(`${id} tool is missing`))
+      events.length = 0
+      yield* call(tool, input, `${id}-plain`)
+      expect(events).toEqual([])
+    }
+
+    hooks.push({
+      "tool.execute.before": async (input) => {
+        events.push(`${input.tool}:hook`)
+      },
+    })
+    const guarded = yield* resolve(dirs.ctx, [], events).pipe(Effect.provide(plainLayer))
+    for (const [id, input] of Object.entries(args)) {
+      const tool = guarded[id]
+      if (!tool) yield* Effect.die(new Error(`${id} tool is missing`))
+      events.length = 0
+      yield* call(tool, input, `${id}-hooked`)
+      expect(events).toEqual(["snapshot", `${id}:hook`])
+    }
   }),
 )

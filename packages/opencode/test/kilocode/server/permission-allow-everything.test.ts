@@ -233,7 +233,10 @@ describe("AllowEverythingPermission", () => {
         })
       }).pipe(provideInstance(second))
 
-      expect(result).toBeUndefined()
+      expect(result).toEqual({
+        manual: false,
+        rule: { permission: "*", pattern: "*", action: "allow" },
+      })
     }).pipe(Effect.provide(testInstanceStoreLayer)),
   )
 
