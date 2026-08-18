@@ -257,6 +257,8 @@ describe("lazy snapshot mutation gate", () => {
     expect(check("list_mcp_resources")).toBe(false)
     expect(check("list_mcp_resource_templates")).toBe(false)
     expect(check("read_mcp_resource")).toBe(false)
+    expect(check("question")).toBe(false)
+    expect(check("todowrite")).toBe(false)
   })
 
   it("fails closed for shell, plugin, and generic MCP tools", () => {
