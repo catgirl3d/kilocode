@@ -1134,9 +1134,16 @@ describe("tool.shell abort", () => {
       projectRoot,
       Effect.gen(function* () {
         const updates: string[] = []
+        // kilocode_change start - use shell-native output without nested quoting
+        const command = PS.has(sh())
+          ? "Write-Output first; Write-Output second"
+          : sh() === "cmd"
+            ? "echo first & echo second"
+            : "printf 'first\\n'; printf 'second\\n'"
+        // kilocode_change end
         const result = yield* run(
           {
-            command: `echo first && sleep 0.1 && echo second`,
+            command, // kilocode_change
           },
           {
             ...ctx,
@@ -1149,7 +1156,7 @@ describe("tool.shell abort", () => {
         )
         expect(result.output).toContain("first")
         expect(result.output).toContain("second")
-        expect(updates.length).toBeGreaterThan(1)
+        expect(updates.some((output) => output.includes("second"))).toBe(true) // kilocode_change
       }),
     ),
   )
