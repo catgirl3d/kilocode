@@ -457,6 +457,13 @@ export const MessageList: Component<MessageListProps> = (props) => {
   function taskText(part: Part & { type: "tool" }, state: ToolState): string[] {
     const input = state.input as { subagent_type?: string; description?: string } | undefined
     const type = input?.subagent_type
+    const meta = state.status === "running" || state.status === "completed" ? state.metadata : undefined
+    const child = childID({
+      type: "tool",
+      tool: part.tool,
+      metadata: part.metadata as { sessionId?: string } | undefined,
+      state: { metadata: meta },
+    })
     const chunks = [type ? i18n.t("ui.tool.agent", { type }) : i18n.t("ui.tool.agent.default")]
     if (input?.description) chunks.push(input.description)
     // TaskToolExpanded.tsx only shows the raw <task_result> body when there's
@@ -468,12 +475,6 @@ export const MessageList: Component<MessageListProps> = (props) => {
     // kilo-ui's default hideDetails task card, which never shows result
     // text there), so skip this entirely in that surface.
     if (state.status === "completed" && !inAgentManager) {
-      const child = childID({
-        type: "tool",
-        tool: part.tool,
-        metadata: part.metadata as { sessionId?: string } | undefined,
-        state: { metadata: state.metadata },
-      })
       const result = taskResult(state.output, child)
       if (result) chunks.push(stripMarkdownLinkUrls(result))
     }
