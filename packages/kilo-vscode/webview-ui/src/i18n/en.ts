@@ -510,6 +510,7 @@ export const dict = {
   "session.tabs.switcher.current": "Current",
   "session.tabs.switcher.pending": "New",
   "session.tabs.switcher.busy": "Working",
+  "session.action.copyId": "Copy session ID",
   "session.tab.local": "Local",
   "session.tab.cloud": "Cloud",
   "session.tab.worktree": "Worktree",
