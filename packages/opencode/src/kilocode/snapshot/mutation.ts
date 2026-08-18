@@ -22,6 +22,8 @@ export namespace KiloSnapshotMutation {
     "list_mcp_resources",
     "list_mcp_resource_templates",
     "read_mcp_resource",
+    "question",
+    "todowrite",
   ])
   const writes = new Set(["edit", "write", "apply_patch", "interactive_terminal", "notebook_edit", "notebook_execute"])
   // These actions only inspect or manage the tracked process; start/restart and
