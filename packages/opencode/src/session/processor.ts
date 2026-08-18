@@ -779,6 +779,21 @@ const layer = Layer.effect(
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
         const finished = yield* gate.finishStep() // kilocode_change - close lazy snapshot before cleanup patch
         const baseline = ctx.snapshot ?? finished.baseline // kilocode_change
+        const terminal = baseline && finished.finish // kilocode_change
+        // kilocode_change start - terminal checkpoint must precede its patch for part-level reverts
+        if (terminal) {
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            messageID: ctx.assistantMessage.id,
+            sessionID: ctx.sessionID,
+            type: "step-finish",
+            reason: ctx.assistantMessage.finish ?? "error",
+            snapshot: terminal,
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+        }
+        // kilocode_change end
         if (baseline) { // kilocode_change
           const patch = yield* snapshot.patch(baseline) // kilocode_change
           if (patch.files.length) {
@@ -793,7 +808,16 @@ const layer = Layer.effect(
           }
           ctx.snapshot = undefined
         }
-
+        // kilocode_change start - summary must observe the terminal checkpoint after its patch
+        if (terminal) {
+          yield* summary
+            .summarize({
+              sessionID: ctx.sessionID,
+              messageID: ctx.assistantMessage.parentID,
+            })
+            .pipe(Effect.ignore, Effect.forkIn(scope))
+        }
+        // kilocode_change end
         if (ctx.currentText) {
           const end = Date.now()
           ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
