@@ -101,12 +101,14 @@ describe("lazy snapshot mutation gate", () => {
         const empty = yield* gate.finishStep()
         const baseline = yield* gate.ensure()
         const finish = yield* gate.finishStep()
-        return { empty, baseline, finish }
+        const again = yield* gate.finishStep()
+        return { empty, baseline, finish, again }
       }),
     )
     expect(result.empty.finish).toBeUndefined()
     expect(result.baseline).toBe("baseline")
     expect(result.finish.finish).toBe("finish")
+    expect(result.again.finish).toBeUndefined()
     expect(tracks).toBe(2)
   })
 
