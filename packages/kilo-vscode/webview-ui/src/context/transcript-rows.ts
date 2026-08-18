@@ -256,7 +256,7 @@ export function transcriptRows(
     attachTiming(assistant, copied, turnTiming(turn))
 
     const changes = diffs(turn.user)
-    const snapshot = snapshotStatus(turn.assistant.flatMap((msg) => getParts(msg.id)))
+    const snapshot = snapshotStatus(turn.assistant.flatMap((msg) => parts(msg.id)))
     if (changes.length > 0 || snapshot) {
       rows.push({ ...meta, type: "diff", key: `${turn.id}:diff`, message: turn.user, diffs: changes, snapshot })
     }
