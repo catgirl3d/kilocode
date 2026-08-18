@@ -11,6 +11,7 @@
 - Preview or remove stale child sessions with the `kilo session cleanup` command.
 - Send an empty first prompt as `continue` when no media or review comments are attached.
 - Clear heavy tool outputs from the active session context on demand.
+- Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
 
 ### Fixes & Enhancements
 

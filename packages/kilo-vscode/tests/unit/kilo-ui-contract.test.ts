@@ -27,6 +27,15 @@ const KILO_MESSAGE_PART_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/co
 const KILO_MESSAGE_HIGHLIGHT_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/message-highlight.ts")
 const KILO_BASIC_TOOL_CSS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/basic-tool.css")
 const KILO_MESSAGE_PART_CSS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/message-part.css")
+const TASK_RENDERER_FILE = path.join(
+  MONOREPO_ROOT,
+  "packages/kilo-vscode/webview-ui/src/components/chat/TaskToolExpanded.tsx",
+)
+const MESSAGE_LIST_FILE = path.join(
+  MONOREPO_ROOT,
+  "packages/kilo-vscode/webview-ui/src/components/chat/MessageList.tsx",
+)
+const MESSAGE_PARTS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/types/messages/parts.ts")
 const SHELL_ROLLING_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/shell-rolling-results.tsx")
 const ASSISTANT_MESSAGE_FILE = path.join(
   MONOREPO_ROOT,
@@ -86,6 +95,32 @@ describe("ToolRegistry tool name contract (runtime)", () => {
       process.exit(0)
     `)
     expect(result.ok, `ToolRegistry check failed: ${result.output}`).toBe(true)
+  })
+})
+
+describe("Sub-agent session title contract", () => {
+  it("keeps task titles short while exposing the child session ID through copy actions", () => {
+    const expanded = fs.readFileSync(TASK_RENDERER_FILE, "utf-8")
+    const standard = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
+    const list = fs.readFileSync(MESSAGE_LIST_FILE, "utf-8")
+    const parts = fs.readFileSync(MESSAGE_PARTS_FILE, "utf-8")
+
+    expect(expanded).toContain(
+      'createMemo(() => i18n.t("ui.tool.agent", { type: props.input.subagent_type || props.tool }))',
+    )
+    expect(expanded).toContain(
+      '<CopyButton value={() => childSessionId() ?? ""} label={language.t("session.action.copyId")} />',
+    )
+    expect(standard).toContain("props.metadata.sessionId ?? props.partMetadata?.sessionId")
+    expect(standard).toContain("const title = createMemo(() => agentTitle(i18n, type()))")
+    expect(standard).toContain('label={i18n.t("session.action.copyId" as UiI18nKey)}')
+    expect(standard).toContain("await clipboard.write(text)")
+    expect(standard).toContain("e.stopPropagation()")
+    expect(standard).toContain("onMouseDown={(e: MouseEvent) => e.preventDefault()}")
+    expect(standard).toContain('props.label} placement="bottom"')
+    expect(parts).toMatch(/status: "running"[\s\S]*metadata\?: Record<string, unknown>/)
+    expect(list).toContain('state.status === "running" || state.status === "completed"')
+    expect(list).not.toContain("chunks.push(`(${child})`)")
   })
 })
 

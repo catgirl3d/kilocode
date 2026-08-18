@@ -1,7 +1,12 @@
 // Tool state for tool parts
 export type ToolState =
   | { status: "pending"; input: Record<string, unknown> }
-  | { status: "running"; input: Record<string, unknown>; title?: string }
+  | {
+      status: "running"
+      input: Record<string, unknown>
+      title?: string
+      metadata?: Record<string, unknown>
+    }
   | {
       status: "completed"
       input: Record<string, unknown>
