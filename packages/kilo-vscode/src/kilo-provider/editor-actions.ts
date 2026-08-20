@@ -34,7 +34,7 @@ type EditorActionMessage = EditorOpenMessage & {
 type EditorActionOptions = {
   dir: (sessionID?: string) => string
   diff?: DiffVirtualProvider
-  openMarkdown?: (file: string, sessionID?: string) => boolean
+  openMarkdown?: (file: string, sessionID?: string, line?: number, column?: number) => boolean
   storage?: vscode.Uri
   post?: (msg: unknown) => void
 }
@@ -106,13 +106,20 @@ function validateInstructionPath(message: EditorActionMessage, opts: EditorActio
   )
 }
 
+function openMarkdownFile(file: string, message: EditorActionMessage, opts: EditorActionOptions): boolean {
+  if (!isMarkdownFile(file)) return false
+  if (/^https?:\/\//i.test(file) || file.startsWith("~/") || isAbsolutePath(file)) return false
+  return opts.openMarkdown?.(file, message.sessionID, message.line, message.column) === true
+}
+
 export function handleEditorAction(message: EditorActionMessage, opts: EditorActionOptions): boolean {
   if (message.type === "openFile") {
     // Resolve the directory from the session the file reference was rendered
     // for (when the webview provides it), not whatever session happens to be
     // current — mirrors the validateFiles case below.
     if (message.filePath) {
-      if (isMarkdownFile(message.filePath) && opts.openMarkdown?.(message.filePath, message.sessionID)) return true
+      const file = message.filePath
+      if (openMarkdownFile(file, message, opts)) return true
       openFile(opts.dir(message.sessionID), message.filePath, message.line, message.column)
     }
     return true
