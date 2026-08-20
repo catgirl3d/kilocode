@@ -1756,12 +1756,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           : (this.getProjectDirectory(this.currentSession?.id) ?? this.getWorkspaceDirectory(this.currentSession?.id)),
       diff: this.diffVirtualProvider,
       openPRComment: (comment, sessionID) => this.openChanges(sessionID, undefined, comment),
-      openMarkdown: (file, sessionID) => {
+      openMarkdown: (file, sessionID, line, column) => {
         if (!this.documentViewerProvider) return false
         this.documentViewerProvider.openFromCommand({
           sessionId: sessionID,
           directory: this.getWorkspaceDirectory(sessionID ?? this.currentSession?.id),
           file,
+          line,
+          column,
         })
         return true
       },
