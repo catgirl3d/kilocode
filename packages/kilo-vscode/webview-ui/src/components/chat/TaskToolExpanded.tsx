@@ -24,7 +24,7 @@ import { useWorktreeMode } from "../../context/worktree-mode"
 import { childID, latestTaskPart } from "../../context/session-utils"
 import { useConfig } from "../../context/config"
 import { openSubagent } from "./open-subagent"
-import { showChildPromotion, taskAvatarStatus, taskResult, taskRunning, taskVisible } from "./task-tool-state"
+import { showChildPromotion, taskAvatarStatus, taskResult, taskRunning, taskSessionStatus, taskVisible } from "./task-tool-state"
 
 const TaskToolRenderer: Component<ToolProps> = (props) => {
   const i18n = useI18n()
@@ -57,6 +57,14 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
       ),
     ),
   )
+  const taskStatus = createMemo(() => {
+    const id = childSessionId()
+    return taskSessionStatus(id ? session.allStatusMap()[id] : undefined, props.status)
+  })
+  const jobLabel = createMemo(() => {
+    const status = taskStatus()
+    return status ? language.t(`task.backgroundAgents.status.${status}`) : undefined
+  })
 
   const running = createMemo(() => taskRunning(props.status))
   const avatar = createMemo(() => {
@@ -186,6 +194,17 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
   const trigger = () => (
     <div data-slot="basic-tool-tool-info-structured" data-component="task-tool-heading">
       <div data-slot="basic-tool-tool-info-main">
+        <Show when={taskStatus()}>
+          {(status) => (
+            <span
+              data-slot="task-agent-status"
+              data-status={status()}
+              role="img"
+              aria-label={jobLabel()}
+              title={jobLabel()}
+            />
+          )}
+        </Show>
         <span data-slot="basic-tool-tool-title" title={description() || title()}>
           {description() || title()}
         </span>
