@@ -38,6 +38,8 @@ Before saying an implementation is ready, run the smallest relevant checks that 
 | JetBrains plugin | From `packages/kilo-jetbrains/`: `./gradlew typecheck`, `./gradlew test`. Requires Java 21; do not run `java -version` as a routine preflight. Check Java only after a Java-version or missing-Java failure. |
 | CI/local guards | Run affected guards documented above, such as `bun run knip`, `bun run check-kilocode-change`, `bun run script/check-opencode-annotations.ts --worktree`, or source link extraction |
 
+The `pre-commit` hook runs the fast guards automatically (`format:check`, forbidden-marker check, opencode annotations, markdown table padding, fork audit); the `pre-push` hook repeats them and adds typechecks. Fix failures before committing instead of bypassing hooks.
+
 Never run root `bun test`; the root script prints `do not run tests from root` and exits with code 1. Use package-level tests instead.
 
 ## Products
@@ -211,3 +213,25 @@ When editing shared upstream files, mark Kilo-specific lines with `kilocode_chan
 Markers are NOT needed in paths that contain `kilocode` in the name (e.g. `packages/opencode/src/kilocode/`, `packages/opencode/test/kilocode/`) — these are entirely Kilo Code additions and won't conflict with upstream.
 
 For decision rules on when to keep changes inline vs. extract Kilo logic, marker placement guidance, and verification commands, load `.kilo/skills/kilocode-merge-minimizer/SKILL.md`.
+
+## Personal Fork Rules & Change Tracking
+
+This repository is a personal fork of Kilo Code (`upstream/main`).
+
+- **Fork Changelog & Changesets**:
+  - Every custom feature, enhancement, or fix in this fork MUST be documented in `CHANGELOG-FORK.md`.
+  - In addition, user-facing changes STILL require a changeset file in `.changeset/<slug>.md` (e.g. `"kilo-code": patch` or `minor`) describing the change from the user's perspective in imperative mood.
+- **Change Annotation Rules by Location**:
+  - **New Fork Source Files**: Put `// fork_change - new file` (or `{/* fork_change - new file */}`, `# fork_change - new file`) on Line 1 of any new source file created for this fork. In shared OpenCode directories, use `// kilocode_change - new file`. New test files, Markdown docs, and JSON configs are exempt.
+  - **Edits in Existing Kilo Files**: When modifying existing upstream Kilo code in `packages/kilo-vscode/`, `packages/kilo-ui/`, or existing files in `packages/opencode/src/kilocode/`, mark only your added/changed blocks with `// fork_change` (or `// fork_change start` / `end`, `{/* fork_change */}`). In `src/kilocode/` and `kilo-gateway/`, historical `kilocode_change` comments are also accepted.
+  - **NEVER use `kilocode_change` in `packages/kilo-vscode/` or `packages/kilo-ui/`**: Doing so breaks CI `check-kilocode-change`.
+  - **Shared OpenCode Files**: When editing shared upstream OpenCode files (`packages/opencode/src/` outside `kilocode/`), use `// kilocode_change` to satisfy `bun run script/check-opencode-annotations.ts`.
+  - **Prettier Stability**: Use block markers (`// fork_change start` / `end` on standalone lines) for multi-line expressions, hooks, and JSX to prevent Prettier from moving trailing comments onto inner lines during formatting.
+- **Fork Rebase Protocol**:
+  - When rebasing on `upstream/main`, strictly follow `FORK_REBASE.md`.
+- **Finding Fork Changes & Verification**:
+  - **Single file / folder audit on disk**: `bun run script/fork-audit.ts --worktree path/to/file.ts` (or `git diff upstream/main -- path/to/file.ts`).
+  - **Single file / folder in commit history**: `bun run script/fork-audit.ts path/to/file.ts` (or `git diff upstream/main...HEAD -- path/to/file.ts`).
+  - **Full repository pre-commit/pre-push audit**: Run `bun run script/fork-audit.ts --worktree`.
+  - **Committed history audit (`upstream/main...HEAD`)**: Run `bun run script/fork-audit.ts`.
+  - Reports uncovered blocks, unbalanced markers, and layer violations; exits with code 1 on any finding, code 0 when clean.
