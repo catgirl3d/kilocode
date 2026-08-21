@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+# fork_change start - commit-time verification guards (mirror of pre-push fast checks)
+echo "[pre-commit] format:check (kilo-vscode)"
+bun run --cwd packages/kilo-vscode format:check
+
+echo "[pre-commit] forbidden kilocode_change markers"
+bun run --cwd packages/kilo-vscode check-kilocode-change
+
+echo "[pre-commit] opencode annotation markers"
+bun run script/check-opencode-annotations.ts --worktree
+
+echo "[pre-commit] markdown table padding"
+bun run script/check-md-table-padding.ts
+
+echo "[pre-commit] fork annotation audit"
+bun run script/fork-audit.ts --worktree
+# fork_change end
