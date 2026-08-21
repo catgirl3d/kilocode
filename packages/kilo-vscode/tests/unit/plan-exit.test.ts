@@ -64,6 +64,11 @@ describe("plan_exit renderer uses openFile not openDiff (source)", () => {
     expect(src).not.toContain('language.t("plan.exit.readyNew")')
   })
 
+  it("does not render the plan status badge", () => {
+    expect(src).not.toContain("plan-exit-badge")
+    expect(src).not.toContain('language.t("ui.patch.action.plan")')
+  })
+
   it("does not infer status from tool history", () => {
     expect(src).not.toContain("function inferPlanStatus")
     expect(src).not.toContain("function patchUpdatedPlan")
