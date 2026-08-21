@@ -2996,7 +2996,7 @@ export class Auth2 extends HeyApiClient {
       name: string
       directory?: string
       workspace?: string
-      code?: string
+      code: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3097,11 +3097,11 @@ export class Mcp extends HeyApiClient {
    * Dynamically add a new Model Context Protocol (MCP) server to the system.
    */
   public add<ThrowOnError extends boolean = false>(
-    parameters?: {
+    parameters: {
       directory?: string
       workspace?: string
-      name?: string
-      config?: McpLocalConfig | McpRemoteConfig
+      name: string
+      config: McpLocalConfig | McpRemoteConfig
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3196,11 +3196,11 @@ export class Mcp extends HeyApiClient {
    * Read a resource from a connected MCP server by URI. Used by MCP Apps to load UI resources.
    */
   public readResource<ThrowOnError extends boolean = false>(
-    parameters?: {
+    parameters: {
       directory?: string
       workspace?: string
-      uri?: string
-      server?: string
+      uri: string
+      server: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3235,11 +3235,11 @@ export class Mcp extends HeyApiClient {
    * Call a tool on a connected MCP server. Used by MCP Apps for widget-initiated tool calls.
    */
   public callTool<ThrowOnError extends boolean = false>(
-    parameters?: {
+    parameters: {
       directory?: string
       workspace?: string
-      server?: string
-      name?: string
+      server: string
+      name: string
       arguments?: {
         [key: string]: unknown
       }

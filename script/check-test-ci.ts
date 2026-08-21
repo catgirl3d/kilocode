@@ -11,15 +11,18 @@ const proc = Bun.spawnSync(["git", "ls-files", "packages", "script"], {
 if (proc.exitCode !== 0) throw new Error(proc.stderr.toString() || "Unable to list tracked package tests")
 
 const exempt = new Set(["packages/kilo-vscode"])
-const dirs = new Set(
-  proc.stdout
-    .toString()
-    .split("\n")
-    .filter((file) => /^packages\/.*\.test\.tsx?$/.test(file))
-    .map((file) => file.split("/").slice(0, 2).join("/")),
-)
 const missing: string[] = []
 const files = proc.stdout.toString().split("\n")
+
+const dirs = new Set<string>()
+for (const file of files.filter((file) => /^packages\/.*\.test\.tsx?$/.test(file))) {
+  for (let dir = path.posix.dirname(file); dir.startsWith("packages/"); dir = path.posix.dirname(dir)) {
+    if (await Bun.file(path.join(root, dir, "package.json")).exists()) {
+      dirs.add(dir)
+      break
+    }
+  }
+}
 
 const scripts = files.filter((file) => /^script\/.*\.test\.tsx?$/.test(file))
 if (scripts.length > 0) {
