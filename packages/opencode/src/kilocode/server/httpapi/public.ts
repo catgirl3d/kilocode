@@ -22,9 +22,11 @@ type Response = {
 }
 
 type Operation = {
+  operationId?: string
   tags?: string[]
   parameters?: Parameter[]
   requestBody?: {
+    required?: boolean
     content?: Record<string, { schema?: Schema }>
   }
   responses?: Record<string, Response>
@@ -40,6 +42,14 @@ type Spec = {
 export function matchLegacyKiloOpenApi(input: Record<string, unknown>) {
   rebrand(input)
   const spec = input as Spec
+  const requiredBodies = new Set(["mcp.add", "mcp.auth.callback", "mcp.readResource", "mcp.callTool"])
+  for (const item of Object.values(spec.paths ?? {})) {
+    for (const operation of Object.values(item)) {
+      if (operation && requiredBodies.has(operation.operationId ?? "") && operation.requestBody) {
+        operation.requestBody.required = true
+      }
+    }
+  }
   const shake = spec.paths?.["/session/{sessionID}/shake"]?.post
   if (shake) shake.tags = ["session"]
   const rules = spec.paths?.["/config/rules"]?.get?.parameters?.find(
