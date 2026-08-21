@@ -8,6 +8,8 @@
 - Support Groq Whisper voice input with configured Groq API keys and optional English translation.
 - Choose a preferred reasoning effort for models without a saved selection.
 - Quickly switch to and reorder favorite models from the VS Code chat picker.
+- Filter discovered skills by name in Agent Behaviour settings.
+- Preserve child session statuses, including retry state, when syncing sessions in the inspector.
 - Preview or remove stale child sessions with the `kilo session cleanup` command.
 - Send an empty first prompt as `continue` when no media or review comments are attached.
 - Clear heavy tool outputs from the active session context on demand.
@@ -21,3 +23,4 @@
 - Avoid initializing workspace snapshots for reasoning-only and read-only agent steps, and show their status unobtrusively in VS Code chat.
 - Prevent nested cards around tool and reasoning output in VS Code chat.
 - Preserve earlier conversation history when reverting after message IDs roll over.
+- Remove the upstream `PLAN` badge from completed plan messages in VS Code chat.
