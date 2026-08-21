@@ -1,7 +1,11 @@
 import { afterEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
+import { BackgroundJob } from "../../../src/background/job"
+import { AppRuntime } from "../../../src/effect/app-runtime"
 import { Session } from "../../../src/session/session"
+import { InstanceStore } from "../../../src/project/instance-store"
+import { KilocodePaths } from "../../../src/kilocode/server/httpapi/groups/kilocode"
 import { Server } from "../../../src/server/server"
 import { ExperimentalPaths } from "../../../src/server/routes/instance/httpapi/groups/experimental"
 import { disposeAllInstances, TestInstance } from "../../fixture/fixture"
@@ -71,5 +75,41 @@ describe("Kilo experimental HttpApi", () => {
       },
     },
     30_000,
+  )
+
+  it.instance("omits undefined background job metadata values from JSON responses", () =>
+    Effect.gen(function* () {
+      const tmp = yield* TestInstance
+      yield* Effect.promise(() =>
+        AppRuntime.runPromise(
+          InstanceStore.Service.use((store) =>
+            store.provide(
+              { directory: tmp.directory },
+              BackgroundJob.Service.use((jobs) =>
+                jobs.start({
+                  id: "job_httpapi_undefined_variant",
+                  type: "task",
+                  metadata: {
+                    parentSessionId: "ses_httpapi_parent",
+                    sessionId: "ses_httpapi_child",
+                    variant: undefined,
+                  },
+                  run: Effect.never,
+                }),
+              ),
+            ),
+          ),
+        ),
+      )
+
+      const response = yield* request(`${KilocodePaths.backgroundJobs}?sessionID=ses_httpapi_parent`, tmp.directory)
+      expect(response.status).toBe(200)
+      const jobs = yield* json<Array<{ metadata?: Record<string, unknown> }>>(response)
+      expect(jobs).toHaveLength(1)
+      expect(jobs[0]?.metadata).toEqual({
+        parentSessionId: "ses_httpapi_parent",
+        sessionId: "ses_httpapi_child",
+      })
+    }),
   )
 })
