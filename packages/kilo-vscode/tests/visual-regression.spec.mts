@@ -79,18 +79,24 @@ async function settle(page: Page) {
 // lands at indeterminate times.
 // The diff-panel scroll-up story settles at a slightly different scroll offset
 // between runs, so its baseline flips by a few pixels even without source changes.
+// The session-dock stability story exists to measure geometry across the
+// working/idle swap and carries a debug toggle button, so it is not a meaningful
+// appearance baseline.
+// Interactive fixture for the Skills search Playwright test.
 const SKIP = new Set<string>([
   "agentmanager--diff-panel-cached-worktree-switch",
   "agentmanager--diff-panel-viewport-loading",
   "agentmanager--diff-panel-interrupted-loading",
   "agentmanager--diff-panel-scroll-up",
   "agentmanager--file-tree-virtualized-large",
+  "chat--chat-view-session-dock-stability",
   "agentmanager--worktree-item-busy",
   "agentmanager--full-screen-diff-agent-edit-scroll",
   "agentmanager--side-terminal-panel-tabs",
   "composite-webview--permission-dock-config-preloaded",
   "settings--sandboxing-allowlist",
   "settings--sandboxing-panel",
+  "settings--agent-behaviour-skills-search",
 ])
 
 const DOCS = new Map<string, string[]>([
