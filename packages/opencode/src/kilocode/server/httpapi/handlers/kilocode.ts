@@ -322,7 +322,12 @@ export const kilocodeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilocode"
           started_at: job.started_at,
           completed_at: job.completed_at,
           error: job.error,
-          metadata: job.metadata,
+          // fork_change start
+          metadata:
+            job.metadata === undefined
+              ? undefined
+              : Object.fromEntries(Object.entries(job.metadata).filter(([, value]) => value !== undefined)),
+          // fork_change end
         })) satisfies (typeof BackgroundJobInfo.Type)[]
     })
 
