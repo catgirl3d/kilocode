@@ -923,8 +923,10 @@ export const dict = {
   "settings.agentBehaviour.badge.disabled": "disabled",
   "settings.agentBehaviour.badge.deprecated": "deprecated",
   "settings.agentBehaviour.discoveredSkills": "Discovered Skills",
+  "settings.agentBehaviour.skillSearch": "Search skills by name",
   "settings.agentBehaviour.noSkillsFound":
     "No skills discovered. Add skill folder paths or URLs below to make skills available.",
+  "settings.agentBehaviour.noSkillsMatch": "No skills match your search.",
   "settings.agentBehaviour.noAgentsFound": "No agents found.",
   "settings.agentBehaviour.removeAgent.title": "Remove agent",
   "settings.agentBehaviour.removeAgent.confirm":

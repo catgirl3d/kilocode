@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test"
 
 const GLOBALS = "colorScheme:dark;theme:kilo-vscode;vscodeTheme:dark-modern"
 const STORY_ID = "settings--agent-behaviour-skills-overflow"
+const SEARCH_STORY_ID = "settings--agent-behaviour-skills-search"
 
 const SEEDED_PATH = "/home/user/projects/very-long-directory-name/skills-collection/team-shared"
 const SEEDED_PATH_2 = "./relative/path/to/skills/another/very/long/nested/directory"
@@ -10,6 +11,12 @@ const SEEDED_URL_2 = "https://other.example.org/skills/v2/registry.json?namespac
 
 function overflowFixture(page: Page) {
   return page.goto(`/iframe.html?id=${STORY_ID}&viewMode=story&globals=${GLOBALS}`, {
+    waitUntil: "load",
+  })
+}
+
+function searchFixture(page: Page) {
+  return page.goto(`/iframe.html?id=${SEARCH_STORY_ID}&viewMode=story&globals=${GLOBALS}`, {
     waitUntil: "load",
   })
 }
@@ -30,6 +37,14 @@ async function assertRowContained(row: Locator, card: Locator, label: string) {
   expect(rowBox!.x + rowBox!.width, `${label}: row right edge inside card`).toBeLessThanOrEqual(
     cardBox!.x + cardBox!.width + 1,
   )
+}
+
+async function assertWithinViewport(loc: Locator, label: string, page: Page) {
+  const box = await loc.boundingBox()
+  const viewport = page.viewportSize()!
+  expect(box, `${label}: bounding box`).not.toBeNull()
+  expect(box!.x, `${label}: left edge inside viewport`).toBeGreaterThanOrEqual(-1)
+  expect(box!.x + box!.width, `${label}: right edge inside viewport`).toBeLessThanOrEqual(viewport.width + 1)
 }
 
 async function assertTooltipFitsViewport(content: Locator, label: string, page: Page) {
@@ -69,6 +84,7 @@ test.describe("skills settings responsive layout", () => {
       await expect(trigger, `path Tooltip trigger wraps the value: ${seeded}`).toBeVisible()
       const row = trigger.locator("xpath=parent::div")
       await assertRowContained(row, pathsCard, `Skill Folder Paths row "${seeded}"`)
+      await assertWithinViewport(row, `Skill Folder Paths row "${seeded}"`, page)
 
       const closeButton = row.locator('[data-icon="close"]')
       await expect(closeButton, "× button is visible").toBeVisible()
@@ -78,6 +94,7 @@ test.describe("skills settings responsive layout", () => {
       expect(btnBox!.x + btnBox!.width, "× button right edge inside card (not pushed off-screen)").toBeLessThanOrEqual(
         cardBox!.x + cardBox!.width + 1,
       )
+      await assertWithinViewport(closeButton, `× button for path "${seeded}"`, page)
 
       // The full path is always in the DOM — the ellipsis is visual-only, so
       // screen readers read the complete value without any interaction. The
@@ -96,6 +113,7 @@ test.describe("skills settings responsive layout", () => {
       await expect(trigger, `URL Tooltip trigger wraps the value: ${seeded}`).toBeVisible()
       const row = trigger.locator("xpath=parent::div")
       await assertRowContained(row, urlsCard, `Skill URLs row "${seeded}"`)
+      await assertWithinViewport(row, `Skill URLs row "${seeded}"`, page)
 
       const closeButton = row.locator('[data-icon="close"]')
       await expect(closeButton, "× button is visible").toBeVisible()
@@ -105,6 +123,7 @@ test.describe("skills settings responsive layout", () => {
       expect(btnBox!.x + btnBox!.width, "× button right edge inside card (not pushed off-screen)").toBeLessThanOrEqual(
         cardBox!.x + cardBox!.width + 1,
       )
+      await assertWithinViewport(closeButton, `× button for URL "${seeded}"`, page)
 
       // The full URL is always in the DOM — the ellipsis is visual-only, so
       // screen readers read the complete value without any interaction. The
@@ -128,6 +147,31 @@ test.describe("skills settings responsive layout", () => {
       expect(addBox!.x + addBox!.width, `Add button right edge inside ${label} card`).toBeLessThanOrEqual(
         cardBox!.x + cardBox!.width + 1,
       )
+      await assertWithinViewport(add, `Add button in ${label} card`, page)
+    }
+  })
+
+  test("filters discovered skills by name and restores the list when cleared", async ({ page }) => {
+    await searchFixture(page)
+
+    const search = page.getByRole("textbox", { name: "Search skills by name" })
+    await expect(search).toBeVisible()
+
+    for (const name of ["code-review", "browser-automation", "database-migration"]) {
+      await expect(page.getByText(name, { exact: true })).toBeVisible()
+    }
+
+    await search.fill("BROWSER")
+    await expect(page.getByText("browser-automation", { exact: true })).toBeVisible()
+    await expect(page.getByText("code-review", { exact: true })).toHaveCount(0)
+    await expect(page.getByText("database-migration", { exact: true })).toHaveCount(0)
+
+    await search.fill("quality")
+    await expect(page.getByText("No skills match your search.", { exact: true })).toBeVisible()
+
+    await search.fill("")
+    for (const name of ["code-review", "browser-automation", "database-migration"]) {
+      await expect(page.getByText(name, { exact: true })).toBeVisible()
     }
   })
 })
