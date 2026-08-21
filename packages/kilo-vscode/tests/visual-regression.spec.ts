@@ -92,6 +92,8 @@ const SKIP = new Set<string>([
   "composite-webview--permission-dock-config-preloaded",
   "settings--sandboxing-allowlist",
   "settings--sandboxing-panel",
+  // Interactive fixture for the Skills search Playwright test.
+  "settings--agent-behaviour-skills-search",
 ])
 
 const DOCS = new Map<string, string[]>([
