@@ -77,17 +77,23 @@ async function settle(page: Page) {
 // Sandboxing rows can settle at different scroll heights after settings context updates.
 // Side terminal tabs mount live xterm instances whose websocket error text
 // lands at indeterminate times.
+// The session-dock stability story exists to measure geometry across the
+// working/idle swap and carries a debug toggle button, so it is not a meaningful
+// appearance baseline.
+// Interactive fixture for the Skills search Playwright test.
 const SKIP = new Set<string>([
   "agentmanager--diff-panel-cached-worktree-switch",
   "agentmanager--diff-panel-viewport-loading",
   "agentmanager--diff-panel-interrupted-loading",
   "agentmanager--file-tree-virtualized-large",
+  "chat--chat-view-session-dock-stability",
   "agentmanager--worktree-item-busy",
   "agentmanager--full-screen-diff-agent-edit-scroll",
   "agentmanager--side-terminal-panel-tabs",
   "composite-webview--permission-dock-config-preloaded",
   "settings--sandboxing-allowlist",
   "settings--sandboxing-panel",
+  "settings--agent-behaviour-skills-search",
 ])
 
 const DOCS = new Map<string, string[]>([
