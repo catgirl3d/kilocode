@@ -14,6 +14,7 @@
 - Send an empty first prompt as `continue` when no media or review comments are attached.
 - Clear heavy tool outputs from the active session context on demand.
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
+- Show live sub-agent status dots on task cards: green while running, gray when completed, and red on error.
 
 ### Fixes & Enhancements
 
