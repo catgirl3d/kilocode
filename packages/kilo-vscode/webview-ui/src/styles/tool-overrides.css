@@ -13,6 +13,32 @@
   }
 }
 
+[data-slot="basic-tool-tool-info-main"]:has(> [data-slot="task-agent-status"]) {
+  gap: 6px;
+}
+
+[data-slot="task-agent-status"] {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  align-self: center;
+  border-radius: 50%;
+  background-color: var(--vscode-disabledForeground, #888);
+
+  &[data-status="running"] {
+    background-color: var(--vscode-testing-iconPassed, #4caf50);
+  }
+
+  &[data-status="completed"] {
+    background-color: var(--vscode-disabledForeground, #888);
+  }
+
+  &[data-status="error"] {
+    background: var(--icon-critical-base);
+  }
+}
+
 /* ============================================
    Background Process Tool
    ============================================ */
