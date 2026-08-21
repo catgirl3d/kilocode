@@ -36,6 +36,7 @@ type Parameter = {
 type Method = "get" | "post" | "patch" | "put"
 
 type Body = {
+  required?: boolean
   content?: Record<string, { schema?: Schema }>
 }
 
@@ -289,5 +290,21 @@ describe("Kilo PublicApi OpenAPI contract", () => {
 
     expect(query).toEqual(["directory", "workspace"])
     expect(route?.responses?.["200"]?.content?.["application/json"]?.schema).toMatchObject({ type: "array" })
+  })
+
+  test("requires MCP payload bodies and includes MCP Apps routes", () => {
+    const spec = OpenApi.fromApi(PublicApi)
+    const routes = [
+      { id: "mcp.add", path: "/mcp" },
+      { id: "mcp.auth.callback", path: "/mcp/{name}/auth/callback" },
+      { id: "mcp.readResource", path: "/experimental/resource/read" },
+      { id: "mcp.callTool", path: "/experimental/mcp/call-tool" },
+    ] as const
+
+    for (const route of routes) {
+      const operation = spec.paths[route.path]?.post
+      expect(operation?.operationId, route.id).toBe(route.id)
+      expect((operation?.requestBody as Body | undefined)?.required, route.id).toBe(true)
+    }
   })
 })
