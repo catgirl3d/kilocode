@@ -79,8 +79,11 @@ function createClient(options?: {
   sandboxStarted?: Deferred<void>
   createSession?: (params: Record<string, unknown>, index: number) => Promise<{ data: unknown }>
   statusData?: Record<string, unknown>
+  statusDeferred?: Deferred<{ data: Record<string, unknown> }>
+  statusDeferreds?: Deferred<{ data: Record<string, unknown> }>[]
 }) {
   const calls: { before?: string; limit?: number }[] = []
+  const gets: Array<{ sessionID: string; directory?: string }> = []
   const stopped: { sessionID: string; directory?: string }[] = []
   const aborted: { sessionID: string; directory?: string; scope?: "session" | "tree" }[] = []
   const deleted: { sessionID: string; directory?: string }[] = []
@@ -96,8 +99,10 @@ function createClient(options?: {
   const sandboxed: Array<Record<string, unknown>> = []
   const sandboxSupport: Array<Record<string, unknown>> = []
   const configReads: Array<Record<string, unknown>> = []
+  const statusCalls: Array<{ directory?: string }> = []
   return {
     calls,
+    gets,
     stopped,
     aborted,
     deleted,
@@ -108,6 +113,7 @@ function createClient(options?: {
     sandboxed,
     sandboxSupport,
     configReads,
+    statusCalls,
     session: {
       list: async () => ({ data: [] }),
       create: async (params: Record<string, unknown>) => {
@@ -116,11 +122,17 @@ function createClient(options?: {
         return options?.createDeferred?.promise ?? { data: mkCreatedSession() }
       },
       get: async (params: { sessionID: string; directory?: string }) => {
+        gets.push(params)
         if (options?.sessionGet) return options.sessionGet(params)
         return { data: options?.sessionData ?? null }
       },
-      status: async (params: { directory?: string }) =>
-        options?.status?.(params) ?? { data: options?.statusData ?? {} },
+      status: async (params: { directory?: string }) => {
+        statusCalls.push(params)
+        const deferred = options?.statusDeferreds?.shift() ?? options?.statusDeferred
+        if (deferred) return deferred.promise
+        if (options?.status) return options.status(params)
+        return { data: options?.statusData ?? {} }
+      },
       revert: async (params: Record<string, unknown>) => {
         reverted.push(params)
         if (options?.revertDeferred) return options.revertDeferred.promise
@@ -277,6 +289,8 @@ type ProviderInternals = {
     sid: string,
     opts?: { mode?: string; before?: string; limit?: number; preserveStream?: boolean },
   ) => Promise<void>
+  handleSyncSession: (sid: string, parent?: string, scope?: "task" | "inspector") => Promise<void>
+  handleChildSyncMessage: (message: Record<string, unknown>) => boolean
   handleConnectionState: (state: State) => Promise<void>
   checkConfigWarnings: (from: string) => Promise<void>
   syncWebviewState: (reason: string) => Promise<void>
@@ -1226,6 +1240,106 @@ describe("KiloProvider.handleLoadMessages / focus mode freshness", () => {
     )
     expect(loaded).toEqual([])
     expect(client.stopped).toEqual([{ sessionID: "s1", directory: "/repo" }])
+  })
+})
+
+describe("KiloProvider.handleSyncSession status hydration", () => {
+  it("replays retry details when an adopted child is opened in the inspector", async () => {
+    const client = createClient({
+      sessionData: { ...mkSession(), id: "child" },
+      messagesData: [mkMessage("m1", "assistant", 1, "child")],
+      statusData: { child: { type: "retry", attempt: 3, message: "rate limited", next: 5000 } },
+    })
+    const { internal, sent } = makeProvider(client)
+    internal.sessionDirectories.set("parent", "/repo/worktree")
+
+    await internal.handleSyncSession("child", "parent", "task")
+    expect(client.statusCalls).toEqual([{ directory: "/repo/worktree" }])
+    expect(client.calls).toHaveLength(1)
+    expect(client.gets).toHaveLength(1)
+    sent.length = 0
+
+    internal.handleChildSyncMessage({
+      type: "syncSession",
+      sessionID: "child",
+      parentSessionID: "parent",
+      scope: "inspector",
+    })
+    await Bun.sleep(0)
+
+    expect(sent).toContainEqual({
+      type: "sessionStatus",
+      sessionID: "child",
+      status: "retry",
+      attempt: 3,
+      message: "rate limited",
+      next: 5000,
+    })
+    expect(client.statusCalls).toEqual([{ directory: "/repo/worktree" }, { directory: "/repo/worktree" }])
+    expect(client.calls).toHaveLength(1)
+    expect(client.gets).toHaveLength(1)
+  })
+
+  it("replays idle when an adopted child is absent from the status response", async () => {
+    const client = createClient({
+      sessionData: { ...mkSession(), id: "child" },
+      messagesData: [mkMessage("m1", "user", 1, "child")],
+      statusData: {},
+    })
+    const { internal, sent } = makeProvider(client)
+
+    await internal.handleSyncSession("child", undefined, "task")
+    sent.length = 0
+    internal.handleChildSyncMessage({ type: "syncSession", sessionID: "child", scope: "inspector" })
+    await Bun.sleep(0)
+
+    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "child", status: "idle" })
+  })
+
+  it("does not overwrite a newer SSE status with an older inspector snapshot", async () => {
+    const initial = defer<{ data: Record<string, unknown> }>()
+    const replay = defer<{ data: Record<string, unknown> }>()
+    const client = createClient({
+      sessionData: { ...mkSession(), id: "child" },
+      messagesData: [mkMessage("m1", "assistant", 1, "child")],
+      statusDeferreds: [initial, replay],
+    })
+    const { internal, sent } = makeProvider(client)
+    const initialSync = internal.handleSyncSession("child", undefined, "task")
+    initial.resolve({ data: { child: { type: "busy" } } })
+    await initialSync
+    sent.length = 0
+
+    internal.handleChildSyncMessage({ type: "syncSession", sessionID: "child", scope: "inspector" })
+
+    internal.handleEvent({
+      type: "session.status",
+      properties: { sessionID: "child", status: { type: "busy" } },
+    })
+    replay.resolve({ data: { child: { type: "retry", attempt: 2, message: "old", next: 1000 } } })
+    await Bun.sleep(0)
+
+    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "child", status: "busy" })
+    expect(sent).not.toContainEqual(expect.objectContaining({ type: "sessionStatus", status: "retry" }))
+  })
+
+  it("delivers initial metadata and history before status is available", async () => {
+    const status = defer<{ data: Record<string, unknown> }>()
+    const client = createClient({
+      sessionData: { ...mkSession(), id: "child" },
+      messagesData: [mkMessage("m1", "assistant", 1, "child")],
+      statusDeferred: status,
+    })
+    const { internal, sent } = makeProvider(client)
+    const sync = internal.handleSyncSession("child", undefined, "task")
+
+    await Bun.sleep(0)
+
+    expect(sent).toContainEqual(expect.objectContaining({ type: "messagesLoaded", sessionID: "child" }))
+    expect(sent).not.toContainEqual(expect.objectContaining({ type: "sessionStatus", sessionID: "child" }))
+
+    status.resolve({ data: {} })
+    await sync
   })
 })
 
