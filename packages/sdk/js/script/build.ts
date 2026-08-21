@@ -11,8 +11,6 @@ import { createClient } from "@hey-api/openapi-ts"
 
 const opencode = path.resolve(dir, "../../opencode")
 
-await $`bun dev generate > ${dir}/openapi.json`.cwd(opencode)
-
 // kilocode_change start
 const retry = async <T>(label: string, fn: () => Promise<T>) => {
   if (process.platform !== "win32") return fn()
@@ -31,8 +29,13 @@ const retry = async <T>(label: string, fn: () => Promise<T>) => {
 }
 // kilocode_change end
 
+try {
+  const openapi = await $`bun dev generate`.cwd(opencode).text()
+  await Bun.write("./openapi.json", openapi)
+
 const document = (await Bun.file("./openapi.json").json()) as {
   components?: { schemas?: Record<string, unknown> }
+  paths?: Record<string, unknown>
   [key: string]: unknown
 }
 const schemas = document.components?.schemas
@@ -88,6 +91,49 @@ await createClient({
     },
   ],
 })
+
+// With paramsStructure="flat", @hey-api/openapi-ts preserves required body
+// fields in operation data types but does not propagate requestBody.required to
+// the flattened class method parameters. Keep this narrow workaround until the
+// generator handles that case itself.
+const sdkPath = "./src/v2/gen/sdk.gen.ts"
+const sdkSource = await retry("MCP SDK required parameters source", () => Bun.file(sdkPath).text())
+const requiredMethods = [
+  ["Mcp", "add", true, ["name", "config"]],
+  ["Auth2", "callback", false, ["code"]],
+  ["Mcp", "readResource", true, ["uri", "server"]],
+  ["Mcp", "callTool", true, ["server", "name"]],
+] as const
+const requiredSdk = requiredMethods.reduce((source, [className, name, needsObject, fields]) => {
+  const start = source.indexOf(`export class ${className} extends HeyApiClient {`)
+  if (start < 0) throw new Error(`Required parameters class not found: ${className}`)
+  const end = source.indexOf("\nexport class ", start + 1)
+  const section = source.slice(start, end < 0 ? undefined : end)
+  const methodStart = section.indexOf(`public ${name}<`)
+  if (methodStart < 0) throw new Error(`Required parameters method not found: ${className}.${name}`)
+  const methodEnd = section.indexOf("\n    public ", methodStart + 1)
+  const method = section.slice(methodStart, methodEnd < 0 ? undefined : methodEnd)
+  const signature = needsObject
+    ? method.replace(
+        new RegExp(`public ${name}<([^>]+)>\\(parameters\\?:`),
+        (_match, generic: string) => `public ${name}<${generic}>(parameters:`,
+      )
+    : method
+  if (needsObject && signature === method) {
+    throw new Error(`Required parameters object patch did not apply: ${className}.${name}`)
+  }
+  if (!needsObject && !new RegExp(`public ${name}<[^>]+>\\(parameters:`).test(method)) {
+    throw new Error(`Required parameters object already missing: ${className}.${name}`)
+  }
+  const nextMethod = fields.reduce((value, field) => {
+    const next = value.replace(new RegExp(`(${field})\\?:`), "$1:")
+    if (next === value) throw new Error(`Required field patch did not apply: ${className}.${name}.${field}`)
+    return next
+  }, signature)
+  const next = section.slice(0, methodStart) + nextMethod + section.slice(methodStart + method.length)
+  return source.slice(0, start) + next + source.slice(start + section.length)
+}, sdkSource)
+await retry("MCP SDK required parameters patch", () => Bun.write(sdkPath, requiredSdk))
 
 await retry("Session history types patch", async () => {
   const generatedTypes = await Bun.file("./src/v2/gen/types.gen.ts").text()
@@ -161,4 +207,6 @@ await Bun.write(legacyTypesPath, legacyNext)
 await retry("Prettier", () => $`bun prettier --write src/gen src/v2`)
 await $`rm -rf dist tsconfig.tsbuildinfo`
 await $`bun tsc`
-await $`rm openapi.json`
+} finally {
+  await retry("OpenAPI cleanup", () => $`rm -f openapi.json`)
+}

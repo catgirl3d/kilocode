@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import type { V2SessionHistoryData } from "../src/v2/gen/types.gen"
+import type { V2SessionHistoryData } from "../src/v2/gen/types.gen.js"
 
 test("uses numeric Session history positions", () => {
   const input = {

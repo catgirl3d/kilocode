@@ -11888,7 +11888,7 @@ export type McpStatusResponses = {
 export type McpStatusResponse = McpStatusResponses[keyof McpStatusResponses]
 
 export type McpAddData = {
-  body?: {
+  body: {
     name: string
     config: McpLocalConfig | McpRemoteConfig
   }
@@ -11994,7 +11994,7 @@ export type McpAuthStartResponses = {
 export type McpAuthStartResponse = McpAuthStartResponses[keyof McpAuthStartResponses]
 
 export type McpAuthCallbackData = {
-  body?: {
+  body: {
     code: string
   }
   path: {
@@ -12132,7 +12132,7 @@ export type McpDisconnectResponses = {
 export type McpDisconnectResponse = McpDisconnectResponses[keyof McpDisconnectResponses]
 
 export type McpReadResourceData = {
-  body?: {
+  body: {
     uri: string
     server: string
   }
@@ -12172,7 +12172,7 @@ export type McpReadResourceResponses = {
 export type McpReadResourceResponse = McpReadResourceResponses[keyof McpReadResourceResponses]
 
 export type McpCallToolData = {
-  body?: {
+  body: {
     server: string
     name: string
     arguments?: {
