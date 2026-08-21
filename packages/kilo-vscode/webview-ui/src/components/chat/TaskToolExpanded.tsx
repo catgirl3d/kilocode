@@ -21,7 +21,7 @@ import { useVSCode } from "../../context/vscode"
 import { useWorktreeMode } from "../../context/worktree-mode"
 import { childID } from "../../context/session-utils"
 import { openSubagent } from "./open-subagent"
-import { taskResult, taskRunning, taskVisible } from "./task-tool-state"
+import { taskResult, taskRunning, taskSessionStatus, taskVisible } from "./task-tool-state"
 
 const TaskToolRenderer: Component<ToolProps> = (props) => {
   const i18n = useI18n()
@@ -37,6 +37,15 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
       metadata: props.partMetadata as { sessionId?: string } | undefined,
       state: { metadata: props.metadata as { sessionId?: string } },
     })
+
+  const taskStatus = createMemo(() => {
+    const id = childSessionId()
+    return taskSessionStatus(id ? session.allStatusMap()[id] : undefined, props.status)
+  })
+  const jobLabel = createMemo(() => {
+    const status = taskStatus()
+    return status ? language.t(`task.backgroundAgents.status.${status}`) : undefined
+  })
 
   const running = createMemo(() => taskRunning(props.status))
   // BasicTool's forceOpen effect only fires onOpenChange on a false->true
@@ -137,6 +146,17 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
   const trigger = () => (
     <div data-slot="basic-tool-tool-info-structured">
       <div data-slot="basic-tool-tool-info-main">
+        <Show when={taskStatus()}>
+          {(status) => (
+            <span
+              data-slot="task-agent-status"
+              data-status={status()}
+              role="img"
+              aria-label={jobLabel()}
+              title={jobLabel()}
+            />
+          )}
+        </Show>
         <span data-slot="basic-tool-tool-title" class="capitalize">
           {title()}
         </span>
