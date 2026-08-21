@@ -1673,7 +1673,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (message.type === "syncSession") {
       if (message.scope === "inspector") this.inspectorSessionIds.add(message.sessionID)
       const parent = typeof message.parentSessionID === "string" ? message.parentSessionID : undefined
-      this.handleSyncSession(message.sessionID, parent).catch((e) =>
+      const scope = message.scope === "inspector" ? "inspector" : "task"
+      this.handleSyncSession(message.sessionID, parent, scope).catch((e) =>
         console.error("[Kilo New] handleSyncSession failed:", e),
       )
       return true
@@ -2192,9 +2193,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    * Handle syncing a child session (e.g. spawned by the task tool).
    * Tracks the session for SSE events and fetches its messages.
    */
-  private async handleSyncSession(sessionID: string, parentSessionID?: string): Promise<void> {
+  private async handleSyncSession(
+    sessionID: string,
+    parentSessionID?: string,
+    scope: "task" | "inspector" = "task",
+  ): Promise<void> {
     if (!this.client) return
-    if (this.syncedChildSessions.has(sessionID)) return
+    if (this.syncedChildSessions.has(sessionID)) {
+      if (scope === "inspector") await this.fetchChildSessionStatus(sessionID, this.getWorkspaceDirectory(sessionID))
+      return
+    }
 
     this.syncedChildSessions.add(sessionID)
     this.trackedSessionIds.add(sessionID)
@@ -2214,6 +2222,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
     try {
       const workspaceDir = this.getWorkspaceDirectory(sessionID)
+      void this.fetchChildSessionStatus(sessionID, workspaceDir)
       const [info, history] = await Promise.all([
         retry(() => this.client!.session.get({ sessionID, directory: workspaceDir }, { throwOnError: true })),
         retry(() => this.client!.session.messages({ sessionID, directory: workspaceDir }, { throwOnError: true })),
@@ -2247,6 +2256,25 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     } catch (err) {
       this.syncedChildSessions.delete(sessionID)
       console.error("[Kilo New] KiloProvider: Failed to sync child session:", err)
+    }
+  }
+
+  private async fetchChildSessionStatus(sessionID: string, directory: string): Promise<void> {
+    const revision = this.statusRevisions.get(sessionID) ?? 0
+    try {
+      const result = await retry(() => this.client!.session.status({ directory }, { throwOnError: true }))
+      if ((this.statusRevisions.get(sessionID) ?? 0) !== revision) return
+      const status = result.data?.[sessionID]
+      const type = status?.type ?? "idle"
+      this.sessionStatusMap.set(sessionID, type)
+      this.postMessage({
+        type: "sessionStatus",
+        sessionID,
+        status: type,
+        ...(status?.type === "retry" ? { attempt: status.attempt, message: status.message, next: status.next } : {}),
+      })
+    } catch (err) {
+      console.warn("[Kilo New] KiloProvider: Failed to fetch child session status:", err)
     }
   }
 
