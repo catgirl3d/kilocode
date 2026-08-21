@@ -23,20 +23,6 @@
     font-weight: var(--font-weight-medium);
   }
 
-  [data-slot="plan-exit-badge"] {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px 5px;
-    border: 1px solid var(--border-interactive-base);
-    border-radius: 999px;
-    color: var(--text-interactive-base);
-    font-size: var(--kilo-font-size-11);
-    font-weight: var(--font-weight-medium);
-    line-height: var(--line-height-small);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
   [data-slot="plan-exit-link"] {
     display: inline-flex;
     align-items: center;
