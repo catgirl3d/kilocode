@@ -55,6 +55,8 @@ const SCOPES = [
 const EXEMPT_SCOPES = [
   "script/upstream",
   "script/check-opencode-annotations.ts",
+  "script/fork-audit.ts",
+  "script/fork-audit.test.ts",
   "packages/script/tests/check-opencode-annotations.test.ts",
   ".github/workflows/check-opencode-annotations.yml",
   ".github/workflows/watch-opencode-releases.yml",
