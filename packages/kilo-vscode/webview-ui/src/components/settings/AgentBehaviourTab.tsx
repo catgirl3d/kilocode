@@ -82,6 +82,7 @@ const AgentBehaviourTab: Component = () => {
   const dialog = useDialog()
   const vscode = useVSCode()
   const [activeSubtab, setActiveSubtab] = createSignal<SubtabId>("agents")
+  const [search, setSearch] = createSignal("")
   const [newSkillPath, setNewSkillPath] = createSignal("")
   const [newSkillUrl, setNewSkillUrl] = createSignal("")
   const [newGlobalInstruction, setNewGlobalInstruction] = createSignal("")
@@ -267,6 +268,11 @@ const AgentBehaviourTab: Component = () => {
 
   const skillPaths = () => config().skills?.paths ?? []
   const skillUrls = () => config().skills?.urls ?? []
+  const filtered = createMemo(() => {
+    const query = search().trim().toLowerCase()
+    if (!query) return session.skills()
+    return session.skills().filter((skill) => skill.name.toLowerCase().includes(query))
+  })
 
   const addSkillPath = () => {
     const value = newSkillPath().trim()
@@ -963,40 +969,58 @@ const AgentBehaviourTab: Component = () => {
           </Card>
         }
       >
-        <Card style={{ "margin-bottom": "16px" }}>
-          <For each={session.skills()}>
-            {(skill, index) => (
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  "justify-content": "space-between",
-                  padding: "8px 0",
-                  "border-bottom": index() < session.skills().length - 1 ? "1px solid var(--border-weak-base)" : "none",
-                }}
-              >
-                <div style={{ flex: 1, "min-width": 0 }}>
-                  <div data-slot="settings-row-label-title" style={{ "margin-bottom": "0" }}>
-                    {skill.name}
+        <div style={{ "margin-bottom": "8px" }}>
+          <TextField
+            label={language.t("settings.agentBehaviour.skillSearch")}
+            hideLabel
+            placeholder={language.t("settings.agentBehaviour.skillSearch")}
+            value={search()}
+            onChange={setSearch}
+          />
+        </div>
+        <Show
+          when={filtered().length > 0}
+          fallback={
+            <Card style={{ "margin-bottom": "16px" }}>
+              <div data-slot="settings-row-label-subtitle">{language.t("settings.agentBehaviour.noSkillsMatch")}</div>
+            </Card>
+          }
+        >
+          <Card style={{ "margin-bottom": "16px" }}>
+            <For each={filtered()}>
+              {(skill, index) => (
+                <div
+                  style={{
+                    display: "flex",
+                    "align-items": "center",
+                    "justify-content": "space-between",
+                    padding: "8px 0",
+                    "border-bottom": index() < filtered().length - 1 ? "1px solid var(--border-weak-base)" : "none",
+                  }}
+                >
+                  <div style={{ flex: 1, "min-width": 0 }}>
+                    <div data-slot="settings-row-label-title" style={{ "margin-bottom": "0" }}>
+                      {skill.name}
+                    </div>
+                    <div
+                      data-slot="settings-row-label-subtitle"
+                      style={{
+                        "margin-top": "4px",
+                        "font-family": "var(--vscode-editor-font-family, monospace)",
+                      }}
+                    >
+                      <div>{skill.description}</div>
+                      {!builtin(skill) && <div>{skill.location}</div>}
+                    </div>
                   </div>
-                  <div
-                    data-slot="settings-row-label-subtitle"
-                    style={{
-                      "margin-top": "4px",
-                      "font-family": "var(--vscode-editor-font-family, monospace)",
-                    }}
-                  >
-                    <div>{skill.description}</div>
-                    {!builtin(skill) && <div>{skill.location}</div>}
-                  </div>
+                  {!builtin(skill) && (
+                    <IconButton size="small" variant="ghost" icon="close" onClick={() => confirmRemoveSkill(skill)} />
+                  )}
                 </div>
-                {!builtin(skill) && (
-                  <IconButton size="small" variant="ghost" icon="close" onClick={() => confirmRemoveSkill(skill)} />
-                )}
-              </div>
-            )}
-          </For>
-        </Card>
+              )}
+            </For>
+          </Card>
+        </Show>
       </Show>
 
       {/* Skill paths */}

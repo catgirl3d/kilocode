@@ -15,7 +15,7 @@ import AgentBehaviourTab from "../components/settings/AgentBehaviourTab"
 import AutoApproveTab from "../components/settings/AutoApproveTab"
 import ModeEditView from "../components/settings/ModeEditView"
 import McpEditView from "../components/settings/McpEditView"
-import type { AgentConfig, CommandConfig, Config } from "../types/messages"
+import type { AgentConfig, CommandConfig, Config, SkillInfo } from "../types/messages"
 import IndexingTab from "../components/settings/IndexingTab"
 import CustomProviderDialog from "../components/settings/CustomProviderDialog"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
@@ -41,6 +41,12 @@ const MOCK_AGENTS = [
     mode: "primary" as const,
     native: false,
   },
+]
+
+const MOCK_SKILLS: SkillInfo[] = [
+  { name: "code-review", description: "Review code for quality", location: "builtin" },
+  { name: "browser-automation", description: "Automate browser tasks", location: "builtin" },
+  { name: "database-migration", description: "Plan database migrations", location: "builtin" },
 ]
 
 export const SettingsPanel: Story = {
@@ -418,9 +424,33 @@ export const AgentBehaviourSkillsOverflow: Story = {
         }
       >
         <SessionContext.Provider value={session as any}>
-          <div style={{ width: "320px", height: "700px", overflow: "auto" }}>
+          <div style={{ width: "min(320px, calc(100vw - 24px))", height: "700px", overflow: "auto" }}>
             <SubtabWrapper tab="skills" />
           </div>
+        </SessionContext.Provider>
+      </StoryProviders>
+    )
+  },
+}
+
+/** Skills subtab with seeded names for the search interaction test. */
+export const AgentBehaviourSkillsSearch: Story = {
+  name: "AgentBehaviourTab — skills search",
+  render: () => {
+    const session = {
+      ...mockSessionValue({ id: "skills-search-story", status: "idle" }),
+      agents: () => MOCK_AGENTS,
+      allAgents: () => MOCK_AGENTS,
+      removeAgent: noop,
+      removeMcp: noop,
+      skills: () => MOCK_SKILLS,
+      refreshSkills: noop,
+      removeSkill: noop,
+    }
+    return (
+      <StoryProviders sessionID="skills-search-story" status="idle">
+        <SessionContext.Provider value={session as any}>
+          <SubtabWrapper tab="skills" />
         </SessionContext.Provider>
       </StoryProviders>
     )
