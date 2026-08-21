@@ -38,9 +38,48 @@ platform-specific recipes to this process.
 A substantive conflict touches executable code, configuration, tests, workflows, or a user-facing contract unless the coordinator demonstrates it is formatting-only.
 
 Do not mechanically combine substantive conflicts. Compare the common base,
-upstream intent, and fork intent. Determine whether the changes implement one
+upstream intent, and fork intent (identified by `// fork_change` and `// kilocode_change`
+markers, or `CHANGELOG-FORK.md`). Determine whether the changes implement one
 contract or independent changes, then trace affected consumers, data, state,
 ordering, and failure paths.
+
+Always preserve and adjust `// fork_change` markers during conflict resolution so
+fork modifications remain clearly annotated.
+
+### Annotation Commit Conflicts
+
+When a conflict pits an upstream refactor against the fork's annotation commit,
+resolve per hunk and never with `git checkout --ours`: taking the whole file
+also strips markers around genuine fork changes elsewhere in it.
+
+First determine which annotated regions are still fork-specific. For each
+conflicted file, check whether fork commits changed its content before the
+annotation commit:
+
+```bash
+git diff <merge-base>..<parent-of-the-annotation-commit> -- <file>
+```
+
+An empty diff proves every conflicting marker in that file is stale: take the
+HEAD side and drop those markers outright. Regions that remain genuinely
+fork-specific keep their markers at the original annotation commit's placement.
+
+Two mechanical rules prevent audit failures when restoring or adjusting markers:
+
+- Put `// fork_change end` after any fork-added blank lines adjacent to the
+  block, and `start` before leading ones. fork-audit treats a block as a run of
+  consecutive added lines; a single uncovered blank line marks the whole block
+  as missing even though the code itself is wrapped.
+- Verify placements with `bun run script/fork-audit.ts --worktree <file>` and
+  prettier before folding fixes into the annotation commit; the committed audit
+  reads HEAD and silently ignores uncommitted edits.
+
+For `bun.lock` conflicts, never resolve manually; use:
+
+```bash
+git checkout --theirs bun.lock
+bun install
+```
 
 **If upstream independently implements the same or an overlapping feature, stop before
 choosing a resolution.** The coordinator must compare the resulting user-facing
@@ -88,8 +127,11 @@ and actual behavior.
 - After a non-trivial resolution, send the current diff to review subagents and
   critically assess their findings.
 - Keep `AGENTS.md` as the source of truth for additional affected guards.
+- Run `bun run check-kilocode-change` from `packages/kilo-vscode/` to ensure no illegal markers were added.
+- Run `bun run script/check-opencode-annotations.ts --worktree` from the root when touching shared OpenCode files.
+- Run `bun run script/fork-audit.ts` to audit marker coverage and layer compliance across all rebased commits.
 - If rebased changes affect server endpoints in `packages/opencode/src/server/`, run `./script/generate.ts` from the repository root and verify the generated SDK changes.
-- Check every fork feature affected by the rebase.
+- Check every fork feature affected by the rebase (referenced in `CHANGELOG-FORK.md`).
 - For CI, inspect `trigger -> conditions -> needs -> runner -> required status`.
 
 Finish only when the working tree is clean, `git diff --check upstream/main..main`
