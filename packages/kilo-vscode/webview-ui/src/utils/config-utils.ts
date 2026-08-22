@@ -86,10 +86,12 @@ export function resolveConfig(server: Config, draft: Partial<Config>, dirty: boo
   return server
 }
 
+// fork_change start
 export function acceptsConfig(saving: boolean, blocked: boolean) {
   return !saving && !blocked
 }
 
+// fork_change end
 /**
  * Plain-object config state machine — mirrors the SolidJS ConfigProvider
  * logic without signals so the message-handling behavior is unit-testable.
@@ -100,7 +102,9 @@ export class ConfigState {
   draft: Partial<Config> = {}
   dirty = false
   saving = false
+  // fork_change start
   blocked = false
+  // fork_change end
   loading = true
 
   /** Accumulate a partial change (same as the toggle click path). */
@@ -112,7 +116,9 @@ export class ConfigState {
 
   /** Handle an incoming configLoaded push from the extension. */
   handleConfigLoaded(server: Config) {
+    // fork_change start
     if (!acceptsConfig(this.saving, this.blocked)) return
+    // fork_change end
     this.config = resolveConfig(server, this.draft, this.dirty)
     this.saved = server
     this.loading = false
@@ -120,7 +126,9 @@ export class ConfigState {
 
   /** Handle an incoming configUpdated push from the extension. */
   handleConfigUpdated(server: Config) {
+    // fork_change start
     if (this.blocked && !this.saving) return
+    // fork_change end
     if (this.saving) {
       this.saving = false
       this.draft = {}
@@ -151,19 +159,25 @@ export class ConfigState {
 
   /** Send the draft to the backend. */
   saveConfig() {
+    // fork_change start
     if (this.saving || this.blocked || Object.keys(this.draft).length === 0) return
+    // fork_change end
     this.saving = true
   }
 
+  // fork_change start
   expireConfig() {
     if (this.dirty) this.blocked = true
   }
 
+  // fork_change end
   /** Discard pending changes. */
   discardConfig() {
     this.config = this.saved
     this.draft = {}
     this.dirty = false
+    // fork_change start
     this.blocked = false
+    // fork_change end
   }
 }

@@ -12,11 +12,14 @@ import { parseModelString } from "../../../../src/shared/provider-model"
 import { ModelSelectorBase } from "../shared/ModelSelector"
 import { ThinkingSelectorBase } from "../shared/ThinkingSelector"
 import SettingsRow from "./SettingsRow"
+// fork_change start
 import {
   DEFAULT_SPEECH_TO_TEXT_MODEL,
   getSpeechToTextModel,
   type SpeechToTextMode,
 } from "../../../../src/speech-to-text/models"
+// fork_change end
+// fork_change start
 import {
   canConfigureSpeechToText,
   hasSpeechToTextAccess,
@@ -24,16 +27,19 @@ import {
   selectedSpeechToTextModel,
   selectedSpeechToTextMode,
 } from "../speech-to-text/availability"
+// fork_change end
 import { speechToTextModelOptions } from "../speech-to-text/model-selector"
 import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autocomplete-model-selector"
 import { preserveVariant } from "../../context/session-variant-store"
 
+// fork_change start
 const REASONING_VARIANTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 const SPEECH_MODE_OPTIONS: Array<{ value: SpeechToTextMode; label: string }> = [
   { value: "transcribe", label: "settings.models.speechToTextResult.transcribe" },
   { value: "translate", label: "settings.models.speechToTextResult.translate" },
 ]
 
+// fork_change end
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting } = useConfig()
   const language = useLanguage()
@@ -64,11 +70,13 @@ const ModelsTab: Component = () => {
   const speechModel = createMemo(() => selectedSpeechToTextModel(config(), speechModels.models()))
   const speechOptions = createMemo(() => speechToTextModelOptions(speechModels.models()))
   const speechOption = createMemo(() => speechOptions().find((item) => item.value === speechModel()))
+  // fork_change start
   const speechMode = createMemo(() => selectedSpeechToTextMode(config()))
   const speechModeOption = createMemo(() => SPEECH_MODE_OPTIONS.find((item) => item.value === speechMode()))
   const speechReady = createMemo(() => hasSpeechToTextAccess(config(), provider.authStates()))
   const speechConfigurable = createMemo(() => canConfigureSpeechToText(config(), provider.authStates()))
   const speechTranslatable = createMemo(() => canTranslateSpeechToText(config()))
+  // fork_change end
   const variantKey = createMemo(() => config().subagent_model ?? undefined)
   const subagentVariants = createMemo(() => Object.keys(provider.findModel(subagentModel())?.variants ?? {}))
   const subagentVariant = createMemo(() => {
@@ -154,6 +162,7 @@ const ModelsTab: Component = () => {
             description={language.t("settings.providers.defaultModel.description")}
           />
         </SettingsRow>
+        {/* fork_change start */}
         <SettingsRow
           title={language.t("settings.models.preferredReasoning.title")}
           description={language.t("settings.models.preferredReasoning.description")}
@@ -169,6 +178,7 @@ const ModelsTab: Component = () => {
             globalTrigger={false}
           />
         </SettingsRow>
+        {/* fork_change end */}
         <SettingsRow
           title={language.t("settings.providers.smallModel.title")}
           description={language.t("settings.providers.smallModel.description")}
@@ -228,6 +238,7 @@ const ModelsTab: Component = () => {
             description={language.t("settings.autocomplete.model.description")}
           />
         </SettingsRow>
+        {/* fork_change start */}
         <SettingsRow
           title={language.t("settings.models.speechToTextModel.title")}
           description={
@@ -269,6 +280,8 @@ const ModelsTab: Component = () => {
             />
           </Tooltip>
         </SettingsRow>
+        {/* fork_change end */}
+        {/* fork_change start */}
         <Show when={speechTranslatable()}>
           <SettingsRow
             title={language.t("settings.models.speechToTextResult.title")}
@@ -297,6 +310,7 @@ const ModelsTab: Component = () => {
             />
           </SettingsRow>
         </Show>
+        {/* fork_change end */}
         <SettingsRow
           title={language.t("settings.models.hidePromptTraining.title")}
           description={language.t("settings.models.hidePromptTraining.description")}

@@ -22,11 +22,13 @@ type Response = {
 }
 
 type Operation = {
+  // kilocode_change start
   operationId?: string
   tags?: string[]
+  // kilocode_change end
   parameters?: Parameter[]
   requestBody?: {
-    required?: boolean
+    required?: boolean // kilocode_change
     content?: Record<string, { schema?: Schema }>
   }
   responses?: Record<string, Response>
@@ -42,6 +44,7 @@ type Spec = {
 export function matchLegacyKiloOpenApi(input: Record<string, unknown>) {
   rebrand(input)
   const spec = input as Spec
+  // kilocode_change start
   const requiredBodies = new Set(["mcp.add", "mcp.auth.callback", "mcp.readResource", "mcp.callTool"])
   for (const item of Object.values(spec.paths ?? {})) {
     for (const operation of Object.values(item)) {
@@ -52,6 +55,7 @@ export function matchLegacyKiloOpenApi(input: Record<string, unknown>) {
   }
   const shake = spec.paths?.["/session/{sessionID}/shake"]?.post
   if (shake) shake.tags = ["session"]
+  // kilocode_change end
   const rules = spec.paths?.["/config/rules"]?.get?.parameters?.find(
     (param) => param.in === "query" && param.name === "scope",
   )

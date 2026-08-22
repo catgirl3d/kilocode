@@ -93,7 +93,7 @@ import { clearIfOn, createCloudPrune } from "./session-cloud-prune"
 import { isSameSessionTree } from "./model-usage"
 import { createDraftAgentSeed, resolvePromptAgent } from "./session-agent"
 import { createModelSelector } from "./session-model-selector"
-import { moveFavorite as move } from "../../../src/shared/model-favorites"
+import { moveFavorite as move } from "../../../src/shared/model-favorites" // fork_change
 
 const RECENT_LIMIT = 5
 const MESSAGE_PAGE_LIMIT = 80
@@ -232,15 +232,15 @@ interface SessionContextValue {
   currentVariant: (sessionID?: string) => string | undefined
   variantForAgent: (agent: string, model: ModelSelection | null) => string | undefined
   selectVariant: (value: string | undefined, sessionID?: string) => void
-  preferredVariant: Accessor<string | undefined>
-  setPreferredVariant: (value?: string) => void
+  preferredVariant: Accessor<string | undefined> // fork_change
+  setPreferredVariant: (value?: string) => void // fork_change
 
   // Model favorites
   recentModels: Accessor<ModelSelection[]>
   modelUsageHistory: Accessor<ModelUsageMap>
   favoriteModels: Accessor<ModelSelection[]>
   toggleFavorite: (providerID: string, modelID: string) => void
-  moveFavorite: (providerID: string, modelID: string, direction: "up" | "down") => void
+  moveFavorite: (providerID: string, modelID: string, direction: "up" | "down") => void // fork_change
 
   // Revert/undo state for the current session
   revert: Accessor<SessionInfo["revert"]>
@@ -277,8 +277,8 @@ interface SessionContextValue {
   ) => void
   abort: () => void
   compact: () => void
-  shake: () => void
-  shaking: () => boolean
+  shake: () => void // fork_change
+  shaking: () => boolean // fork_change
   respondToPermission: (
     permissionId: string,
     response: "once" | "always" | "reject",
@@ -330,7 +330,7 @@ export const SessionProvider: ParentComponent = (props) => {
   }
   const [draftSessionID, setDraftSessionID] = createSignal<string | undefined>()
   const [userClearedSession, setUserClearedSession] = createSignal(false)
-  const [shaking, setShaking] = createSignal<string>()
+  const [shaking, setShaking] = createSignal<string>() // fork_change
 
   // Per-session status map — keyed by sessionID
   const [statusMap, setStatusMap] = createStore<Record<string, SessionStatusInfo>>({})
@@ -670,7 +670,7 @@ export const SessionProvider: ParentComponent = (props) => {
     })
   }
 
-  const [preferredVariant, setPreferred] = createSignal<string>()
+  const [preferredVariant, setPreferred] = createSignal<string>() // fork_change
   const variants = createSessionVariants({
     selections: () => store.variantSelections,
     set: (key, value) => setStore("variantSelections", key, value),
@@ -678,7 +678,7 @@ export const SessionProvider: ParentComponent = (props) => {
     session: currentSessionID,
     agent: agentForScope,
     find: provider.findModel,
-    preferred: preferredVariant,
+    preferred: preferredVariant, // fork_change
     post: vscode.postMessage,
     listen: vscode.onMessage,
   })
@@ -695,10 +695,12 @@ export const SessionProvider: ParentComponent = (props) => {
     hide: hideErrors,
   })
   const selectModel = models.select
+  // fork_change start
   const setPreferredVariant = (value?: string) => {
     setPreferred(value)
     vscode.postMessage({ type: "persistPreferredVariant", value })
   }
+  // fork_change end
 
   function selectKiloModel(modelID?: string, agent?: string) {
     if (!modelID && !agent) return
@@ -944,6 +946,7 @@ export const SessionProvider: ParentComponent = (props) => {
 
   onCleanup(variants.load())
 
+  // fork_change start
   const unsubPreferredVariant = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "preferredVariantLoaded") return
     setPreferred(message.value)
@@ -952,6 +955,7 @@ export const SessionProvider: ParentComponent = (props) => {
 
   onCleanup(unsubPreferredVariant)
 
+  // fork_change end
   // Load persisted per-mode model selections from model.json via extension host.
   // Uses replace semantics so a reset (empty payload) clears old entries.
   const unsubSelections = vscode.onMessage((message: ExtensionMessage) => {
@@ -1061,6 +1065,7 @@ export const SessionProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "toggleFavorite", action, providerID, modelID })
   }
 
+  // fork_change start
   function moveFavorite(providerID: string, modelID: string, direction: "up" | "down") {
     const favorites = move(store.favoriteModels, providerID, modelID, direction)
     if (favorites === store.favoriteModels) return
@@ -1068,7 +1073,9 @@ export const SessionProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "moveFavorite", providerID, modelID, direction })
   }
 
+  // fork_change end
   function handleStreamMessage(message: ExtensionMessage): boolean {
+    // fork_change start
     if (message.type === "sessionShakeCompleted") {
       if (shaking() === message.sessionID) setShaking(undefined)
       if (message.sessionID !== currentSessionID()) return true
@@ -1106,6 +1113,7 @@ export const SessionProvider: ParentComponent = (props) => {
       showToast({ variant: "error", title: language.t("command.session.shake.failed"), description: message.error })
       return true
     }
+    // fork_change end
     if (message.type === "partUpdated") {
       handlePartUpdated(message.sessionID, message.messageID, message.part, message.delta)
       return true
@@ -2537,6 +2545,7 @@ export const SessionProvider: ParentComponent = (props) => {
     })
   }
 
+  // fork_change start
   function shake() {
     if (!server.isConnected()) {
       console.warn("[Kilo New] Cannot shake: not connected")
@@ -2555,6 +2564,7 @@ export const SessionProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "shake", sessionID })
   }
 
+  // fork_change end
   function respondToPermission(
     permissionId: string,
     response: "once" | "always" | "reject",
@@ -2893,10 +2903,10 @@ export const SessionProvider: ParentComponent = (props) => {
   const revertedCount = createMemo(() => {
     const boundary = revert()?.messageID
     if (!boundary) return 0
-    const list = messages()
-    const index = list.findIndex((message) => message.id === boundary)
-    if (index < 0) return 0
-    return list.slice(index).filter((message) => message.role === "user").length
+    const list = messages() // fork_change
+    const index = list.findIndex((message) => message.id === boundary) // fork_change
+    if (index < 0) return 0 // fork_change
+    return list.slice(index).filter((message) => message.role === "user").length // fork_change
   })
 
   const summary = createMemo(() => {
@@ -3120,13 +3130,13 @@ export const SessionProvider: ParentComponent = (props) => {
     modelUsageHistory: () => store.modelUsageHistory,
     favoriteModels: () => store.favoriteModels,
     toggleFavorite,
-    moveFavorite,
+    moveFavorite, // fork_change
     variantList,
     currentVariant,
     variantForAgent,
     selectVariant,
-    preferredVariant,
-    setPreferredVariant,
+    preferredVariant, // fork_change
+    setPreferredVariant, // fork_change
     revert,
     revertedCount,
     summary,
@@ -3138,8 +3148,8 @@ export const SessionProvider: ParentComponent = (props) => {
     sendCommand,
     abort,
     compact,
-    shake,
-    shaking: () => shaking() === currentSessionID(),
+    shake, // fork_change
+    shaking: () => shaking() === currentSessionID(), // fork_change
     respondToPermission,
     replyToQuestion,
     rejectQuestion,

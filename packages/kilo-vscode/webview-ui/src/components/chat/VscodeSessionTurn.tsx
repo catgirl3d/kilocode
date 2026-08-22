@@ -29,10 +29,14 @@ import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { useFeedback } from "../../context/feedback"
 import { visibleError } from "../../context/session-errors"
+// fork_change start
 import { snapshotStatus, type SnapshotPart } from "../../context/session-utils"
+// fork_change end
 import type { ErrorDisplayProps } from "./ErrorDisplay"
 import type { Message as WebMessage } from "../../types/messages"
+// fork_change start
 import { SnapshotBadge } from "./SnapshotBadge"
+// fork_change end
 
 export interface VscodeTurn {
   id: string
@@ -74,12 +78,14 @@ export const VscodeSessionTurn: Component<VscodeSessionTurnProps> = (props) => {
 
   const assistantMessages = createMemo(() => props.turn.assistant as SDKAssistantMessage[])
 
+  // fork_change start
   const snapshot = createMemo(() =>
     snapshotStatus(
       assistantMessages().flatMap((amsg) => (data.store.part?.[amsg.id] ?? []) as unknown as SnapshotPart[]),
     ),
   )
 
+  // fork_change end
   const interrupted = createMemo(() => assistantMessages().some((m) => m.error?.name === "MessageAbortedError"))
 
   const error = createMemo(() => visibleError(assistantMessages(), session.isErrorHidden))
@@ -184,6 +190,7 @@ export const VscodeSessionTurn: Component<VscodeSessionTurnProps> = (props) => {
             </div>
           </Show>
 
+          {/* fork_change start */}
           {/* Diff and snapshot metadata stay in the turn footer. */}
           <Show when={(diffs().length > 0 && server.gitInstalled()) || snapshot()}>
             <div class="vscode-session-turn-footer" data-component="session-turn">
@@ -209,6 +216,7 @@ export const VscodeSessionTurn: Component<VscodeSessionTurnProps> = (props) => {
               <Show when={snapshot()}>{(status) => <SnapshotBadge status={status()} />}</Show>
             </div>
           </Show>
+          {/* fork_change end */}
 
           {/* Error handling */}
           <Show when={error()}>

@@ -1,3 +1,4 @@
+// fork_change - new file
 import type { KiloClient } from "@kilocode/sdk/v2"
 import { Effect } from "effect"
 import type { FooterApi } from "@/cli/cmd/run/types"

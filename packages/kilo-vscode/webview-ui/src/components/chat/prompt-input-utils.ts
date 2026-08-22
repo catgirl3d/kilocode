@@ -118,6 +118,7 @@ export function isPromptBlocked(permissions: number): boolean {
   return permissions > 0
 }
 
+// fork_change start
 /** Use a continue prompt when the input has no user content. */
 export function resolvePrompt(text: string, hasComments: boolean, hasImages: boolean): string {
   if (text || hasComments || hasImages) return text
@@ -133,6 +134,7 @@ export function commandAction(
   return shake
 }
 
+// fork_change end
 /**
  * Whether the session is busy from the prompt's perspective.
  * Returns false (idle-like) when the session is busy only because

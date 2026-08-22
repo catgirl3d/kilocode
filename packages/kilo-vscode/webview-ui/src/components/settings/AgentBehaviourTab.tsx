@@ -11,15 +11,19 @@ import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 
 import { useConfig } from "../../context/config"
 import { useSession } from "../../context/session"
+// fork_change start
 import { useServer } from "../../context/server"
+// fork_change end
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
+// fork_change start
 import type {
   AgentInfo,
   FilePickerResultMessage,
   SkillInfo,
   ValidateInstructionPathResultMessage,
 } from "../../types/messages"
+// fork_change end
 import ModeEditView from "./ModeEditView"
 import ModeCreateView from "./ModeCreateView"
 import McpEditView from "./McpEditView"
@@ -27,6 +31,7 @@ import WorkflowsTab from "./agent-behaviour/WorkflowsTab"
 import { mcpConfigScope, mcpEnabledPatch, removable, selectedDefaultAgentValue } from "./agent-behaviour-patches"
 import { parseImport, MAX_IMPORT_SIZE } from "./mode-io"
 import type { ImportError } from "./mode-io"
+// fork_change start
 import {
   add as addInstruction,
   kind as instructionKind,
@@ -34,6 +39,7 @@ import {
   remove as removeInstruction,
   toggle as toggleInstruction,
 } from "../../utils/instruction-items"
+// fork_change end
 
 type SubtabId = "agents" | "mcpServers" | "rules" | "workflows" | "skills"
 
@@ -61,11 +67,14 @@ const builtin = (skill: SkillInfo) => skill.location === "builtin" || skill.loca
 
 // View states for the agents subtab
 type AgentView = "list" | "create" | "edit"
+// fork_change start
 type InstructionScope = "global" | "project"
 type InstructionRequest = { id: string; scope: InstructionScope; binding?: string }
+// fork_change end
 
 const AgentBehaviourTab: Component = () => {
   const language = useLanguage()
+  // fork_change start
   const {
     config,
     collections,
@@ -77,14 +86,20 @@ const AgentBehaviourTab: Component = () => {
     updateGlobalConfig,
     updateProjectConfig,
   } = useConfig()
+  // fork_change end
   const session = useSession()
+  // fork_change start
   const server = useServer()
+  // fork_change end
   const dialog = useDialog()
   const vscode = useVSCode()
   const [activeSubtab, setActiveSubtab] = createSignal<SubtabId>("agents")
+  // fork_change start
   const [search, setSearch] = createSignal("")
+  // fork_change end
   const [newSkillPath, setNewSkillPath] = createSignal("")
   const [newSkillUrl, setNewSkillUrl] = createSignal("")
+  // fork_change start
   const [newGlobalInstruction, setNewGlobalInstruction] = createSignal("")
   const [newProjectInstruction, setNewProjectInstruction] = createSignal("")
   const [globalInstructionError, setGlobalInstructionError] = createSignal("")
@@ -96,6 +111,7 @@ const AgentBehaviourTab: Component = () => {
   const requests = { value: 0 }
   const picks = new Map<string, InstructionRequest>()
   const checks: Partial<Record<InstructionScope, InstructionRequest>> = {}
+  // fork_change end
 
   // Load the VS Code setting for Claude Code compatibility
   vscode.postMessage({ type: "requestClaudeCompatSetting" })
@@ -141,6 +157,7 @@ const AgentBehaviourTab: Component = () => {
     ]
   })
 
+  // fork_change start
   const globalInstructions = createMemo(() => listInstructions(globalEffectiveConfig(), globalConfig()))
   const projectInstructions = createMemo(() => listInstructions(projectConfig()))
 
@@ -266,13 +283,16 @@ const AgentBehaviourTab: Component = () => {
   })
   onCleanup(unsub)
 
+  // fork_change end
   const skillPaths = () => config().skills?.paths ?? []
   const skillUrls = () => config().skills?.urls ?? []
+  // fork_change start
   const filtered = createMemo(() => {
     const query = search().trim().toLowerCase()
     if (!query) return session.skills()
     return session.skills().filter((skill) => skill.name.toLowerCase().includes(query))
   })
+  // fork_change end
 
   const addSkillPath = () => {
     const value = newSkillPath().trim()
@@ -969,6 +989,7 @@ const AgentBehaviourTab: Component = () => {
           </Card>
         }
       >
+        {/* fork_change start */}
         <div style={{ "margin-bottom": "8px" }}>
           <TextField
             label={language.t("settings.agentBehaviour.skillSearch")}
@@ -1021,6 +1042,7 @@ const AgentBehaviourTab: Component = () => {
             </For>
           </Card>
         </Show>
+        {/* fork_change end */}
       </Show>
 
       {/* Skill paths */}
@@ -1172,6 +1194,7 @@ const AgentBehaviourTab: Component = () => {
           </div>
         </div>
 
+        {/* fork_change start */}
         <div style={{ display: "grid", gap: "12px", padding: "8px 0" }}>
           <section style={{ display: "grid", gap: "8px" }}>
             <div style={{ "font-weight": "500" }}>{language.t("settings.config.scope.global")}</div>
@@ -1295,6 +1318,7 @@ const AgentBehaviourTab: Component = () => {
             </section>
           </Show>
         </div>
+        {/* fork_change end */}
       </Card>
 
       {/* Claude Code compatibility */}
