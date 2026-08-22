@@ -8,7 +8,9 @@
  */
 
 import { Component, createEffect, createMemo, createSignal, Index, Show, on, onCleanup } from "solid-js"
+// fork_change start
 import { CopyButton, ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part"
+// fork_change end
 import { BasicTool, initialOpen } from "@kilocode/kilo-ui/basic-tool"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { AgentAvatar } from "@kilocode/kilo-ui/agent-avatar"
@@ -24,7 +26,10 @@ import { useWorktreeMode } from "../../context/worktree-mode"
 import { childID, latestTaskPart } from "../../context/session-utils"
 import { useConfig } from "../../context/config"
 import { openSubagent } from "./open-subagent"
-import { showChildPromotion, taskAvatarStatus, taskResult, taskRunning, taskSessionStatus, taskVisible } from "./task-tool-state"
+import { showChildPromotion, taskAvatarStatus, taskResult, taskRunning, taskVisible } from "./task-tool-state"
+// fork_change start
+import { taskSessionStatus } from "./task-tool-state"
+// fork_change end
 
 const TaskToolRenderer: Component<ToolProps> = (props) => {
   const i18n = useI18n()
@@ -57,6 +62,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
       ),
     ),
   )
+  // fork_change start
   const taskStatus = createMemo(() => {
     const id = childSessionId()
     return taskSessionStatus(id ? session.allStatusMap()[id] : undefined, props.status)
@@ -66,6 +72,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
     return status ? language.t(`task.backgroundAgents.status.${status}`) : undefined
   })
 
+  // fork_change end
   const running = createMemo(() => taskRunning(props.status))
   const avatar = createMemo(() => {
     const id = childSessionId()
@@ -194,6 +201,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
   const trigger = () => (
     <div data-slot="basic-tool-tool-info-structured" data-component="task-tool-heading">
       <div data-slot="basic-tool-tool-info-main">
+        {/* fork_change start */}
         <Show when={taskStatus()}>
           {(status) => (
             <span
@@ -205,6 +213,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
             />
           )}
         </Show>
+        {/* fork_change end */}
         <span data-slot="basic-tool-tool-title" title={description() || title()}>
           {description() || title()}
         </span>
@@ -229,7 +238,9 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
             />
           </Tooltip>
         </Show>
+        {/* fork_change start */}
         <CopyButton value={() => childSessionId() ?? ""} label={language.t("session.action.copyId")} />
+        {/* fork_change end */}
         <IconButton
           icon="square-arrow-top-right"
           size="small"

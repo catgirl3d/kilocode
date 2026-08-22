@@ -45,6 +45,7 @@ export async function seedSessionStatuses(
     console.error("[Kilo New] KiloProvider: Failed to seed session statuses:", error)
   }
 }
+// fork_change start
 
 /**
  * Reconcile one focused session after an SSE gap. Unlike the connect-time
@@ -75,3 +76,4 @@ export async function reconcileSessionStatus(
     console.error("[Kilo New] KiloProvider: Failed to reconcile session status:", error)
   }
 }
+// fork_change end

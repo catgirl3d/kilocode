@@ -1,3 +1,4 @@
+// fork_change - new file
 export type SpeechToTextMode = "transcribe" | "translate"
 
 const models: ReadonlyArray<{ id: string; label: string; modes: ReadonlyArray<SpeechToTextMode> }> = [

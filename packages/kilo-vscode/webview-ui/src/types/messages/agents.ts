@@ -14,7 +14,7 @@ export interface SlashCommandInfo {
   agent?: string
   model?: string
   variant?: string
-  source?: "builtin" | "command" | "mcp" | "skill"
+  source?: "builtin" | "command" | "mcp" | "skill" // fork_change
   hints: string[]
 }
 

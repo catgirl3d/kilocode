@@ -27,15 +27,15 @@ const retry = async <T>(label: string, fn: () => Promise<T>) => {
     }
   }
 }
-// kilocode_change end
 
 try {
   const openapi = await $`bun dev generate`.cwd(opencode).text()
   await Bun.write("./openapi.json", openapi)
+// kilocode_change end
 
 const document = (await Bun.file("./openapi.json").json()) as {
   components?: { schemas?: Record<string, unknown> }
-  paths?: Record<string, unknown>
+  paths?: Record<string, unknown> // kilocode_change
   [key: string]: unknown
 }
 const schemas = document.components?.schemas
@@ -92,6 +92,7 @@ await createClient({
   ],
 })
 
+// kilocode_change start
 // With paramsStructure="flat", @hey-api/openapi-ts preserves required body
 // fields in operation data types but does not propagate requestBody.required to
 // the flattened class method parameters. Keep this narrow workaround until the
@@ -134,7 +135,9 @@ const requiredSdk = requiredMethods.reduce((source, [className, name, needsObjec
   return source.slice(0, start) + next + source.slice(start + section.length)
 }, sdkSource)
 await retry("MCP SDK required parameters patch", () => Bun.write(sdkPath, requiredSdk))
+// kilocode_change end
 
+// kilocode_change start
 await retry("Session history types patch", async () => {
   const generatedTypes = await Bun.file("./src/v2/gen/types.gen.ts").text()
   if (/export type SessionNext\w+1 =/.test(generatedTypes)) {
@@ -161,6 +164,7 @@ await retry("Session history SDK patch", async () => {
   }
   await Bun.write("./src/v2/gen/sdk.gen.ts", historySdkPatched)
 })
+// kilocode_change end
 
 // The legacy SDK generator is retired, but this public Config type remains exported.
 // Keep Kilo's released sandbox settings aligned with the current generated client.
@@ -191,6 +195,7 @@ const legacyPatched = legacySource.includes(sandbox)
 if (!legacyPatched.includes(sandbox)) {
   throw new Error(`Legacy Config sandbox patch did not apply (${legacyTypesPath})`)
 }
+// kilocode_change start
 const instructions = `  /**
    * Instruction entries disabled in this config scope
    */
@@ -203,10 +208,13 @@ if (!legacyNext.includes(instructions)) {
   throw new Error(`Legacy Config instructions_disabled patch did not apply (${legacyTypesPath})`)
 }
 await Bun.write(legacyTypesPath, legacyNext)
+// kilocode_change end
 
-await retry("Prettier", () => $`bun prettier --write src/gen src/v2`)
+await retry("Prettier", () => $`bun prettier --write src/gen src/v2`) // kilocode_change
 await $`rm -rf dist tsconfig.tsbuildinfo`
 await $`bun tsc`
+// kilocode_change start
 } finally {
   await retry("OpenAPI cleanup", () => $`rm -f openapi.json`)
 }
+// kilocode_change end

@@ -89,9 +89,11 @@ export interface MemoryOperationMessage {
   file?: MemorySourceFile
   section?: string
 }
+// fork_change start
 
 export interface MemoryPromptMessage {
   type: "memoryPrompt"
   operation: "remember" | "forget"
   sessionID?: string
 }
+// fork_change end

@@ -261,24 +261,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register toggle auto-approve shortcut (Ctrl+Alt+A / Cmd+Alt+A)
   const defaultDir = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()
-  const autoApprove = registerToggleAutoApprove(
-    context,
-    connectionService,
-    (sessionId) => {
-      if (sessionId) {
-        const dir =
-          provider.getSessionDirectories().get(sessionId) ?? agentManagerProvider.getSessionDirectories().get(sessionId)
-        if (dir) return dir
-      }
-      return defaultDir()
-    },
-    () => {
-      const dirs = new Set([defaultDir()])
-      for (const dir of provider.getSessionDirectories().values()) dirs.add(dir)
-      for (const dir of agentManagerProvider.getSessionDirectories().values()) dirs.add(dir)
-      return [...dirs]
-    },
-  )
+  // fork_change start
+  // Keep the backend runtime shield instead of upstream per-event approve; enabled mode
+  // suppresses repeated permission prompts across tracked directories and reconnects.
+  const autoApprove = registerToggleAutoApprove(context, connectionService, () => {
+    const dirs = new Set([defaultDir()])
+    for (const dir of provider.getSessionDirectories().values()) dirs.add(dir)
+    for (const dir of agentManagerProvider.getSessionDirectories().values()) dirs.add(dir)
+    return [...dirs]
+  })
+  // fork_change end
+  // Keep upstream notifications independently; omit its obsolete per-event approve callback
+  // because the backend owns permission bypass.
   const attention = new AttentionService(connectionService, {
     details: async (sessionID, directory) => {
       provider.rememberSession(sessionID, directory)
