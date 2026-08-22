@@ -64,11 +64,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
+  // kilocode_change start
   const hooks = yield* plugin.list()
   const hooked = hooks.some(
     (hook) => typeof hook["tool.execute.before"] === "function" || typeof hook["tool.execute.after"] === "function",
-  ) // kilocode_change
-  const shellEnvHooked = hooks.some((hook) => typeof hook["shell.env"] === "function") // kilocode_change
+  )
+  const shellEnvHooked = hooks.some((hook) => typeof hook["shell.env"] === "function")
+  // kilocode_change end
   const permission = yield* Permission.Service
   // kilocode_change start
   const agents = yield* Agent.Service
@@ -85,8 +87,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const flags = yield* RuntimeFlags.Service
   const restricted = yield* SandboxPolicy.networkRestricted(input.session.id) // kilocode_change
   const sandboxed = (yield* SandboxPolicy.status(input.session.id)).enabled // kilocode_change
+  // kilocode_change start
 
-  const shell = Shell.acceptable(cfg.shell) // kilocode_change
+  const shell = Shell.acceptable(cfg.shell)
 
   const mutates = Effect.fn("SessionTools.mutates")(function* (toolID: string, args: Record<string, unknown>) {
     const access = yield* Effect.gen(function* () {
@@ -100,6 +103,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     return KiloSnapshotMutation.mayMutate({ tool: toolID, args, shell: access })
   })
 
+  // kilocode_change end
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => {
     const extra = {
       model: input.model,
@@ -191,8 +195,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
+            // kilocode_change start
             if (hooked || (item.id === "bash" && shellEnvHooked) || (yield* mutates(item.id, args)))
-              yield* input.processor.ensureSnapshot() // kilocode_change
+              yield* input.processor.ensureSnapshot()
+            // kilocode_change end
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },

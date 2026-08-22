@@ -1283,6 +1283,7 @@ function createLayer(input: StreamInput) {
                       ),
                   ),
                 )
+// kilocode_change start
               : DirectAction.matches(command)
                 ? Effect.sync(() => {
                     input.trace?.write("send.shake", { sessionID: input.sessionID })
@@ -1370,6 +1371,7 @@ function createLayer(input: StreamInput) {
                         }),
                       ),
                     )
+// kilocode_change end
 
           yield* send.pipe(
             Effect.flatMap(() => {

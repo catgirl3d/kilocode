@@ -34,6 +34,7 @@ export function items(part: Part): TodoItem[] | undefined {
   return todos as TodoItem[]
 }
 
+// fork_change start
 function active(input: Input, index: number) {
   const msg = input.messages[index]!
   const parts = list(input.parts, msg.id)
@@ -55,6 +56,7 @@ export function writes(input: Input): Write[] {
     }),
   )
 }
+// fork_change end
 
 export function state(input: Input): TodoItem[] {
   return writes(input).at(-1)?.todos ?? []

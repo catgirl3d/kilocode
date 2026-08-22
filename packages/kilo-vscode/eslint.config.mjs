@@ -70,7 +70,9 @@ export default [
     // Raised from the default 3000 as this session context grew past the cap
     // after upstream merges; kept as a targeted override rather than loosening
     // the global limit.
+    // fork_change start
     rules: { complexity: ["error", 31], "max-lines": ["error", 3200] },
+    // fork_change end
   },
   {
     files: ["src/services/autocomplete/classic-auto-complete/AutocompleteInlineCompletionProvider.ts"],

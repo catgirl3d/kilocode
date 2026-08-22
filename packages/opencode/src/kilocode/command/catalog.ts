@@ -1,4 +1,4 @@
-// kilocode_change - server command discovery metadata
+// fork_change - new file
 import { Command } from "@/command"
 import { BUILTIN_COMMAND_CATALOG } from "@/kilocode/session/builtin-commands"
 import { Schema } from "effect"

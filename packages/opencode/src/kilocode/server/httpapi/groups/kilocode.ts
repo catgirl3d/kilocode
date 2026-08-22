@@ -26,7 +26,7 @@ import { ModelUsage } from "@/kilocode/session/model-usage"
 import { MessageID, SessionID } from "@/session/schema"
 import { ApiNotFoundError, InvalidRequestError } from "@/server/routes/instance/httpapi/errors"
 import { CommandFiles } from "@/kilocode/command-files"
-import { KiloSessionApi } from "./session"
+import { KiloSessionApi } from "./session" // kilocode_change
 
 const root = "/kilocode"
 const Scope = Schema.Literals(["global", "project"])
@@ -336,7 +336,7 @@ export const KilocodeApi = HttpApi.make("kilocode")
       .middleware(Authorization),
   )
   .addHttpApi(AnacondaDesktopApi)
-  .addHttpApi(KiloSessionApi)
+  .addHttpApi(KiloSessionApi) // kilocode_change
   .annotateMerge(
     OpenApi.annotations({
       title: "kilo HttpApi",

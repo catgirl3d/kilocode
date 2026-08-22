@@ -13,7 +13,9 @@ import { useFeedback } from "../../context/feedback"
 import { AssistantMessage } from "./AssistantMessage"
 import { ErrorDisplay, type ErrorDisplayProps } from "./ErrorDisplay"
 import { VscodeUserMessage } from "./VscodeUserMessage"
+// fork_change start
 import { SnapshotBadge } from "./SnapshotBadge"
+// fork_change end
 
 interface TranscriptRowViewProps {
   row: TranscriptRow
@@ -128,6 +130,7 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
 
       <Show when={props.row.type === "diff" ? props.row : undefined}>
         {(row) => (
+          // fork_change start
           <div class="vscode-session-turn-footer" data-component="session-turn">
             <Show when={server.gitInstalled() && row().diffs.length > 0}>
               <button
@@ -151,6 +154,7 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
             </Show>
             <Show when={row().snapshot}>{(status) => <SnapshotBadge status={status()} />}</Show>
           </div>
+          // fork_change end
         )}
       </Show>
 

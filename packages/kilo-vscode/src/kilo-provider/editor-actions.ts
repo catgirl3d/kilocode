@@ -1,10 +1,14 @@
 import * as vscode from "vscode"
+// fork_change start
 import path from "path"
 import os from "os"
+// fork_change end
 import { buildPreviewPath, getPreviewCommand, getPreviewDir, parseImage, trimEntries } from "../image-preview"
 import { escapeGlob, isAbsolutePath } from "../path-utils"
 import { validateFiles } from "./file-links"
+// fork_change start
 import { validate as validateInstruction } from "./instruction-path"
+// fork_change end
 import type { DiffVirtualFile, DiffVirtualProvider } from "../DiffVirtualProvider"
 
 type EditorOpenMessage = {
@@ -15,12 +19,15 @@ type EditorOpenMessage = {
   content?: string
   language?: string
   sessionID?: string
+  // fork_change start
   requestId?: string
   path?: string
   scope?: "global" | "project"
   bindingId?: string
+  // fork_change end
 }
 
+// fork_change start
 type EditorActionMessage = EditorOpenMessage & {
   url?: unknown
   diff?: unknown
@@ -39,6 +46,7 @@ type EditorActionOptions = {
   post?: (msg: unknown) => void
 }
 
+// fork_change end
 function isMarkdownFile(file: string): boolean {
   return /\.(md|mdx|markdown)$/i.test(file)
 }
@@ -92,6 +100,7 @@ function previewImage(dir: vscode.Uri | undefined, dataUrl: string, filename: st
     .then(open, (err) => console.error("[Kilo New] KiloProvider: Failed to preview image:", err))
 }
 
+// fork_change start
 function validateInstructionPath(message: EditorActionMessage, opts: EditorActionOptions): void {
   const id = message.requestId
   const path = message.path
@@ -113,14 +122,17 @@ function openMarkdownFile(file: string, message: EditorActionMessage, opts: Edit
 }
 
 export function handleEditorAction(message: EditorActionMessage, opts: EditorActionOptions): boolean {
+  // fork_change end
   if (message.type === "openFile") {
     // Resolve the directory from the session the file reference was rendered
     // for (when the webview provides it), not whatever session happens to be
     // current — mirrors the validateFiles case below.
     if (message.filePath) {
+      // fork_change start
       const file = message.filePath
       if (openMarkdownFile(file, message, opts)) return true
       openFile(opts.dir(message.sessionID), message.filePath, message.line, message.column)
+      // fork_change end
     }
     return true
   }
@@ -144,10 +156,12 @@ export function handleEditorAction(message: EditorActionMessage, opts: EditorAct
     }
     return true
   }
+  // fork_change start
   if (message.type === "validateInstructionPath") {
     validateInstructionPath(message, opts)
     return true
   }
+  // fork_change end
   if (message.type === "openExternal") {
     openExternal(message.url)
     return true
@@ -221,6 +235,7 @@ function findFallback(dir: string, filePath: string, line?: number, column?: num
 }
 
 function openFile(dir: string, filePath: string, line?: number, column?: number): void {
+  // fork_change start
   if (/^https?:\/\//i.test(filePath)) {
     openExternal(filePath)
     return
@@ -228,6 +243,7 @@ function openFile(dir: string, filePath: string, line?: number, column?: number)
 
   const next = filePath.startsWith("~/") ? path.join(os.homedir(), filePath.slice(2)) : filePath
   const uri = isAbsolutePath(next) ? vscode.Uri.file(next) : vscode.Uri.joinPath(vscode.Uri.file(dir), next)
+  // fork_change end
   vscode.workspace.fs.stat(uri).then(
     (stat) => {
       if (stat.type & vscode.FileType.Directory) {

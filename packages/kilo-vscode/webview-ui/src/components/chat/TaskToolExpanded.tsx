@@ -8,7 +8,9 @@
  */
 
 import { Component, createEffect, createMemo, createSignal, Index, Show, on, onCleanup } from "solid-js"
+// fork_change start
 import { CopyButton, ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part"
+// fork_change end
 import { BasicTool, initialOpen } from "@kilocode/kilo-ui/basic-tool"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
@@ -23,7 +25,10 @@ import { useWorktreeMode } from "../../context/worktree-mode"
 import { childID, latestTaskPart } from "../../context/session-utils"
 import { useConfig } from "../../context/config"
 import { openSubagent } from "./open-subagent"
-import { showChildPromotion, taskResult, taskRunning, taskSessionStatus, taskVisible } from "./task-tool-state"
+import { showChildPromotion, taskResult, taskRunning, taskVisible } from "./task-tool-state"
+// fork_change start
+import { taskSessionStatus } from "./task-tool-state"
+// fork_change end
 
 const TaskToolRenderer: Component<ToolProps> = (props) => {
   const i18n = useI18n()
@@ -56,6 +61,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
       ),
     ),
   )
+  // fork_change start
   const taskStatus = createMemo(() => {
     const id = childSessionId()
     return taskSessionStatus(id ? session.allStatusMap()[id] : undefined, props.status)
@@ -65,6 +71,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
     return status ? language.t(`task.backgroundAgents.status.${status}`) : undefined
   })
 
+  // fork_change end
   const running = createMemo(() => taskRunning(props.status))
   // BasicTool's forceOpen effect only fires onOpenChange on a false->true
   // transition — a virtualized remount that starts with forceOpen already
@@ -171,6 +178,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
   const trigger = () => (
     <div data-slot="basic-tool-tool-info-structured">
       <div data-slot="basic-tool-tool-info-main">
+        {/* fork_change start */}
         <Show when={taskStatus()}>
           {(status) => (
             <span
@@ -182,6 +190,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
             />
           )}
         </Show>
+        {/* fork_change end */}
         <span data-slot="basic-tool-tool-title" class="capitalize">
           {title()}
         </span>
@@ -206,7 +215,9 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
             />
           </Tooltip>
         </Show>
+        {/* fork_change start */}
         <CopyButton value={() => childSessionId() ?? ""} label={language.t("session.action.copyId")} />
+        {/* fork_change end */}
         <IconButton
           icon="square-arrow-top-right"
           size="small"
