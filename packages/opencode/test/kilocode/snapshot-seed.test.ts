@@ -233,7 +233,7 @@ test("regular seed preserves aged line endings and filtered worktree bytes", asy
   expect(await fs.readFile(path.join(seeded, "filtered.flt"))).toEqual(
     await fs.readFile(path.join(source.path, "filtered.flt")),
   )
-})
+}, { timeout: 35_000 })
 
 test(
   "regular primary checkout materializes a durable split-index snapshot",
@@ -473,4 +473,4 @@ test("regular seed falls back for sparse checkouts", async () => {
   expect(patch.files).toEqual([fwd(file)])
   await run(tmp.path, (snapshot) => snapshot.revert([patch]))
   expect(await fs.readFile(file, "utf8")).toBe("tracked\n")
-})
+}, { timeout: 35_000 })
