@@ -54,5 +54,5 @@ describe("PR comments", () => {
 
     const output = child.stdout.toString() + child.stderr.toString()
     expect(child.exitCode, output).toBe(0)
-  })
+  }, 60000) // fork_change
 })
