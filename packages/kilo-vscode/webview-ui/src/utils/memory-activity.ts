@@ -1,3 +1,4 @@
+// fork_change - new file
 import { MemoryMarkerMeta } from "@kilocode/kilo-memory/marker-meta"
 import type { MemoryEventDetail } from "../types/messages/memory"
 

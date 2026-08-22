@@ -24,12 +24,14 @@ import {
 import { DIRECT_FIM_ENV, requestMistralFim, resolveFimTarget } from "@kilocode/kilo-gateway/fim"
 import { DIRECT_EDIT_ENV, extractFencedBody, resolveEditTarget } from "@kilocode/kilo-gateway/edit"
 import { buildMercuryEditPrompt } from "@kilocode/kilo-gateway/edit-prompt"
+// kilocode_change start
 import {
   GROQ_TRANSCRIPTIONS_URL,
   GROQ_TRANSLATIONS_URL,
   resolveGroqTranscriptionModel,
   supportsGroqSpeechToTextMode,
 } from "@kilocode/kilo-gateway/speech-to-text"
+// kilocode_change end
 import { buildKiloHeaders } from "@kilocode/kilo-gateway"
 import { Effect, Schema } from "effect"
 import * as Stream from "effect/Stream"
@@ -51,7 +53,7 @@ import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 import { AudioTranscriptionsBody, ClawStatus, CloudSessionImportError, EditBody, FimBody } from "../groups/kilo-gateway"
 
 const FIM_TIMEOUT_MS = 30_000
-const GROQ_AUDIO_LIMIT = 25 * 1024 * 1024
+const GROQ_AUDIO_LIMIT = 25 * 1024 * 1024 // kilocode_change
 const log = Log.create({ service: "kilo-gateway" })
 
 function jsonError(error: string, status: number) {
@@ -299,6 +301,7 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
     const audioTranscriptions = Effect.fn("KiloGatewayHttpApi.audioTranscriptions")(function* (ctx: {
       payload: typeof AudioTranscriptionsBody.Type
     }) {
+      // kilocode_change start
       const model = resolveGroqTranscriptionModel(ctx.payload.model)
       const mode = ctx.payload.mode ?? "transcribe"
       if (model) {
@@ -347,7 +350,7 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
       }
 
       if (mode === "translate") return jsonError("Voice translation is only supported by compatible Groq models", 400)
-
+      // kilocode_change end
       const info = yield* proxyAuth()
       if (!info.auth) return yield* Effect.fail(new HttpApiError.Unauthorized({}))
       if (!info.token) return yield* Effect.fail(new HttpApiError.Unauthorized({}))
@@ -364,7 +367,7 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
               [HEADER_FEATURE]: "vscode-extension",
             },
             signal: request.source instanceof Request ? request.source.signal : undefined,
-            body: JSON.stringify({ ...ctx.payload, mode: undefined }),
+            body: JSON.stringify({ ...ctx.payload, mode: undefined }), // kilocode_change
           }),
         catch: () => new HttpApiError.BadRequest({}),
       })

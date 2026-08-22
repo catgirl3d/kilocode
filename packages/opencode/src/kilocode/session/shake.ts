@@ -1,3 +1,4 @@
+// fork_change - new file
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect, Schema } from "effect"

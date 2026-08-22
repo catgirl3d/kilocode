@@ -118,6 +118,7 @@ export function revertPromptState(parts: readonly Part[]): RevertPromptState {
   }
 }
 
+// fork_change start
 export const SNAPSHOT_RUNNING_KEY = "kilo.snapshot.running"
 
 export interface SnapshotEvent {
@@ -159,6 +160,7 @@ export function snapshotProgress(part: SnapshotPart | undefined): boolean {
   if (!part.synthetic) return false
   return part.metadata?.[SNAPSHOT_RUNNING_KEY] === true || (part.text ?? "").includes("Initializing snapshot")
 }
+// fork_change end
 
 type ParentSession = { parentID?: string | null }
 

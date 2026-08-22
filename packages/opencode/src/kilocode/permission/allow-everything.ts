@@ -15,11 +15,13 @@ export namespace AllowEverythingPermission {
       const cfg = yield* Config.Service
       const rules: Permission.Ruleset = [{ permission: "*", pattern: "*", action: "allow" }]
 
+      // kilocode_change start
       if (input.runtime) {
         yield* svc.allowEverything({ enable: input.enable, requestID: input.requestID, runtime: true })
         return true
       }
 
+      // kilocode_change end
       if (!input.enable) {
         if (input.sessionID) {
           const id = SessionID.make(input.sessionID)

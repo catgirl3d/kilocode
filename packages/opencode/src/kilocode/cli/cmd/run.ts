@@ -7,6 +7,7 @@ import { Provider } from "@/provider/provider"
 import { Filesystem } from "@/util/filesystem"
 
 export namespace KiloRun {
+  // kilocode_change start
   // Shared by headless JSON output and its deterministic contract tests.
   export function jsonRecord(
     type: string,
@@ -21,12 +22,14 @@ export namespace KiloRun {
     if (command !== "shake" || !result.data || typeof result.data !== "object" || Array.isArray(result.data)) return
     return result.data as Record<string, unknown>
   }
-
+  // kilocode_change end
   export async function resolveBuiltin(sdk: KiloClient, command?: string, directory?: string) {
     if (!isBuiltinCommand(command)) return
     const result = await sdk.command.list({ directory })
+    // kilocode_change start
     if (result.error) return command
     if (result.data?.some((item) => item.name === command && item.source !== "builtin")) return
+    // kilocode_change end
     return command
   }
 
@@ -48,20 +51,23 @@ export namespace KiloRun {
     switch (command) {
       case "compact":
       case "summarize":
+        // kilocode_change start
         const selected = resolve(model, current)
         if (!selected) {
           UI.error("No model specified and session has no model")
           process.exit(1)
         }
-
+        // kilocode_change end
         return sdk.session.summarize({
           sessionID,
           directory,
           providerID: selected.providerID,
           modelID: selected.modelID,
         })
+      // kilocode_change start
       case "shake":
         return sdk.session.shake({ sessionID, directory })
+      // kilocode_change end
     }
   }
 }

@@ -28,7 +28,7 @@ import { networkHandlers } from "./handlers/network"
 import { remoteHandlers } from "./handlers/remote"
 import { sandboxHandlers } from "./handlers/sandbox"
 import { sessionImportHandlers } from "./handlers/session-import"
-import { sessionShakeHandlers } from "./handlers/session"
+import { sessionShakeHandlers } from "./handlers/session" // kilocode_change
 import { suggestionHandlers } from "./handlers/suggestion"
 import { telemetryHandlers } from "./handlers/telemetry"
 
@@ -51,7 +51,7 @@ export const provide = Layer.provide([
   remoteHandlers,
   sandboxHandlers,
   sessionImportHandlers,
-  sessionShakeHandlers,
+  sessionShakeHandlers, // kilocode_change
   suggestionHandlers,
   telemetryHandlers,
 ])

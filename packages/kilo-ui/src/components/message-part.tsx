@@ -33,7 +33,9 @@ import { checkFile } from "../file-link-validator"
 import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { useClipboard } from "../context/clipboard"
+// fork_change start
 import { type UiI18n, type UiI18nKey, useI18n } from "../context/i18n"
+// fork_change end
 import { BasicTool, useToolApprovalLine } from "./basic-tool"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
@@ -2436,7 +2438,9 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const i18n = useI18n()
+    // fork_change start
     const childSessionId = () => (props.metadata.sessionId ?? props.partMetadata?.sessionId) as string | undefined
+    // fork_change end
     const type = createMemo(() => {
       const raw = props.input.subagent_type
       if (typeof raw !== "string" || !raw) return undefined
@@ -2509,9 +2513,11 @@ ToolRegistry.register({
           {/* Keep the auto-approve line attached to the subagent card instead of forcing a collapsible body. */}
           {approvalLine()}
         </div>
+        {/* fork_change start */}
         <Show when={childSessionId()}>
           <CopyButton value={() => childSessionId() ?? ""} label={i18n.t("session.action.copyId" as UiI18nKey)} />
         </Show>
+        {/* fork_change end */}
       </div>
     )
 
@@ -2528,6 +2534,7 @@ ToolRegistry.register({
   },
 })
 
+// fork_change start
 export function CopyButton(props: { value: () => string; label: string }) {
   const i18n = useI18n()
   const clipboard = useClipboard()
@@ -2553,6 +2560,7 @@ export function CopyButton(props: { value: () => string; label: string }) {
     </Tooltip>
   )
 }
+// fork_change end
 
 function BashHighlightedOutput(props: { cmd: string; output: string; outputPath?: string; active?: boolean }) {
   const data = useData()
@@ -2609,7 +2617,9 @@ function BashHighlightedOutput(props: { cmd: string; output: string; outputPath?
             </span>
             <div data-slot="bash-section-code" data-scrollable ref={cmdRef} />
             <div data-slot="bash-section-actions">
+              {/* fork_change start */}
               <CopyButton value={() => props.cmd} label={i18n.t("ui.message.copy")} />
+              {/* fork_change end */}
             </div>
           </div>
         </div>
@@ -2630,7 +2640,9 @@ function BashHighlightedOutput(props: { cmd: string; output: string; outputPath?
                   />
                 </Tooltip>
               </Show>
+              {/* fork_change start */}
               <CopyButton value={() => props.output} label={i18n.t("ui.message.copy")} />
+              {/* fork_change end */}
             </div>
           </div>
         </div>

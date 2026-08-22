@@ -28,11 +28,15 @@ import { useSession } from "../../context/session"
 import { useDisplay } from "../../context/display"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
+// fork_change start
 import { useMemory } from "../../context/memory"
+// fork_change end
 import { useServer } from "../../context/server"
 import { planDisplayPath } from "../../utils/plan-path"
 import { isRenderable, UPSTREAM_SUPPRESSED_TOOLS } from "../../utils/transcript-parts"
+// fork_change start
 import { MemoryMarkerMeta } from "@kilocode/kilo-memory/marker-meta"
+// fork_change end
 import { messageThroughput, formatTG } from "../../context/session-utils"
 import { color as timelineColor } from "../../utils/timeline/colors"
 import type { Part as TimelinePart } from "../../types/messages"
@@ -125,8 +129,10 @@ type ToolStateProps = {
   status?: string
 }
 
+// fork_change start
 type MemoryItem = MemoryMarkerMeta.Decoded
 
+// fork_change end
 function TodoToolCard(props: { part: ToolPart; forceOpen?: boolean }) {
   const render = ToolRegistry.render(props.part.tool)
   const state = () => props.part.state as ToolStateProps
@@ -217,7 +223,9 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
   const data = useData()
   const session = useSession()
   const display = useDisplay()
+  // fork_change start
   const mem = useMemory()
+  // fork_change end
   const language = useLanguage()
   const { config } = useConfig()
   const open = createMemo(() => config().terminal_command_display !== "collapsed")
@@ -239,6 +247,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
       return !!matchToolRequest(part, "question", session.questions())
     })
   })
+  // fork_change start
   const meta = createMemo(() =>
     MemoryMarkerMeta.fromParts((props.parts ?? data.store.part?.[props.message.id] ?? []) as MemoryMarkerMeta.Part[]),
   )
@@ -265,6 +274,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
       </div>
     )
   }
+  // fork_change end
   // Pull the weighted generation rate across the turn's step-finish parts
   // (output + reasoning tokens over active generation duration) so the badge
   // represents the turn as a whole rather than whichever step happened to
@@ -408,6 +418,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
           )
         }}
       </For>
+      {/* fork_change start */}
       <Show when={mem.enabled() && recall()}>
         {(item) => (
           <Tooltip value={tip(item())} placement="top">
@@ -419,6 +430,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
           </Tooltip>
         )}
       </Show>
+      {/* fork_change end */}
     </>
   )
 }

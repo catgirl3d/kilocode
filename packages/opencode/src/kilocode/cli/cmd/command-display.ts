@@ -2,7 +2,7 @@ import { reviewCommandName } from "@/kilocode/review/command"
 
 type Command = {
   name: string
-  source?: "command" | "mcp" | "skill" | "builtin"
+  source?: "command" | "mcp" | "skill" | "builtin" // kilocode_change
 }
 
 export function slashDisplay(cmd: Command) {

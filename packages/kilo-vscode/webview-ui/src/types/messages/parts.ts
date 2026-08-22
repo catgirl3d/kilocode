@@ -1,12 +1,14 @@
 // Tool state for tool parts
 export type ToolState =
   | { status: "pending"; input: Record<string, unknown> }
+  // fork_change start
   | {
       status: "running"
       input: Record<string, unknown>
       title?: string
       metadata?: Record<string, unknown>
     }
+  // fork_change end
   | {
       status: "completed"
       input: Record<string, unknown>
@@ -73,7 +75,7 @@ export interface StepStartPart extends BasePart {
   time?: {
     start: number
   }
-  snapshot?: string
+  snapshot?: string // fork_change
 }
 
 // Tokens-per-second throughput metrics reported by the backend on step-finish.
@@ -114,7 +116,7 @@ export interface StepFinishPart extends BasePart {
     cache?: { read: number; write: number }
   }
   metrics?: StepThroughputMetrics
-  snapshot?: string
+  snapshot?: string // fork_change
 }
 
 export interface CompactionPart extends BasePart {

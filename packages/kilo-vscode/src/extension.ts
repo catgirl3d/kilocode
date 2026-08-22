@@ -194,6 +194,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register toggle auto-approve shortcut (Ctrl+Alt+A / Cmd+Alt+A)
   const defaultDir = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()
+  // fork_change start
   const autoApprove = registerToggleAutoApprove(context, connectionService, () => {
     const dirs = new Set([defaultDir()])
     for (const dir of provider.getSessionDirectories().values()) dirs.add(dir)
@@ -201,6 +202,7 @@ export async function activate(context: vscode.ExtensionContext) {
     return [...dirs]
   })
   const attention = new AttentionService(connectionService)
+  // fork_change end
 
   // Prewarm only after all global event consumers are ready.
   ensureBackendForAutocomplete(connectionService)

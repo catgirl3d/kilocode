@@ -184,7 +184,7 @@ const layer = Layer.effect(
         return state
       }),
     )
-    let runtime = false // kilocode_change - VS Code shield spans directory-scoped instance state
+    let runtime = false // kilocode_change — VS Code shield spans directory-scoped instance state
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)

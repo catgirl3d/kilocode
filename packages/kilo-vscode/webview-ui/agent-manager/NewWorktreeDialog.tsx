@@ -27,11 +27,13 @@ import { DEFAULT_VARIANT, cycleVariant, preserveVariant } from "../src/context/s
 import { ModelSelectorBase } from "../src/components/shared/ModelSelector"
 import { ModeSwitcherBase } from "../src/components/shared/ModeSwitcher"
 import { SpeechToTextButton } from "../src/components/speech-to-text/SpeechToTextButton"
+// fork_change start
 import {
   canUseSpeechToText,
   selectedSpeechToTextModel,
   selectedSpeechToTextMode,
 } from "../src/components/speech-to-text/availability"
+// fork_change end
 import { ThinkingSelectorBase } from "../src/components/shared/ThinkingSelector"
 import { SandboxButtonBase, SandboxTooltipContent } from "../src/components/shared/SandboxButton"
 import {
@@ -195,7 +197,9 @@ export const NewWorktreeDialog: Component<{
   const speechModels = useSpeechToTextModels()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
+  // fork_change start
   const speechMode = () => selectedSpeechToTextMode(config())
+  // fork_change end
   let prior: string | null = null
   let request: string | undefined
   const cancel = () => {
@@ -538,7 +542,9 @@ export const NewWorktreeDialog: Component<{
   }
 
   const startSpeech = () => {
+    // fork_change start
     speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText })
+    // fork_change end
   }
 
   const shortcut = createSpeechShortcut({
