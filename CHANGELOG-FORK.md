@@ -18,6 +18,7 @@
 
 ### Fixes & Enhancements
 
+- Speed up Windows voice input by capturing audio natively through WASAPI instead of spawning FFmpeg on each recording.
 - Recover snapshots automatically when a stale snapshot index lock is left behind by an interrupted git process, instead of silently disabling snapshots for the project.
 - Auto-approve permitted actions before displaying permission prompts and correctly remember exact shell command approvals.
 - Recover completed chat responses and clear stale running indicators after reconnecting to the local backend.
