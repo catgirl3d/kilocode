@@ -16,6 +16,9 @@ import {
 } from "../src/services/cli-backend/cli-resources"
 import { currentBwrapTarget, ensureBwrapForTarget } from "./bwrap-helper"
 import { currentFfmpegTarget, ensureFfmpegForTarget } from "./ffmpeg-helper"
+// fork_change start
+import { ensureMicForTarget } from "./mic-helper"
+// fork_change end
 
 const forceRebuild = process.argv.includes("--force")
 const compiledOnly = process.argv.includes("--compiled")
@@ -286,6 +289,9 @@ async function bundleKiloSandboxWorker() {
 
 async function ensureLocalHelpers() {
   await ensureFfmpegForTarget(currentFfmpegTarget(), targetBinDir)
+  // fork_change start
+  await ensureMicForTarget(currentFfmpegTarget(), targetBinDir)
+  // fork_change end
   if (process.env.KILO_SKIP_BUNDLED_BWRAP === "1") return
   if (await sanitizeSandboxResources(targetBinDir, true)) return
   await ensureBwrapForTarget(currentBwrapTarget())
