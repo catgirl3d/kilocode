@@ -1,10 +1,12 @@
 import { describe, it, expect } from "bun:test"
 import { ProjectContexts } from "../../src/agent-manager/project/contexts"
 import { ProjectRegistry, type StoredProject } from "../../src/agent-manager/project/registry"
-import { projectIdFor } from "../../src/agent-manager/project/paths"
+import { canonicalizePath, projectIdFor } from "../../src/agent-manager/project/paths" // fork_change
 import type { WorktreeStateManager } from "../../src/agent-manager/WorktreeStateManager"
 
-const WORKSPACE = "/repo/main"
+// fork_change start
+const WORKSPACE = canonicalizePath("/repo/main")
+// fork_change end
 const PINNED = projectIdFor(WORKSPACE)
 
 function stored(id: string): StoredProject {
@@ -183,9 +185,9 @@ describe("ProjectContexts", () => {
     expect(dynamic.syncPinned()).toBe(true)
     expect(dynamic.active()?.id).toBe(PINNED)
     expect(dynamic.syncPinned()).toBe(false)
-    ws.root = "/repo/other"
+    ws.root = "/repo/other" // fork_change
     expect(dynamic.syncPinned()).toBe(true)
-    expect(dynamic.active()?.root).toBe("/repo/other")
+    expect(dynamic.active()?.root).toBe(canonicalizePath("/repo/other")) // fork_change
   })
 
   it("snapshots pinned first with registry projects in order", () => {

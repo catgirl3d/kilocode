@@ -20,7 +20,8 @@ afterEach(() => {
   process.env.KILO_BWRAP_PATH = configured
 })
 
-describe("local Bubblewrap helper", () => {
+describe.skipIf(process.platform === "win32")("local Bubblewrap helper", () => {
+  // fork_change
   it("copies the configured helper to a cache outside the extension", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-vscode-bwrap-"))
     try {
