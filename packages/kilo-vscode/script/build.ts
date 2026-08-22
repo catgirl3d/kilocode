@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
 import { join } from "node:path"
+// fork_change start
 import { existsSync, mkdirSync, rmSync, chmodSync, copyFileSync } from "node:fs"
+// fork_change end
 import {
   copyKiloSandboxWorker,
   copySandboxResources,
@@ -79,7 +81,9 @@ for (const config of targets) {
   }
 
   console.log(`  📥 Copying binary from ${config.cliDir}/bin/${config.binary}...`)
+  // fork_change start
   copyFileSync(sourceBinary, targetBinary)
+  // fork_change end
   await copyTreeSitterResources(sourceBinary, targetBinary)
   await copySandboxResources(sourceBinary, targetBinary)
   await copyKiloSandboxWorker(sourceBinary, targetBinary)

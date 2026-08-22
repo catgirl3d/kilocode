@@ -57,12 +57,14 @@ function target(messages: Message[], index: number, id: string, parts?: (msg: Me
   return id
 }
 
+// fork_change start
 export function visibleParts(id: string, parts: Part[], revert?: RevertBoundary) {
   if (!revert || id !== revert.messageID) return parts
   if (!revert.partID) return []
   const idx = parts.findIndex((part) => part.id === revert.partID)
   return idx < 0 ? [] : parts.slice(0, idx)
 }
+// fork_change end
 
 export function messageTurns(
   messages: Message[],
@@ -73,6 +75,7 @@ export function messageTurns(
   const lead: Message[] = []
   const by = new Map<string, { turn: MessageTurn; index: number }>()
   const projected = (msg: Message) => visibleParts(msg.id, parts?.(msg) ?? msg.parts ?? [], revert)
+  // fork_change start
   const index = revert ? messages.findIndex((msg) => msg.id === revert.messageID) : -1
   const boundary = revert?.partID ? messages[index] : undefined
   const items = revert?.partID
@@ -86,9 +89,12 @@ export function messageTurns(
     : index < 0
       ? messages
       : messages.slice(0, index)
+  // fork_change end
   let compact: { turn: MessageTurn; index: number } | undefined
 
+  // fork_change start
   for (const msg of items) {
+    // fork_change end
     if (msg.role === "user") {
       const turn = { id: msg.id, user: msg, assistant: [] }
       const item = { turn, index: result.length }

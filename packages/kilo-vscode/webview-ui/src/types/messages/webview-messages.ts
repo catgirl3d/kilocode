@@ -16,7 +16,7 @@ import type {
   SkipLegacyMigrationMessage,
   StartMigrationMessage,
 } from "./migration"
-import type { MemoryPromptMessage, MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } from "./memory"
+import type { MemoryPromptMessage, MemoryShowMessage, MemoryOperationMessage, RequestMemoryMessage } from "./memory" // fork_change
 
 // ============================================
 // Messages FROM webview TO extension
@@ -191,6 +191,7 @@ export interface ValidateFilesRequest {
   sessionID: string
   paths: string[]
 }
+// fork_change start
 
 export interface ValidateInstructionPathRequest {
   type: "validateInstructionPath"
@@ -199,7 +200,7 @@ export interface ValidateInstructionPathRequest {
   scope: "global" | "project"
   bindingId?: string
 }
-
+// fork_change end
 export interface CancelLoginRequest {
   type: "cancelLogin"
 }
@@ -238,12 +239,13 @@ export interface CompactRequest {
   providerID?: string
   modelID?: string
 }
+// fork_change start
 
 export interface ShakeRequest {
   type: "shake"
   sessionID: string
 }
-
+// fork_change end
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
   tab?: string
@@ -436,7 +438,7 @@ export interface SpeechToTextStartMessage {
   type: "speechToTextStart"
   requestId: string
   model: string
-  mode?: "transcribe" | "translate"
+  mode?: "transcribe" | "translate" // fork_change
   language?: string
 }
 
@@ -1104,6 +1106,7 @@ export interface PersistVariantRequest {
 export interface RequestVariantsMessage {
   type: "requestVariants"
 }
+// fork_change start
 
 export interface PersistPreferredVariantRequest {
   type: "persistPreferredVariant"
@@ -1113,7 +1116,7 @@ export interface PersistPreferredVariantRequest {
 export interface RequestPreferredVariantMessage {
   type: "requestPreferredVariant"
 }
-
+// fork_change end
 // Enhance prompt request (webview → extension)
 export interface EnhancePromptRequest {
   type: "enhancePrompt"
@@ -1376,6 +1379,7 @@ export interface ToggleFavoriteRequest {
   providerID: string
   modelID: string
 }
+// fork_change start
 
 export interface MoveFavoriteRequest {
   type: "moveFavorite"
@@ -1383,7 +1387,7 @@ export interface MoveFavoriteRequest {
   modelID: string
   direction: "up" | "down"
 }
-
+// fork_change end
 export interface RequestFavoritesMessage {
   type: "requestFavorites"
 }
@@ -1530,7 +1534,7 @@ export type WebviewMessage =
   | SelectSourceRequest
   | RequestProvidersMessage
   | CompactRequest
-  | ShakeRequest
+  | ShakeRequest // fork_change
   | RequestAgentsMessage
   | RequestSkillsMessage
   | RequestCommandsMessage
@@ -1560,7 +1564,7 @@ export type WebviewMessage =
   | RequestFileSearchMessage
   | RequestSessionSearchMessage
   | RequestFilePickerMessage
-  | ValidateInstructionPathRequest
+  | ValidateInstructionPathRequest // fork_change
   | RequestTerminalContextMessage
   | RequestGitChangesContextMessage
   | ChatCompletionAcceptedMessage
@@ -1636,8 +1640,10 @@ export type WebviewMessage =
   | SetReviewMarkdownRenderRequest
   | PersistVariantRequest
   | RequestVariantsMessage
+  // fork_change start
   | PersistPreferredVariantRequest
   | RequestPreferredVariantMessage
+  // fork_change end
   | RequestCloudSessionDataMessage
   | ImportAndSendMessage
   | RequestBranchesMessage
@@ -1707,7 +1713,7 @@ export type WebviewMessage =
   | PersistModelSelectorExpandedRequest
   | RequestModelSelectorExpandedMessage
   | ToggleFavoriteRequest
-  | MoveFavoriteRequest
+  | MoveFavoriteRequest // fork_change
   | RequestFavoritesMessage
   | PersistModelSelectionRequest
   | ClearModelSelectionRequest
@@ -1719,7 +1725,7 @@ export type WebviewMessage =
   | RequestMemoryMessage
   | MemoryShowMessage
   | MemoryOperationMessage
-  | MemoryPromptMessage
+  | MemoryPromptMessage // fork_change
   | CreateSectionRequest
   | RenameSectionRequest
   | DeleteSectionRequest

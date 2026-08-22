@@ -21,11 +21,15 @@ import { useVSCode } from "../../context/vscode"
 import { useConfig } from "../../context/config"
 import { useProvider } from "../../context/provider"
 import { ModelSelector } from "../shared/ModelSelector"
+// fork_change start
 import { FavoriteModelSwitcher } from "../shared/FavoriteModelSwitcher"
+// fork_change end
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
 import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
+// fork_change start
 import { canUseSpeechToText, selectedSpeechToTextModel, selectedSpeechToTextMode } from "../speech-to-text/availability"
+// fork_change end
 import { ThinkingSelector } from "../shared/ThinkingSelector"
 import { useFileMention } from "../../hooks/useFileMention"
 import type { MentionResult } from "../../hooks/file-mention-utils"
@@ -33,7 +37,9 @@ import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
+// fork_change start
 import { useSlashCommand, type SlashCommandEntry } from "../../hooks/useSlashCommand"
+// fork_change end
 import { useGhostText } from "../../hooks/useGhostText"
 import { useSpeechToText } from "../speech-to-text/useSpeechToText"
 import { useSpeechToTextModels } from "../../context/speech-to-text-models"
@@ -54,8 +60,10 @@ import {
   isPathMention,
   applySandboxStates,
   memoryRest,
+  // fork_change start
   commandAction,
   resolvePrompt,
+  // fork_change end
   type SandboxDefaultState,
   type SandboxState,
 } from "./prompt-input-utils"
@@ -536,14 +544,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const isDisabled = () => !server.isConnected()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
+  // fork_change start
   const speechMode = () => selectedSpeechToTextMode(config())
+  // fork_change end
   const hasInput = () => text().trim().length > 0 || imageAttach.images().length > 0 || reviewComments().length > 0
   const canSend = () =>
     !isDisabled() &&
     !terminal.pending() &&
     !git.pending() &&
     !props.blocked?.() &&
+    // fork_change start
     (speech.state() === "recording" || !speech.active())
+  // fork_change end
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
     if (speech.state() === "recording") return language.t("prompt.action.send.recording")
@@ -1037,7 +1049,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const startSpeech = () => {
+    // fork_change start
     speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText })
+    // fork_change end
   }
 
   const transcribeAndSend = () => {
@@ -1131,7 +1145,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "memoryOperation",
         operation: memory.operation,
         sessionID: sid(),
+        // fork_change start
         ...(memory.operation === "auto" || memory.operation === "verbose" ? { mode: memory.mode } : {}),
+        // fork_change end
         ...(memory.operation === "purge" ? { confirm: memory.confirm } : {}),
         ...(memory.operation === "remember" || memory.operation === "correct" ? { text: memory.text } : {}),
         ...(memory.operation === "forget" ? { query: memory.query } : {}),
@@ -1151,7 +1167,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const handleSend = async () => {
+    // fork_change start
     let draft = text().trim()
+    // fork_change end
 
     const memory = parseMemoryCommand(draft)
     if (memory) {
@@ -1179,6 +1197,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       ? (slash.commands().find((c) => c.name === word) ?? slash.commands().find((c) => c.hints.includes(word)))
       : undefined
 
+    // fork_change start
     // Builtin actions use dedicated session endpoints; configured commands retain precedence.
     const action = commandAction(matched, () => session.shake())
     if (action) {
@@ -1196,10 +1215,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       action()
       return
     }
+    // fork_change end
 
     const imgs = imageAttach.images()
     const pending = reviewComments()
+    // fork_change start
     draft = resolvePrompt(draft, pending.length > 0, imgs.length > 0)
+    // fork_change end
     const review = pending.length > 0 ? formatReviewCommentsMarkdown(pending) : ""
     const message = draft && review ? `${review}\n\n${draft}` : draft || review
     const data = review ? { version: 1 as const, comments: pending } : undefined
@@ -1514,10 +1536,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       <div class="prompt-input-hint">
         <div class="prompt-input-hint-selectors">
           <ModeSwitcher sessionID={sid} />
+          {/* fork_change start */}
           <div class="model-quick-switcher">
             <FavoriteModelSwitcher sessionID={sid} numbered />
             <ModelSelector sessionID={sid} compact />
           </div>
+          {/* fork_change end */}
           <ThinkingSelector sessionID={sid} />
           <Show when={session.hasModelOverride(sid())}>
             <Tooltip value={language.t("prompt.action.resetModel")} placement="top" openDelay={0}>

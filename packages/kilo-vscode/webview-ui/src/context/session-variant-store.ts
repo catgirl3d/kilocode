@@ -33,6 +33,7 @@ export function variantKey(sel: ModelSelection, agent: string, session?: string)
   return `agent/${agent}/${base}`
 }
 
+// fork_change start
 export function getVariant(
   store: Record<string, string>,
   sel: ModelSelection,
@@ -49,7 +50,9 @@ export function getVariant(
   if (stored === DEFAULT_VARIANT) return undefined
   return preserveVariant(stored, variants)
 }
+// fork_change end
 
+// fork_change start
 export function getAgentVariant(
   store: Record<string, string>,
   sel: ModelSelection,
@@ -60,6 +63,7 @@ export function getAgentVariant(
   if (!model?.variants) return undefined
   return getVariant(store, sel, Object.keys(model.variants), agent, undefined, preferred)
 }
+// fork_change end
 
 /**
  * Next variant in the list, returning to the default after the last.

@@ -4,6 +4,7 @@
 //
 // Kept in a side-effect-free module so it can be imported from the server
 // (`session/prompt.ts`) without pulling in CLI dependencies.
+// kilocode_change start
 export const BUILTIN_COMMANDS = ["compact", "summarize", "shake"] as const
 
 export const BUILTIN_COMMAND_DESCRIPTIONS: Record<BuiltinCommand, string> = {
@@ -20,6 +21,7 @@ export const BUILTIN_COMMAND_CATALOG = [
     kind: "action" as const,
   },
 ]
+// kilocode_change end
 
 export type BuiltinCommand = (typeof BUILTIN_COMMANDS)[number]
 

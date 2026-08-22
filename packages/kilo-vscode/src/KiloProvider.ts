@@ -54,7 +54,9 @@ import { GitStatsPoller, type LocalStats } from "./agent-manager/GitStatsPoller"
 import { createMarketplaceRemover, removeMcp } from "./kilo-provider/remove-config-item"
 import type { RemoteStatusService } from "./services/RemoteStatusService"
 import { resolveProjectDirectory } from "./project-directory"
+// fork_change start
 import { reconcileSessionStatus, seedSessionStatuses } from "./session-status"
+// fork_change end
 import { normalizeEnhancePromptErrorMessage } from "./enhance-prompt-error"
 import { retry } from "./services/cli-backend/retry"
 import { removeAgent } from "./services/agent-removal"
@@ -145,7 +147,9 @@ import { nativeTitle } from "./kilo-provider/native-tab-title"
 import { parseReview, reviewMetadata, type ReviewMessageData } from "./shared/review-comments"
 import { completesWithoutStatus } from "./kilo-provider/command-completion"
 import { KiloProviderMemory } from "./kilo-provider/memory"
+// fork_change start
 import { moveFavorite } from "./shared/model-favorites"
+// fork_change end
 
 import {
   buildActionContext,
@@ -211,7 +215,9 @@ type SandboxSupportClient = {
 }
 type ConfigSnapshot = {
   effective: Config
+  // fork_change start
   global?: Config
+  // fork_change end
   targets: { global: ConfigTarget; project: ConfigTarget }
 }
 
@@ -333,7 +339,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private contextSessionID: string | undefined
   private connectionState: "connecting" | "connected" | "disconnected" | "error" = "connecting"
   private connectionGeneration = 0
+  // fork_change start
   private hasConnected = false
+  // fork_change end
   private loginAttempt = 0
   private isWebviewReady = false
   private readonly extensionVersion =
@@ -391,7 +399,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private readonly draftSessions = new Map<string, { sid: string; dir: string; expires: number }>()
   private readonly sandboxTransitions = new Map<string, Promise<void>>()
   private readonly revisions = new Map<string, { id: string; seq: number }>()
+  // fork_change start
   private readonly statusRevisions = new Map<string, number>()
+  // fork_change end
   private readonly refreshes = new Map<string, number>()
   private readonly anacondaDesktop = new AnacondaDesktopBridge()
   private sessionStatusMap = new Map<string, SessionStatus["type"]>() // Latest status used for destructive config warnings.
@@ -567,7 +577,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.cachedConfigMessage = null
     this.postMessage({ type: "workspaceDirectoryChanged", directory: directory ?? "" })
     this.postMessage({ type: "configBindingExpired", reason: "project-changed" })
+    // fork_change start
     if (this.client && this.connectionState === "connected") void this.fetchAndSendConfig()
+    // fork_change end
   }
 
   public setDiffVirtualProvider(provider: import("./DiffVirtualProvider").DiffVirtualProvider): void {
@@ -713,14 +725,17 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         data: profileData,
       })
 
+      // fork_change start
       if (this.currentSession && reason !== "sse-reconnected") {
         this.refreshSessionDetails(this.currentSession.id, this.getWorkspaceDirectory(this.currentSession.id))
       }
+      // fork_change end
 
       // Re-send cached worktree stats and git status after webview reload.
       if (this.cachedStats) this.postMessage(this.cachedStats)
       this.postMessage({ type: "gitStatus", repo: this.cachedGitRepo })
 
+      // fork_change start
       // Seed session status map so the Settings panel knows about already-running sessions.
       // Must run after webview is ready (postMessage is a no-op before that).
       // Only reconcile (reset missing busy→idle) when the map is empty, i.e.
@@ -731,6 +746,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         const reconcile = this.sessionStatusMap.size === 0
         void this.seedSessionStatusMap(reconcile)
       }
+      // fork_change end
 
       this.sendRemoteStatus()
     }
@@ -1050,7 +1066,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           backgroundJobs: (sessionID, requestID) => this.fetchAndSendBackgroundJobs(sessionID, requestID),
           cancelBackgroundJob: (jobID, sessionID, requestID) => this.cancelBackgroundJob(jobID, sessionID, requestID),
           backgroundSubagents: (sessionID) => this.backgroundSubagents(sessionID),
+          // fork_change start
           shake: (sessionID) => this.handleShake(sessionID),
+          // fork_change end
         })
       ) {
         return
@@ -1086,7 +1104,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       ) {
         return
       }
+      // fork_change start
       if (await this.handleModelPreferenceMessage(message)) return
+      // fork_change end
       this.handleWebviewFocusMessage(message)
       this.visibleTaskStreams.handle(message)
       this.handleStreamVisibilityMessage(message)
@@ -1614,10 +1634,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (message.type === "syncSession") {
       if (message.scope === "inspector") this.inspectorSessionIds.add(message.sessionID)
       const parent = typeof message.parentSessionID === "string" ? message.parentSessionID : undefined
+      // fork_change start
       const scope = message.scope === "inspector" ? "inspector" : "task"
       this.handleSyncSession(message.sessionID, parent, scope).catch((e) =>
         console.error("[Kilo New] handleSyncSession failed:", e),
       )
+      // fork_change end
       return true
     }
     if (message.scope === "inspector") this.inspectorSessionIds.delete(message.sessionID)
@@ -1634,6 +1656,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.releaseChildSession(message.sessionID)
   }
 
+  // fork_change start
   private handleEditorOpenMessage(message: Parameters<typeof handleEditorAction>[0]): boolean {
     return handleEditorAction(message, {
       // Explicit session IDs retain worktree routing; Settings has no session ID and uses its selected project.
@@ -1657,7 +1680,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       post: (msg) => this.postMessage(msg),
     })
   }
+  // fork_change end
 
+  // fork_change start
   private async handleModelPreferenceMessage(message: TypedWebviewMessage): Promise<boolean> {
     if (message.type === "moveFavorite") {
       const favorite = message as TypedWebviewMessage & {
@@ -1695,6 +1720,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
     return false
   }
+  // fork_change end
 
   // legacy-migration start
   private handleLegacyMigrationMessage(message: { type: string }): boolean {
@@ -1747,6 +1773,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.connectionService.notifyFavoritesChanged(favorites)
   }
 
+  // fork_change start
   private async reorderFavorite(message: {
     providerID: string
     modelID: string
@@ -1759,6 +1786,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.connectionService.notifyFavoritesChanged(favorites)
   }
 
+  // fork_change end
   /**
    * Initialize connection to the CLI backend server.
    * Subscribes to the shared KiloConnectionService.
@@ -1846,9 +1874,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       )
 
       // Subscribe to connection state changes
+      // fork_change start
       this.unsubscribeState = this.connectionService.onStateChange((state, error) =>
         this.handleConnectionState(state, error),
       )
+      // fork_change end
 
       // Subscribe to notification dismiss broadcast from other KiloProvider instances
       this.unsubscribeNotificationDismiss = this.connectionService.onNotificationDismissed(() => {
@@ -1895,7 +1925,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       // Get current state and push to webview
       const serverInfo = this.connectionService.getServerInfo()
       this.connectionState = this.connectionService.getConnectionState()
+      // fork_change start
       if (this.connectionState === "connected") this.hasConnected = true
+      // fork_change end
 
       if (serverInfo) {
         const langConfig = vscode.workspace.getConfiguration("kilo-code.new")
@@ -2151,6 +2183,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    * Handle syncing a child session (e.g. spawned by the task tool).
    * Tracks the session for SSE events and fetches its messages.
    */
+  // fork_change start
   private async handleSyncSession(
     sessionID: string,
     parentSessionID?: string,
@@ -2161,6 +2194,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (scope === "inspector") await this.fetchChildSessionStatus(sessionID, this.getWorkspaceDirectory(sessionID))
       return
     }
+    // fork_change end
 
     this.syncedChildSessions.add(sessionID)
     this.trackedSessionIds.add(sessionID)
@@ -2180,7 +2214,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
     try {
       const workspaceDir = this.getWorkspaceDirectory(sessionID)
+      // fork_change start
       void this.fetchChildSessionStatus(sessionID, workspaceDir)
+      // fork_change end
       const [info, history] = await Promise.all([
         retry(() => this.client!.session.get({ sessionID, directory: workspaceDir }, { throwOnError: true })),
         retry(() => this.client!.session.messages({ sessionID, directory: workspaceDir }, { throwOnError: true })),
@@ -2217,6 +2253,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
+  // fork_change start
   private async fetchChildSessionStatus(sessionID: string, directory: string): Promise<void> {
     const revision = this.statusRevisions.get(sessionID) ?? 0
     try {
@@ -2236,6 +2273,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
+  // fork_change end
   private releaseChildSession(sessionID: string): void {
     if (
       this.inspectorSessionIds.has(sessionID) ||
@@ -2396,7 +2434,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.lastReconciledAt.delete(sessionID)
     this.checkpoints.delete(sessionID)
     this.revisions.delete(sessionID)
+    // fork_change start
     this.statusRevisions.delete(sessionID)
+    // fork_change end
     this.refreshes.delete(sessionID)
     this.sessionStatusMap.delete(sessionID)
     this.costs.onSessionDeleted(sessionID)
@@ -3011,6 +3051,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     await seedSessionStatuses(this.client, dir, this.sessionStatusMap, (msg) => this.postMessage(msg), reconcile)
   }
 
+  // fork_change start
   private async handleConnectionState(
     state: "connecting" | "connected" | "disconnected" | "error",
     error?: Error,
@@ -3071,6 +3112,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     ])
   }
 
+  // fork_change end
   /**
    * Fetch the latest merged config and push it as configUpdated.
    * Called when global.config.updated SSE fires (config changed without a full dispose).
@@ -3436,6 +3478,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           this.validConfigProject(project),
         )
       : undefined
+    // fork_change start
     if ((hasGlobal && !globalBinding) || (hasProject && !projectBinding)) {
       this.postMessage({ type: "configUpdateFailed", message: "Settings changed or expired. Reload before saving." })
       void this.fetchAndSendConfig()
@@ -3447,6 +3490,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       return
     }
 
+    // fork_change end
     this.pending++
     const dir = projectBinding?.directory ?? globalBinding?.directory ?? this.settingsDirectory()
     const completed: Array<"global" | "project"> = []
@@ -3488,6 +3532,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         snapshot = result.data as ConfigSnapshot
         completed.push("project")
       }
+      // fork_change start
     } catch (error) {
       if (globalBinding) this.configBindings.consume(globalBinding.id)
       if (projectBinding) this.configBindings.consume(projectBinding.id)
@@ -3496,6 +3541,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       void this.fetchAndSendConfig()
       return
     }
+    // fork_change end
     if (globalBinding) this.configBindings.consume(globalBinding.id)
     if (projectBinding) this.configBindings.consume(projectBinding.id)
 
@@ -3503,14 +3549,18 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (!snapshot) throw new Error("Config update returned no authoritative snapshot")
       const bindings = this.bindingsFor(dir, snapshot.targets)
       const global = snapshot.targets.global.raw as Config
+      // fork_change start
       const globalEffectiveConfig = (snapshot.global ?? global) as Config
+      // fork_change end
       const projectConfig = bindings.project ? (snapshot.targets.project.raw as Config) : undefined
       this.cachedGlobalConfig = global
       this.cachedConfigMessage = {
         type: "configLoaded",
         config: snapshot.effective,
         globalConfig: global,
+        // fork_change start
         globalEffectiveConfig,
+        // fork_change end
         projectConfig,
         bindings,
         settings: this.configSettings(),
@@ -3520,7 +3570,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         type: "configUpdated",
         config: snapshot.effective,
         globalConfig: global,
+        // fork_change start
         globalEffectiveConfig,
+        // fork_change end
         projectConfig,
         bindings,
         settings: this.configSettings(),
@@ -3540,14 +3592,18 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const snapshot = await fetchSnapshot(this.client!, dir, () => this.configSettings())
     const bindings = this.bindingsFor(dir, snapshot.targets)
     const globalConfig = (snapshot.targets?.global.raw ?? snapshot.globalConfig) as Config
+    // fork_change start
     const globalEffectiveConfig = snapshot.globalConfig as Config
+    // fork_change end
     const projectConfig = bindings.project ? (snapshot.targets?.project.raw as Config) : undefined
     this.cachedGlobalConfig = globalConfig ?? null
     this.cachedConfigMessage = {
       type: "configLoaded",
       config: snapshot.config,
       globalConfig,
+      // fork_change start
       globalEffectiveConfig,
+      // fork_change end
       projectConfig,
       bindings,
       collections: snapshot.collections,
@@ -3558,7 +3614,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       type,
       config: snapshot.config,
       globalConfig,
+      // fork_change start
       globalEffectiveConfig,
+      // fork_change end
       projectConfig,
       bindings,
       collections: snapshot.collections,
@@ -3582,7 +3640,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       completedScopes: completed,
       config: snapshot?.effective,
       globalConfig: snapshot?.targets.global.raw,
+      // fork_change start
       globalEffectiveConfig: snapshot?.global,
+      // fork_change end
       projectConfig: bindings?.project ? snapshot?.targets.project.raw : undefined,
       bindings,
     })
@@ -4240,6 +4300,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
+  // fork_change start
   private async handleShake(sessionID?: string): Promise<void> {
     const target = sessionID || this.currentSession?.id
     if (!this.client) {
@@ -4267,6 +4328,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
+  // fork_change end
   // Permission + question handlers extracted to kilo-provider/handlers/permission.ts and question.ts
 
   private get permissionCtx(): PermissionContext {
@@ -4434,7 +4496,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
     // Clear globalState items that are not part of the configuration
     await this.extensionContext?.globalState.update("variantSelections", undefined)
+    // fork_change start
     await this.extensionContext?.globalState.update("preferredVariant", undefined)
+    // fork_change end
     await this.extensionContext?.globalState.update("recentModels", undefined)
     await this.extensionContext?.globalState.update("modelUsage", undefined)
     await this.extensionContext?.globalState.update("kilo.dismissedNotificationIds", undefined)
@@ -4454,7 +4518,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
     // Re-send globalState items to the webview
     this.postMessage({ type: "variantsLoaded", variants: {} })
+    // fork_change start
     this.postMessage({ type: "preferredVariantLoaded" })
+    // fork_change end
     this.postMessage({ type: "recentsLoaded", recents: [] })
     this.postMessage({ type: "modelUsageLoaded", usage: {} })
 
@@ -4728,7 +4794,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     // busy-session warning on Save.
     if (event.type === "session.status") {
       const sid = event.properties.sessionID
+      // fork_change start
       this.statusRevisions.set(sid, (this.statusRevisions.get(sid) ?? 0) + 1)
+      // fork_change end
       const prev = this.sessionStatusMap.get(sid)
       if ((prev === undefined || prev === "idle") && event.properties.status.type !== "idle") {
         this.costs.rearm(sid)

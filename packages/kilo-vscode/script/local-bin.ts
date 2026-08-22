@@ -2,7 +2,9 @@
 import { $ } from "bun"
 import { createHash } from "node:crypto"
 import { join, relative, dirname, basename } from "node:path"
+// fork_change start
 import { chmodSync, statSync, rmSync, readdirSync, existsSync, copyFileSync, mkdirSync } from "node:fs"
+// fork_change end
 import {
   copyKiloSandboxWorker,
   copySandboxResources,
@@ -295,7 +297,9 @@ async function writeSourceWrapper() {
   }
 
   const bun = Bun.which("bun") ?? "bun"
+  // fork_change start
   mkdirSync(targetBinDir, { recursive: true })
+  // fork_change end
   await Bun.write(
     targetBinPath,
     [
@@ -360,8 +364,10 @@ async function main() {
     return null
   })
   if (!sourceBinPath) return
+  // fork_change start
   mkdirSync(targetBinDir, { recursive: true })
   copyFileSync(sourceBinPath, targetBinPath)
+  // fork_change end
   await copyTreeSitterResources(sourceBinPath, targetBinPath)
   await copySandboxResources(sourceBinPath, targetBinPath)
   await copyKiloSandboxWorker(sourceBinPath, targetBinPath)

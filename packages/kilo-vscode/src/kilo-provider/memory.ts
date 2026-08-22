@@ -1,14 +1,20 @@
 import * as vscode from "vscode"
+// fork_change start
 import { isMemoryOperation, type MemoryOperation as SharedMemoryOperation } from "@kilocode/kilo-memory/commands"
+// fork_change end
 import { MemorySchema } from "@kilocode/kilo-memory/schema"
+// fork_change start
 import type { KiloClient, MemoryShowResponse, MemoryStatusResponse, Session } from "@kilocode/sdk/v2/client"
+// fork_change end
 import { retry } from "../services/cli-backend/retry"
 import { getErrorMessage } from "../kilo-provider-utils"
 
 type MemorySourceFile = MemorySchema.Source
 type MemoryApi = KiloClient["memory"]
+// fork_change start
 type MemoryOperation = SharedMemoryOperation
 type MemoryPromptOperation = "remember" | "forget"
+// fork_change end
 const CACHE_LIMIT = 8
 const STORED_LIMIT = 16
 const NO_PROJECT = "No active project for memory. Open a file in the target folder to manage its memory."
@@ -41,10 +47,12 @@ function operation(value: unknown): MemoryOperation | undefined {
   return isMemoryOperation(value) ? value : undefined
 }
 
+// fork_change start
 function prompt(value: unknown): MemoryPromptOperation | undefined {
   if (value === "remember" || value === "forget") return value
 }
 
+// fork_change end
 function mode(value: unknown) {
   if (value === "status" || value === "on" || value === "off") return value
   return undefined
@@ -123,8 +131,10 @@ export class KiloProviderMemory {
       return true
     }
     if (message.type === "memoryShow") {
+      // fork_change start
       const mode = message.mode === "status" || message.mode === "show" ? message.mode : undefined
       await this.show(typeof message.sessionID === "string" ? message.sessionID : undefined, mode)
+      // fork_change end
       return true
     }
     if (message.type === "memoryOperation") {
@@ -142,12 +152,14 @@ export class KiloProviderMemory {
       await this.run(parsed.value)
       return true
     }
+    // fork_change start
     if (message.type === "memoryPrompt") {
       const op = prompt(message.operation)
       if (!op) return true
       await this.prompt(op, typeof message.sessionID === "string" ? message.sessionID : undefined)
       return true
     }
+    // fork_change end
     return false
   }
 
@@ -200,6 +212,7 @@ export class KiloProviderMemory {
     }
   }
 
+  // fork_change start
   show(sessionID?: string, mode?: "status" | "show"): Promise<void> {
     return this.serial(() => this.doShow(sessionID, mode))
   }
@@ -220,6 +233,7 @@ export class KiloProviderMemory {
   }
 
   private async doShow(sessionID?: string, mode?: "status" | "show"): Promise<void> {
+    // fork_change end
     const client = this.input.client()
     if (!client) {
       this.input.post({
@@ -247,8 +261,10 @@ export class KiloProviderMemory {
         this.input.post({ type: "memoryLoaded", sessionID, error: NO_PROJECT })
         return
       }
+      // fork_change start
       const { data: show } = await retry(() => api.show({ directory }, { throwOnError: true }))
       const { data: status } = await retry(() => api.status({ directory }, { throwOnError: true }))
+      // fork_change end
       const msg = {
         type: "memoryLoaded",
         sessionID,
@@ -256,6 +272,7 @@ export class KiloProviderMemory {
       }
       this.cache(directory, msg)
       this.input.post(msg)
+      // fork_change start
       if (mode) {
         this.picker(show, status, mode)
         return
@@ -299,6 +316,7 @@ export class KiloProviderMemory {
       await vscode.workspace
         .openTextDocument({ content, language: "markdown" })
         .then((doc) => vscode.window.showTextDocument(doc, { preview: true }))
+      // fork_change end
     } catch (err) {
       console.error("[Kilo New] KiloProvider: Failed to show memory:", err)
       this.input.post({
@@ -309,6 +327,7 @@ export class KiloProviderMemory {
     }
   }
 
+  // fork_change start
   private picker(show: MemoryShowResponse, status: MemoryStatusResponse, mode: "status" | "show") {
     const items = stored(show.items)
     if (mode === "show" && items.length === 0) {
@@ -351,6 +370,7 @@ export class KiloProviderMemory {
     })
   }
 
+  // fork_change end
   run(message: KiloProviderMemoryMessage): Promise<boolean> {
     return this.serial(() => this.execute(message))
   }
@@ -466,7 +486,9 @@ export class KiloProviderMemory {
     if (op === "rebuild") return (await api.rebuild({ directory }, { throwOnError: true })).data
     if (op === "purge") return this.purge(api, directory, message)
     if (op === "auto") return this.auto(api, directory, message)
+    // fork_change start
     if (op === "verbose") return this.verbose(api, directory, message)
+    // fork_change end
     if (op === "remember") return this.remember(api, directory, message)
     if (op === "correct") return this.correct(api, directory, message)
     return this.forget(api, directory, message)
@@ -531,6 +553,7 @@ export class KiloProviderMemory {
     }
     throw new Error("Auto-save mode is required")
   }
+  // fork_change start
 
   private async verbose(api: MemoryApi, directory: string, message: KiloProviderMemoryMessage) {
     if (message.mode === "on" || message.mode === "off") {
@@ -538,4 +561,5 @@ export class KiloProviderMemory {
     }
     throw new Error("Verbose mode is required")
   }
+  // fork_change end
 }

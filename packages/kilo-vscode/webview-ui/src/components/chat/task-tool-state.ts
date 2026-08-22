@@ -1,3 +1,4 @@
+// fork_change start
 import type { SessionStatusInfo } from "../../types/messages"
 
 export function taskMarkerStatus(status: string | undefined) {
@@ -14,6 +15,7 @@ export function taskSessionStatus(status: SessionStatusInfo | undefined, parent:
 export function taskRunning(status: string | undefined) {
   return taskMarkerStatus(status) === "running"
 }
+// fork_change end
 
 export function taskVisible(open: boolean | undefined, id: string | undefined) {
   return open ? id : undefined
