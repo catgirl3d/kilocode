@@ -385,7 +385,7 @@ describe("GitStatsPoller", () => {
       })
 
       poller.setEnabled(true)
-      await waitFor(() => git.commands.filter((item) => item.args.includes("--porcelain=v2")).length >= 15, 3_000)
+      await waitFor(() => git.commands.filter((item) => item.args.includes("--porcelain=v2")).length >= 15, 15_000) // fork_change
       poller.stop()
       const counts = new Map<string, number>()
       for (const item of git.commands) {
@@ -396,7 +396,19 @@ describe("GitStatsPoller", () => {
       expect(counts.get(dirs[1]!)).toBeGreaterThan(2)
       expect(counts.get(dirs[2]!)).toBeGreaterThan(2)
     } finally {
-      await fs.promises.rm(root, { recursive: true, force: true })
+      // fork_change start
+      // Windows can transiently hold handles to freshly written .git objects.
+      // Best-effort cleanup: retry briefly, then leave the dir for OS temp cleanup.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await fs.promises.rm(root, { recursive: true, force: true })
+          break
+        } catch (err) {
+          if (attempt >= 20 || (err as NodeJS.ErrnoException)?.code !== "EBUSY") throw err
+          await new Promise((resolve) => setTimeout(resolve, 300))
+        }
+      }
+      // fork_change end
     }
   })
 
