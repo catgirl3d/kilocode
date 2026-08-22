@@ -223,11 +223,14 @@ This repository is a personal fork of Kilo Code (`upstream/main`).
   - Every custom feature, enhancement, or fix in this fork MUST be documented in `CHANGELOG-FORK.md`.
   - In addition, user-facing changes STILL require a changeset file in `.changeset/<slug>.md` (e.g. `"kilo-code": patch` or `minor`) describing the change from the user's perspective in imperative mood.
 - **Change Annotation Rules by Location**:
-  - **New Fork Source Files**: Put `// fork_change - new file` (or `{/* fork_change - new file */}`, `# fork_change - new file`) on Line 1 of any new source file created for this fork. In shared OpenCode directories, use `// kilocode_change - new file`. New test files, Markdown docs, and JSON configs are exempt.
-  - **Edits in Existing Kilo Files**: When modifying existing upstream Kilo code in `packages/kilo-vscode/`, `packages/kilo-ui/`, or existing files in `packages/opencode/src/kilocode/`, mark only your added/changed blocks with `// fork_change` (or `// fork_change start` / `end`, `{/* fork_change */}`). In `src/kilocode/` and `kilo-gateway/`, historical `kilocode_change` comments are also accepted.
+  - **Exempt Files & Folders (NEVER Add Markers)**:
+    - All test files and fixtures (`*.test.ts`, `*.spec.ts`, `test/`, `tests/`, `fixture/`, `__snapshots__/`), Markdown docs (`*.md`), JSON/YAML configs, and Storybook stories are **completely exempt** from all markers — both for newly created files and for edits in existing upstream files. Never put `fork_change` or `kilocode_change` comments inside test files.
+  - **New Fork Source Files**: Put `// fork_change - new file` (or `{/* fork_change - new file */}`, `# fork_change - new file`) on Line 1 of any new non-exempt source file created for this fork. In shared OpenCode directories, use `// kilocode_change - new file`.
+  - **Edits in Existing Kilo Files**: When modifying existing upstream Kilo code in `packages/kilo-vscode/`, `packages/kilo-ui/`, or existing files in `packages/opencode/src/kilocode/`, mark only your added/changed blocks with `// fork_change` (or `// fork_change start` / `end`, `{/* fork_change */}`). In `src/kilocode/` and `kilo-gateway/`, historical `kilocode_change` comments from upstream Kilo Code (including Line 1 `// kilocode_change - new file` headers present in `upstream/main`) are preserved as-is.
   - **NEVER use `kilocode_change` in `packages/kilo-vscode/` or `packages/kilo-ui/`**: Doing so breaks CI `check-kilocode-change`.
   - **Shared OpenCode Files**: When editing shared upstream OpenCode files (`packages/opencode/src/` outside `kilocode/`), use `// kilocode_change` to satisfy `bun run script/check-opencode-annotations.ts`.
   - **Prettier Stability**: Use block markers (`// fork_change start` / `end` on standalone lines) for multi-line expressions, hooks, and JSX to prevent Prettier from moving trailing comments onto inner lines during formatting.
+
 - **Fork Rebase Protocol**:
   - When rebasing on `upstream/main`, strictly follow `FORK_REBASE.md`.
 - **Finding Fork Changes & Verification**:
