@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it, mock } from "bun:test"
 import { EventEmitter } from "node:events"
 import * as fs from "node:fs/promises"
-// fork_change start
+
 import * as processUtil from "../../src/util/process"
 
 type ExecArgs = Parameters<typeof processUtil.exec>
@@ -62,18 +62,16 @@ mock.module("fs/promises", () => ({
     if (!intercepting) return realUnlink(...args)
   },
 }))
-// fork_change end
 
 const { cancelSpeechCapture, prewarmSpeechCapture, startSpeechCapture } = await import(
   "../../src/speech-to-text/capture"
 )
 
 afterAll(() => {
-  // fork_change start
   intercepting = false
   mock.module("../../src/util/process", () => ({ ...processUtil, exec: realExec, spawn: realSpawn }))
   mock.module("fs/promises", () => ({ ...fs, unlink: realUnlink }))
-  // fork_change end
+
   if (platform) Object.defineProperty(process, "platform", platform)
   if (ffmpeg === undefined) delete process.env.KILO_FFMPEG_PATH
   else process.env.KILO_FFMPEG_PATH = ffmpeg
@@ -83,14 +81,12 @@ afterAll(() => {
 
 describe("speech capture prewarm", () => {
   afterEach(() => {
-    // fork_change
     intercepting = false
   })
 
   it("shares Windows DirectShow discovery across prewarm and capture start", async () => {
-    // fork_change start
     intercepting = true
-    // fork_change end
+
     await Promise.all([prewarmSpeechCapture(), prewarmSpeechCapture()])
     await startSpeechCapture({ requestId: "request", model: "model" })
     await cancelSpeechCapture("request")
