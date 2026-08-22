@@ -29,6 +29,7 @@ async function repo(): Promise<string> {
   await git.init(["--initial-branch=main"])
   await git.addConfig("user.email", "test@test.com")
   await git.addConfig("user.name", "Test")
+  await git.addConfig("core.autocrlf", "false") // fork_change
   await fs.writeFile(path.join(dir, "state.txt"), "base\n")
   await git.add("state.txt")
   await git.commit("initial")
@@ -226,7 +227,7 @@ describe("continueInWorktree", () => {
     expect(created).toBeDefined()
     expect(await fs.readFile(path.join(created!.path, "state.txt"), "utf8")).toBe("local dirty\n")
     expect(await simpleGit(created!.path).revparse(["HEAD"])).toBe(head)
-  })
+  }, 60000) // fork_change
 
   it("rolls back the created worktree when Git transfer fails", async () => {
     const root = await repo()

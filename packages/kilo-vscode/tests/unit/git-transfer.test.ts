@@ -24,6 +24,7 @@ describe("git-transfer", () => {
     await git(["init", "-b", "main"], dir)
     await git(["config", "user.email", "test@test.com"], dir)
     await git(["config", "user.name", "Test"], dir)
+    await git(["config", "core.autocrlf", "false"], dir) // fork_change
     // Initial commit so HEAD exists
     await fs.writeFile(path.join(dir, "init.txt"), "init\n")
     await git(["add", "."], dir)
