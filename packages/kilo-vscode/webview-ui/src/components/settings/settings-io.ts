@@ -23,7 +23,9 @@ export const KNOWN_KEYS: ReadonlyArray<string> = [
   "mcp",
   "command",
   "instructions",
+  // fork_change start
   "instructions_disabled",
+  // fork_change end
   "skills",
   "snapshot",
   "remote_control",

@@ -13,9 +13,13 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox"
+// fork_change start
 import { Switch } from "@kilocode/kilo-ui/switch"
+// fork_change end
 import { useSession } from "../../context/session"
+// fork_change start
 import { useMemory } from "../../context/memory"
+// fork_change end
 import { calcTokenUsage, collapseCostBreakdown } from "../../context/session-utils"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
@@ -28,10 +32,14 @@ import { TranscriptSearch } from "./TranscriptSearch"
 import { useTranscriptSearch } from "../../context/transcript-search"
 import { hasModelUsage, tokenSummary } from "../../context/model-usage"
 import { SessionRenameEditor } from "../shared/SessionRenameEditor"
+// fork_change start
 import { DeferredPopover } from "../shared/DeferredPopover"
+// fork_change end
 import { target as todoTarget } from "../../context/todo-revert"
 import type { Part, TodoItem, ExtensionMessage } from "../../types/messages"
+// fork_change start
 import type { MemoryActivity } from "../../utils/memory-activity"
+// fork_change end
 
 interface TaskHeaderProps {
   readonly?: boolean
@@ -40,7 +48,9 @@ interface TaskHeaderProps {
 
 export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const session = useSession()
+  // fork_change start
   const memory = useMemory()
+  // fork_change end
   const language = useLanguage()
   const search = useTranscriptSearch()
 
@@ -49,7 +59,9 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const hasMessages = createMemo(() => session.messages().length > 0)
   const busy = createMemo(() => session.status() === "busy")
   const canCompact = createMemo(() => !busy() && session.visibleMessages().length > 0 && !!session.selected())
+  // fork_change start
   const canShake = createMemo(() => !busy() && session.visibleMessages().length > 0 && !session.shaking())
+  // fork_change end
 
   const money = createMemo(() => new Intl.NumberFormat(language.locale(), { style: "currency", currency: "USD" }))
   const fmt = (n: number) => money().format(n)
@@ -96,6 +108,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
     return false
   })
 
+  // fork_change start
   const memoryVerbose = createMemo(() => Boolean(memory.status()?.state.verbose))
   const memoryActive = createMemo(() => {
     if (!memory.enabled()) return false
@@ -166,6 +179,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
     </>
   )
 
+  // fork_change end
   const vscode = useVSCode()
   const [expanded, setExpanded] = createSignal(true)
 
@@ -318,6 +332,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
             )}
           </Show>
           <SwarmBoard readonly={props.readonly} projectId={props.projectId} />
+          {/* fork_change start */}
           <Tooltip value={activityTooltip()} placement="bottom" contentClass="task-header-memory-tooltip">
             <DeferredPopover
               placement="bottom-end"
@@ -416,6 +431,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
               </div>
           </DeferredPopover>
           </Tooltip>
+          {/* fork_change end */}
           <Show when={!props.readonly}>
             <Tooltip value={language.t("command.session.compact")} placement="bottom">
               <IconButton
@@ -427,6 +443,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                 aria-label={language.t("command.session.compact")}
               />
             </Tooltip>
+            {/* fork_change start */}
             <Tooltip value={language.t("command.session.shake")} placement="bottom">
               <IconButton
                 icon="collapse"
@@ -437,6 +454,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                 aria-label={language.t("command.session.shake")}
               />
             </Tooltip>
+            {/* fork_change end */}
           </Show>
           <Show when={hasMessages()}>
             <Tooltip value={language.t("chat.search.toggle")} placement="bottom">

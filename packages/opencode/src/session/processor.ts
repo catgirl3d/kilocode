@@ -133,7 +133,7 @@ const layer = Layer.effect(
         toolcalls: {},
         toolmeta: {}, // kilocode_change
         shouldBreak: false,
-        snapshot: undefined,
+        snapshot: undefined, // kilocode_change
         blocked: false,
         needsCompaction: false,
         compactionError: undefined, // kilocode_change
@@ -777,10 +777,10 @@ const layer = Layer.effect(
       })
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
-        const finished = yield* gate.finishStep() // kilocode_change - close lazy snapshot before cleanup patch
-        const baseline = ctx.snapshot ?? finished.baseline // kilocode_change
-        const terminal = baseline && finished.finish // kilocode_change
-        // kilocode_change start - terminal checkpoint must precede its patch for part-level reverts
+        // kilocode_change start - close lazy snapshot before cleanup patch and write terminal checkpoint
+        const finished = yield* gate.finishStep()
+        const baseline = ctx.snapshot ?? finished.baseline
+        const terminal = baseline && finished.finish
         if (terminal) {
           yield* session.updatePart({
             id: PartID.ascending(),
