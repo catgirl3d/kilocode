@@ -443,13 +443,16 @@ export const MessageList: Component<MessageListProps> = (props) => {
   // always `i18n.t("ui.tool.agent", { type })` regardless of status — the
   // "capitalize" CSS class only changes how it *looks*, the DOM text node
   // itself is the raw, lowercase subagent_type. The "(N)" child-tool-count
+  // fork_change start
   // suffix shown there is a live value from
   // session.getSessionToolCount(), not stored on the part at all, so it can't
   // be indexed from a snapshot — searching for that count isn't meaningful
   // content anyway.
+  // fork_change end
   function taskText(part: Part & { type: "tool" }, state: ToolState): string[] {
     const input = state.input as { subagent_type?: string; description?: string } | undefined
     const type = input?.subagent_type || part.tool
+    // fork_change start
     const meta = state.status === "running" || state.status === "completed" ? state.metadata : undefined
     const child = childID({
       type: "tool",
@@ -457,6 +460,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
       metadata: part.metadata as { sessionId?: string } | undefined,
       state: { metadata: meta },
     })
+    // fork_change end
     const chunks = [i18n.t("ui.tool.agent", { type })]
     if (input?.description) chunks.push(input.description)
     // TaskToolExpanded.tsx only shows the raw <task_result> body when there's

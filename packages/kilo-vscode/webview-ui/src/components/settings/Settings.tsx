@@ -220,7 +220,9 @@ const Settings: Component<SettingsProps> = (props) => {
   const server = useServer()
   const language = useLanguage()
   const vscode = useVSCode()
+  // fork_change start
   const { loading, isDirty, saving, blocked, saveError, saveConfig, discardConfig, features } = useConfig()
+  // fork_change end
   const session = useSession()
   const [active, setActive] = createSignal(props.tab ?? "models")
   const [errorExpanded, setErrorExpanded] = createSignal(false)
@@ -509,7 +511,9 @@ const Settings: Component<SettingsProps> = (props) => {
             <Button variant="ghost" size="small" onClick={discardConfig} disabled={saving()}>
               {language.t("settings.saveBar.discard")}
             </Button>
+            {/* fork_change start */}
             <Button variant="primary" size="small" onClick={handleSave} disabled={saving() || blocked()}>
+              {/* fork_change end */}
               {saving() ? language.t("settings.saveBar.saving") : language.t("settings.saveBar.save")}
             </Button>
           </div>

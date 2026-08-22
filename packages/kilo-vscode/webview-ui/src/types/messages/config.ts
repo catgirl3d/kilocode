@@ -56,7 +56,7 @@ export interface ExperimentalConfig {
   task_model_selection?: boolean
   native_notebook_tools?: boolean
   speech_to_text_model?: string
-  speech_to_text_mode?: "transcribe" | "translate"
+  speech_to_text_mode?: "transcribe" | "translate" // fork_change
   primary_tools?: string[]
   continue_loop_on_deny?: boolean
   mcp_timeout?: number
@@ -149,7 +149,7 @@ export interface Config {
   mcp?: Record<string, McpConfig>
   command?: Record<string, CommandConfig>
   instructions?: string[]
-  instructions_disabled?: string[]
+  instructions_disabled?: string[] // fork_change
   skills?: SkillsConfig
   snapshot?: boolean
   remote_control?: boolean

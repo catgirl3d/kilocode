@@ -1,3 +1,4 @@
+// fork_change start
 import type { SessionStatusInfo } from "../../types/messages"
 export function taskMarkerStatus(status: string | undefined) {
   if (status === "pending" || status === "running") return "running" as const
@@ -13,6 +14,7 @@ export function taskSessionStatus(status: SessionStatusInfo | undefined, parent:
 export function taskRunning(status: string | undefined) {
   return taskMarkerStatus(status) === "running"
 }
+// fork_change end
 
 export function childForeground(
   id: string | undefined,

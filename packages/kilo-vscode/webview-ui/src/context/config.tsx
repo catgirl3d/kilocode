@@ -14,15 +14,19 @@ import { useVSCode } from "./vscode"
 import type {
   Config,
   ConfigCollections,
+  // fork_change start
   ConfigLoadedMessage,
   ConfigUpdatedMessage,
+  // fork_change end
   ExtensionMessage,
   FeatureFlags,
   SettingsConfigBinding,
 } from "../types/messages"
 import {
   configUnsetPaths,
+  // fork_change start
   acceptsConfig,
+  // fork_change end
   deepMerge,
   mergeScopedConfig,
   pruneConfigSet,
@@ -44,16 +48,22 @@ interface ConfigContextValue {
   config: Accessor<Config>
   globalConfig: Accessor<Config>
   globalDraft: Accessor<Partial<Config>>
+  // fork_change start
   globalEffectiveConfig: Accessor<Config>
+  // fork_change end
   projectConfig: Accessor<Config>
+  // fork_change start
   projectBinding: Accessor<SettingsConfigBinding | undefined>
+  // fork_change end
   collections: Accessor<ConfigCollections>
   settings: Accessor<Record<string, unknown>>
   features: Accessor<FeatureFlags>
   loading: Accessor<boolean>
   isDirty: Accessor<boolean>
   saving: Accessor<boolean>
+  // fork_change start
   blocked: Accessor<boolean>
+  // fork_change end
   saveError: Accessor<SaveError | null>
   updateConfig: (partial: Partial<Config>) => void
   updateGlobalConfig: (partial: Partial<Config>) => void
@@ -86,14 +96,18 @@ function loadedSettings(message: ExtensionMessage): Record<string, unknown> | un
   if (message.type === "autoApprovalReasonSettingLoaded") return { showAutoApprovalReason: message.visible }
 }
 
+// fork_change start
 type ConfigMessage = ConfigLoadedMessage | ConfigUpdatedMessage
 
+// fork_change end
 export const ConfigProvider: ParentComponent = (props) => {
   const vscode = useVSCode()
 
   const [config, setConfig] = createSignal<Config>({})
   const [globalConfig, setGlobalConfig] = createSignal<Config>({})
+  // fork_change start
   const [globalEffectiveConfig, setGlobalEffectiveConfig] = createSignal<Config>({})
+  // fork_change end
   const [projectConfig, setProjectConfig] = createSignal<Config>({})
   const [collections, setCollections] = createSignal<ConfigCollections>({})
   const [settings, setSettings] = createSignal<Record<string, unknown>>({})
@@ -123,7 +137,9 @@ export const ConfigProvider: ParentComponent = (props) => {
   // True while a saveConfig() write is in-flight — used to clear draft on success
   // and to guard against stale configLoaded messages overwriting optimistic state.
   const [saving, setSaving] = createSignal(false)
+  // fork_change start
   const [blocked, setBlocked] = createSignal(false)
+  // fork_change end
   // Error from the most recent saveConfig() attempt, or null if no error.
   // Cleared when the user edits the draft again or starts a new save.
   const [saveError, setSaveError] = createSignal<SaveError | null>(null)
@@ -131,6 +147,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     if (next !== undefined) setCollections(next)
   }
 
+  // fork_change start
   const updateGlobal = (message: ConfigMessage, merge: boolean) => {
     if (message.globalConfig !== undefined) {
       setGlobalConfig(merge ? mergeScopedConfig(message.globalConfig, globalDraft()) : message.globalConfig)
@@ -190,11 +207,13 @@ export const ConfigProvider: ParentComponent = (props) => {
     setSaved(message.config)
   }
 
+  // fork_change end
   // Register handler immediately (not in onMount) so we never miss
   // a configLoaded message that arrives before the DOM mount.
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
     const patch = loadedSettings(message)
     if (patch) return mergeSettings(patch)
+    // fork_change start
     if (message.type === "configLoaded") {
       load(message)
       return
@@ -209,12 +228,15 @@ export const ConfigProvider: ParentComponent = (props) => {
       update(message)
       return
     }
+    // fork_change end
   })
   const unsubscribeExpired = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "configBindingExpired") return
     setBindings({})
     if (isDirty()) {
+      // fork_change start
       setBlocked(true)
+      // fork_change end
       setSaveError({ message: "The Settings project changed. Discard or reload before saving." })
       return
     }
@@ -251,7 +273,9 @@ export const ConfigProvider: ParentComponent = (props) => {
       setSaved(message.config)
     }
     if (message.bindings) setBindings(message.bindings)
+    // fork_change start
     if (message.globalEffectiveConfig !== undefined) setGlobalEffectiveConfig(message.globalEffectiveConfig)
+    // fork_change end
     setSaveError({ message: message.message, details: message.details })
   })
   const unsubscribeIndexing = vscode.onMessage((message: ExtensionMessage) => {
@@ -315,7 +339,9 @@ export const ConfigProvider: ParentComponent = (props) => {
   })
 
   function updateConfig(partial: Partial<Config>) {
+    // fork_change start
     if (blocked()) return
+    // fork_change end
     // Optimistically update local state with deep merge + null stripping
     setConfig((prev) => stripNulls(deepMerge(prev, partial)))
     // Accumulate in draft — will be sent on saveConfig()
@@ -326,21 +352,27 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function updateGlobalConfig(partial: Partial<Config>) {
+    // fork_change start
     if (blocked()) return
+    // fork_change end
     setGlobalConfig((prev) => mergeScopedConfig(prev, partial))
     setGlobalDraft((prev) => deepMerge(prev as Config, partial))
     setSaveError(null)
   }
 
   function updateProjectConfig(partial: Partial<Config>) {
+    // fork_change start
     if (blocked()) return
+    // fork_change end
     setProjectConfig((prev) => mergeScopedConfig(prev, partial))
     setProjectDraft((prev) => deepMerge(prev as Config, partial))
     setSaveError(null)
   }
 
   function updateSetting(key: string, value: unknown) {
+    // fork_change start
     if (blocked()) return
+    // fork_change end
     setSettings((prev) => ({ ...prev, [key]: value }))
     setSettingsDraft((prev) => ({ ...prev, [key]: value }))
     setSaveError(null)
@@ -366,7 +398,9 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function saveConfig() {
+    // fork_change start
     if (blocked()) return
+    // fork_change end
     const changes = draft()
     const globals = globalDraft()
     const projects = projectDraft()
@@ -409,7 +443,9 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function discardConfig() {
+    // fork_change start
     const reload = blocked()
+    // fork_change end
     setConfig(saved())
     setGlobalConfig(savedGlobal())
     setProjectConfig(savedProject())
@@ -418,28 +454,38 @@ export const ConfigProvider: ParentComponent = (props) => {
     setProjectDraft({})
     setSettings(savedSettings())
     setSettingsDraft({})
+    // fork_change start
     setBlocked(false)
+    // fork_change end
     setSaveError(null)
+    // fork_change start
     if (reload) {
       setLoading(true)
       vscode.postMessage({ type: "requestConfig" })
     }
+    // fork_change end
   }
 
   const value: ConfigContextValue = {
     config,
     globalConfig,
     globalDraft,
+    // fork_change start
     globalEffectiveConfig,
+    // fork_change end
     projectConfig,
+    // fork_change start
     projectBinding: () => bindings().project,
+    // fork_change end
     collections,
     settings,
     features,
     loading,
     isDirty,
     saving,
+    // fork_change start
     blocked,
+    // fork_change end
     saveError,
     updateConfig,
     updateGlobalConfig,

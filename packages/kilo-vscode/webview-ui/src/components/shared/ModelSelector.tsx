@@ -138,8 +138,10 @@ export interface ModelSelectorBaseProps {
   description?: string
   /** Only respond to picker events from this prompt scope. */
   trigger?: string
+  // fork_change start
   /** Render an icon-only trigger for compact chat controls. */
   compact?: boolean
+  // fork_change end
 }
 
 export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
@@ -808,6 +810,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           {props.description}
         </span>
       </Show>
+      {/* fork_change start */}
       <Tooltip
         value={props.compact ? controlLabel() : (activeModel()?.id ?? "")}
         placement="top"
@@ -815,6 +818,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         inactive={!props.compact && !activeModel()}
         contentClass={props.compact ? "model-quick-switcher-tooltip" : undefined}
       >
+        {/* fork_change end */}
         <PopupSelector
           expanded={expanded()}
           preferredWidth={350}
@@ -831,7 +835,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           triggerProps={{
             variant: "secondary",
             size: "normal",
+            // fork_change start
             class: props.compact ? "model-selector-quick-open" : undefined,
+            // fork_change end
             get disabled() {
               return !canOpen()
             },
@@ -843,34 +849,37 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
             },
           }}
           trigger={
-            <Show
-              when={props.compact}
-              fallback={
-                <>
-                  <span class="model-selector-trigger-label">{triggerLabel()}</span>
-                  <Show when={activeCollectsData()}>
-                    <Tooltip value={dataLabel()} placement="top" openDelay={0}>
-                      <span class="model-selector-trigger-free-data" aria-label={dataLabel()}>
-                        <Icon name="book-open-check" size="small" />
-                      </span>
-                    </Tooltip>
-                  </Show>
-                  <svg
-                    class="model-selector-trigger-chevron"
-                    width="10"
-                    height="10"
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                  >
-                    <path d="M8 4l4 5H4l4-5z" />
-                  </svg>
-                </>
-              }
-            >
-              <Icon name="models" size="small" />
-            </Show>
+            <>
+              {/* fork_change start */}
+              <Show
+                when={props.compact}
+                fallback={
+                  <>
+                    <span class="model-selector-trigger-label">{triggerLabel()}</span>
+                    <Show when={activeCollectsData()}>
+                      <Tooltip value={dataLabel()} placement="top" openDelay={0}>
+                        <span class="model-selector-trigger-free-data" aria-label={dataLabel()}>
+                          <Icon name="book-open-check" size="small" />
+                        </span>
+                      </Tooltip>
+                    </Show>
+                    <svg
+                      class="model-selector-trigger-chevron"
+                      width="10"
+                      height="10"
+                      viewBox="0 0 16 16"
+                      fill="currentColor"
+                    >
+                      <path d="M8 4l4 5H4l4-5z" />
+                    </svg>
+                  </>
+                }
+              >
+                <Icon name="models" size="small" />
+              </Show>
+              {/* fork_change end */}
+            </>
           }
-          class={`model-selector-popover${expanded() ? " model-selector-popover--expanded" : ""}`}
         >
           {(bodyH) => {
             createEffect(() => {
@@ -1027,6 +1036,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           const preActive = () => isPreActive(row.key)
                           const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
                           const showSelect = () => expanded() && preActive() && !isActive(model)
+                          // fork_change start
                           const index = () =>
                             session
                               ?.favoriteModels()
@@ -1041,6 +1051,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                             if (!session) return
                             session.moveFavorite(model.providerID, model.id, direction)
                           }
+                          // fork_change end
                           const starLabel = () =>
                             `${starred() ? language.t("model.favorite.remove") : language.t("model.favorite.add")}: ${sanitizeName(model.name)}`
                           return (
@@ -1113,6 +1124,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   <span class="model-selector-item-provider-tag">{model.providerName}</span>
                                 </div>
                               </div>
+                              {/* fork_change start */}
                               <Show
                                 when={row.kind === "favorite" && session && props.favorites !== false && index() >= 0}
                               >
@@ -1150,6 +1162,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   </button>
                                 </div>
                               </Show>
+                              {/* fork_change end */}
                               <Show when={session && props.favorites !== false}>
                                 <button
                                   type="button"
@@ -1212,7 +1225,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
 interface ModelSelectorProps {
   sessionID?: Accessor<string | undefined>
+  // fork_change start
   compact?: boolean
+  // fork_change end
 }
 
 export const ModelSelector: Component<ModelSelectorProps> = (props) => {
@@ -1231,7 +1246,9 @@ export const ModelSelector: Component<ModelSelectorProps> = (props) => {
       onCancel={() => {
         requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } })))
       }}
+      // fork_change start
       compact={props.compact}
+      // fork_change end
     />
   )
 }

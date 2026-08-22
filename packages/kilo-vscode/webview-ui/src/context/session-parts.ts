@@ -22,9 +22,11 @@ export function sameParts(local: Part[] = [], snapshot: Part[] = []): boolean {
   for (const [i, part] of snapshot.entries()) {
     const current = local[i]!
     if (current.id !== part.id || current.type !== part.type) return false
+    // fork_change start
     const previous = "snapshot" in current ? current.snapshot : undefined
     const next = "snapshot" in part ? part.snapshot : undefined
     if (previous !== next) return false
+    // fork_change end
     if (!stream(current) || !stream(part)) continue
     if (current.text !== part.text) return false
     if (current.time?.end !== part.time?.end) return false

@@ -1,6 +1,8 @@
 import type { KiloConnectionService } from "../services/cli-backend/connection-service"
 import { getErrorMessage } from "../kilo-provider-utils"
+// fork_change start
 import { getSpeechToTextModel, type SpeechToTextMode } from "./models"
+// fork_change end
 
 const PATH = "/kilo/audio/transcriptions"
 const PROMPT =
@@ -8,7 +10,9 @@ const PROMPT =
 
 type Req = {
   model?: string
+  // fork_change start
   mode?: SpeechToTextMode
+  // fork_change end
   data: string
   format: string
   language?: string
@@ -56,7 +60,9 @@ export async function transcribeSpeech(
       },
       body: JSON.stringify({
         model: input.model || model.id,
+        // fork_change start
         mode: input.mode ?? "transcribe",
+        // fork_change end
         input_audio: {
           data: input.data,
           format: input.format,
@@ -73,12 +79,14 @@ export async function transcribeSpeech(
       return {
         ok: false,
         error: errorMessage(body, raw) ?? `Speech to text failed with status ${res.status}`,
+        // fork_change start
         code:
           res.status === 401
             ? model.providerID === "kilo"
               ? "not_authenticated"
               : "provider_not_authenticated"
             : undefined,
+        // fork_change end
       }
     }
 

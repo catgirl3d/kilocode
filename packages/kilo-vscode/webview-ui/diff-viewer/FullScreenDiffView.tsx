@@ -16,7 +16,9 @@ import { TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import type { WorktreeFileDiff } from "../src/types/messages"
 import { useLanguage } from "../src/context/language"
 import { useConfig } from "../src/context/config"
+// fork_change start
 import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
+// fork_change end
 import { FileTree } from "./FileTree"
 import { treeOrder } from "./file-tree-utils"
 import type { ReviewComment } from "./review-comments"
@@ -77,7 +79,9 @@ export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) =>
   const { t } = useLanguage()
   const noticeText = () => notice(t, props.notice)
   const { config } = useConfig()
+  // fork_change start
   const speechMode = () => selectedSpeechToTextMode(config())
+  // fork_change end
   const localComposer = createReviewComposer()
   const composer = () => props.composer ?? localComposer
   const reviewOpen = createReviewOpenState(
