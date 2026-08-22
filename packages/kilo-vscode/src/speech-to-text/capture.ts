@@ -6,6 +6,7 @@ import type { ChildProcess } from "child_process"
 import { exec, spawn } from "../util/process"
 // fork_change start
 import type { SpeechToTextMode } from "./models"
+import { cancelWasapiCapture, startWasapiCapture, stopWasapiCapture } from "./wasapi-capture"
 // fork_change end
 
 type Input = {
@@ -30,7 +31,7 @@ type Recording = Input & {
 
 type Audio = {
   data: string
-  format: "m4a"
+  format: "m4a" | "wav" // fork_change
   model: string
   // fork_change start
   mode?: SpeechToTextMode
@@ -43,6 +44,13 @@ type Args = {
   input: string[]
 }
 
+// fork_change start
+type DeviceTask = {
+  bin: string
+  task: Promise<string[]>
+}
+
+// fork_change end
 const macScript = `
 ObjC.import("AVFoundation")
 ObjC.import("Foundation")
@@ -67,10 +75,15 @@ function run(args) {
 let active: Recording | undefined
 let starting: string | undefined
 let ffmpeg: Promise<string> | undefined
+let dshow: DeviceTask | undefined // fork_change
 
 export async function prewarmSpeechCapture(): Promise<void> {
   if (useMacCapture(process.platform, process.env)) return
-  await resolveFFmpeg()
+  // fork_change start
+  const bin = await resolveFFmpeg()
+  if (process.platform !== "win32" || process.env.KILO_FFMPEG_AUDIO_DEVICE) return
+  await windowsAudioDevices(bin)
+  // fork_change end
 }
 
 export async function startSpeechCapture(input: Input): Promise<boolean> {
@@ -86,15 +99,38 @@ export async function startSpeechCapture(input: Input): Promise<boolean> {
       })
       if (result) return !result.stopped
     }
+    // fork_change start
+    if (process.platform === "win32" && !process.env.KILO_FFMPEG_AUDIO_DEVICE) {
+      const wasapi = await startWasapiCapture(input).catch((err: unknown) => {
+        console.warn("[Kilo New] WASAPI speech capture failed, falling back to FFmpeg", err)
+        return false
+      })
+      if (wasapi) return true
+    }
+    // fork_change end
     const bin = await resolveFFmpeg()
-    const state = await startWithArgs(bin, file, input, await inputArgSets(bin))
-    return !state.stopped
+    // fork_change start
+    const args = await inputArgSets(bin)
+    try {
+      const state = await startWithArgs(bin, file, input, args)
+      return !state.stopped
+    } catch (err) {
+      if (process.platform !== "win32" || process.env.KILO_FFMPEG_AUDIO_DEVICE) throw err
+      dshow = undefined
+      const state = await startWithArgs(bin, file, input, await inputArgSets(bin))
+      return !state.stopped
+    }
+    // fork_change end
   } finally {
     if (starting === input.requestId) starting = undefined
   }
 }
 
 export async function stopSpeechCapture(requestId: string): Promise<Audio> {
+  // fork_change start
+  const wasapi = await stopWasapiCapture(requestId)
+  if (wasapi) return wasapi
+  // fork_change end
   const state = requireActive(requestId)
   state.stopped = true
   active = undefined
@@ -127,6 +163,9 @@ export async function stopSpeechCapture(requestId: string): Promise<Audio> {
 }
 
 export async function cancelSpeechCapture(requestId: string): Promise<void> {
+  // fork_change start
+  if (await cancelWasapiCapture(requestId)) return
+  // fork_change end
   const state = active
   if (!state || state.requestId !== requestId) return
   state.stopped = true
@@ -392,11 +431,29 @@ async function windowsInputArgSets(bin: string): Promise<Args[]> {
   const configured = process.env.KILO_FFMPEG_AUDIO_DEVICE
   if (configured) return [{ input: ["-f", "dshow", "-i", `audio=${configured}`] }]
 
-  const devices = await listDshowAudioDevices(bin)
+  const devices = await windowsAudioDevices(bin) // fork_change
   if (devices.length === 0) throw new Error("No Windows audio input devices found for speech input")
   return devices.map((device) => ({ input: ["-f", "dshow", "-i", `audio=${device}`] }))
 }
 
+// fork_change start
+async function windowsAudioDevices(bin: string): Promise<string[]> {
+  const cached = dshow
+  if (cached?.bin === bin) return cached.task
+
+  const task = listDshowAudioDevices(bin)
+  dshow = { bin, task }
+  try {
+    const devices = await task
+    if (devices.length === 0 && dshow?.task === task) dshow = undefined
+    return devices
+  } catch (err) {
+    if (dshow?.task === task) dshow = undefined
+    throw err
+  }
+}
+
+// fork_change end
 async function listDshowAudioDevices(bin: string): Promise<string[]> {
   const raw = await exec(bin, ["-list_devices", "true", "-f", "dshow", "-i", "dummy"], { timeout: 5000 })
     .then((result) => `${result.stdout}\n${result.stderr}`)
