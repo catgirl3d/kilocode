@@ -1,6 +1,8 @@
 import type { Message, Part } from "../types/messages"
 import { visibleParts, type MessageTurn, type RevertBoundary } from "./session-queue"
+// fork_change start
 import { snapshotStatus, type SnapshotStatus } from "./session-utils"
+// fork_change end
 
 interface TranscriptMeta {
   turn: string
@@ -41,7 +43,9 @@ export interface TranscriptDiffRow extends TranscriptMeta {
   key: string
   message: Message
   diffs: unknown[]
+  // fork_change start
   snapshot?: SnapshotStatus
+  // fork_change end
 }
 
 export interface TranscriptErrorRow extends TranscriptMeta {
@@ -100,6 +104,7 @@ function sameTiming(a?: TurnTiming, b?: TurnTiming) {
   return a?.completedAt === b?.completedAt && a?.durationMs === b?.durationMs
 }
 
+// fork_change start
 function snapshotEqual(a: SnapshotStatus | undefined, b: SnapshotStatus | undefined) {
   if (!a && !b) return true
   if (!a || !b) return false
@@ -110,6 +115,7 @@ function snapshotEqual(a: SnapshotStatus | undefined, b: SnapshotStatus | undefi
   )
 }
 
+// fork_change end
 function equal(a: TranscriptRow, b: TranscriptRow) {
   if (a.type !== b.type || !meta(a, b)) return false
   if (a.type === "user" && b.type === "user") {
@@ -121,7 +127,9 @@ function equal(a: TranscriptRow, b: TranscriptRow) {
     return a.message === b.message && same(a.parts, b.parts) && a.copy === b.copy && sameTiming(a.timing, b.timing)
   }
   if (a.type === "diff" && b.type === "diff") {
+    // fork_change start
     return a.message === b.message && same(a.diffs, b.diffs) && snapshotEqual(a.snapshot, b.snapshot)
+    // fork_change end
   }
   if (a.type === "error" && b.type === "error") {
     return a.message === b.message && a.error === b.error
@@ -256,10 +264,12 @@ export function transcriptRows(
     attachTiming(assistant, copied, turnTiming(turn))
 
     const changes = diffs(turn.user)
+    // fork_change start
     const snapshot = snapshotStatus(turn.assistant.flatMap((msg) => parts(msg.id)))
     if (changes.length > 0 || snapshot) {
       rows.push({ ...meta, type: "diff", key: `${turn.id}:diff`, message: turn.user, diffs: changes, snapshot })
     }
+    // fork_change end
 
     const failed = turn.assistant.find(
       (msg) => terminal(msg) && msg.error && msg.error.name !== "MessageAbortedError" && opts.hidden?.(msg.id) !== true,

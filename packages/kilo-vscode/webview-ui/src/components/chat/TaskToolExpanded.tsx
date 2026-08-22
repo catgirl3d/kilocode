@@ -9,7 +9,9 @@
 
 import { Component, createEffect, createMemo, createSignal, Index, Show, on, onCleanup } from "solid-js"
 import { BasicTool, initialOpen, rememberOpen } from "@kilocode/kilo-ui/basic-tool"
+// fork_change start
 import { CopyButton, ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part"
+// fork_change end
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { AgentAvatar } from "@kilocode/kilo-ui/agent-avatar"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
@@ -67,6 +69,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
       ),
     ),
   )
+  // fork_change start
   const taskStatus = createMemo(() => {
     const id = childSessionId()
     return taskSessionStatus(id ? session.allStatusMap()[id] : undefined, props.status)
@@ -76,6 +79,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
     return status ? language.t(`task.backgroundAgents.status.${status}`) : undefined
   })
 
+  // fork_change end
   const running = createMemo(() => taskRunning(props.status))
   // Background task cards stay collapsed: they must not auto-open or show the
   // "Starting..." status, which would flicker the transcript as the child runs.
@@ -236,6 +240,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
   const trigger = () => (
     <div data-slot="basic-tool-tool-info-structured" data-component="task-tool-heading">
       <div data-slot="basic-tool-tool-info-main">
+        {/* fork_change start */}
         <Show when={taskStatus()}>
           {(status) => (
             <span
@@ -247,6 +252,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
             />
           )}
         </Show>
+        {/* fork_change end */}
         <span data-slot="basic-tool-tool-title" title={description() || title()}>
           {description() || title()}
         </span>
@@ -271,7 +277,9 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
             />
           </Tooltip>
         </Show>
+        {/* fork_change start */}
         <CopyButton value={() => childSessionId() ?? ""} label={language.t("session.action.copyId")} />
+        {/* fork_change end */}
         <IconButton
           icon="square-arrow-top-right"
           size="small"

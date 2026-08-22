@@ -1,5 +1,7 @@
 import * as vscode from "vscode"
+// fork_change start
 import type { KiloClient } from "@kilocode/sdk/v2/client"
+// fork_change end
 import type { KiloConnectionService } from "../services/cli-backend/connection-service"
 
 /**
@@ -16,6 +18,7 @@ export interface AutoApproveController {
 const CONFIG = "kilo-code.new.autoApprove"
 const KEY = "enabled"
 
+// fork_change start
 /**
  * Runtime auto-accept toggle for permissions. The persisted extension setting is
  * applied to each directory-scoped backend without writing global allow rules.
@@ -25,10 +28,13 @@ export function registerToggleAutoApprove(
   connectionService: KiloConnectionService,
   directories: AllDirectories,
 ): AutoApproveController {
+  // fork_change end
   let active = readActive()
   // Bumped on disable to invalidate in-flight enable drains
   let generation = 0
+  // fork_change start
   let queue = Promise.resolve()
+  // fork_change end
   const listeners = new Set<(active: boolean) => void>()
 
   const notify = () => {
@@ -40,6 +46,7 @@ export function registerToggleAutoApprove(
     generation++
     notify()
     await vscode.workspace.getConfiguration(CONFIG).update(KEY, active, target())
+    // fork_change start
     await sync(generation)
   }
 
@@ -62,7 +69,7 @@ export function registerToggleAutoApprove(
     })
     return queue
   }
-
+  // fork_change end
   const toggle = async () => {
     await setActive(!active)
     if (!active) {
@@ -82,18 +89,24 @@ export function registerToggleAutoApprove(
       active = next
       generation++
       notify()
+      // fork_change start
       void sync(generation)
+      // fork_change end
     }),
   )
 
+  // fork_change start
   context.subscriptions.push({
     dispose: connectionService.onStateChange((state) => {
       if (state === "connected") void sync(generation)
     }),
   })
 
+  // fork_change end
   context.subscriptions.push(vscode.commands.registerCommand("kilo-code.new.toggleAutoApprove", toggle))
+  // fork_change start
   void sync(generation)
+  // fork_change end
 
   return {
     active: () => active,

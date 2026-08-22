@@ -457,6 +457,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
   function taskText(part: Part & { type: "tool" }, state: ToolState): string[] {
     const input = state.input as { subagent_type?: string; description?: string } | undefined
     const type = input?.subagent_type
+    // fork_change start
     const meta = state.status === "running" || state.status === "completed" ? state.metadata : undefined
     const child = childID({
       type: "tool",
@@ -464,6 +465,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
       metadata: part.metadata as { sessionId?: string } | undefined,
       state: { metadata: meta },
     })
+    // fork_change end
     const chunks = [type ? i18n.t("ui.tool.agent", { type }) : i18n.t("ui.tool.agent.default")]
     if (input?.description) chunks.push(input.description)
     // TaskToolExpanded.tsx only shows the raw <task_result> body when there's
