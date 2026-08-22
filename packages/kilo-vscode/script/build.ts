@@ -10,6 +10,9 @@ import {
   copyTreeSitterResources,
 } from "../src/services/cli-backend/cli-resources"
 import { ensureFfmpegForTarget } from "./ffmpeg-helper"
+// fork_change start
+import { ensureMicForTarget } from "./mic-helper"
+// fork_change end
 
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
 const packageJson = await Bun.file(packageJsonPath).json()
@@ -97,6 +100,11 @@ for (const config of targets) {
   console.log("Adding bundled FFmpeg helper...")
   await ensureFfmpegForTarget(config.target, binDir)
 
+  // fork_change start
+  console.log("Adding WASAPI microphone helper...")
+  await ensureMicForTarget(config.target, binDir)
+
+  // fork_change end
   console.log(`  📦 Packaging .vsix for ${config.target}${prerelease ? " (pre-release)" : ""}...`)
   const vsixPath = join(outDir, `kilo-vscode-${config.target}.vsix`)
   const args = ["--no-dependencies", "--skip-license", "--target", config.target, "-o", vsixPath]
