@@ -7,10 +7,12 @@ import { GitOps } from "../../src/agent-manager/GitOps"
 import { handleProjectMessage, type ProjectMessageDeps } from "../../src/agent-manager/project/messages"
 import { ProjectRegistry, type RegistryStorage } from "../../src/agent-manager/project/registry"
 import { ProjectContexts } from "../../src/agent-manager/project/contexts"
-import { projectIdFor } from "../../src/agent-manager/project/paths"
+import { canonicalizePath, projectIdFor } from "../../src/agent-manager/project/paths" // fork_change
 import type { AgentManagerInMessage } from "../../src/agent-manager/types"
 
-const WORKSPACE = "/repo/main"
+// fork_change start
+const WORKSPACE = canonicalizePath("/repo/main")
+// fork_change end
 
 function gitRepo(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kilo-am-msg-"))
@@ -104,9 +106,11 @@ describe("handleProjectMessage", () => {
     const { deps, registry, calls, pick } = setup()
     pick(repo)
     await handleProjectMessage(msg("agentManager.addProject"), deps)
-    const id = projectIdFor(repo)
+    // fork_change start
+    const id = projectIdFor(canonicalizePath(repo))
     const project = registry.get(id)
-    expect(project?.root).toBe(repo)
+    expect(project?.root).toBe(canonicalizePath(repo))
+    // fork_change end
     expect(calls.push).toBe(1)
     expect(calls.error).toEqual([])
   })
