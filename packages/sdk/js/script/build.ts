@@ -207,7 +207,18 @@ const legacyNext = legacyPatched.includes(instructions)
 if (!legacyNext.includes(instructions)) {
   throw new Error(`Legacy Config instructions_disabled patch did not apply (${legacyTypesPath})`)
 }
-await Bun.write(legacyTypesPath, legacyNext)
+const advisor = `    /**
+     * Model ID to use for on-demand advisor consultations
+     */
+    advisor_model?: string
+`
+const patched = legacyNext.includes(advisor)
+  ? legacyNext
+  : legacyNext.replace("  experimental?: {\n", "  experimental?: {\n" + advisor)
+if (!patched.includes(advisor)) {
+  throw new Error(`Legacy Config advisor_model patch did not apply (${legacyTypesPath})`)
+}
+await Bun.write(legacyTypesPath, patched)
 // kilocode_change end
 
 await retry("Prettier", () => $`bun prettier --write src/gen src/v2`) // kilocode_change

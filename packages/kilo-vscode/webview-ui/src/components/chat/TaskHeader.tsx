@@ -429,7 +429,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                   </Show>
                 </section>
               </div>
-          </DeferredPopover>
+            </DeferredPopover>
           </Tooltip>
           {/* fork_change end */}
           <Show when={!props.readonly}>

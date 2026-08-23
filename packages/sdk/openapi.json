@@ -35696,6 +35696,12 @@
               "speech_to_text_api_key": {
                 "type": "string"
               },
+              "advisor_model": {
+                "type": "string"
+              },
+              "openTelemetry": {
+                "type": "boolean"
+              },
               "openTelemetry": {
                 "type": "boolean"
               },
