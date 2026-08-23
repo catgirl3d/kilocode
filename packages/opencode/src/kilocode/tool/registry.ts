@@ -12,6 +12,7 @@ import { MemoryRecallTool } from "./memory-recall"
 import { MemorySaveTool } from "./memory-save"
 import { NotifyUserTool } from "./notify-user"
 import { SendFileTool } from "./send-file"
+import { ConsultAdvisorTool } from "./consult-advisor" // fork_change
 import * as Tool from "../../tool/tool"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Effect } from "effect"
@@ -87,6 +88,7 @@ export namespace KiloToolRegistry {
       const notify = yield* NotifyUserTool.pipe(Effect.provideService(KiloSessions.Service, sessions))
       const send = yield* SendFileTool
       const board = yield* Effect.all({ boardRead: BoardReadTool, boardPost: BoardPostTool })
+      const advisor = yield* ConsultAdvisorTool // fork_change
       if (!notebook)
         return {
           recall,
@@ -102,6 +104,7 @@ export namespace KiloToolRegistry {
           notify,
           send,
           ...board,
+          advisor, // fork_change
         }
       const tools = yield* Effect.all({
         notebookRead: NotebookReadTool,
@@ -122,6 +125,7 @@ export namespace KiloToolRegistry {
         notify,
         send,
         ...board,
+        advisor, // fork_change
         ...tools,
       }
     })
@@ -145,6 +149,7 @@ export namespace KiloToolRegistry {
       send: Tool.Info
       boardRead?: Tool.Info
       boardPost?: Tool.Info
+      advisor?: Tool.Info // fork_change
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
       notebookExecute?: Tool.Info
@@ -164,6 +169,7 @@ export namespace KiloToolRegistry {
         image: Tool.init(tools.image),
         notify: Tool.init(tools.notify),
         send: Tool.init(tools.send),
+        ...(tools.advisor ? { advisor: Tool.init(tools.advisor) } : {}), // fork_change
       })
       const terminal = tools.terminal ? yield* Tool.init(tools.terminal) : undefined
       const board =
@@ -247,18 +253,22 @@ export namespace KiloToolRegistry {
       send: Tool.Def
       boardRead?: Tool.Def
       boardPost?: Tool.Def
+      advisor?: Tool.Def // fork_change
       notebookRead?: Tool.Def
       notebookEdit?: Tool.Def
       notebookExecute?: Tool.Def
     },
+    // fork_change start
     cfg: {
       experimental?: {
         image_generation?: boolean
         native_notebook_tools?: boolean
         task_model_selection?: boolean
         shared_agent_board?: boolean
+        advisor_model?: string // fork_change
       }
     },
+    // fork_change end
   ): Tool.Def[] {
     return [
       ...(cfg.experimental?.image_generation === true ? [tools.image] : []),
@@ -286,6 +296,7 @@ export namespace KiloToolRegistry {
         : []),
       tools.notify,
       tools.send,
+      ...(cfg.experimental?.advisor_model && tools.advisor ? [tools.advisor] : []), // fork_change
     ]
   }
 

@@ -15,4 +15,9 @@ export class Policy extends Schema.Class<Policy>("ConfigV2.Experimental.Policy")
 
 export class Experimental extends Schema.Class<Experimental>("ConfigV2.Experimental")({
   policies: Policy.pipe(Schema.Array, Schema.optional),
+  // kilocode_change start
+  advisor_model: Schema.String.pipe(Schema.optional).annotate({
+    description: "Model ID to use for on-demand advisor consultations",
+  }),
+  // kilocode_change end
 }) {}
