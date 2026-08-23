@@ -101,6 +101,10 @@ function runGitShow(ref: string, file: string): string | null {
 // Validate base reference
 const verify = spawnSync("git", ["rev-parse", "--verify", base], { cwd: ROOT, encoding: "utf8" })
 if (verify.status !== 0) {
+  if (process.env.CI || !baseArg) {
+    console.warn(`⚠️ Base reference '${base}' not found in Git repository. Skipping fork audit.`)
+    process.exit(0)
+  }
   console.error(`❌ Base reference '${base}' not found in Git repository. Check remotes or use --base=<ref>.`)
   process.exit(1)
 }

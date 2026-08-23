@@ -2,8 +2,9 @@
 set -e
 
 # fork_change start - commit-time verification guards (mirror of pre-push fast checks)
-echo "[pre-commit] format:check (kilo-vscode)"
-bun run --cwd packages/kilo-vscode format:check
+echo "[pre-commit] format (kilo-vscode)"
+bun run --cwd packages/kilo-vscode format
+git update-index --again
 
 echo "[pre-commit] forbidden kilocode_change markers"
 bun run --cwd packages/kilo-vscode check-kilocode-change
