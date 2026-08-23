@@ -35127,6 +35127,9 @@
                 "type": "string",
                 "enum": ["transcribe", "translate"]
               },
+              "advisor_model": {
+                "type": "string"
+              },
               "openTelemetry": {
                 "type": "boolean"
               },

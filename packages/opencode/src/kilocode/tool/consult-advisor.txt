@@ -1,0 +1,5 @@
+Consult a configured advisor model for a concise second opinion on the current work.
+
+The advisor receives a bounded transcript of the recent conversation and has no tools. Use `focus` to guide the review and `question` to ask a specific question. The advisor cannot inspect files or change the session.
+
+Call it before committing to a non-trivial or multi-file plan, when stuck or evidence conflicts, and before declaring substantial work done. Do not call it for routine steps, simple lookups, or trivial answers; weigh its advice rather than blindly obeying it.

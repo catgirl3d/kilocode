@@ -2683,6 +2683,7 @@ export type Config = {
     native_notebook_tools?: boolean
     speech_to_text_model?: string
     speech_to_text_mode?: "transcribe" | "translate"
+    advisor_model?: string
     openTelemetry?: boolean
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
