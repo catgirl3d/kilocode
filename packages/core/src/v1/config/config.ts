@@ -315,6 +315,11 @@ export const Info = Schema.Struct({
       speech_to_text_mode: Schema.optional(Schema.Literals(["transcribe", "translate"])).annotate({
         description: "Whether voice input transcribes the spoken language or translates it to English when supported",
       }),
+      // kilocode_change start
+      advisor_model: Schema.optional(Schema.String).annotate({
+        description: "Model ID to use for on-demand advisor consultations",
+      }),
+      // kilocode_change end
       openTelemetry: Schema.Boolean.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed(true))).annotate({
         description: "Enable telemetry. Set to false to opt-out.",
       }),
