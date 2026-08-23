@@ -13,6 +13,7 @@ import { MemorySaveTool } from "./memory-save"
 import { NotifyUserTool } from "./notify-user"
 import { OpenPlanTool } from "./open-plan"
 import { SendFileTool } from "./send-file"
+import { ConsultAdvisorTool } from "./consult-advisor" // fork_change
 import * as Tool from "../../tool/tool"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Effect } from "effect"
@@ -94,6 +95,7 @@ export namespace KiloToolRegistry {
         boardPost: BoardPostTool,
         goalReport: GoalReportTool,
       })
+      const advisor = yield* ConsultAdvisorTool // fork_change
       if (!notebook)
         return {
           recall,
@@ -109,6 +111,7 @@ export namespace KiloToolRegistry {
           openPlan,
           send,
           ...board,
+          advisor, // fork_change
         }
       const tools = yield* Effect.all({
         notebookRead: NotebookReadTool,
@@ -129,6 +132,7 @@ export namespace KiloToolRegistry {
         openPlan,
         send,
         ...board,
+        advisor, // fork_change
         ...tools,
       }
     })
@@ -153,6 +157,7 @@ export namespace KiloToolRegistry {
       boardRead?: Tool.Info
       goalReport?: Tool.Info
       boardPost?: Tool.Info
+      advisor?: Tool.Info // fork_change
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
       notebookExecute?: Tool.Info
@@ -172,6 +177,7 @@ export namespace KiloToolRegistry {
         image: Tool.init(tools.image),
         notify: Tool.init(tools.notify),
         send: Tool.init(tools.send),
+        ...(tools.advisor ? { advisor: Tool.init(tools.advisor) } : {}), // fork_change
       })
       const openPlan = tools.openPlan ? yield* Tool.init(tools.openPlan) : undefined
       const report = tools.goalReport ? { goalReport: yield* Tool.init(tools.goalReport) } : {}
@@ -265,18 +271,22 @@ export namespace KiloToolRegistry {
       boardRead?: Tool.Def
       goalReport?: Tool.Def
       boardPost?: Tool.Def
+      advisor?: Tool.Def // fork_change
       notebookRead?: Tool.Def
       notebookEdit?: Tool.Def
       notebookExecute?: Tool.Def
     },
+    // fork_change start
     cfg: {
       experimental?: {
         image_generation?: boolean
         native_notebook_tools?: boolean
         task_model_selection?: boolean
         shared_agent_board?: boolean
+        advisor_model?: string // fork_change
       }
     },
+    // fork_change end
     flags: Pick<RuntimeFlags.Info, "experimentalSharedAgentBoard">,
   ): Tool.Def[] {
     const enabled = BoardEnabled.resolve({
@@ -308,6 +318,7 @@ export namespace KiloToolRegistry {
       tools.notify,
       ...(Flag.KILO_CLIENT === "vscode" && tools.openPlan ? [tools.openPlan] : []),
       tools.send,
+      ...(cfg.experimental?.advisor_model && tools.advisor ? [tools.advisor] : []), // fork_change
     ]
   }
 

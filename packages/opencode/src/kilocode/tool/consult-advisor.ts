@@ -1,0 +1,178 @@
+// fork_change - new file
+import { Config } from "@/config/config"
+import { Agent } from "@/agent/agent"
+import { LLM } from "@/session/llm"
+import { Session } from "@/session/session"
+import { MessageID, SessionID } from "@/session/schema"
+import { Provider, parseModel } from "@/provider/provider"
+import { KiloLLM } from "@/kilocode/session/llm"
+import { SessionTranscript } from "@/kilocode/session/transcript"
+import { Tool } from "@/tool/tool"
+import { SessionV1 } from "@opencode-ai/core/v1/session"
+import { Cause, Effect, Exit, Schema } from "effect"
+import DESCRIPTION from "./consult-advisor.txt"
+
+const Params = Schema.Struct({
+  focus: Schema.optional(Schema.Literals(["plan", "risk", "stuck", "verification", "general"])),
+  question: Schema.optional(Schema.Trim.check(Schema.isMaxLength(2_000))),
+})
+
+type Params = Schema.Schema.Type<typeof Params>
+
+const busy = new Set<string>()
+
+export function acquire(sessionID: string) {
+  if (busy.has(sessionID)) return false
+  busy.add(sessionID)
+  return true
+}
+
+export function release(sessionID: string) {
+  busy.delete(sessionID)
+}
+
+function abort(ctx: Tool.Context) {
+  return Effect.callback<never, Error>((resume) => {
+    const err = () => new DOMException("Aborted", "AbortError")
+    if (ctx.abort.aborted) return resume(Effect.fail(err()))
+    const stop = () => {
+      ctx.abort.removeEventListener("abort", stop)
+      resume(Effect.fail(err()))
+    }
+    ctx.abort.addEventListener("abort", stop, { once: true })
+    return Effect.sync(() => ctx.abort.removeEventListener("abort", stop))
+  })
+}
+
+function reviewer(model: Provider.Model): Agent.Info {
+  return {
+    name: "advisor",
+    mode: "primary",
+    hidden: true,
+    options: {},
+    permission: [],
+    temperature: 0.2,
+    model: { providerID: model.providerID, modelID: model.id },
+    prompt:
+      "You are a concise engineering advisor. Do not use tools. Do not claim to have inspected files. Give actionable guidance based only on the supplied transcript.",
+  }
+}
+
+function user(sessionID: SessionID, model: Provider.Model): SessionV1.User {
+  return {
+    id: MessageID.ascending(),
+    sessionID,
+    role: "user",
+    time: { created: Date.now() },
+    agent: "advisor",
+    model: { providerID: model.providerID, modelID: model.id },
+  }
+}
+
+export const ConsultAdvisorTool = Tool.define<
+  typeof Params,
+  {},
+  Config.Service | Provider.Service | LLM.Service | Session.Service,
+  "consult_advisor"
+>(
+  "consult_advisor",
+  Effect.gen(function* () {
+    const cfg = yield* Config.Service
+    const provider = yield* Provider.Service
+    const llm = yield* LLM.Service
+    const sessions = yield* Session.Service
+    return {
+      description: DESCRIPTION,
+      parameters: Params,
+      execute: (params: Params, ctx: Tool.Context) =>
+        Effect.gen(function* () {
+          if (!acquire(ctx.sessionID)) {
+            return {
+              title: "Advisor busy",
+              output: "An advisor consultation is already running for this session.",
+              metadata: {},
+            }
+          }
+          return yield* Effect.gen(function* () {
+            const configured = (yield* cfg.get()).experimental?.advisor_model
+            if (!configured) {
+              return {
+                title: "Advisor unavailable",
+                output: "No advisor model is configured. Set experimental.advisor_model and retry.",
+                metadata: {},
+              }
+            }
+
+            const parsed = yield* Effect.try({
+              try: () => parseModel(configured),
+              catch: () => new Error("invalid advisor model"),
+            }).pipe(Effect.option)
+            if (parsed._tag === "None") {
+              return {
+                title: "Advisor unavailable",
+                output: `The configured advisor model is invalid: ${configured}.`,
+                metadata: {},
+              }
+            }
+            const model = yield* provider.getModel(parsed.value.providerID, parsed.value.modelID).pipe(Effect.option)
+            if (model._tag === "None") {
+              return {
+                title: "Advisor unavailable",
+                output: `The configured advisor model could not be resolved: ${configured}.`,
+                metadata: {},
+              }
+            }
+
+            const focus = params.focus ?? "general"
+            const question = params.question?.trim() || "Provide the most useful next-step guidance."
+            const session = yield* sessions
+              .get(ctx.sessionID)
+              .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)))
+            if (!session) {
+              return {
+                title: "Advisor unavailable",
+                output: "The current session could not be found. Retry the consultation.",
+                metadata: {},
+              }
+            }
+            const transcript = ctx.messages.length
+              ? SessionTranscript.format(session, ctx.messages, { max: 60_000 })
+              : "[no prior context]"
+            const body = [
+              `Focus: ${focus}`,
+              `Question: ${question}`,
+              "Recent conversation transcript:",
+              transcript,
+            ].join("\n\n")
+            const stream = KiloLLM.text(
+              llm.stream({
+                agent: reviewer(model.value),
+                user: user(SessionID.make(`${ctx.sessionID}-advisor`), model.value),
+                sessionID: SessionID.make(`${ctx.sessionID}-advisor`),
+                parentSessionID: ctx.sessionID,
+                model: model.value,
+                system: [],
+                messages: [{ role: "user", content: body }],
+                tools: {},
+                toolChoice: "none",
+                retries: 0,
+              }),
+            )
+            const exit = yield* Effect.raceFirst(stream, abort(ctx)).pipe(Effect.exit)
+            if (ctx.abort.aborted) return yield* Effect.interrupt
+            if (Exit.isFailure(exit)) {
+              const err = Cause.squash(exit.cause)
+              const detail = (err instanceof Error ? err.message : String(err)).slice(0, 500)
+              return {
+                title: "Advisor failed",
+                output: `Advisor consultation failed: ${detail}`,
+                metadata: {},
+              }
+            }
+            const output = exit.value.trim()
+            return { title: "Advisor guidance", output: output || "The advisor returned no guidance.", metadata: {} }
+          }).pipe(Effect.ensuring(Effect.sync(() => release(ctx.sessionID))))
+        }),
+    }
+  }),
+)

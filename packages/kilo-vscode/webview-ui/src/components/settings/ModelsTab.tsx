@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo } from "solid-js"
+import { Component, For, Show, createMemo, createSignal } from "solid-js" // fork_change
 import { Card } from "@kilocode/kilo-ui/card"
 import { Select } from "@kilocode/kilo-ui/select"
 import { Switch } from "@kilocode/kilo-ui/switch"
@@ -59,6 +59,10 @@ const ModelsTab: Component = () => {
   }
 
   const subagentModel = createMemo(() => parseModelString(config().subagent_model ?? undefined))
+  // fork_change start
+  const [advisorForcedOn, setAdvisorForcedOn] = createSignal(false)
+  const advisorEnabled = () => advisorForcedOn() || Boolean(config().experimental?.advisor_model)
+  // fork_change end
   const speechModel = createMemo(() => selectedSpeechToTextModel(config(), speechModels.models()))
   const speechOptions = createMemo(() => speechToTextModelOptions(speechModels.models()))
   const speechOption = createMemo(() => speechOptions().find((item) => item.value === speechModel()))
@@ -195,6 +199,52 @@ const ModelsTab: Component = () => {
             </Show>
           </div>
         </SettingsRow>
+        {/* fork_change start */}
+        <SettingsRow
+          title={language.t("settings.providers.advisorModel.title")}
+          description={language.t("settings.providers.advisorModel.description")}
+        >
+          <Switch
+            checked={advisorEnabled()}
+            onChange={(checked: boolean) => {
+              if (checked) {
+                setAdvisorForcedOn(true)
+                return
+              }
+              setAdvisorForcedOn(false)
+              updateConfig({
+                experimental: { ...config().experimental, advisor_model: null },
+              })
+            }}
+            hideLabel
+          >
+            {language.t("settings.providers.advisorModel.title")}
+          </Switch>
+        </SettingsRow>
+        <Show when={advisorEnabled()}>
+          <SettingsRow
+            title={language.t("settings.providers.advisorModel.title")}
+            description={language.t("settings.providers.advisorModel.description")}
+          >
+            <ModelSelectorBase
+              value={parseModelString(config().experimental?.advisor_model ?? undefined)}
+              onSelect={(providerID, modelID) =>
+                updateConfig({
+                  experimental: {
+                    ...config().experimental,
+                    advisor_model: providerID && modelID ? `${providerID}/${modelID}` : null,
+                  },
+                })
+              }
+              placement="bottom-start"
+              allowClear
+              clearLabel={language.t("settings.providers.notSet")}
+              label={language.t("settings.providers.advisorModel.title")}
+              description={language.t("settings.providers.advisorModel.description")}
+            />
+          </SettingsRow>
+        </Show>
+        {/* fork_change end */}
         <SettingsRow
           title={language.t("settings.autocomplete.model.title")}
           description={language.t("settings.autocomplete.model.description")}
