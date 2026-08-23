@@ -1365,6 +1365,10 @@ export type Config = {
     writable_paths?: Array<string>
   }
   experimental?: {
+    /**
+     * Model ID to use for on-demand advisor consultations
+     */
+    advisor_model?: string
     hook?: {
       file_edited?: {
         [key: string]: Array<{

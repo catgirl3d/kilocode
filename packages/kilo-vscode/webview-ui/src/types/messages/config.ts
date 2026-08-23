@@ -49,6 +49,7 @@ export interface WatcherConfig {
 }
 
 export interface ExperimentalConfig {
+  advisor_model?: string | null // fork_change
   batch_tool?: boolean
   image_generation?: boolean
   shared_agent_board?: boolean

@@ -2709,6 +2709,7 @@ export type Config = {
     task_model_selection?: boolean
     speech_to_text_model?: string
     speech_to_text_mode?: "transcribe" | "translate"
+    advisor_model?: string
     openTelemetry?: boolean
     shared_agent_board?: boolean
     primary_tools?: Array<string>

@@ -347,6 +347,7 @@ describe("kilocode tool registry indexing", () => {
       send: def("send_file"),
       boardRead: def("board_read"),
       boardPost: def("board_post"),
+      advisor: def("consult_advisor"),
       notebookRead: def("notebook_read"),
       notebookEdit: def("notebook_edit"),
       notebookExecute: def("notebook_execute"),
@@ -363,6 +364,19 @@ describe("kilocode tool registry indexing", () => {
         "interactive_terminal",
         "notify_user",
         "send_file",
+      ])
+      expect(
+        KiloToolRegistry.extra(tools, { experimental: { advisor_model: "provider/model" } }).map((tool) => tool.id),
+      ).toEqual([
+        "semantic_search",
+        "kilo_memory_recall",
+        "kilo_memory_save",
+        "recall",
+        "background_process",
+        "interactive_terminal",
+        "notify_user",
+        "send_file",
+        "consult_advisor",
       ])
       expect(
         KiloToolRegistry.extra(tools, { experimental: { image_generation: true } }).map((tool) => tool.id),
@@ -403,6 +417,21 @@ describe("kilocode tool registry indexing", () => {
         "browser_open",
         "notify_user",
         "send_file",
+      ])
+      expect(
+        KiloToolRegistry.extra(tools, { experimental: { advisor_model: "provider/model" } }).map((tool) => tool.id),
+      ).toEqual([
+        "semantic_search",
+        "kilo_memory_recall",
+        "kilo_memory_save",
+        "recall",
+        "chart",
+        "background_process",
+        "agent_manager_models",
+        "agent_manager",
+        "notify_user",
+        "send_file",
+        "consult_advisor",
       ])
       expect(
         KiloToolRegistry.extra(tools, {
