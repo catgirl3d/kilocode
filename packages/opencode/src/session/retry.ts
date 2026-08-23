@@ -26,11 +26,16 @@ export type Retryable = {
 export const RETRY_INITIAL_DELAY = 2000
 export const RETRY_BACKOFF_FACTOR = 2
 export const RETRY_MAX_DELAY_NO_HEADERS = 30_000 // 30 seconds
+// kilocode_change start - clamp provider-provided waits so quota windows cannot hang the retry loop
+export const RETRY_MAX_DELAY_HEADERS = 60_000 // 60 seconds
+// kilocode_change end
 export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for setTimeout
 
+// kilocode_change start - every wait caps at RETRY_MAX_DELAY_HEADERS instead of the setTimeout limit
 function cap(ms: number) {
-  return Math.min(ms, RETRY_MAX_DELAY)
+  return Math.min(ms, RETRY_MAX_DELAY_HEADERS)
 }
+// kilocode_change end
 
 export function delay(attempt: number, error?: SessionV1.APIError) {
   if (error) {

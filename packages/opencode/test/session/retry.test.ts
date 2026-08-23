@@ -73,18 +73,30 @@ describe("session.retry.delay", () => {
     expect(SessionRetry.delay(1, error)).toBe(2000)
   })
 
-  test("uses retry-after values even when exceeding 10 minutes with headers", () => {
+  // kilocode_change start - provider retry headers now clamp at RETRY_MAX_DELAY_HEADERS
+  test("uses short retry-after values unchanged", () => {
     const error = apiError({ "retry-after": "50" })
     expect(SessionRetry.delay(1, error)).toBe(50000)
-
-    const longError = apiError({ "retry-after-ms": "700000" })
-    expect(SessionRetry.delay(1, longError)).toBe(700000)
   })
 
-  test("caps oversized header delays to the runtime timer limit", () => {
+  test("clamps long header waits to 60 seconds", () => {
+    const seconds = apiError({ "retry-after": "700" })
+    expect(SessionRetry.delay(1, seconds)).toBe(SessionRetry.RETRY_MAX_DELAY_HEADERS)
+
+    const millis = apiError({ "retry-after-ms": "700000" })
+    expect(SessionRetry.delay(1, millis)).toBe(SessionRetry.RETRY_MAX_DELAY_HEADERS)
+  })
+
+  test("caps oversized header delays to 60 seconds", () => {
     const error = apiError({ "retry-after-ms": "999999999999" })
-    expect(SessionRetry.delay(1, error)).toBe(SessionRetry.RETRY_MAX_DELAY)
+    expect(SessionRetry.delay(1, error)).toBe(SessionRetry.RETRY_MAX_DELAY_HEADERS)
   })
+
+  test("caps exponential growth when headers exist but hints are unparsable", () => {
+    const error = apiError({ "retry-after": "not-a-number" })
+    expect(SessionRetry.delay(20, error)).toBe(SessionRetry.RETRY_MAX_DELAY_HEADERS)
+  })
+  // kilocode_change end
 
   it.instance("policy updates retry status and increments attempts", () =>
     Effect.gen(function* () {
