@@ -35,7 +35,7 @@
     {
       "label": "Kilo: Run CLI Tests",
       "type": "shell",
-      "command": "bun test",
+      "command": "bun run test",
       "options": { "cwd": "${workspaceFolder}/packages/opencode" },
       "group": "test",
       "problemMatcher": []
