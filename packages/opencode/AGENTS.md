@@ -3,7 +3,7 @@
 ## Build/Test
 
 - **Run**: `bun run --conditions=browser ./src/index.ts`
-- **Test**: `bun test` (all tests) or `bun test test/tool/tool.test.ts` (single test)
+- **Test**: `bun run test` (all tests via the isolated per-file runner; plain `bun test` shares one process and cross-contaminates files) or `bun test test/tool/tool.test.ts` (single test)
 - **Typecheck**: `bun run typecheck` (runs `tsgo --noEmit`)
 
 ## Import Aliases
