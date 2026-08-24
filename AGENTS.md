@@ -13,7 +13,7 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 - **Dev with params**: `bun dev -- help`
 - **Extension**: `bun run extension` (build + launch VS Code with the extension in dev mode). Pass `--no-build` to skip the build. When asked to run an isolated VS Code/Kilo environment, use the CLI scripts instead of interactive launch configs: `bun run extension:isolated` reuses `.kilo-dev/`, and `bun run extension:isolated:clean` clears `.kilo-dev/` first. Pass an optional workspace path after `--`, for example `bun run extension:isolated -- ../sample-project`.
 - **Typecheck**: `bun turbo typecheck` (uses `tsgo`, not `tsc`). Includes the JetBrains plugin and requires Java 21; do not run `java -version` as a routine preflight. Only check Java when a Gradle/Java command fails with a Java-version or missing-Java error. If missing, install via SDKMAN: `sdk install java 21-tem && sdk use java 21-tem`. If SDKMAN is not installed, see https://sdkman.io/install.
-- **Test**: `bun test` from `packages/opencode/` (NOT from root -- root blocks tests)
+- **Test**: `bun run test` from `packages/opencode/` (NOT from root -- root blocks tests). This is the isolated per-file runner (`script/test-runner.ts`); plain `bun test` runs every file in one shared process and cross-contaminates state, producing mass failures.
 - **Single test**: `bun test ./test/tool/tool-define.test.ts` from `packages/opencode/`
 - **CLI build artifact size check**: after `bun run script/build.ts --single --skip-install` in `packages/opencode/`, use `du -h dist/*/*/bin/kilo` (scoped package output lives under `dist/@kilocode/`)
 - **SDK regen**: After changing server endpoints in `packages/opencode/src/server/`, run `./script/generate.ts` from root to regenerate `packages/sdk/js/`
@@ -32,7 +32,7 @@ Before saying an implementation is ready, run the smallest relevant checks that 
 | Area | Checks |
 |---|---|
 | Root / cross-package | `bun run lint`, `bun run typecheck` |
-| CLI | From `packages/opencode/`: `bun run typecheck`, `bun test` or targeted `bun test ./path/to/file.test.ts` |
+| CLI | From `packages/opencode/`: `bun run typecheck`, `bun run test` (full suite) or targeted `bun test ./path/to/file.test.ts` (single file is safe in its own process) |
 | VS Code extension | From `packages/kilo-vscode/`: `bun run typecheck`, `bun run lint`, `bun run test:unit` or `bun run test` |
 | Extension build/package | From `packages/kilo-vscode/`: `bun run compile` or `bun run package` when touching build, packaging, SDK, or webview integration paths |
 | JetBrains plugin | From `packages/kilo-jetbrains/`: `./gradlew typecheck`, `./gradlew test`. Requires Java 21; do not run `java -version` as a routine preflight. Check Java only after a Java-version or missing-Java failure. |
