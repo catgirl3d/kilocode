@@ -10,7 +10,7 @@ This fork publishes custom VSIX packages through `publish-vscode-release.yml`. T
 2. In GitHub Actions, go to **publish-vscode-release** -> **Run workflow**.
 3. (Optional) Provide a custom version or release note override, or leave them empty to build the current version (`7.4.22`) with notes from `CHANGELOG-FORK.md`.
 
-The workflow builds Linux x64 and Windows x64 VSIX packages, uploads both to Actions Artifacts (for immediate direct download), and creates/updates a GitHub Release in your fork with both `.vsix` assets attached.
+The workflow builds Linux x64 and Windows x64 VSIX packages and creates/updates a GitHub Release in this fork with both `.vsix` assets attached. VSIX files are attached only to the GitHub Release — they are not duplicated as Actions Artifacts.
 
 ## How to Trigger a Release
 
