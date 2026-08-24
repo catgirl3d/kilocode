@@ -88,15 +88,6 @@ jobs:
         run: |
           bun run script/build.ts
 
-      - name: Upload VSIX to Actions Artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: kilo-code-${{ steps.meta.outputs.version }}-vsix
-          path: |
-            packages/kilo-vscode/out/kilo-vscode-linux-x64.vsix
-            packages/kilo-vscode/out/kilo-vscode-win32-x64.vsix
-          retention-days: 30
-
       - name: Create or recreate GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
