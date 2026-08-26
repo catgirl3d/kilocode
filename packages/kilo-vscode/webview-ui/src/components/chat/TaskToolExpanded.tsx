@@ -8,8 +8,9 @@
  */
 
 import { Component, createEffect, createMemo, createSignal, Index, Show, on, onCleanup } from "solid-js"
+import { ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part"
 // fork_change start
-import { CopyButton, ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part"
+import { CopyButton } from "@kilocode/kilo-ui/message-part"
 // fork_change end
 import { BasicTool, initialOpen } from "@kilocode/kilo-ui/basic-tool"
 import { Icon } from "@kilocode/kilo-ui/icon"
