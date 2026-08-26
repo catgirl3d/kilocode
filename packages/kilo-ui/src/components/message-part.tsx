@@ -33,8 +33,9 @@ import { checkFile } from "../file-link-validator"
 import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { useClipboard } from "../context/clipboard"
+import { type UiI18n, useI18n } from "../context/i18n"
 // fork_change start
-import { type UiI18n, type UiI18nKey, useI18n } from "../context/i18n"
+import { type UiI18nKey } from "../context/i18n"
 // fork_change end
 import { BasicTool, useToolApprovalLine } from "./basic-tool"
 import { Accordion } from "./accordion"
