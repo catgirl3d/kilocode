@@ -154,6 +154,10 @@ Do **not** right-pad cells to line up columns:
 
 Padding makes every content change rewrite the entire table, which blows up diffs on untouched rows. Markdown files are excluded from prettier (see `.prettierignore`) so running the formatter won't re-pad them, and `script/check-md-table-padding.ts` enforces the rule in CI. Run `bun run script/check-md-table-padding.ts --fix` to auto-rewrite padded tables.
 
+## Known formatting exceptions
+
+- `packages/kilo-ui/src/components/message-part.tsx` intentionally fails `prettier --check`: four whitespace-only regions are inherited verbatim from `upstream/main`; do not reformat them, as `script/fork-audit.ts` rejects the resulting fake fork diff. Fork-added code in this file must remain Prettier-clean.
+
 ## Commit Conventions
 
 [Conventional Commits](https://www.conventionalcommits.org/) with scopes matching packages: `vscode`, `cli`, `agent-manager`, `sdk`, `ui`, `i18n`, `kilo-docs`, `gateway`, `telemetry`, `desktop`. Omit scope when spanning multiple packages.
