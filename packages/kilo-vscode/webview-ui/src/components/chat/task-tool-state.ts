@@ -1,5 +1,5 @@
-// fork_change start
 import type { SessionStatusInfo } from "../../types/messages"
+// fork_change start
 export function taskMarkerStatus(status: string | undefined) {
   if (status === "pending" || status === "running") return "running" as const
   if (status === "completed" || status === "error") return status
