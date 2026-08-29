@@ -235,7 +235,17 @@ This repository is a personal fork of Kilo Code (`upstream/main`).
   - **Prettier Stability**: Use block markers (`// fork_change start` / `end` on standalone lines) for multi-line expressions, hooks, and JSX to prevent Prettier from moving trailing comments onto inner lines during formatting.
 
 - **Fork Rebase Protocol**:
-  - When rebasing on `upstream/main`, strictly follow `FORK_REBASE.md`.
+  - When rebasing on `upstream/main`, strictly follow `FORK_REBASE.md`, including its risk-proportional post-rebase regression review: deep review agents only for substantive executable conflicts or overlap; no default i18n scan.
+
+### Agent Scope Discipline
+
+- Every subagent assignment MUST define one concrete question, the allowed files or paths, the relevant behavior, and the checks required to answer it.
+- Do not dispatch open-ended tasks to inspect the whole repository, every file, all contracts, all consumers, or every related subsystem. "Read everything" is not a valid task.
+- For conflict-free rebases and docs/config/format-only changes, use lightweight review of the range-diff, changed paths, and relevant checks. Use deep review only for substantive executable conflicts, overlapping behavior, state/lifecycle/timing risk, cross-package contracts, or demonstrably broad executable overlap.
+- Give parallel agents distinct, non-overlapping questions. Stop an agent when its assigned scope is answered; report adjacent findings instead of expanding the investigation.
+- Full-repository scans, broad test suites, or expanded context require explicit user approval. If the scope cannot be stated precisely, narrow the task before starting the agent.
+- Do not attempt exhaustive full-file reading to prove the absence of unrelated regressions; rely on targeted diffs and package tests.
+
 - **Finding Fork Changes & Verification**:
   - **Single file / folder audit on disk**: `bun run script/fork-audit.ts --worktree path/to/file.ts` (or `git diff upstream/main -- path/to/file.ts`).
   - **Single file / folder in commit history**: `bun run script/fork-audit.ts path/to/file.ts` (or `git diff upstream/main...HEAD -- path/to/file.ts`).
