@@ -421,6 +421,28 @@ describe("PromptInput send origin contract", () => {
   })
 })
 
+describe("PromptInput empty-chat continue contract", () => {
+  const source = readFile(PROMPT_FILE)
+  const start = source.indexOf("const handleSend = async () =>")
+  const end = source.indexOf("\n  return (", start)
+  const body = source.slice(start, end)
+
+  it("allows an empty prompt to be sent regardless of chat history", () => {
+    expect(source).toContain('(speech.state() === "recording" || !speech.active())')
+  })
+
+  it("checks upstream resume before resolving the fork fallback", () => {
+    const resume = body.indexOf("if (canSendContinue())")
+    const call = body.indexOf("session.resume()", resume)
+    const fallback = body.indexOf("draft = resolvePrompt", resume)
+
+    expect(resume).toBeGreaterThan(-1)
+    expect(call).toBeGreaterThan(resume)
+    expect(fallback).toBeGreaterThan(call)
+    expect(body).toContain("resolvePrompt(draft, pending.length > 0, imgs.length > 0)")
+  })
+})
+
 describe("SessionContext userClearedSession contract", () => {
   const source = readFile(SESSION_FILE)
 

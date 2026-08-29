@@ -56,6 +56,7 @@ import {
   isPathMention,
   memoryRest,
   commandAction, // fork_change
+  resolvePrompt, // fork_change
   type SandboxDefaultState,
   type SandboxState,
 } from "./prompt-input-utils"
@@ -560,8 +561,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const hasInput = () => text().trim().length > 0 || imageAttach.images().length > 0 || reviewComments().length > 0
   const sendReady = () => !isDisabled() && !terminal.pending() && !git.pending() && !props.blocked?.()
   const canContinue = () => speech.state() === "idle" && !hasInput() && session.canResume()
-  const canSend = () =>
-    sendReady() && (speech.state() === "recording" || (!speech.active() && (hasInput() || canContinue())))
+  // fork_change start
+  const canSend = () => sendReady() && (speech.state() === "recording" || !speech.active())
+  // fork_change end
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
@@ -1186,7 +1188,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const handleSend = async () => {
-    const draft = text().trim()
+    // fork_change start
+    let draft = text().trim()
+    // fork_change end
 
     const memory = parseMemoryCommand(draft)
     if (memory) {
@@ -1243,6 +1247,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       session.resume()
       return
     }
+    // fork_change start
+    draft = resolvePrompt(draft, pending.length > 0, imgs.length > 0)
+    // fork_change end
     const message = draft && review ? `${review}\n\n${draft}` : draft || review
     const data = review ? { version: 1 as const, comments: pending } : undefined
     if ((!message && imgs.length === 0) || !sendReady() || speech.active()) return
