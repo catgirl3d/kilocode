@@ -47,6 +47,12 @@ export interface ThinkingSelectorBaseProps {
   cycleHint?: boolean
   /** Accessible name for the selector trigger. */
   label?: string
+  // fork_change start
+  /** Visual variant for the selector trigger. */
+  triggerVariant?: "ghost" | "secondary"
+  /** Visual size for the selector trigger. */
+  triggerSize?: "small" | "normal"
+  // fork_change end
 }
 
 export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props) => {
@@ -172,7 +178,13 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
           open={open()}
           onOpenChange={onOpen}
           triggerAs={Button}
-          triggerProps={{ variant: "ghost", size: "small", "aria-label": props.label }}
+          /* fork_change start */
+          triggerProps={{
+            variant: props.triggerVariant ?? "ghost",
+            size: props.triggerSize ?? "small",
+            "aria-label": props.label,
+          }}
+          /* fork_change end */
           trigger={
             <>
               <span class="thinking-selector-trigger-label">{display(props.value)}</span>

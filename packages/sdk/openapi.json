@@ -35518,6 +35518,9 @@
               "advisor_model": {
                 "type": "string"
               },
+              "advisor_variant": {
+                "type": "string"
+              },
               "openTelemetry": {
                 "type": "boolean"
               },
