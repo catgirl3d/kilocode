@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
 import { createRoot, createSignal } from "solid-js"
 import {
   createDocumentComments,
@@ -8,7 +10,22 @@ import {
 } from "../../webview-ui/documents/state"
 import type { AgentManagerDocumentMessage } from "../../webview-ui/src/types/messages"
 
+const ROOT = path.resolve(import.meta.dir, "../..")
+const DOCUMENT_PANEL = path.join(ROOT, "webview-ui/documents/DocumentPanel.tsx")
+
 describe("Agent Manager document state", () => {
+  it("keeps reading mode separate from the review gutter", () => {
+    const source = fs.readFileSync(DOCUMENT_PANEL, "utf-8")
+
+    expect(source).toContain("const [review, setReview] = createSignal(false)")
+    expect(source).toContain('"am-document-reading": reading()')
+    expect(source).toContain('"am-document-review": reviewing()')
+    expect(source).toContain("aria-pressed={review()}")
+    expect(source).toContain("enableGutterUtility={review()}")
+    expect(source).toContain("onGutterUtilityClick={pick()}")
+    expect(source).toContain("onLineNumberClick={jump()}")
+  })
+
   it("keeps tabs, content, and comments scoped when switching worktrees and projects", () => {
     createRoot((dispose) => {
       const sent: unknown[] = []
