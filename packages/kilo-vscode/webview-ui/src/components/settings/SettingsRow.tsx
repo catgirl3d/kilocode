@@ -7,10 +7,12 @@ const SettingsRow: Component<{
   descriptionId?: string
   tag?: () => string | undefined
   last?: boolean
+  class?: string // fork_change
   children: JSX.Element
 }> = (props) => (
   <div
     data-slot="settings-row"
+    class={props.class} /* fork_change */
     style={{
       "margin-bottom": props.last ? "0" : "8px",
       "padding-bottom": props.last ? "0" : "8px",
