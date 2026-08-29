@@ -204,6 +204,18 @@ describe("transcriptRows", () => {
     })
   })
 
+  it("keeps assistant IDs on diff rows for snapshot hydration", () => {
+    const u1 = user("u1", { summary: { diffs: [{ file: "a.ts" }] } })
+    const a1 = assistant("a1", "u1")
+    const a2 = assistant("a2", "u1")
+    const first = transcriptRows(messageTurns([u1, a1]), lookup({}))
+    const second = transcriptRows(messageTurns([u1, a1, a2]), lookup({}), {}, first)
+    const diff = second.find((row) => row.type === "diff")
+
+    expect(diff).toMatchObject({ type: "diff", assistantIDs: ["a1", "a2"] })
+    expect(diff).not.toBe(first.find((row) => row.type === "diff"))
+  })
+
   it("keeps keys stable when older turns are prepended and parts are appended", () => {
     const u1 = user("u1")
     const a1 = assistant("a1", "u1")
