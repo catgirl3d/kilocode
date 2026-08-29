@@ -212,7 +212,6 @@ export interface ValidateInstructionPathRequest {
   scope: "global" | "project"
   bindingId?: string
 }
-
 // fork_change end
 export interface CancelLoginRequest {
   type: "cancelLogin"
@@ -258,7 +257,6 @@ export interface ShakeRequest {
   type: "shake"
   sessionID: string
 }
-
 // fork_change end
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
@@ -1505,7 +1503,6 @@ export interface MoveFavoriteRequest {
   modelID: string
   direction: "up" | "down"
 }
-
 // fork_change end
 export interface RequestFavoritesMessage {
   type: "requestFavorites"

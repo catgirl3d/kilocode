@@ -44,6 +44,7 @@ export interface TranscriptDiffRow extends TranscriptMeta {
   message: Message
   diffs: unknown[]
   // fork_change start
+  assistantIDs?: string[]
   snapshot?: SnapshotStatus
   // fork_change end
 }
@@ -115,6 +116,15 @@ function snapshotEqual(a: SnapshotStatus | undefined, b: SnapshotStatus | undefi
   )
 }
 
+function diffEqual(a: TranscriptDiffRow, b: TranscriptDiffRow) {
+  return (
+    a.message === b.message &&
+    same(a.diffs, b.diffs) &&
+    same(a.assistantIDs ?? [], b.assistantIDs ?? []) &&
+    snapshotEqual(a.snapshot, b.snapshot)
+  )
+}
+
 // fork_change end
 function equal(a: TranscriptRow, b: TranscriptRow) {
   if (a.type !== b.type || !meta(a, b)) return false
@@ -128,7 +138,7 @@ function equal(a: TranscriptRow, b: TranscriptRow) {
   }
   if (a.type === "diff" && b.type === "diff") {
     // fork_change start
-    return a.message === b.message && same(a.diffs, b.diffs) && snapshotEqual(a.snapshot, b.snapshot)
+    return diffEqual(a, b)
     // fork_change end
   }
   if (a.type === "error" && b.type === "error") {
@@ -265,9 +275,18 @@ export function transcriptRows(
 
     const changes = diffs(turn.user)
     // fork_change start
-    const snapshot = snapshotStatus(turn.assistant.flatMap((msg) => parts(msg.id)))
+    const assistantIDs = turn.assistant.map((msg) => msg.id)
+    const snapshot = snapshotStatus(assistantIDs.flatMap((id) => parts(id)))
     if (changes.length > 0 || snapshot) {
-      rows.push({ ...meta, type: "diff", key: `${turn.id}:diff`, message: turn.user, diffs: changes, snapshot })
+      rows.push({
+        ...meta,
+        type: "diff",
+        key: `${turn.id}:diff`,
+        message: turn.user,
+        diffs: changes,
+        assistantIDs,
+        snapshot,
+      })
     }
     // fork_change end
 

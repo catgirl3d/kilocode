@@ -260,7 +260,6 @@ export interface SessionShakeFailedMessage {
   sessionID: string
   error: string
 }
-
 // fork_change end
 export interface SessionDeletedMessage {
   type: "sessionDeleted"
@@ -662,7 +661,6 @@ export interface ValidateInstructionPathResultMessage {
   valid: boolean
   bindingId?: string
 }
-
 // fork_change end
 export interface TerminalContextResultMessage {
   type: "terminalContextResult"

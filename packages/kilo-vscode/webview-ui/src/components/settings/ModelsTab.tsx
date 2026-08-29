@@ -13,11 +13,14 @@ import { parseModelString } from "../../../../src/shared/provider-model"
 import { ModelSelectorBase } from "../shared/ModelSelector"
 import { ThinkingSelectorBase } from "../shared/ThinkingSelector"
 import SettingsRow from "./SettingsRow"
+// fork_change start
 import {
   DEFAULT_SPEECH_TO_TEXT_MODEL,
   getSpeechToTextModel,
   type SpeechToTextMode,
 } from "../../../../src/speech-to-text/models"
+// fork_change end
+// fork_change start
 import {
   canConfigureSpeechToText,
   hasSpeechToTextAccess,
@@ -26,14 +29,17 @@ import {
   selectedSpeechToTextMode,
   hasCustomSpeechToTextSource,
 } from "../speech-to-text/availability"
+// fork_change end
 import { speechToTextModelOptions } from "../speech-to-text/model-selector"
 import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autocomplete-model-selector"
 import { preserveVariant } from "../../context/session-variant-store"
 
+// fork_change start
 const SPEECH_MODE_OPTIONS: Array<{ value: SpeechToTextMode; label: string }> = [
   { value: "transcribe", label: "settings.models.speechToTextResult.transcribe" },
   { value: "translate", label: "settings.models.speechToTextResult.translate" },
 ]
+// fork_change end
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting } = useConfig()
   const language = useLanguage()
@@ -68,6 +74,7 @@ const ModelsTab: Component = () => {
   const speechModel = createMemo(() => selectedSpeechToTextModel(config(), speechModels.models()))
   const speechOptions = createMemo(() => speechToTextModelOptions(speechModels.models()))
   const speechOption = createMemo(() => speechOptions().find((item) => item.value === speechModel()))
+  // fork_change start
   const speechMode = createMemo(() => selectedSpeechToTextMode(config()))
   const speechModeOption = createMemo(() => SPEECH_MODE_OPTIONS.find((item) => item.value === speechMode()))
   const speechReady = createMemo(() => hasSpeechToTextAccess(config(), provider.authStates()))
@@ -78,6 +85,7 @@ const ModelsTab: Component = () => {
     updateConfig({ experimental: { ...config().experimental, ...patch } })
   }
   const speechTranslatable = createMemo(() => canTranslateSpeechToText(config()))
+  // fork_change end
   const variantKey = createMemo(() => config().subagent_model ?? undefined)
   const subagentVariants = createMemo(() => Object.keys(provider.findModel(subagentModel())?.variants ?? {}))
   const subagentVariant = createMemo(() => {
@@ -313,7 +321,7 @@ const ModelsTab: Component = () => {
           description={
             customSpeech()
               ? language.t("settings.models.speechToTextModel.customDescription")
-              : speechReady()
+              : speechReady() // fork_change
                 ? language.t("settings.models.speechToTextModel.description")
                 : language.t("settings.models.speechToText.disabledDescription")
           }
@@ -331,13 +339,14 @@ const ModelsTab: Component = () => {
             <Tooltip
               value={language.t("settings.models.speechToText.disabledDescription")}
               placement="top"
-              inactive={speechConfigurable()}
+              inactive={speechConfigurable()} // fork_change
             >
               <Select
                 options={speechOptions()}
                 current={speechOption()}
                 value={(item) => item.value}
                 label={(item) => `${item.label} (${item.provider})`}
+                // fork_change start
                 onSelect={(item) => {
                   const model = item?.value ?? DEFAULT_SPEECH_TO_TEXT_MODEL.id
                   updateConfig({
@@ -350,18 +359,20 @@ const ModelsTab: Component = () => {
                     },
                   })
                 }}
+                // fork_change end
                 variant="secondary"
                 size="small"
                 triggerVariant="settings"
                 triggerProps={{
                   "aria-label": `${language.t("settings.models.speechToTextModel.title")}: ${speechOption()?.label}`,
                 }}
-                disabled={!speechConfigurable()}
+                disabled={!speechConfigurable()} // fork_change
                 placeholder={DEFAULT_SPEECH_TO_TEXT_MODEL.label}
               />
             </Tooltip>
           </Show>
         </SettingsRow>
+        {/* fork_change start */}
         <Show when={speechTranslatable()}>
           <SettingsRow
             title={language.t("settings.models.speechToTextResult.title")}
@@ -390,6 +401,7 @@ const ModelsTab: Component = () => {
             />
           </SettingsRow>
         </Show>
+        {/* fork_change end */}
         <SettingsRow
           title={language.t("settings.models.hidePromptTraining.title")}
           description={language.t("settings.models.hidePromptTraining.description")}
