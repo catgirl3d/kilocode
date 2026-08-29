@@ -43,7 +43,13 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
   const feedback = useFeedback()
   const i18n = useI18n()
 
-  createEffect(() => session.hydrateParts([props.row.message.id]))
+  // fork_change start
+  createEffect(() => {
+    const row = props.row
+    const ids = row.type === "diff" ? [row.message.id, ...(row.assistantIDs ?? [])] : [row.message.id]
+    session.hydrateParts([...new Set(ids)])
+  })
+  // fork_change end
 
   const open = () => vscode.postMessage({ type: "openChanges", turnId: props.row.message.id })
 

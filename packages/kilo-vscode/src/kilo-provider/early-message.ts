@@ -70,17 +70,28 @@ function isResume(input: { sessionID?: unknown; messageID?: unknown; requestID?:
   )
 }
 
+// fork_change start
+async function routeSessionMessage(
+  message: { type: string; sessionID?: unknown; messageID?: unknown; requestID?: unknown },
+  ctx: Ctx,
+): Promise<boolean | undefined> {
+  if (message.type === "resumeSession") {
+    if (isResume(message)) await ctx.resume(message.sessionID, message.messageID, message.requestID)
+    return true
+  }
+  if (message.type === "shake") {
+    if (typeof message.sessionID === "string") await ctx.shake(message.sessionID)
+    return true
+  }
+  return undefined
+}
 export async function routeEarlyMessage(
   message: { type: string; id?: unknown; text?: unknown; state?: unknown },
   ctx: Ctx,
 ): Promise<boolean> {
-  if (message.type === "resumeSession") {
-    const input = message as { sessionID?: unknown; messageID?: unknown; requestID?: unknown }
-    if (isResume(input)) {
-      await ctx.resume(input.sessionID, input.messageID, input.requestID)
-    }
-    return true
-  }
+  const session = await routeSessionMessage(message, ctx)
+  if (session !== undefined) return session
+  // fork_change end
   if (message.type === "copyToClipboard") {
     if (typeof message.id !== "string") return true
     if (typeof message.text !== "string") {
@@ -103,13 +114,6 @@ export async function routeEarlyMessage(
     await ctx.modelUsage(message as ModelUsageMessage)
     return true
   }
-  // fork_change start
-  if (message.type === "shake") {
-    const input = message as { sessionID?: unknown }
-    if (typeof input.sessionID === "string") await ctx.shake(input.sessionID)
-    return true
-  }
-  // fork_change end
   await routeSuggestionWebviewMessage(ctx.question, message)
   if (await ModelState.handleMessage(message.type, message, ctx.client, ctx.post)) return true
   if (message.type === "exportSessionTranscript") {
