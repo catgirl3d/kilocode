@@ -50,6 +50,7 @@ export interface WatcherConfig {
 
 export interface ExperimentalConfig {
   advisor_model?: string | null // fork_change
+  advisor_variant?: string | null // fork_change
   batch_tool?: boolean
   image_generation?: boolean
   image_generation_model?: string

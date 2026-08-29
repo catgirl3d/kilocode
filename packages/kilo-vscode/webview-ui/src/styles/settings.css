@@ -131,6 +131,26 @@
   max-width: none;
 }
 
+.settings-advisor-model-row [data-slot="settings-row-input"] {
+  display: flex;
+  flex: 1 1 0%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  max-width: none;
+}
+
+.settings-advisor-model-row [data-slot="settings-row-input"] > [data-component="tooltip-trigger"] {
+  min-width: 0;
+  max-width: 160px;
+}
+
+.settings-advisor-model-row [data-slot="popover-trigger"] {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .settings-font-size-control {
   display: flex;
   align-items: center;

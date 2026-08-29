@@ -19,5 +19,8 @@ export class Experimental extends Schema.Class<Experimental>("ConfigV2.Experimen
   advisor_model: Schema.String.pipe(Schema.optional).annotate({
     description: "Model ID to use for on-demand advisor consultations",
   }),
+  advisor_variant: Schema.String.pipe(Schema.optional).annotate({
+    description: "Model variant to use for on-demand advisor consultations",
+  }),
   // kilocode_change end
 }) {}
