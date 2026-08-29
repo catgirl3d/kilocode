@@ -393,7 +393,7 @@
 }
 
 /* ============================================
-   VscodeSessionTurn layout
+   TranscriptRow layout
    ============================================ */
 
 /* Virtua positions turns absolutely based on measured box size, so flex `gap`

@@ -229,6 +229,7 @@ export interface SessionUpdatedMessage {
   session: SessionUpdate
 }
 
+// fork_change start
 export interface SessionShakeCompletedMessage {
   type: "sessionShakeCompleted"
   sessionID: string
@@ -250,7 +251,7 @@ export interface SessionShakeFailedMessage {
   sessionID: string
   error: string
 }
-
+// fork_change end
 export interface SessionDeletedMessage {
   type: "sessionDeleted"
   sessionID: string
@@ -623,6 +624,7 @@ export interface FilePickerResultMessage {
   requestId: string
 }
 
+// fork_change start
 export interface ValidateInstructionPathResultMessage {
   type: "validateInstructionPathResult"
   requestId: string
@@ -630,7 +632,7 @@ export interface ValidateInstructionPathResultMessage {
   valid: boolean
   bindingId?: string
 }
-
+// fork_change end
 export interface TerminalContextResultMessage {
   type: "terminalContextResult"
   requestId: string
@@ -734,7 +736,7 @@ export interface ConfigLoadedMessage {
   type: "configLoaded"
   config: Config
   globalConfig?: Config
-  globalEffectiveConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
   collections?: ConfigCollections
@@ -746,7 +748,7 @@ export interface ConfigUpdatedMessage {
   type: "configUpdated"
   config: Config
   globalConfig?: Config
-  globalEffectiveConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
   collections?: ConfigCollections
@@ -761,7 +763,7 @@ export interface ConfigUpdateFailedMessage {
   completedScopes?: Array<"global" | "project">
   config?: Config
   globalConfig?: Config
-  globalEffectiveConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
 }
@@ -1490,8 +1492,10 @@ export type ExtensionMessage =
   | SessionCreatedMessage
   | SessionForkedMessage
   | SessionUpdatedMessage
+  // fork_change start
   | SessionShakeCompletedMessage
   | SessionShakeFailedMessage
+  // fork_change end
   | SessionDeletedMessage
   | MessageRemovedMessage
   | DeleteMessageResultMessage
@@ -1532,7 +1536,7 @@ export type ExtensionMessage =
   | FileSearchResultMessage
   | SessionSearchResultMessage
   | FilePickerResultMessage
-  | ValidateInstructionPathResultMessage
+  | ValidateInstructionPathResultMessage // fork_change
   | TerminalContextResultMessage
   | TerminalContextErrorMessage
   | GitChangesContextResultMessage

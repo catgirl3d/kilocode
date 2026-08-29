@@ -16,7 +16,7 @@ import { ServerProvider } from "../context/server"
 import { FeedbackProvider } from "../context/feedback"
 import { ProviderContext } from "../context/provider"
 import { flattenModels, findModel as _findModel } from "../context/provider-utils"
-import type { EnrichedModel } from "../context/provider"
+import type { EnrichedModel } from "../context/provider" // fork_change
 import { ConfigProvider, ConfigContext } from "../context/config"
 import { DisplayProvider } from "../context/display"
 import { DataProvider, type OpenDiffFn, type OpenFileFn } from "@kilocode/kilo-ui/context/data"
@@ -100,11 +100,13 @@ const MOCK_PROVIDERS = {
 const MOCK_MODELS = flattenModels(MOCK_PROVIDERS as any)
 
 /** A synchronous mock ProviderContext — provides models without waiting for a postMessage round-trip. */
+// fork_change start
 const MockProviderProvider: ParentComponent<{ kiloAuth?: boolean; training?: boolean; models?: EnrichedModel[] }> = (
   props,
 ) => {
+  // fork_change end
   const models = createMemo(() =>
-    (props.models ?? MOCK_MODELS).map((model) => ({
+    (props.models /* fork_change */ ?? MOCK_MODELS).map((model) => ({
       ...model,
       mayTrainOnYourPrompts: props.training === true,
     })),
@@ -263,7 +265,7 @@ export function mockSessionValue(overrides?: {
     recentModels: () => [],
     modelUsageHistory: () => ({}),
     toggleFavorite: noop,
-    moveFavorite: noop,
+    moveFavorite: noop, // fork_change
     variantList: () => [],
     currentVariant: () => undefined,
     variantForAgent: () => undefined,
@@ -272,8 +274,10 @@ export function mockSessionValue(overrides?: {
     sendCommand: noop,
     abort: noop,
     compact: noop,
+    // fork_change start
     shake: noop,
     shaking: () => false,
+    // fork_change end
     respondToPermission: noop,
     replyToQuestion: noop,
     rejectQuestion: noop,
@@ -318,7 +322,7 @@ interface StoryProvidersProps {
   onOpenFile?: OpenFileFn
   kiloAuth?: boolean
   training?: boolean
-  models?: EnrichedModel[]
+  models?: EnrichedModel[] // fork_change
   /** When true, renders children without the default 12px padding wrapper */
   noPadding?: boolean
 }
@@ -356,16 +360,16 @@ const ConfigWrapper: ParentComponent<{
       config: createMemo(() => cfg()),
       globalConfig: createMemo(() => (scoped ? global() : cfg())),
       globalDraft: () => ({}),
-      globalEffectiveConfig: createMemo(() => (scoped ? global() : cfg())),
+      globalEffectiveConfig: createMemo(() => (scoped ? global() : cfg())), // fork_change
       projectConfig: createMemo(() => (scoped ? project() : cfg())),
-      projectBinding: () => undefined,
+      projectBinding: () => undefined, // fork_change
       collections: () => ({}),
       settings,
       features,
       loading: () => false,
       isDirty: dirty,
       saving: () => false,
-      blocked: () => false,
+      blocked: () => false, // fork_change
       saveError: () => null,
       updateConfig: (partial: Partial<Config>) => {
         setCfg((prev) => {
@@ -437,7 +441,9 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
             onProjectConfigChange={props.onProjectConfigChange}
           >
             <DisplayProvider>
+              {/* fork_change start */}
               <MockProviderProvider kiloAuth={props.kiloAuth} training={props.training} models={props.models}>
+                {/* fork_change end */}
                 <DialogProvider>
                   <LanguageContext.Provider
                     value={{

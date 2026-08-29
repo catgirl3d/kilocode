@@ -15642,7 +15642,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.removeSnapshot({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.kilocode.removeSnapshot({\n  ...\n})"
           }
         ]
       }
@@ -16728,7 +16728,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.backgroundJob.promote({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.kilocode.backgroundJob.promote({\n  ...\n})"
           }
         ]
       }
