@@ -1,4 +1,8 @@
 import { describe, expect, it } from "bun:test"
+import { unlinkSync } from "node:fs"
+import path from "node:path"
+import { build } from "esbuild"
+import { solidPlugin } from "esbuild-plugin-solid"
 import { continuation } from "../../webview-ui/src/context/session-continuation"
 import type { Message, Part } from "../../webview-ui/src/types/messages"
 
@@ -87,4 +91,56 @@ describe("empty prompt continuation", () => {
       expect(continuation({ ...input, [key]: true })).toBeUndefined()
     }
   })
+})
+
+describe("PromptInput empty send", () => {
+  it("resumes resumable sessions and sends literal continue otherwise", async () => {
+    const root = path.resolve(import.meta.dir, "../..")
+    const webview = path.join(root, "webview-ui")
+    const fixture = path.join(root, "tests/fixtures/prompt-input-send.tsx")
+    const solid = path.dirname(Bun.resolveSync("solid-js/package.json", webview))
+    const aliases: Record<string, string> = {
+      "solid-js": path.join(solid, "dist/solid.js"),
+      "solid-js/web": path.join(solid, "web/dist/web.js"),
+      "solid-js/store": path.join(solid, "store/dist/store.js"),
+    }
+    const dedupe = {
+      name: "solid-dedupe",
+      setup(ctx: Parameters<NonNullable<Parameters<typeof build>[0]["plugins"]>[number]["setup"]>[0]) {
+        ctx.onResolve({ filter: /^solid-js(\/web|\/store)?$/ }, (args) => ({ path: aliases[args.path] }))
+      },
+    }
+    const workers = {
+      name: "worker-url",
+      setup(ctx: Parameters<NonNullable<Parameters<typeof build>[0]["plugins"]>[number]["setup"]>[0]) {
+        ctx.onResolve({ filter: /\?worker&url$/ }, (args) => ({ path: args.path, namespace: "worker-url" }))
+        ctx.onLoad({ filter: /.*/, namespace: "worker-url" }, () => ({
+          contents: "export default 'test-worker.js'",
+          loader: "js",
+        }))
+      },
+    }
+    const result = await build({
+      entryPoints: [fixture],
+      bundle: true,
+      conditions: ["browser"],
+      external: ["happy-dom"],
+      format: "esm",
+      logLevel: "silent",
+      loader: { ".css": "empty", ".svg": "empty" },
+      platform: "node",
+      plugins: [dedupe, workers, solidPlugin()],
+      target: "es2022",
+      write: false,
+    })
+    const file = path.join(root, `.prompt-input-send-${crypto.randomUUID()}.mjs`)
+    await Bun.write(file, result.outputFiles[0]!.contents)
+    try {
+      const child = Bun.spawnSync(["bun", file], { cwd: webview, stdout: "pipe", stderr: "pipe" })
+      const output = child.stdout.toString() + child.stderr.toString()
+      expect(child.exitCode, output).toBe(0)
+    } finally {
+      unlinkSync(file)
+    }
+  }, 30_000)
 })

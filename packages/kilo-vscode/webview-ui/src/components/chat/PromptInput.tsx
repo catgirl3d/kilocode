@@ -59,6 +59,7 @@ import {
   isPathMention,
   memoryRest,
   commandAction, // fork_change
+  resolvePrompt, // fork_change
   type SandboxDefaultState,
   type SandboxState,
 } from "./prompt-input-utils"
@@ -709,10 +710,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sendReady = () => !isDisabled() && goalReady() && !terminal.pending() && !git.pending() && !props.blocked?.()
   const canContinue = () => !goal.active() && speech.state() === "idle" && !hasInput() && session.canResume()
   const goalReady = () => !goal.pending() && (!goal.active() || (!enhancing() && !imageAttach.pending()))
+  // fork_change start
   const canSend = () =>
     sendReady() &&
     (speech.state() === "recording" ||
-      (!speech.active() && (goal.active() ? goal.ready(text()) : hasInput() || canContinue())))
+      (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
+  // fork_change end
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
@@ -1449,7 +1452,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const handleSend = async () => {
-    const draft = text().trim()
+    // fork_change start
+    let draft = text().trim()
+    // fork_change end
     if (
       !goal.prepare(draft, () => {
         setText("")
@@ -1516,11 +1521,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const push = pushInstruction(pending, settings()["agentManager.pushFixes"] !== false)
     const browserData = browserFeedbackData(browsers())
     const browserText = browserData ? formatBrowserFeedback(browserData.references) : ""
-    const message = [review, push, browserText, draft].filter(Boolean).join("\n\n")
     if (canSendContinue()) {
       session.resume()
       return
     }
+    // fork_change start
+    draft = resolvePrompt(draft, pending.length > 0 || browserData !== undefined, imgs.length > 0)
+    const message = [review, push, browserText, draft].filter(Boolean).join("\n\n")
+    // fork_change end
     const data = review ? { version: 1 as const, comments: pending } : undefined
     if ((!message && imgs.length === 0) || !sendReady() || speech.active()) return
 

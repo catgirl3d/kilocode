@@ -11,7 +11,7 @@
 - Filter discovered skills by name in Agent Behaviour settings.
 - Preserve child session statuses, including retry state, when syncing sessions in the inspector.
 - Preview or remove stale child sessions with the `kilo session cleanup` command.
-- Send an empty first prompt as `continue` when no media or review comments are attached.
+- Allow sending an empty prompt as `continue` when no media or review comments are attached.
 - Clear heavy tool outputs from the active session context on demand.
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
 - Show live sub-agent status dots on task cards: green while running, gray when completed, and red on error.
