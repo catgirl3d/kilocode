@@ -76,6 +76,20 @@
         "useVsCodeApi": true,
         "command": "workbench.action.tasks.runTask",
         "args": ["Kilo: Generate Staged Diff"]
+      },
+      {
+        "name": "FORCE PUSH",
+        "color": "#ffab91",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Git: Force Push with Lease"]
+      },
+      {
+        "name": "SOFT RESET",
+        "color": "#cfd8dc",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Git: Custom Soft Reset"]
       }
     ],
     "defaultColor": "white",
