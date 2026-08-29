@@ -322,6 +322,9 @@ export const Info = Schema.Struct({
       advisor_model: Schema.optional(Schema.String).annotate({
         description: "Model ID to use for on-demand advisor consultations",
       }),
+      advisor_variant: Schema.optional(Schema.String).annotate({
+        description: "Model variant to use for on-demand advisor consultations",
+      }),
       // kilocode_change end
       openTelemetry: Schema.Boolean.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed(true))).annotate({
         description: "Enable telemetry. Set to false to opt-out.",

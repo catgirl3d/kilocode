@@ -124,6 +124,8 @@ function isIgnored(file: string): boolean {
   )
     return true
   if (basename.endsWith(".css") || basename.endsWith(".scss") || basename.endsWith(".less")) return true
+  // Repo-level dotfile configs (.gitignore, .editorconfig, .prettierignore, ...) carry no fork source
+  if (basename.startsWith(".") && !path.extname(basename)) return true
   if (
     basename.endsWith(".png") ||
     basename.endsWith(".jpg") ||
