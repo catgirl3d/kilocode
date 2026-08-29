@@ -5,6 +5,7 @@ import { LLM } from "@/session/llm"
 import { Session } from "@/session/session"
 import { MessageID, SessionID } from "@/session/schema"
 import { Provider, parseModel } from "@/provider/provider"
+import { hasVariant } from "@/kilocode/provider/provider"
 import { KiloLLM } from "@/kilocode/session/llm"
 import { SessionTranscript } from "@/kilocode/session/transcript"
 import { Tool } from "@/tool/tool"
@@ -58,15 +59,21 @@ function reviewer(model: Provider.Model): Agent.Info {
   }
 }
 
-function user(sessionID: SessionID, model: Provider.Model): SessionV1.User {
+function user(sessionID: SessionID, model: Provider.Model, variant?: string): SessionV1.User {
   return {
     id: MessageID.ascending(),
     sessionID,
     role: "user",
     time: { created: Date.now() },
     agent: "advisor",
-    model: { providerID: model.providerID, modelID: model.id },
+    model: { providerID: model.providerID, modelID: model.id, variant },
   }
+}
+
+function resolveVariant(model: Provider.Model, configured?: string) {
+  if (!configured) return { variant: undefined, available: undefined }
+  if (hasVariant(model, configured)) return { variant: configured, available: undefined }
+  return { variant: undefined, available: Object.keys(model.variants ?? {}) }
 }
 
 export const ConsultAdvisorTool = Tool.define<
@@ -122,6 +129,15 @@ export const ConsultAdvisorTool = Tool.define<
                 metadata: {},
               }
             }
+            const configuredVariant = (yield* cfg.get()).experimental?.advisor_variant
+            const variant = resolveVariant(model.value, configuredVariant)
+            if (variant.available) {
+              return {
+                title: "Advisor unavailable",
+                output: `The configured advisor variant is unavailable: ${configuredVariant}. Available variants: ${variant.available.join(", ") || "none"}.`,
+                metadata: {},
+              }
+            }
 
             const focus = params.focus ?? "general"
             const question = params.question?.trim() || "Provide the most useful next-step guidance."
@@ -147,7 +163,7 @@ export const ConsultAdvisorTool = Tool.define<
             const stream = KiloLLM.text(
               llm.stream({
                 agent: reviewer(model.value),
-                user: user(SessionID.make(`${ctx.sessionID}-advisor`), model.value),
+                user: user(SessionID.make(`${ctx.sessionID}-advisor`), model.value, variant.variant),
                 sessionID: SessionID.make(`${ctx.sessionID}-advisor`),
                 parentSessionID: ctx.sessionID,
                 model: model.value,
