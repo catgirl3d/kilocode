@@ -22,11 +22,11 @@ import { useVSCode } from "../../context/vscode"
 import { useConfig } from "../../context/config"
 import { useProvider } from "../../context/provider"
 import { ModelSelector } from "../shared/ModelSelector"
-import { FavoriteModelSwitcher } from "../shared/FavoriteModelSwitcher"
+import { FavoriteModelSwitcher } from "../shared/FavoriteModelSwitcher" // fork_change
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
 import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
-import { canUseSpeechToText, selectedSpeechToTextModel, selectedSpeechToTextMode } from "../speech-to-text/availability"
+import { canUseSpeechToText, selectedSpeechToTextModel, selectedSpeechToTextMode } from "../speech-to-text/availability" // fork_change
 import { ThinkingSelector } from "../shared/ThinkingSelector"
 import { useFileMention } from "../../hooks/useFileMention"
 import type { MentionResult, WorktreeReference } from "../../hooks/file-mention-utils"
@@ -35,7 +35,7 @@ import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
-import { useSlashCommand, type SlashCommandEntry } from "../../hooks/useSlashCommand"
+import { useSlashCommand, type SlashCommandEntry } from "../../hooks/useSlashCommand" // fork_change
 import { useGhostText } from "../../hooks/useGhostText"
 import { useSpeechToText } from "../speech-to-text/useSpeechToText"
 import { useSpeechToTextModels } from "../../context/speech-to-text-models"
@@ -57,7 +57,7 @@ import {
   isPromptBusy,
   isPathMention,
   memoryRest,
-  commandAction,
+  commandAction, // fork_change
   type SandboxDefaultState,
   type SandboxState,
 } from "./prompt-input-utils"
@@ -622,7 +622,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const isDisabled = () => !server.isConnected() || locked()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
-  const speechMode = () => selectedSpeechToTextMode(config())
+  const speechMode = () => selectedSpeechToTextMode(config()) // fork_change
   const hasInput = () =>
     text().trim().length > 0 || imageAttach.images().length > 0 || reviewComments().length > 0 || browsers().length > 0
   const sendReady = () => !isDisabled() && !terminal.pending() && !git.pending() && !props.blocked?.()
@@ -1158,7 +1158,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const startSpeech = () => {
-    speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText })
+    speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText }) // fork_change
   }
 
   const transcribeAndSend = () => {
@@ -1254,7 +1254,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "memoryOperation",
         operation: memory.operation,
         sessionID: sid(),
-        ...(memory.operation === "auto" || memory.operation === "verbose" ? { mode: memory.mode } : {}),
+        ...(memory.operation === "auto" || memory.operation === "verbose" ? { mode: memory.mode } : {}), // fork_change
         ...(memory.operation === "purge" ? { confirm: memory.confirm } : {}),
         ...(memory.operation === "remember" || memory.operation === "correct" ? { text: memory.text } : {}),
         ...(memory.operation === "forget" ? { query: memory.query } : {}),
@@ -1304,6 +1304,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       ? (slash.commands().find((c) => c.name === word) ?? slash.commands().find((c) => c.hints.includes(word)))
       : undefined
 
+    // fork_change start
     // Builtin actions use dedicated session endpoints; configured commands retain precedence.
     const action = commandAction(matched, () => session.shake())
     if (action) {
@@ -1323,6 +1324,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       action()
       return
     }
+    // fork_change end
 
     const imgs = imageAttach.images()
     const pending = reviewComments()
@@ -1682,10 +1684,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       <div class="prompt-input-hint">
         <div class="prompt-input-hint-selectors">
           <ModeSwitcher sessionID={sid} />
+          {/* fork_change start */}
           <div class="model-quick-switcher">
             <FavoriteModelSwitcher sessionID={sid} numbered />
             <ModelSelector sessionID={sid} compact />
           </div>
+          {/* fork_change end */}
           <ThinkingSelector sessionID={sid} />
         </div>
         <div class="prompt-input-hint-actions">

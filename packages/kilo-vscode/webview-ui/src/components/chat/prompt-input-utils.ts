@@ -118,6 +118,7 @@ export function isPromptBlocked(permissions: number): boolean {
   return permissions > 0
 }
 
+// fork_change start
 export function commandAction(
   command: { name: string; source?: "builtin" | "command" | "mcp" | "skill"; action?: () => void } | undefined,
   shake: () => void,
@@ -127,6 +128,7 @@ export function commandAction(
   return shake
 }
 
+// fork_change end
 /**
  * Whether the session is busy from the prompt's perspective.
  * Returns false (idle-like) when the session is busy only because

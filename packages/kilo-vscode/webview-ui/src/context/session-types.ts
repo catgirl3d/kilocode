@@ -152,7 +152,7 @@ export interface SessionContextValue {
   modelUsageHistory: Accessor<ModelUsageMap>
   favoriteModels: Accessor<ModelSelection[]>
   toggleFavorite: (providerID: string, modelID: string) => void
-  moveFavorite: (providerID: string, modelID: string, direction: "up" | "down") => void
+  moveFavorite: (providerID: string, modelID: string, direction: "up" | "down") => void // fork_change
 
   // Revert/undo state for the current session
   revert: Accessor<SessionInfo["revert"]>
@@ -191,6 +191,8 @@ export interface SessionContextValue {
   ) => boolean
   abort: () => void
   compact: () => void
+  shake: () => void // fork_change
+  shaking: () => boolean // fork_change
   respondToPermission: (
     permissionId: string,
     response: "once" | "always" | "reject",
