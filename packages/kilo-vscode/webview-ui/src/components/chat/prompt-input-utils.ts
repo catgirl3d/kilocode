@@ -119,6 +119,12 @@ export function isPromptBlocked(permissions: number): boolean {
 }
 
 // fork_change start
+/** Use a continue prompt when the input has no user content. */
+export function resolvePrompt(text: string, hasComments: boolean, hasImages: boolean): string {
+  if (text || hasComments || hasImages) return text
+  return "continue"
+}
+
 export function commandAction(
   command: { name: string; source?: "builtin" | "command" | "mcp" | "skill"; action?: () => void } | undefined,
   shake: () => void,

@@ -58,6 +58,7 @@ import {
   isPathMention,
   memoryRest,
   commandAction, // fork_change
+  resolvePrompt, // fork_change
   type SandboxDefaultState,
   type SandboxState,
 } from "./prompt-input-utils"
@@ -627,8 +628,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     text().trim().length > 0 || imageAttach.images().length > 0 || reviewComments().length > 0 || browsers().length > 0
   const sendReady = () => !isDisabled() && !terminal.pending() && !git.pending() && !props.blocked?.()
   const canContinue = () => speech.state() === "idle" && !hasInput() && session.canResume()
-  const canSend = () =>
-    sendReady() && (speech.state() === "recording" || (!speech.active() && (hasInput() || canContinue())))
+  // fork_change start
+  const canSend = () => sendReady() && (speech.state() === "recording" || !speech.active())
+  // fork_change end
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
@@ -1274,7 +1276,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const handleSend = async () => {
-    const draft = text().trim()
+    // fork_change start
+    let draft = text().trim()
+    // fork_change end
 
     const memory = parseMemoryCommand(draft)
     if (memory) {
@@ -1331,11 +1335,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const review = pending.length > 0 ? formatReviewCommentsMarkdown(pending) : ""
     const browserData = browserFeedbackData(browsers())
     const browserText = browserData ? formatBrowserFeedback(browserData.references) : ""
-    const message = [review, browserText, draft].filter(Boolean).join("\n\n")
     if (canSendContinue()) {
       session.resume()
       return
     }
+    // fork_change start
+    draft = resolvePrompt(draft, pending.length > 0 || browserData !== undefined, imgs.length > 0)
+    // fork_change end
+    const message = [review, browserText, draft].filter(Boolean).join("\n\n")
     const data = review ? { version: 1 as const, comments: pending } : undefined
     if ((!message && imgs.length === 0) || !sendReady() || speech.active()) return
 
