@@ -124,8 +124,6 @@ and actual behavior.
   validated at package scope.
 
 - Never run root `bun test`; it intentionally fails.
-- After a non-trivial resolution, send the current diff to review subagents and
-  critically assess their findings.
 - Keep `AGENTS.md` as the source of truth for additional affected guards.
 - Run `bun run check-kilocode-change` from `packages/kilo-vscode/` to ensure no illegal markers were added.
 - Run `bun run script/check-opencode-annotations.ts --worktree` from the root when touching shared OpenCode files.
@@ -133,6 +131,40 @@ and actual behavior.
 - If rebased changes affect server endpoints in `packages/opencode/src/server/`, run `./script/generate.ts` from the repository root and verify the generated SDK changes.
 - Check every fork feature affected by the rebase (referenced in `CHANGELOG-FORK.md`).
 - For CI, inspect `trigger -> conditions -> needs -> runner -> required status`.
+
+### Regression Review
+
+Structural gates (range-diff, fork-audit, typecheck, lint) do not prove behavior
+preservation. Choose the regression-review depth by the risk of the rebase:
+
+- For docs/config/format-only changes or a conflict-free rebase with no substantive
+  executable overlap, use a lightweight review: inspect the range-diff and changed
+  paths, then run only checks relevant to those paths. Do not launch a multi-agent
+  behavioral investigation for a simple case.
+- Use deep review only for substantive conflict resolutions, overlapping executable
+  behavior, state/lifecycle/timing changes, cross-package contracts, or a broad
+  executable-file intersection. Dispatch several read-only agents: one compares
+  each original commit with its replay (`git show <old>` vs `git show <new>`), and
+  one adversarial agent inspects the merged regions in the final tree.
+- Compare against BOTH baselines when classifying: the pre-rebase fork HEAD and
+  the new `upstream/main`.
+- Classify every finding as exactly one of:
+  - **rebase regression** — caused by the resolution; fix before finishing, then
+    re-run validation;
+  - **upstream behavior change** — verify the fork feature still composes with
+    the new upstream semantics;
+  - **pre-existing** — inherited from earlier fork history; record as follow-up,
+    do not silently absorb it into the rebase.
+- Do not include translation/i18n searches in the default regression review. Audit
+  localization only when the rebase changes locale files or translation keys, or
+  when the user explicitly requests it.
+- Run the affected package's default unit suite when substantive executable package
+  behavior is in scope (for VS Code: `bun run test:unit` from
+  `packages/kilo-vscode/`). Do not require a package behavior suite for
+  docs/config/format-only changes.
+- A relevant test that hangs, times out, or cannot execute in the local
+  environment is an explicit verification gap. Name it in the final report;
+  do not treat the remaining green checks as full coverage.
 
 Finish only when the working tree is clean, `git diff --check upstream/main..main`
 passes, the range-diff has been reviewed, and this tracked-file conflict-marker
