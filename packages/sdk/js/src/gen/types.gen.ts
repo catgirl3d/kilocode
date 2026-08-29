@@ -1369,6 +1369,10 @@ export type Config = {
      * Model ID to use for on-demand advisor consultations
      */
     advisor_model?: string
+    /**
+     * Model variant to use for on-demand advisor consultations
+     */
+    advisor_variant?: string
     hook?: {
       file_edited?: {
         [key: string]: Array<{

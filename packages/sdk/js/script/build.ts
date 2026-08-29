@@ -166,16 +166,27 @@ try {
   if (!legacyNext.includes(instructions)) {
     throw new Error(`Legacy Config instructions_disabled patch did not apply (${legacyTypesPath})`)
   }
-  const advisor = `    /**
+  const advisorModel = `    /**
      * Model ID to use for on-demand advisor consultations
      */
     advisor_model?: string
 `
-  const patched = legacyNext.includes(advisor)
+  const withAdvisorModel = legacyNext.includes(advisorModel)
     ? legacyNext
-    : legacyNext.replace("  experimental?: {\n", "  experimental?: {\n" + advisor)
-  if (!patched.includes(advisor)) {
+    : legacyNext.replace("  experimental?: {\n", "  experimental?: {\n" + advisorModel)
+  if (!withAdvisorModel.includes(advisorModel)) {
     throw new Error(`Legacy Config advisor_model patch did not apply (${legacyTypesPath})`)
+  }
+  const advisorVariant = `    /**
+     * Model variant to use for on-demand advisor consultations
+     */
+    advisor_variant?: string
+`
+  const patched = withAdvisorModel.includes(advisorVariant)
+    ? withAdvisorModel
+    : withAdvisorModel.replace("    advisor_model?: string\n", "    advisor_model?: string\n" + advisorVariant)
+  if (!patched.includes(advisorVariant)) {
+    throw new Error(`Legacy Config advisor_variant patch did not apply (${legacyTypesPath})`)
   }
   await Bun.write(legacyTypesPath, patched)
   // kilocode_change end
