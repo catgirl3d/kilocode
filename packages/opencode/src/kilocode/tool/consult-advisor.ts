@@ -15,7 +15,8 @@ import DESCRIPTION from "./consult-advisor.txt"
 
 const Params = Schema.Struct({
   focus: Schema.optional(Schema.Literals(["plan", "risk", "stuck", "verification", "general"])),
-  question: Schema.optional(Schema.Trim.check(Schema.isMaxLength(2_000))),
+  question: Schema.optional(Schema.Trim.check(Schema.isMaxLength(5_000))),
+  proposal: Schema.optional(Schema.String.check(Schema.isMaxLength(64_000))),
 })
 
 type Params = Schema.Schema.Type<typeof Params>
@@ -52,10 +53,9 @@ function reviewer(model: Provider.Model): Agent.Info {
     hidden: true,
     options: {},
     permission: [],
-    temperature: 0.2,
     model: { providerID: model.providerID, modelID: model.id },
     prompt:
-      "You are a concise engineering advisor. Do not use tools. Do not claim to have inspected files. Give actionable guidance based only on the supplied transcript.",
+      "You are an engineering advisor. Do not use tools. Do not claim to have inspected files. Give actionable guidance based only on the supplied transcript.",
   }
 }
 
@@ -74,6 +74,11 @@ function resolveVariant(model: Provider.Model, configured?: string) {
   if (!configured) return { variant: undefined, available: undefined }
   if (hasVariant(model, configured)) return { variant: configured, available: undefined }
   return { variant: undefined, available: Object.keys(model.variants ?? {}) }
+}
+
+function clip(text: string) {
+  if (text.length <= 64_000) return text
+  return `${text.slice(0, 64_000)}\n(truncated)`
 }
 
 export const ConsultAdvisorTool = Tool.define<
@@ -152,13 +157,25 @@ export const ConsultAdvisorTool = Tool.define<
               }
             }
             const transcript = ctx.messages.length
-              ? SessionTranscript.format(session, ctx.messages, { max: 60_000 })
+              ? SessionTranscript.format(session, ctx.messages, { max: 100_000 })
               : "[no prior context]"
+            const current = ctx.extra?.currentAssistant
+            const parts = current
+              ? (current.parts ??
+                  (yield* sessions.messages({ sessionID: ctx.sessionID })).find((item) => item.info.id === current.id)?.parts ??
+                  [])
+              : []
+            const currentText = parts
+              .filter((part): part is SessionV1.TextPart => part.type === "text")
+              .map((part) => part.text)
+              .join("\n\n")
             const body = [
               `Focus: ${focus}`,
               `Question: ${question}`,
+              ...(params.proposal ? ["Proposal:", clip(params.proposal)] : []),
               "Recent conversation transcript:",
               transcript,
+              ...(currentText ? ["Current assistant message (in progress):", clip(currentText)] : []),
             ].join("\n\n")
             const stream = KiloLLM.text(
               llm.stream({
@@ -171,7 +188,6 @@ export const ConsultAdvisorTool = Tool.define<
                 messages: [{ role: "user", content: body }],
                 tools: {},
                 toolChoice: "none",
-                retries: 0,
               }),
             )
             const exit = yield* Effect.raceFirst(stream, abort(ctx)).pipe(Effect.exit)
@@ -186,7 +202,11 @@ export const ConsultAdvisorTool = Tool.define<
               }
             }
             const output = exit.value.trim()
-            return { title: "Advisor guidance", output: output || "The advisor returned no guidance.", metadata: {} }
+            return {
+              title: "Advisor guidance",
+              output: output || "The advisor returned no guidance.",
+              metadata: { truncated: false },
+            }
           }).pipe(Effect.ensuring(Effect.sync(() => release(ctx.sessionID))))
         }),
     }
