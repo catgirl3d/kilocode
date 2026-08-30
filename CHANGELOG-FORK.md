@@ -15,7 +15,7 @@
 - Clear heavy tool outputs from the active session context on demand.
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
 - Show live sub-agent status dots on task cards: green while running, gray when completed, and red on error.
-- Add an on-demand consult_advisor tool: agents can request a second opinion from a configured advisor model and reasoning variant during planning, when stuck, or before completing complex tasks.
+- Add an on-demand consult_advisor tool with in-progress assistant context and a proposal channel, so agents can request a second opinion from a configured advisor model and reasoning variant during planning, when stuck, or before completing complex tasks.
 - Improve Agent Manager Markdown document previews with cleaner typography, spacing, and optional comment annotations.
 
 ### Fixes & Enhancements
