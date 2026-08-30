@@ -129,6 +129,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       promptOps: input.promptOps,
       sandboxed, // kilocode_change
       sandboxEscalation: false,
+      // kilocode_change start - expose the in-progress assistant to advisor tools
+      currentAssistant: input.processor.message,
+      // kilocode_change end
     }
     return {
       sessionID: input.session.id,
