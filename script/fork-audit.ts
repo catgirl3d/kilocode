@@ -43,35 +43,6 @@ import path from "node:path"
 
 const ROOT = path.resolve(import.meta.dir, "..")
 
-const args = process.argv.slice(2)
-
-if (args.includes("--help") || args.includes("-h")) {
-  console.log(`
-🔍 KILO CODE FORK AUDIT TOOL
-
-Usage:
-  bun run script/fork-audit.ts [options] [paths...]
-
-Options:
-  --worktree           Audit dirty working tree + uncommitted/staged files against base
-  --base=<ref>         Target upstream base reference (default: 'upstream/main')
-  --help, -h           Show this help message
-
-Examples:
-  bun run script/fork-audit.ts
-  bun run script/fork-audit.ts --worktree
-  bun run script/fork-audit.ts packages/kilo-vscode/src/KiloProvider.ts
-  bun run script/fork-audit.ts --worktree packages/kilo-vscode/webview-ui/src/
-`)
-  process.exit(0)
-}
-
-const baseArg = args.find((a) => a.startsWith("--base="))
-const base: string = (baseArg ? baseArg.split("=")[1] : undefined) || "upstream/main"
-const worktree = args.includes("--worktree")
-const targetRef = worktree ? base : `${base}...HEAD`
-const fileArgs = args.filter((a) => !a.startsWith("--"))
-
 function runGit(cmdArgs: string[]): string {
   const res = spawnSync("git", cmdArgs, { cwd: ROOT, encoding: "utf8" })
   if (res.status !== 0) {
@@ -96,17 +67,6 @@ function runGitShow(ref: string, file: string): string | null {
     process.exit(1)
   }
   return res.stdout ?? ""
-}
-
-// Validate base reference
-const verify = spawnSync("git", ["rev-parse", "--verify", base], { cwd: ROOT, encoding: "utf8" })
-if (verify.status !== 0) {
-  if (process.env.CI || !baseArg) {
-    console.warn(`⚠️ Base reference '${base}' not found in Git repository. Skipping fork audit.`)
-    process.exit(0)
-  }
-  console.error(`❌ Base reference '${base}' not found in Git repository. Check remotes or use --base=<ref>.`)
-  process.exit(1)
 }
 
 const SOURCE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".sh", ".bash", ".yml", ".yaml", ".toml"])
@@ -345,7 +305,50 @@ type HunkBlock = {
   startLine: number
   endLine: number
   lines: string[]
+  uncoveredLines: number[]
   isCovered: boolean
+}
+
+const MAX_UNCOVERED_PREVIEW = 5
+
+export function groupAddedLines(addedLines: number[], fileLines: string[], coveredLines: Set<number>): HunkBlock[] {
+  const blocks: HunkBlock[] = []
+  let group: number[] = []
+  const flush = () => {
+    if (group.length === 0) return
+    const startLine = group[0] ?? 0
+    const endLine = group.at(-1) ?? 0
+    const uncoveredLines = group.filter((line) => !coveredLines.has(line))
+    blocks.push({
+      startLine,
+      endLine,
+      lines: fileLines.slice(startLine - 1, endLine),
+      uncoveredLines,
+      isCovered: uncoveredLines.length === 0,
+    })
+    group = []
+  }
+  for (const lineNum of addedLines) {
+    const last = group.at(-1)
+    if (last !== undefined && lineNum !== last + 1) flush()
+    group.push(lineNum)
+  }
+  flush()
+  return blocks
+}
+
+export function formatMissingBlock(block: HunkBlock): string[] {
+  const uncovered = block.uncoveredLines
+  const label = uncovered.length === 1 ? "1 uncovered line" : `${uncovered.length} uncovered lines`
+  const out = [`   [MISSING] L${block.startLine}-L${block.endLine} (${label})`]
+  for (const lineNum of uncovered.slice(0, MAX_UNCOVERED_PREVIEW)) {
+    const text = block.lines[lineNum - block.startLine] ?? ""
+    out.push(text.trim() === "" ? `     L${lineNum}: (blank line)` : `     L${lineNum}: ${text}`)
+  }
+  if (uncovered.length > MAX_UNCOVERED_PREVIEW) {
+    out.push(`     ... (${uncovered.length - MAX_UNCOVERED_PREVIEW} more uncovered lines)`)
+  }
+  return out
 }
 
 type RedundantMarker = {
@@ -363,12 +366,12 @@ type FileAudit = {
   errors: string[]
 }
 
-function auditFile(file: string, isNew: boolean): FileAudit | null {
+function auditFile(cfg: { worktree: boolean; targetRef: string }, file: string, isNew: boolean): FileAudit | null {
   const absPath = path.join(ROOT, file)
   const zone = getFileZone(file)
 
   let content: string | null = ""
-  if (worktree) {
+  if (cfg.worktree) {
     if (!existsSync(absPath)) return null
     content = readFileSync(absPath, "utf8")
   } else {
@@ -383,7 +386,7 @@ function auditFile(file: string, isNew: boolean): FileAudit | null {
 
   const { coveredLines, markers, errors } = parseCoveredRanges(fileLines, zone)
 
-  const diffOut = !isNew ? runGit(["diff", "--unified=0", "--diff-filter=AMRT", targetRef, "--", file]) : ""
+  const diffOut = !isNew ? runGit(["diff", "--unified=0", "--diff-filter=AMRT", cfg.targetRef, "--", file]) : ""
   if (!diffOut && !isNew && errors.length === 0) return null
 
   const addedLines: number[] = []
@@ -464,42 +467,7 @@ function auditFile(file: string, isNew: boolean): FileAudit | null {
   }
 
   // Group contiguous added lines into blocks
-  const blocks: HunkBlock[] = []
-  let currentGroup: number[] = []
-
-  for (const lineNum of addedLines) {
-    if (currentGroup.length === 0) {
-      currentGroup.push(lineNum)
-    } else {
-      const last = currentGroup[currentGroup.length - 1] ?? 0
-      if (lineNum === last + 1) {
-        currentGroup.push(lineNum)
-      } else {
-        const startLine = currentGroup[0] ?? 0
-        const endLine = currentGroup[currentGroup.length - 1] ?? 0
-        const isCovered = currentGroup.every((ln) => coveredLines.has(ln))
-        blocks.push({
-          startLine,
-          endLine,
-          lines: fileLines.slice(startLine - 1, endLine),
-          isCovered,
-        })
-        currentGroup = [lineNum]
-      }
-    }
-  }
-
-  if (currentGroup.length > 0) {
-    const startLine = currentGroup[0] ?? 0
-    const endLine = currentGroup[currentGroup.length - 1] ?? 0
-    const isCovered = currentGroup.every((ln) => coveredLines.has(ln))
-    blocks.push({
-      startLine,
-      endLine,
-      lines: fileLines.slice(startLine - 1, endLine),
-      isCovered,
-    })
-  }
+  const blocks: HunkBlock[] = groupAddedLines(addedLines, fileLines, coveredLines)
 
   const totalAddedLines = addedLines.length
   const coveredAddedLines = addedLines.filter((ln) => coveredLines.has(ln)).length
@@ -515,6 +483,47 @@ function auditFile(file: string, isNew: boolean): FileAudit | null {
 }
 
 function main() {
+  const args = process.argv.slice(2)
+
+  if (args.includes("--help") || args.includes("-h")) {
+    console.log(`
+🔍 KILO CODE FORK AUDIT TOOL
+
+Usage:
+  bun run script/fork-audit.ts [options] [paths...]
+
+Options:
+  --worktree           Audit dirty working tree + uncommitted/staged files against base
+  --base=<ref>         Target upstream base reference (default: 'upstream/main')
+  --help, -h           Show this help message
+
+Examples:
+  bun run script/fork-audit.ts
+  bun run script/fork-audit.ts --worktree
+  bun run script/fork-audit.ts packages/kilo-vscode/src/KiloProvider.ts
+  bun run script/fork-audit.ts --worktree packages/kilo-vscode/webview-ui/src/
+`)
+    process.exit(0)
+  }
+
+  const baseArg = args.find((a) => a.startsWith("--base="))
+  const base: string = (baseArg ? baseArg.split("=")[1] : undefined) || "upstream/main"
+  const worktree = args.includes("--worktree")
+  const targetRef = worktree ? base : `${base}...HEAD`
+  const fileArgs = args.filter((a) => !a.startsWith("--"))
+
+  // Validate base reference
+  const verify = spawnSync("git", ["rev-parse", "--verify", base], { cwd: ROOT, encoding: "utf8" })
+  if (verify.status !== 0) {
+    if (process.env.CI || !baseArg) {
+      console.warn(`⚠️ Base reference '${base}' not found in Git repository. Skipping fork audit.`)
+      process.exit(0)
+    }
+    console.error(`❌ Base reference '${base}' not found in Git repository. Check remotes or use --base=<ref>.`)
+    process.exit(1)
+  }
+
+  const cfg = { worktree, targetRef }
   const modeLabel = worktree ? `working tree & uncommitted changes (${targetRef})` : `committed history (${targetRef})`
   console.log(`🔍 Scanning fork modifications against: ${modeLabel}...\n`)
 
@@ -556,7 +565,7 @@ function main() {
 
   for (const file of targetFiles) {
     const isNew = newFilesSet.has(file)
-    const audit = auditFile(file, isNew)
+    const audit = auditFile(cfg, file, isNew)
     if (audit) {
       results.push(audit)
     }
@@ -589,15 +598,7 @@ function main() {
         coveredBlocks++
       } else {
         missingBlocks++
-        console.log(`   [MISSING] L${b.startLine}-L${b.endLine}`)
-        const preview = b.lines
-          .slice(0, 3)
-          .map((l) => `     + ${l}`)
-          .join("\n")
-        console.log(preview)
-        if (b.lines.length > 3) {
-          console.log(`     + ... (${b.lines.length - 3} more lines)`)
-        }
+        for (const line of formatMissingBlock(b)) console.log(line)
       }
     }
 
@@ -645,4 +646,4 @@ function main() {
   }
 }
 
-main()
+if (import.meta.main) main()
