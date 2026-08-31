@@ -28,7 +28,9 @@ import { useConfig } from "../../context/config"
 import { openSubagent } from "./open-subagent"
 import { showChildPromotion, taskResult, taskRunning, taskVisible } from "./task-tool-state"
 // fork_change start
-import { taskSessionStatus } from "./task-tool-state"
+import { childThinkingPart, taskSessionStatus } from "./task-tool-state"
+import { reasoningHeading } from "@kilocode/kilo-ui/reasoning-heading"
+import { createThrottledValue } from "@kilocode/kilo-ui/tool-utils"
 // fork_change end
 
 const TaskToolRenderer: Component<ToolProps> = (props) => {
@@ -122,6 +124,26 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
 
   const result = createMemo(() => taskResult(props.output, childSessionId()))
 
+  // fork_change start
+  // Live "thinking" status for the subagent: while its newest streamed part is
+  // reasoning, render ONE row that updates in place (never one row per step);
+  // it disappears as soon as the next step (tool part) lands.
+  const thinkingPart = createMemo(() => {
+    if (!running()) return undefined
+    const id = childSessionId()
+    if (!id) return undefined
+    return childThinkingPart(session.allMessages()[id] ?? [], session.getParts)
+  })
+
+  const thinkingText = createThrottledValue(() => thinkingPart()?.text ?? "")
+
+  const thinkingTitle = createMemo(() => {
+    const text = thinkingText()
+    if (!text) return undefined
+    return reasoningHeading(text).title
+  })
+
+  // fork_change end
   createEffect((prev: string | undefined) => {
     const id = taskVisible(open(), childSessionId())
     if (prev && prev !== id) vscode.postMessage({ type: "streamSessionVisible", sessionID: prev, visible: false })
@@ -245,11 +267,13 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
       >
         <div ref={viewport} onScroll={autoScroll.handleScroll} data-component="tool-output" data-scrollable>
           <div ref={content} data-component="task-tools">
-            <Show when={running() && childToolCount() === 0}>
+            {/* fork_change start */}
+            <Show when={running() && childToolCount() === 0 && !thinkingPart()}>
               <div data-slot="task-tool-item" data-state="starting">
                 <span data-slot="task-tool-title">{language.t("session.messages.taskStarting")}</span>
               </div>
             </Show>
+            {/* fork_change end */}
             <Show when={result()}>{(text) => <Markdown text={text()} />}</Show>
             <Index each={childToolParts()}>
               {(item) => {
@@ -271,6 +295,17 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
                 )
               }}
             </Index>
+            {/* fork_change start */}
+            <Show when={thinkingPart()}>
+              <div data-slot="task-tool-item" data-state="thinking">
+                <Icon name="brain" size="small" />
+                <span data-slot="task-tool-title">{language.t("ui.sessionTurn.status.thinking")}</span>
+                <Show when={thinkingTitle()}>
+                  <span data-slot="task-tool-subtitle">{thinkingTitle()}</span>
+                </Show>
+              </div>
+            </Show>
+            {/* fork_change end */}
           </div>
         </div>
       </BasicTool>
