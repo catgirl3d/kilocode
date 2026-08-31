@@ -49,13 +49,15 @@ function setup() {
     [legacy, JSON.stringify({ mcpServers: { memory: {}, keep: {} } })],
     [global, JSON.stringify({ mcpServers: { memory: {}, keep: {} } })],
   ])
+  // Uri.file().fsPath uses platform separators, the fixture keys are POSIX.
+  const posix = (value: string) => value.replaceAll("\\", "/")
   fs.readFile = async (uri) => {
-    const body = files.get(uri.fsPath)
+    const body = files.get(posix(uri.fsPath))
     if (!body) throw new Error("missing file")
     return Buffer.from(body)
   }
   fs.writeFile = async (uri, data) => {
-    files.set(uri.fsPath, Buffer.from(data).toString("utf8"))
+    files.set(posix(uri.fsPath), Buffer.from(data).toString("utf8"))
   }
   return files
 }

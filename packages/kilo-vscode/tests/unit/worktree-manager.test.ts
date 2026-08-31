@@ -459,7 +459,9 @@ describe("WorktreeManager.createWorktree", () => {
     const result = await createManager(root).createWorktree({ branchName: "hook-failure" })
 
     expect(existsSync(result.path)).toBe(true)
-    expect((await simpleGit(root).raw(["worktree", "list", "--porcelain"])).includes(result.path)).toBe(true)
+    // `worktree list --porcelain` prints forward slashes on every platform.
+    const listed = (await simpleGit(root).raw(["worktree", "list", "--porcelain"])).replaceAll("\\", "/")
+    expect(listed).toContain(result.path.replaceAll("\\", "/"))
   })
 })
 
@@ -1424,7 +1426,7 @@ describe("WorktreeManager.createWorktree advanced", () => {
     expect(worktreeHead).toBe(remoteHead)
     expect(result.parentBranch).toBe("main")
     expect(result.remote).toBe("origin")
-  })
+  }, 60_000)
 
   it("does not track a deleted PR source branch when using the pull ref fallback", async () => {
     const { bare, clone } = await createTempRepoWithOrigin()

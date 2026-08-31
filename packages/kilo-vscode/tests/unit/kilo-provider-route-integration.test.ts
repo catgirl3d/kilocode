@@ -9,6 +9,9 @@ const { KiloProvider } = await import("../../src/KiloProvider")
 
 type SessionGetParams = { sessionID: string; directory: string }
 
+// getSessionGitDirectory returns forward-slashed paths on every platform.
+const posix = (value: string) => value.replaceAll("\\", "/")
+
 /**
  * Minimal connection service mock: exposes a controllable client whose
  * session.get records every call so tests can assert which directory was
@@ -186,7 +189,7 @@ describe("KiloProvider route integration", () => {
       internal.webview = { postMessage: async () => true }
 
       await internal.refreshGitStatus(source, "s1")
-      const resolved = await fs.realpath(root)
+      const resolved = posix(await fs.realpath(root))
       expect(provider.getSessionGitDirectory("s1")).toBe(resolved)
 
       const calls: Array<{ directory?: string; sessionID?: string }> = []
@@ -243,7 +246,7 @@ describe("KiloProvider route integration", () => {
         "s1",
       )
 
-      expect(provider.getSessionGitDirectory("s1")).toBe(await fs.realpath(root))
+      expect(provider.getSessionGitDirectory("s1")).toBe(posix(await fs.realpath(root)))
     })
   })
 
@@ -261,7 +264,7 @@ describe("KiloProvider route integration", () => {
 
       await internal.refreshGitStatus(root, "child")
 
-      expect(provider.getSessionGitDirectory("child")).toBe(await fs.realpath(root))
+      expect(provider.getSessionGitDirectory("child")).toBe(posix(await fs.realpath(root)))
       expect(sent).not.toContainEqual({ type: "gitStatus", repo: true })
     })
   })

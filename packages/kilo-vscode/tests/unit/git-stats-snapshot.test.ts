@@ -6,6 +6,9 @@ import { GitOps, type ExecBufferResult } from "../../src/agent-manager/GitOps"
 import { GitStatsSnapshot, refOID } from "../../src/agent-manager/git-stats-snapshot"
 import { diffSummary } from "../../src/agent-manager/local-diff"
 
+// git prints worktree paths with forward slashes on every platform.
+const posix = (value: string) => value.replaceAll("\\", "/")
+
 function run(dir: string, args: string[]): string {
   const result = Bun.spawnSync({
     cmd: ["git", ...args],
@@ -198,7 +201,7 @@ describe("GitStatsSnapshot", () => {
       const refs = await snapshots.refs(dir)
       expect(refOID(refs, "origin/main")).toBe(run(dir, ["rev-parse", "HEAD"]))
       expect(refs.upstreams.get("refs/heads/main")).toBe("refs/remotes/origin/main")
-      expect(refs.worktreePaths?.get(await fs.realpath(dir))).toBe("main")
+      expect(refs.worktreePaths?.get(posix(await fs.realpath(dir)))).toBe("main")
     })
   })
 
@@ -220,7 +223,7 @@ describe("GitStatsSnapshot", () => {
 
       const snapshots = roots.map(() => new GitStatsSnapshot(new GitOps({ log: () => undefined })))
       const refs = await Promise.all(roots.map((root, index) => snapshots[index]!.refs(root)))
-      const paths = await Promise.all(worktrees.map((worktree) => fs.realpath(worktree)))
+      const paths = await Promise.all(worktrees.map((worktree) => fs.realpath(worktree).then(posix)))
 
       expect(refs[0]!.worktreePaths?.get(paths[0]!)).toBe("feature")
       expect(refs[0]!.worktreePaths?.has(paths[1]!)).toBe(false)
@@ -232,12 +235,18 @@ describe("GitStatsSnapshot", () => {
   })
 
   it("parses a linked worktree path containing a newline", async () => {
-    await repo(async (dir) => {
-      const worktree = path.join(dir, "linked\nworktree")
-      run(dir, ["worktree", "add", "-b", "feature", worktree, "main"])
-      const refs = await new GitStatsSnapshot(new GitOps({ log: () => undefined })).refs(dir)
-      expect(refs.worktreePaths?.get(await fs.realpath(worktree))).toBe("feature")
-    })
+    // git on Windows refuses to create worktrees with newlines in the path, so
+    // the NUL-delimited for-each-ref output is mocked instead of exercising a
+    // real worktree — the regression under test lives in the parser.
+    const git = new GitOps({ log: () => undefined })
+    git.execGitBuffer = async (args): Promise<ExecBufferResult> => {
+      if (args[1]?.includes("%(worktreepath)")) {
+        return { code: 0, stdout: Buffer.from("refs/heads/feature\0abc\0\0C:/repo/linked\nworktree\0"), stderr: "" }
+      }
+      return { code: 0, stdout: Buffer.alloc(0), stderr: "" }
+    }
+    const refs = await new GitStatsSnapshot(git).refs("C:/repo")
+    expect(refs.worktreePaths?.get("C:/repo/linked\nworktree")).toBe("feature")
   })
 
   it("falls back to the plain ref query when worktreepath is unsupported", async () => {
