@@ -79,6 +79,12 @@ describe("scoped config normalization", () => {
       ["indexing", "qdrant", "apiKey"],
     ])
   })
+
+  it("routes an undefined shell through unset paths instead of the set payload", () => {
+    const patch = { shell: undefined }
+    expect(pruneConfigSet(patch)).toEqual({})
+    expect(configUnsetPaths(patch)).toEqual([["shell"]])
+  })
 })
 
 describe("stripNulls", () => {

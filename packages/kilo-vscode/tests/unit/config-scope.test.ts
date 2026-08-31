@@ -54,6 +54,18 @@ describe("splitConfigByScope", () => {
         shared_agent_board: true,
       },
     })
+
+    expect(split.global).toEqual({
+      experimental: {
+        shared_agent_board: true,
+      },
+    })
+    expect(split.project).toEqual({})
+  })
+
+  it("writes shell to global config", () => {
+    const split = splitConfigByScope({ shell: "bash" })
+    expect(split.global).toEqual({ shell: "bash" })
     expect(split.project).toEqual({})
   })
 })

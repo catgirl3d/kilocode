@@ -172,6 +172,9 @@ export interface Config {
   experimental?: ExperimentalConfig
   sandbox?: SandboxConfig
   indexing?: IndexingConfig
+  // fork_change start
+  shell?: string
+  // fork_change end
 }
 
 export interface FeatureFlags {
