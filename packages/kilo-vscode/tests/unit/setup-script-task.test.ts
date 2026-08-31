@@ -308,7 +308,9 @@ describe("runWorktreeSetupScript", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kilo-setup-flow-"))
     if (!script) return dir
     fs.mkdirSync(path.join(dir, ".kilo"), { recursive: true })
-    fs.writeFileSync(path.join(dir, ".kilo", "setup-script"), "#!/bin/sh\nexit 0\n")
+    // Match the platform candidate SetupScriptService.resolveScript looks up.
+    const name = process.platform === "win32" ? "setup-script.ps1" : "setup-script"
+    fs.writeFileSync(path.join(dir, ".kilo", name), "#!/bin/sh\nexit 0\n")
     return dir
   }
 

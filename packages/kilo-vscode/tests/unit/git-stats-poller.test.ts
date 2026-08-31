@@ -38,6 +38,23 @@ async function waitFor(check: () => boolean, timeout = 500): Promise<void> {
   }
 }
 
+/**
+ * Windows can transiently hold handles to freshly written .git objects, so
+ * directory cleanup retries briefly before giving up and leaving the directory
+ * for OS temp cleanup.
+ */
+async function removeDir(root: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.promises.rm(root, { recursive: true, force: true })
+      return
+    } catch (err) {
+      if (attempt >= 20 || (err as NodeJS.ErrnoException)?.code !== "EBUSY") throw err
+      await sleep(300)
+    }
+  }
+}
+
 function worktree(id: string, remote = "origin"): Worktree {
   return {
     id,
@@ -192,7 +209,7 @@ describe("GitStatsPoller", () => {
         expect(git.commands.some((item) => item.cwd === roots[index])).toBe(true)
       }
     } finally {
-      await Promise.all(roots.map((root) => fs.promises.rm(root, { recursive: true, force: true })))
+      await Promise.all(roots.map((root) => removeDir(root)))
     }
   })
 
@@ -233,7 +250,7 @@ describe("GitStatsPoller", () => {
       expect(git.worktreeCalls).toBe(1)
       expect(git.aheadCalls).toBeGreaterThan(0)
     } finally {
-      await fs.promises.rm(root, { recursive: true, force: true })
+      await removeDir(root)
     }
   })
 
@@ -270,7 +287,7 @@ describe("GitStatsPoller", () => {
 
       expect(git.worktreeCalls).toBe(1)
     } finally {
-      await fs.promises.rm(root, { recursive: true, force: true })
+      await removeDir(root)
     }
   })
 
@@ -330,7 +347,7 @@ describe("GitStatsPoller", () => {
       await poller.snapshot(true)
       expect(git.aheadCalls).toBe(ahead + 1)
     } finally {
-      await fs.promises.rm(root, { recursive: true, force: true })
+      await removeDir(root)
     }
   })
 
@@ -396,19 +413,7 @@ describe("GitStatsPoller", () => {
       expect(counts.get(dirs[1]!)).toBeGreaterThan(2)
       expect(counts.get(dirs[2]!)).toBeGreaterThan(2)
     } finally {
-      // fork_change start
-      // Windows can transiently hold handles to freshly written .git objects.
-      // Best-effort cleanup: retry briefly, then leave the dir for OS temp cleanup.
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await fs.promises.rm(root, { recursive: true, force: true })
-          break
-        } catch (err) {
-          if (attempt >= 20 || (err as NodeJS.ErrnoException)?.code !== "EBUSY") throw err
-          await new Promise((resolve) => setTimeout(resolve, 300))
-        }
-      }
-      // fork_change end
+      await removeDir(root)
     }
   })
 
