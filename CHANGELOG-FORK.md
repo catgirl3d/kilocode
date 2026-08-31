@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Choose the execution shell for agent commands and Kilo terminals from VS Code Settings, with presets and a custom executable path.
 - Show a live "Thinking..." row in running sub-agent task lists while the agent reasons, instead of a frozen tool list, with one row per reasoning phase rather than one per step.
 - Restore separate global and local Rules settings with file picking, path validation, and per-entry enable and disable switches.
 - Support Groq Whisper voice input with configured Groq API keys and optional English translation.
