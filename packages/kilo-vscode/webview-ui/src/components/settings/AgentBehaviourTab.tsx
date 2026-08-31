@@ -65,6 +65,24 @@ import SettingsRow from "./SettingsRow"
 
 const builtin = (skill: SkillInfo) => skill.location === "builtin" || skill.location === "<built-in>"
 
+// fork_change start
+const SHELL_PRESETS = ["bash", "pwsh", "powershell", "cmd"] as const
+
+type ShellMode = (typeof SHELL_PRESETS)[number] | "auto" | "custom"
+
+const PRESET_SHELLS: ReadonlySet<string> = new Set(SHELL_PRESETS)
+
+interface ShellOption {
+  value: ShellMode
+  labelKey: string
+}
+
+const SHELL_OPTIONS: ShellOption[] = [
+  { value: "auto", labelKey: "settings.shell.auto" },
+  ...SHELL_PRESETS.map((preset) => ({ value: preset, labelKey: `settings.shell.${preset}` })),
+  { value: "custom", labelKey: "settings.shell.custom" },
+]
+// fork_change end
 // View states for the agents subtab
 type AgentView = "list" | "create" | "edit"
 // fork_change start
@@ -157,6 +175,62 @@ const AgentBehaviourTab: Component = () => {
     ]
   })
 
+  // fork_change start
+  const [customMode, setCustomMode] = createSignal(false)
+  const [customShell, setCustomShell] = createSignal("")
+
+  createEffect(() => {
+    const value = globalConfig().shell
+    if (value === undefined || PRESET_SHELLS.has(value)) setCustomMode(false)
+  })
+
+  const shellMode = (): ShellMode => {
+    if (customMode()) return "custom"
+    const value = globalConfig().shell
+    if (value === undefined || value === "") return "auto"
+    if (PRESET_SHELLS.has(value)) return value as ShellMode
+    return "custom"
+  }
+
+  const shellText = () => {
+    if (customMode()) return customShell()
+    const value = globalConfig().shell
+    return value !== undefined && !PRESET_SHELLS.has(value) ? value : ""
+  }
+
+  const selectShell = (next: ShellMode) => {
+    if (next === "auto") {
+      const value = globalConfig().shell
+      setCustomMode(false)
+      setCustomShell("")
+      if (value === undefined) return
+      updateGlobalConfig({ shell: undefined })
+      return
+    }
+    if (next === shellMode()) return
+    setCustomShell("")
+    if (next === "custom") {
+      setCustomMode(true)
+      return
+    }
+    setCustomMode(false)
+    if (next === globalConfig().shell) return
+    updateGlobalConfig({ shell: next })
+  }
+
+  const commitCustomShell = (value: string) => {
+    setCustomShell(value)
+    const next = value.trim()
+    if (!next) {
+      setCustomMode(false)
+      if (globalConfig().shell !== undefined) updateGlobalConfig({ shell: undefined })
+      return
+    }
+    setCustomMode(true)
+    if (next === globalConfig().shell) return
+    updateGlobalConfig({ shell: next })
+  }
+  // fork_change end
   // fork_change start
   const globalInstructions = createMemo(() => listInstructions(globalEffectiveConfig(), globalConfig()))
   const projectInstructions = createMemo(() => listInstructions(projectConfig()))
@@ -444,6 +518,45 @@ const AgentBehaviourTab: Component = () => {
 
     return (
       <div>
+        {/* fork_change start */}
+        <Card style={{ "margin-bottom": "12px" }}>
+          <SettingsRow
+            title={language.t("settings.shell.title")}
+            description={language.t("settings.shell.description")}
+            tag={() => language.t("settings.config.scope.global")}
+            last={shellMode() !== "custom"}
+          >
+            <Select
+              options={SHELL_OPTIONS}
+              current={SHELL_OPTIONS.find((o) => o.value === shellMode())}
+              value={(o) => o.value}
+              label={(o) => language.t(o.labelKey)}
+              onSelect={(o) => {
+                if (!o) return
+                selectShell(o.value)
+              }}
+              variant="secondary"
+              size="small"
+              triggerVariant="settings"
+            />
+          </SettingsRow>
+          <Show when={shellMode() === "custom"}>
+            <SettingsRow
+              title={language.t("settings.shell.customPath.title")}
+              description={language.t("settings.shell.customPath.description")}
+              last
+            >
+              <TextField
+                value={shellText()}
+                placeholder={language.t("settings.shell.customPath.placeholder")}
+                onChange={commitCustomShell}
+                hideLabel
+                label={language.t("settings.shell.customPath.title")}
+              />
+            </SettingsRow>
+          </Show>
+        </Card>
+        {/* fork_change end */}
         {/* Default agent */}
         <Card style={{ "margin-bottom": "12px" }}>
           <SettingsRow

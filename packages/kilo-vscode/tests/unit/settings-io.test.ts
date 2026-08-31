@@ -167,6 +167,13 @@ describe("parseImport", () => {
     if (result.ok) expect(result.config.model).toBe("test-model")
   })
 
+  it("accepts shell config", () => {
+    const json = JSON.stringify({ shell: "bash" })
+    const result = parseImport(json)
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.config.shell).toBe("bash")
+  })
+
   it("preserves task subagent model and variant settings", () => {
     const json = JSON.stringify({
       subagent_model: "anthropic/claude-sonnet-4",
@@ -379,6 +386,13 @@ describe("round-trip", () => {
       expect(result.config.instructions).toEqual(["rules.md"])
       expect(result.config.instructions_disabled).toEqual(["rules.md"])
     }
+  })
+
+  it("export then import preserves a custom shell path", () => {
+    const original: Config = { shell: "C:\\Program Files\\Git\\bin\\bash.exe" }
+    const result = parseImport(JSON.stringify(buildExport(original)))
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.config.shell).toBe("C:\\Program Files\\Git\\bin\\bash.exe")
   })
 })
 
