@@ -60,6 +60,7 @@ const { ProviderProvider } = await import("../../webview-ui/src/context/provider
 const { SessionProvider, useSession, useSessionVisibility } = await import("../../webview-ui/src/context/session")
 const { initialMessage } = await import("../../webview-ui/agent-manager/initial-message")
 const { post } = await import("../../webview-ui/src/utils/webview-message")
+const { MemoryProvider } = await import("../../webview-ui/src/context/memory")
 const { terminal } = await import("../../webview-ui/src/context/session-outcome")
 const { PromptInput } = await import("../../webview-ui/src/components/chat/PromptInput")
 const { IndexingProvider } = await import("../../webview-ui/src/context/indexing")
@@ -218,7 +219,10 @@ const dispose = render(
             <LanguageContext.Provider value={language as never}>
               <NotificationsProvider>
                 <SessionProvider>
-                  <Probe />
+                  {/* TaskHeader (renderTab) consumes useMemory, mirroring ProviderShell.Chat */}
+                  <MemoryProvider>
+                    <Probe />
+                  </MemoryProvider>
                 </SessionProvider>
               </NotificationsProvider>
             </LanguageContext.Provider>
