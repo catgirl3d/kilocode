@@ -83,7 +83,7 @@ function clip(text: string) {
 
 export const ConsultAdvisorTool = Tool.define<
   typeof Params,
-  {},
+  { truncated?: boolean },
   Config.Service | Provider.Service | LLM.Service | Session.Service,
   "consult_advisor"
 >(
@@ -162,8 +162,12 @@ export const ConsultAdvisorTool = Tool.define<
             const current = ctx.extra?.currentAssistant
             const parts = current
               ? (current.parts ??
-                  (yield* sessions.messages({ sessionID: ctx.sessionID })).find((item) => item.info.id === current.id)?.parts ??
-                  [])
+                (yield* sessions
+                  .messages({ sessionID: ctx.sessionID })
+                  .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed([])))).find(
+                  (item) => item.info.id === current.id,
+                )?.parts ??
+                [])
               : []
             const currentText = parts
               .filter((part): part is SessionV1.TextPart => part.type === "text")

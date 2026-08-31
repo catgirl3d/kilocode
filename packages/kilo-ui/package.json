@@ -50,6 +50,8 @@
     "./line-comment": "./src/components/line-comment.tsx",
     "./message-nav": "./src/components/message-nav.tsx",
     "./message-part": "./src/components/message-part.tsx",
+    "./reasoning-heading": "./src/components/reasoning-heading.ts",
+    "./tool-utils": "./src/components/tool-utils.ts",
     "./session-review": "./src/components/session-review.tsx",
     "./session-diff": "./src/components/session-diff.ts",
     "./session-turn": "./src/components/session-turn.tsx",
