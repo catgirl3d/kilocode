@@ -15,7 +15,7 @@ import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { ResizeHandle } from "@kilocode/kilo-ui/resize-handle"
 import { TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import { useLanguage } from "../src/context/language"
-import { useConfig } from "../src/context/config"
+import { useConfig } from "../src/context/config" // fork_change
 // fork_change start
 import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
 // fork_change end
