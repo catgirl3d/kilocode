@@ -47,6 +47,7 @@ globalThis.acquireVsCodeApi = () => ({
 const { render } = await import("solid-js/web")
 const { StoryProviders, mockSessionValue } = await import("../../webview-ui/src/stories/StoryProviders")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
+const { ServerContext } = await import("../../webview-ui/src/context/server")
 const { PromptInput } = await import("../../webview-ui/src/components/chat/PromptInput")
 
 async function settle() {
@@ -69,9 +70,20 @@ async function run(resumable: boolean) {
   const dispose = render(
     () => (
       <StoryProviders noPadding>
-        <SessionContext.Provider value={session as never}>
-          <PromptInput />
-        </SessionContext.Provider>
+        <ServerContext.Provider
+          value={
+            {
+              connectionState: () => "connected",
+              isConnected: () => true,
+              gitInstalled: () => false,
+              workspaceDirectory: () => "/repo",
+            } as never
+          }
+        >
+          <SessionContext.Provider value={session as never}>
+            <PromptInput />
+          </SessionContext.Provider>
+        </ServerContext.Provider>
       </StoryProviders>
     ),
     root,
@@ -79,11 +91,6 @@ async function run(resumable: boolean) {
 
   try {
     await settle()
-    window.dispatchEvent(
-      new MessageEvent("message", {
-        data: { type: "ready", serverInfo: { version: "test" }, workspaceDirectory: "/repo" },
-      }),
-    )
     await settle()
     const button = root.querySelector<HTMLButtonElement>(".prompt-input-hint-actions button[aria-disabled]")
     assert.ok(button, "send button did not render")
