@@ -78,6 +78,7 @@ interface FullScreenDiffViewProps {
 export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) => {
   const { t } = useLanguage()
   const noticeText = () => notice(t, props.notice)
+  const sendAllKeybind = () => reviewSendAllKeybind(t)
   const { config } = useConfig() // fork_change
   // fork_change start
   const speechMode = () => selectedSpeechToTextMode(config())
