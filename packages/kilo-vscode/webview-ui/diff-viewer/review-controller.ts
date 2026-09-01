@@ -9,7 +9,7 @@ import { useConfig } from "../src/context/config"
 import { useVSCode } from "../src/context/vscode"
 import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
 import type { WorktreeFileDiff } from "../src/types/messages"
-import type { SpeechToTextMode } from "../../src/speech-to-text/models"
+import type { SpeechToTextMode } from "../../src/speech-to-text/models" // fork_change
 import { lineCount, sanitizeReviewComments, type ReviewComment } from "./review-comments"
 import {
   buildFileAnnotations,
@@ -50,7 +50,7 @@ type Props = {
   activeTerminalId: Accessor<string | undefined>
   active?: Accessor<boolean>
   canComment?: Accessor<boolean>
-  mode: Accessor<SpeechToTextMode>
+  mode: Accessor<SpeechToTextMode> // fork_change
   onSendClick?: () => void
   onSendAll?: () => void
 }
@@ -66,7 +66,7 @@ export function createReviewController(props: Props) {
     speech: voice.speech,
     enabled: voice.enabled,
     model: voice.model,
-    mode: props.mode,
+    mode: props.mode, // fork_change
     label: props.label,
     keys: speechKeys,
   })

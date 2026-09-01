@@ -6,7 +6,7 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tooltip, TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
 import { useLanguage } from "../src/context/language"
 import { DiffStyleSelect } from "../diff-viewer/InlineSelect"
-import { useConfig } from "../src/context/config"
+import { useConfig } from "../src/context/config" // fork_change
 // fork_change start
 import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
 // fork_change end
@@ -53,7 +53,7 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
   const { t } = useLanguage()
   const noticeText = () => notice(t, props.notice)
   const sendAllKeybind = () => reviewSendAllKeybind(t)
-  const { config } = useConfig()
+  const { config } = useConfig() // fork_change
   // fork_change start
   const speechMode = () => selectedSpeechToTextMode(config())
   // fork_change end
