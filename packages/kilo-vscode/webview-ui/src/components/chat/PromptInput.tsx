@@ -1315,9 +1315,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
     // fork_change start
-    draft = resolvePrompt(draft, pending.length > 0 || browserData !== undefined, imgs.length > 0)
+    if (!browserData) draft = resolvePrompt(draft, pending.length > 0, imgs.length > 0)
     // fork_change end
+    // fork_change start
     const message = [review, browserText, draft].filter(Boolean).join("\n\n")
+    // fork_change end
     const data = review ? { version: 1 as const, comments: pending } : undefined
     if ((!message && imgs.length === 0) || !sendReady() || speech.active()) return
 
