@@ -15219,7 +15219,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.resumeSession({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.kilocode.resumeSession({\n  ...\n})"
           }
         ]
       }
@@ -17512,7 +17512,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.migrate.sessions({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.kilocode.migrate.sessions({\n  ...\n})"
           }
         ]
       }
@@ -17605,7 +17605,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.migrate.discover({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.kilocode.migrate.discover({\n  ...\n})"
           }
         ]
       }

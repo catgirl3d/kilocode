@@ -429,6 +429,7 @@ describe("kilocode tool registry indexing", () => {
         "background_process",
         "agent_manager_models",
         "agent_manager",
+        "browser_open",
         "notify_user",
         "send_file",
         "consult_advisor",
