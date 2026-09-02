@@ -49,6 +49,7 @@ const { StoryProviders, mockSessionValue } = await import("../../webview-ui/src/
 const { SessionContext } = await import("../../webview-ui/src/context/session")
 const { ServerContext } = await import("../../webview-ui/src/context/server")
 const { PromptInput } = await import("../../webview-ui/src/components/chat/PromptInput")
+const { browserDrafts: references, imageDrafts, reviewDrafts } = await import("../../webview-ui/src/utils/draft-store")
 
 async function settle() {
   await window.happyDOM.waitUntilComplete()
@@ -56,14 +57,46 @@ async function settle() {
   await window.happyDOM.waitUntilComplete()
 }
 
-async function run(resumable: boolean) {
-  const calls: string[] = []
+type AttachmentCase = "review" | "image" | "browser"
+
+async function run(resumable: boolean, attachment?: AttachmentCase) {
+  const calls: Array<string | { message: string; files?: unknown[]; review?: unknown; browser?: unknown }> = []
   const base = mockSessionValue({ id: "session", status: "idle" })
   const session = {
     ...base,
     canResume: () => resumable,
     resume: () => calls.push("resume"),
-    sendMessage: (text: string) => calls.push(`send:${text}`),
+    sendMessage: (...args: unknown[]) =>
+      calls.push({ message: args[0] as string, files: args[3] as unknown[], review: args[6], browser: args[8] }),
+  }
+  const key = "prompt:default:session:session"
+  if (attachment === "review") {
+    reviewDrafts.set(key, [
+      {
+        id: "comment-1",
+        file: "src/app.ts",
+        side: "additions",
+        line: 7,
+        comment: "actual review comment",
+        selectedText: "",
+      },
+    ])
+  }
+  if (attachment === "image") {
+    imageDrafts.set(key, [
+      { id: "image-1", dataUrl: "data:image/png;base64,abc", mime: "image/png", filename: "screen.png" },
+    ])
+  }
+  if (attachment === "browser") {
+    references.set(key, [
+      {
+        id: "browser-1",
+        sessionId: "session",
+        selector: "#app",
+        title: "Example page",
+        url: "https://example.com/page",
+      },
+    ])
   }
   const root = document.createElement("div")
   document.body.append(root)
@@ -105,4 +138,54 @@ async function run(resumable: boolean) {
 }
 
 assert.deepEqual(await run(true), ["resume"])
-assert.deepEqual(await run(false), ["send:continue"])
+const continued = await run(false)
+assert.equal(continued.length, 1)
+assert.equal((continued[0] as { message: string }).message, "continue")
+
+const review = await run(true, "review")
+assert.equal(review.length, 1)
+assert.equal(
+  (review[0] as { message: string }).message,
+  "## Review Comments\n\n**src/app.ts** (line 7):\nactual review comment",
+)
+assert.notEqual((review[0] as { message: string }).message, "continue")
+assert.deepEqual((review[0] as { review: unknown }).review, {
+  version: 1,
+  comments: [
+    {
+      id: "comment-1",
+      file: "src/app.ts",
+      side: "additions",
+      line: 7,
+      comment: "actual review comment",
+      selectedText: "",
+    },
+  ],
+})
+
+const image = await run(true, "image")
+assert.equal(image.length, 1)
+assert.equal((image[0] as { message: string }).message, "")
+assert.notEqual((image[0] as { message: string }).message, "continue")
+assert.deepEqual((image[0] as { files: unknown[] }).files, [
+  { mime: "image/png", url: "data:image/png;base64,abc", filename: "screen.png" },
+])
+
+const browser = await run(true, "browser")
+assert.equal(browser.length, 1)
+assert.equal(
+  (browser[0] as { message: string }).message,
+  "## Browser Feedback\n\nPage: Example page (`https://example.com/page`)\n\nElement 1:\n```\n#app\n```",
+)
+assert.deepEqual((browser[0] as { browser: unknown }).browser, {
+  version: 1,
+  references: [
+    {
+      id: "browser-1",
+      sessionId: "session",
+      selector: "#app",
+      title: "Example page",
+      url: "https://example.com/page",
+    },
+  ],
+})

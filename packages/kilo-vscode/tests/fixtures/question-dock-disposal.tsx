@@ -12,6 +12,7 @@ Object.assign(globalThis, {
   HTMLElement: window.HTMLElement,
   SVGElement: window.SVGElement,
   Event: window.Event,
+  KeyboardEvent: window.KeyboardEvent,
   requestAnimationFrame: (callback: FrameRequestCallback) => frames.push(callback),
 })
 
@@ -91,7 +92,7 @@ const option = root.querySelector<HTMLButtonElement>('[data-slot="question-optio
 const submit = root.querySelector<HTMLButtonElement>('[data-slot="question-footer-actions"] button')
 if (!option || !submit) throw new Error("Question controls did not render")
 if (document.activeElement !== option) throw new Error("Question did not focus when no text field was active")
-option.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+option.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
 if (document.activeElement !== root.querySelector('[data-custom="true"]')) {
   throw new Error("Question keyboard navigation did not move to the next option")
 }
