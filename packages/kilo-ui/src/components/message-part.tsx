@@ -1108,6 +1108,10 @@ export interface ToolProps {
   sessionID?: string
   output?: string
   status?: string
+  // fork_change start
+  /** Streamed tool-state title (e.g. consult_advisor progress). */
+  stateTitle?: string
+  // fork_change end
   attachments?: FilePart[]
   hideDetails?: boolean
   defaultOpen?: boolean
@@ -1235,6 +1239,13 @@ function McpTool(props: ToolProps) {
     }
     return ids
   })
+  // fork_change start
+  const labelKeys = ["description", "query", "url", "filePath", "path", "pattern", "name"]
+  const skipKeys = new Set(labelKeys)
+
+  // prefer the streamed state title (e.g. consult_advisor progress) over the raw tool name
+  const title = createMemo(() => props.stateTitle || props.tool)
+  // fork_change end
   const trigger = () => {
     if (props.tool === "board_post")
       return (
@@ -1252,11 +1263,10 @@ function McpTool(props: ToolProps) {
       const rows = messages()
       return { title: i18n.t("ui.messagePart.board.read"), subtitle: rows ? String(rows.length) : undefined }
     }
-    return { title: props.tool, subtitle: subtitle(), args: inputArgs() }
+    // fork_change start - prefer the streamed state title over the raw tool name
+    return { title: title(), subtitle: subtitle(), args: inputArgs() }
+    // fork_change end
   }
-  const labelKeys = ["description", "query", "url", "filePath", "path", "pattern", "name"]
-  const skipKeys = new Set(labelKeys)
-
   const subtitle = () =>
     labelKeys
       .map((key) => props.input?.[key])
@@ -1489,6 +1499,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                 // @ts-expect-error
                 output={part.state.output}
                 status={part.state.status}
+                // fork_change start - streamed progress title; only present on some ToolState variants
+                // @ts-expect-error
+                stateTitle={part.state.title}
+                // fork_change end
                 // @ts-expect-error
                 attachments={part.state.attachments}
                 hideDetails={props.hideDetails}

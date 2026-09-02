@@ -11,6 +11,7 @@ import { SessionTranscript } from "@/kilocode/session/transcript"
 import { Tool } from "@/tool/tool"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Cause, Effect, Exit, Schema } from "effect"
+import * as Stream from "effect/Stream"
 import DESCRIPTION from "./consult-advisor.txt"
 
 const Params = Schema.Struct({
@@ -81,6 +82,15 @@ function clip(text: string) {
   return `${text.slice(0, 64_000)}\n(truncated)`
 }
 
+const BUSY_TITLE = "Advisor busy"
+const UNAVAILABLE_TITLE = "Advisor unavailable"
+const FAILED_TITLE = "Advisor failed"
+const PREPARING_TITLE = "Preparing advisor context"
+const WAITING_TITLE = "Waiting for first response"
+const REASONING_TITLE = "Advisor is reasoning"
+const WRITING_TITLE = "Advisor is writing"
+const COMPLETED_TITLE = "Advisor completed"
+
 export const ConsultAdvisorTool = Tool.define<
   typeof Params,
   { truncated?: boolean },
@@ -100,16 +110,24 @@ export const ConsultAdvisorTool = Tool.define<
         Effect.gen(function* () {
           if (!acquire(ctx.sessionID)) {
             return {
-              title: "Advisor busy",
+              title: BUSY_TITLE,
               output: "An advisor consultation is already running for this session.",
               metadata: {},
             }
           }
           return yield* Effect.gen(function* () {
+            const phase = { title: undefined as string | undefined }
+            const setTitle = (title: string) => {
+              if (phase.title === title) return Effect.void
+              phase.title = title
+              return ctx.metadata({ title })
+            }
+            yield* setTitle(PREPARING_TITLE)
+
             const configured = (yield* cfg.get()).experimental?.advisor_model
             if (!configured) {
               return {
-                title: "Advisor unavailable",
+                title: UNAVAILABLE_TITLE,
                 output: "No advisor model is configured. Set experimental.advisor_model and retry.",
                 metadata: {},
               }
@@ -121,7 +139,7 @@ export const ConsultAdvisorTool = Tool.define<
             }).pipe(Effect.option)
             if (parsed._tag === "None") {
               return {
-                title: "Advisor unavailable",
+                title: UNAVAILABLE_TITLE,
                 output: `The configured advisor model is invalid: ${configured}.`,
                 metadata: {},
               }
@@ -129,7 +147,7 @@ export const ConsultAdvisorTool = Tool.define<
             const model = yield* provider.getModel(parsed.value.providerID, parsed.value.modelID).pipe(Effect.option)
             if (model._tag === "None") {
               return {
-                title: "Advisor unavailable",
+                title: UNAVAILABLE_TITLE,
                 output: `The configured advisor model could not be resolved: ${configured}.`,
                 metadata: {},
               }
@@ -138,7 +156,7 @@ export const ConsultAdvisorTool = Tool.define<
             const variant = resolveVariant(model.value, configuredVariant)
             if (variant.available) {
               return {
-                title: "Advisor unavailable",
+                title: UNAVAILABLE_TITLE,
                 output: `The configured advisor variant is unavailable: ${configuredVariant}. Available variants: ${variant.available.join(", ") || "none"}.`,
                 metadata: {},
               }
@@ -151,7 +169,7 @@ export const ConsultAdvisorTool = Tool.define<
               .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(undefined)))
             if (!session) {
               return {
-                title: "Advisor unavailable",
+                title: UNAVAILABLE_TITLE,
                 output: "The current session could not be found. Retry the consultation.",
                 metadata: {},
               }
@@ -181,33 +199,48 @@ export const ConsultAdvisorTool = Tool.define<
               transcript,
               ...(currentText ? ["Current assistant message (in progress):", clip(currentText)] : []),
             ].join("\n\n")
+            yield* setTitle(WAITING_TITLE)
             const stream = KiloLLM.text(
-              llm.stream({
-                agent: reviewer(model.value),
-                user: user(SessionID.make(`${ctx.sessionID}-advisor`), model.value, variant.variant),
-                sessionID: SessionID.make(`${ctx.sessionID}-advisor`),
-                parentSessionID: ctx.sessionID,
-                model: model.value,
-                system: [],
-                messages: [{ role: "user", content: body }],
-                tools: {},
-                toolChoice: "none",
-              }),
+              llm
+                .stream({
+                  agent: reviewer(model.value),
+                  user: user(SessionID.make(`${ctx.sessionID}-advisor`), model.value, variant.variant),
+                  sessionID: SessionID.make(`${ctx.sessionID}-advisor`),
+                  parentSessionID: ctx.sessionID,
+                  model: model.value,
+                  system: [],
+                  messages: [{ role: "user", content: body }],
+                  tools: {},
+                  toolChoice: "none",
+                })
+                .pipe(
+                  Stream.tap((event) => {
+                    if (event.type === "reasoning-start" || event.type === "reasoning-delta") {
+                      return setTitle(REASONING_TITLE)
+                    }
+                    if (event.type === "text-start" || event.type === "text-delta") {
+                      return setTitle(WRITING_TITLE)
+                    }
+                    return Effect.void
+                  }),
+                ),
             )
             const exit = yield* Effect.raceFirst(stream, abort(ctx)).pipe(Effect.exit)
             if (ctx.abort.aborted) return yield* Effect.interrupt
             if (Exit.isFailure(exit)) {
+              yield* setTitle(FAILED_TITLE)
               const err = Cause.squash(exit.cause)
               const detail = (err instanceof Error ? err.message : String(err)).slice(0, 500)
               return {
-                title: "Advisor failed",
+                title: FAILED_TITLE,
                 output: `Advisor consultation failed: ${detail}`,
                 metadata: {},
               }
             }
             const output = exit.value.trim()
+            yield* setTitle(COMPLETED_TITLE)
             return {
-              title: "Advisor guidance",
+              title: COMPLETED_TITLE,
               output: output || "The advisor returned no guidance.",
               metadata: { truncated: false },
             }
