@@ -23,7 +23,7 @@ Object.assign(globalThis, {
   KeyboardEvent: window.KeyboardEvent,
   MouseEvent: window.MouseEvent,
   PointerEvent: window.PointerEvent,
-  getComputedStyle: (node: Element) => {
+  getComputedStyle: (node: Parameters<typeof style>[0]) => {
     const value = style(node)
     Object.defineProperty(value, "animationName", { configurable: true, value: "none" })
     return value
@@ -37,9 +37,9 @@ const { render } = await import("solid-js/web")
 const { SessionTabSwitcher } = await import("../../webview-ui/src/components/chat/SessionTabSwitcher")
 
 const rows = [
-  { id: "alpha", title: "Alpha", active: true, busy: false, pending: false },
-  { id: "beta", title: "Beta", active: false, busy: true, pending: false },
-  { id: "gamma", title: "Gamma", active: false, busy: false, pending: false },
+  { id: "alpha", title: "Alpha", active: true, state: "idle" as const, stateLabel: "Idle", pending: false },
+  { id: "beta", title: "Beta", active: false, state: "busy" as const, stateLabel: "Working", pending: false },
+  { id: "gamma", title: "Gamma", active: false, state: "idle" as const, stateLabel: "Idle", pending: false },
 ]
 const [items, setItems] = createSignal(rows)
 const selected: string[] = []
@@ -60,7 +60,6 @@ const dispose = render(
           close: "Close tab",
           current: "Current",
           pending: "New",
-          busy: "Working",
         }}
         onSelect={(id) => selected.push(id)}
         onRestore={() => {

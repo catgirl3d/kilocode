@@ -10,7 +10,6 @@ import { KiloGatewayPaths } from "../../../src/kilocode/server/httpapi/groups/ki
 import { KilocodePaths } from "../../../src/kilocode/server/httpapi/groups/kilocode"
 import { MemoryPaths } from "../../../src/kilocode/server/httpapi/groups/memory"
 import { NetworkPaths } from "../../../src/kilocode/server/httpapi/groups/network"
-import { KiloSessionPaths } from "../../../src/kilocode/server/httpapi/groups/session"
 import { TelemetryPaths } from "../../../src/kilocode/server/httpapi/groups/telemetry"
 import { ExperimentalPaths } from "../../../src/server/routes/instance/httpapi/groups/experimental"
 import { SessionPaths } from "../../../src/server/routes/instance/httpapi/groups/session"
@@ -62,9 +61,11 @@ describe("Kilo PublicApi OpenAPI contract", () => {
 
   test("keeps the endpoint-backed shake operation in the session SDK group", () => {
     const spec = OpenApi.fromApi(PublicApi)
-    const path = KiloSessionPaths.shake.replace(/:([A-Za-z0-9_]+)/g, "{$1}")
+    const path = "/session/{sessionID}/shake"
     expect(spec.paths[path]?.post).toBeDefined()
+    expect(spec.paths[path]?.post?.operationId).toBe("session.shake")
     expect(spec.paths[path]?.post?.responses?.["200"]).toBeDefined()
+    expect(spec.paths[path]?.post?.tags).toEqual(["session"])
   })
 
   test("constrains embedding model metadata", () => {

@@ -94,7 +94,7 @@ describe("empty prompt continuation", () => {
 })
 
 describe("PromptInput empty send", () => {
-  it("resumes resumable sessions and sends literal continue otherwise", async () => {
+  it("sends attachment-only review comments, images, and browser references instead of continue", async () => {
     const root = path.resolve(import.meta.dir, "../..")
     const webview = path.join(root, "webview-ui")
     const fixture = path.join(root, "tests/fixtures/prompt-input-send.tsx")
@@ -136,7 +136,7 @@ describe("PromptInput empty send", () => {
     const file = path.join(root, `.prompt-input-send-${crypto.randomUUID()}.mjs`)
     await Bun.write(file, result.outputFiles[0]!.contents)
     try {
-      const child = Bun.spawnSync(["bun", file], { cwd: webview, stdout: "pipe", stderr: "pipe" })
+      const child = Bun.spawnSync([process.execPath, file], { cwd: webview, stdout: "pipe", stderr: "pipe" })
       const output = child.stdout.toString() + child.stderr.toString()
       expect(child.exitCode, output).toBe(0)
     } finally {
