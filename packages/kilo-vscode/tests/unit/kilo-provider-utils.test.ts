@@ -34,6 +34,7 @@ import type {
   EventSuggestionDismissed,
   EventServerConnected,
   TextPart,
+  ToolPart,
   AssistantMessage,
 } from "@kilocode/sdk/v2/client"
 
@@ -279,6 +280,62 @@ describe("mapSSEEventToWebviewMessage", () => {
     if (msg?.type === "partUpdated") {
       expect(msg.sessionID).toBe("sess-1")
       expect(msg.messageID).toBe("m1")
+    }
+  })
+
+  it("preserves streamed tool-state titles in partUpdated", () => {
+    const part = {
+      id: "p-advisor",
+      sessionID: "sess-1",
+      messageID: "m1",
+      type: "tool",
+      callID: "call-advisor",
+      tool: "consult_advisor",
+      state: {
+        status: "running",
+        input: {},
+        title: "Advisor is reasoning",
+        metadata: {},
+        time: { start: 1700000000000 },
+      },
+    } satisfies ToolPart
+    const event: SyncEventMessagePartUpdated = {
+      type: "sync",
+      name: "message.part.updated.1",
+      id: "evt-advisor",
+      seq: 1,
+      aggregateID: "sessionID",
+      data: {
+        sessionID: "sess-1",
+        part,
+        time: 1700000000000,
+      },
+    }
+
+    const msg = mapSSEEventToWebviewMessage(event, "sess-1")
+    expect(msg).toMatchObject({ type: "partUpdated", sessionID: "sess-1", messageID: "m1" })
+    if (msg?.type === "partUpdated" && msg.part.type === "tool") {
+      expect(msg.part.state.title).toBe("Advisor is reasoning")
+    }
+
+    const completed: ToolPart = {
+      ...part,
+      state: {
+        status: "completed",
+        input: {},
+        output: "guidance",
+        title: "Advisor completed",
+        metadata: {},
+        time: { start: 1700000000000, end: 1700000001000 },
+      },
+    }
+    const next = mapSSEEventToWebviewMessage(
+      { ...event, id: "evt-advisor-completed", data: { ...event.data, part: completed } },
+      "sess-1",
+    )
+    expect(next).toMatchObject({ type: "partUpdated", sessionID: "sess-1", messageID: "m1" })
+    if (next?.type === "partUpdated" && next.part.type === "tool" && next.part.state.status === "completed") {
+      expect(next.part.state.title).toBe("Advisor completed")
     }
   })
 

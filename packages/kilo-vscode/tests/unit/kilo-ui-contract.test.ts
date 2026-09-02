@@ -566,3 +566,15 @@ describe("Collapsed deferred tool details contract (source)", () => {
     expect(block).toMatch(/<Show when=\{mounted\(\)\}>[\s\S]*?<BashHighlightedOutput/)
   })
 })
+
+describe("Generic tool state title contract (source)", () => {
+  const message = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
+
+  it("renders the streamed tool-state title in the fallback tool trigger", () => {
+    expect(message).toContain("stateTitle?: string")
+    expect(message).toContain("stateTitle={part.state.title}")
+    expect(message).toContain("props.stateTitle || props.tool")
+    expect(message).toContain("return { title: title(), subtitle: subtitle(), args: inputArgs() }")
+    expect(message).toContain("trigger={trigger()}")
+  })
+})
