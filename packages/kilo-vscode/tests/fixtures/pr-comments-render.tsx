@@ -160,7 +160,8 @@ const [comments, setComments] = createSignal({
     },
   ],
 })
-window.addEventListener("message", (ev: MessageEvent) => {
+window.addEventListener("message", (event) => {
+  const ev = event as unknown as MessageEvent
   if (ev.data?.type === "appendReviewComments") sent.push(ev.data)
 })
 
