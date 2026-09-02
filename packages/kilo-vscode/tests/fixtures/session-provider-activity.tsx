@@ -51,6 +51,7 @@ const { SubagentPanel } = await import("../../webview-ui/agent-manager/SubagentP
 const { createSubagentController } = await import("../../webview-ui/agent-manager/subagent-tabs")
 const { DragDropProvider, SortableProvider } = await import("@thisbeyond/solid-dnd")
 const { renderTab } = await import("../../webview-ui/agent-manager/tab-rendering")
+type TerminalStateControls = import("../../webview-ui/agent-manager/terminal/state").TerminalStateControls
 const { VSCodeProvider } = await import("../../webview-ui/src/context/vscode")
 const { ServerProvider } = await import("../../webview-ui/src/context/server")
 const { ConfigContext } = await import("../../webview-ui/src/context/config")
@@ -128,7 +129,7 @@ const Probe = () => {
   createEffect(() => observed.push(session.selected()))
   const ids = ["root", "background"]
   const deps = {
-    terms: { activeId: () => undefined },
+    terms: { activeId: () => undefined } as unknown as TerminalStateControls,
     REVIEW_TAB_ID: "review",
     tabIds: () => ids,
     kb: () => ({}),
@@ -139,8 +140,22 @@ const Probe = () => {
     isPending: () => false,
     activityFor: session.activityFor,
     stateLabel: (state: string) => state,
-    tabLookup: () => new Map(ids.map((id) => [id, { id, title: id }])),
+    tabLookup: () => new Map(ids.map((id) => [id, { id, title: id, createdAt: "", updatedAt: "" }])),
     adjacentHint: () => "",
+    activateTerminal: () => {},
+    deactivateTerminal: () => {},
+    closeTerminal: () => {},
+    terminalMiddleClick: () => {},
+    closeReview: () => {},
+    reviewMiddleClick: () => {},
+    selectReviewTab: () => {},
+    selectSessionTab: () => {},
+    sessionMiddleClick: () => {},
+    sessionClose: () => {},
+    sessionFork: () => {},
+    onTabKey: () => {},
+    reviewLabel: "",
+    reviewTooltip: "",
   } as Parameters<typeof renderTab>[1]
   return (
     <DragDropProvider>
