@@ -3258,3 +3258,122 @@ noLLMServer.instance(
     }),
   30_000,
 )
+
+it.instance(
+  "persists advisor phase titles through the prompt processor",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        model: "test/test-model",
+        experimental: { advisor_model: "test/test-model" },
+      }))
+      const events = yield* EventV2Bridge.Service
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Advisor lifecycle",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const titles: { status: string; title: string }[] = []
+      const off = yield* events.listen((event) => {
+        if (event.type !== MessageV2.Event.PartUpdated.type) return Effect.void
+        const part = (event.data as { part?: SessionV1.Part }).part
+        if (part?.type !== "tool" || part.tool !== "consult_advisor") return Effect.void
+        if ("title" in part.state && part.state.title)
+          titles.push({ status: part.state.status, title: part.state.title })
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => off)
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "review the advisor lifecycle" }],
+      })
+      yield* llm.tool("consult_advisor", { question: "review the phase transitions" })
+      yield* llm.push(
+        reply().reason("thinking one").reason("thinking two").text("guidance one").text("guidance two").stop().item(),
+      )
+      yield* llm.text("final response")
+
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const advisor = messages
+        .flatMap((message) => message.parts)
+        .find((part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "consult_advisor")
+
+      expect(result.info.role).toBe("assistant")
+      expect(titles).toEqual([
+        { status: "running", title: "Preparing advisor context" },
+        { status: "running", title: "Waiting for first response" },
+        { status: "running", title: "Advisor is reasoning" },
+        { status: "running", title: "Advisor is writing" },
+        { status: "running", title: "Advisor completed" },
+        { status: "completed", title: "Advisor completed" },
+      ])
+      expect(advisor?.state.status).toBe("completed")
+      if (advisor?.state.status !== "completed") return
+      expect(advisor.state.title).toBe("Advisor completed")
+      expect(advisor.state.output).toBe("guidance oneguidance two")
+    }),
+  30_000,
+)
+
+it.instance(
+  "persists advisor failure titles through the prompt processor",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig((url) => ({
+        ...providerCfg(url),
+        model: "test/test-model",
+        experimental: { advisor_model: "test/test-model" },
+      }))
+      const events = yield* EventV2Bridge.Service
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Advisor failure lifecycle",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      const titles: { status: string; title: string }[] = []
+      const off = yield* events.listen((event) => {
+        if (event.type !== MessageV2.Event.PartUpdated.type) return Effect.void
+        const part = (event.data as { part?: SessionV1.Part }).part
+        if (part?.type !== "tool" || part.tool !== "consult_advisor") return Effect.void
+        if ("title" in part.state && part.state.title)
+          titles.push({ status: part.state.status, title: part.state.title })
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => off)
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "review the advisor failure lifecycle" }],
+      })
+      yield* llm.tool("consult_advisor", { question: "review the failure phase" })
+      yield* llm.error(503, { error: "provider unavailable" })
+      yield* llm.text("final response")
+
+      yield* prompt.loop({ sessionID: chat.id })
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const advisor = messages
+        .flatMap((message) => message.parts)
+        .find((part): part is SessionV1.ToolPart => part.type === "tool" && part.tool === "consult_advisor")
+
+      expect(titles).toEqual([
+        { status: "running", title: "Preparing advisor context" },
+        { status: "running", title: "Waiting for first response" },
+        { status: "running", title: "Advisor failed" },
+        { status: "completed", title: "Advisor failed" },
+      ])
+      expect(advisor?.state.status).toBe("completed")
+      if (advisor?.state.status !== "completed") return
+      expect(advisor.state.title).toBe("Advisor failed")
+      expect(advisor.state.output).toContain("Advisor consultation failed")
+    }),
+  30_000,
+)
