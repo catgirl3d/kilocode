@@ -207,6 +207,9 @@ test("favorite model strips preserve pinned slots and switch the selected model"
   const strips = page.locator(".favorite-model-switcher-slot")
   await expect(strips).toHaveCount(4)
   await expect(page.locator(".model-quick-switcher .favorite-model-switcher-slot")).toHaveCount(4)
+  const numbered = page.locator(".model-quick-switcher .favorite-model-switcher-slot--numbered")
+  await expect(numbered).toHaveCount(4)
+  for (const button of await numbered.all()) await expect(button).toHaveCSS("border-radius", "0px")
   await expect(page.locator(".prompt-input-hint-actions .favorite-model-switcher-slot")).toHaveCount(0)
   await expect(page.locator(".model-selector-quick-open")).toBeVisible()
   await expect(page.getByRole("button", { name: "1: Anthropic: Claude Sonnet 4.6" })).toHaveAttribute(
