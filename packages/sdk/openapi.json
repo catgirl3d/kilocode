@@ -15311,7 +15311,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.kilocode.drainSession({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.kilocode.drainSession({\n  ...\n})"
           }
         ]
       }

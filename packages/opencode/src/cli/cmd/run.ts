@@ -1074,8 +1074,10 @@ export const RunCommand = effectCmd({
               process.exitCode = 1
               return
             }
-            const data = KiloRun.builtinCompletion(builtin, result) // kilocode_change
-            if (data) emit("shake", data) // kilocode_change
+            if (builtin) {
+              const data = KiloRun.builtinCompletion(builtin, result) // kilocode_change
+              if (data) emit("shake", data) // kilocode_change
+            }
             await drain.wait(client, cwd)
             if (await completed) process.exitCode = 1
           } catch (error) {
