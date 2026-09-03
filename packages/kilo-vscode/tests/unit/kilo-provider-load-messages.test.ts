@@ -296,7 +296,6 @@ type ProviderInternals = {
   syncWebviewState: (reason: string) => Promise<void>
   recoverCurrentSessionAfterReconnect: () => Promise<void>
   recoverPendingPrompts: () => void
-  handleSyncSession: (sid: string, parent?: string) => Promise<void>
   releaseChildSession: (sid: string) => void
   handleDeleteSession: (sid: string) => Promise<void>
   handleDeleteMessage: (sid: string, mid: string, rid?: string) => Promise<void>

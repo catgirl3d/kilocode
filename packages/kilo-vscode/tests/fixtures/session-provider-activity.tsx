@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { Window } from "happy-dom"
-import type { ModelSelection, WebviewMessage } from "../../webview-ui/src/types/messages"
+import type { Message, ModelSelection, Part, WebviewMessage } from "../../webview-ui/src/types/messages"
 
 const window = new Window({ url: "http://localhost" })
 Object.defineProperty(window, "origin", { value: window.location.origin })
@@ -60,7 +60,6 @@ const { ProviderProvider } = await import("../../webview-ui/src/context/provider
 const { SessionProvider, useSession, useSessionVisibility } = await import("../../webview-ui/src/context/session")
 const { initialMessage } = await import("../../webview-ui/agent-manager/initial-message")
 const { post } = await import("../../webview-ui/src/utils/webview-message")
-const { MemoryProvider } = await import("../../webview-ui/src/context/memory")
 const { terminal } = await import("../../webview-ui/src/context/session-outcome")
 const { PromptInput } = await import("../../webview-ui/src/components/chat/PromptInput")
 const { IndexingProvider } = await import("../../webview-ui/src/context/indexing")
@@ -385,12 +384,13 @@ try {
       type: "agentManager.sendInitialMessage",
       projectId: "background-project",
       sessionId: id,
+      worktreeId: id,
       text: "Initial worktree prompt",
       providerID: "unloaded",
       modelID: "unloaded",
       agent: variant === undefined ? undefined : "ask",
       variant,
-      files: [{ mime: "image/png", url: "data:image/png;base64,cHJvbXB0", filename: "prompt.png" }],
+      files: [{ mime: "image/png", url: "data:image/png;base64,cHJvbXB0" }],
       browserFeedback: { version: 1, references: [{ id: "element", sessionId: id, selector: "button" }] },
     })
     assert(request)
@@ -401,9 +401,10 @@ try {
     assert.deepEqual(sent, { ...request, messageID: sent.messageID })
     assert.equal(value.currentSessionID(), "root")
     assert.equal(value.isSubmitting(id), true)
-    const optimistic = unwrap(value.allMessages()[id]?.at(0))
+    const optimistic: Message | undefined = unwrap(value.allMessages()[id]?.at(0))
+    assert(optimistic)
     assert.equal(optimistic?.id, sent.messageID)
-    const parts = structuredClone(unwrap(value.getParts(sent.messageID)))
+    const parts: Part[] = structuredClone(unwrap(value.getParts(sent.messageID)))
     assert.equal(parts.length, 2)
     assert.equal(parts.find((part) => part.type === "text")?.text, request.text)
     assert.equal(parts.at(1)?.type, "file")
@@ -877,7 +878,7 @@ try {
   }
   const submit = (enter: boolean) => {
     if (enter) {
-      input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+      input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event)
       return
     }
     const button = host.querySelector<HTMLButtonElement>('[aria-label="prompt.action.send"]')
