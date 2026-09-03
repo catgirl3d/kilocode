@@ -135,6 +135,12 @@ Default to a single-word name for variables, parameters, and helper functions. R
 You MUST avoid using `mocks` as much as possible.
 Tests MUST test actual implementation, do not duplicate logic into a test.
 
+## Bug Investigation
+
+Treat reports, errors, and proposed fixes as evidence, not specifications.
+For non-trivial bugs, trace the affected execution path to a confirmed source of truth and verify the cause against relevant history, contracts, or boundaries before editing.
+Fix the confirmed cause in the narrowest owning layer; do not broaden the investigation or change adjacent behavior without evidence.
+
 ## Markdown Tables
 
 Do not pad markdown table cells for column alignment. Use the compact form with single-space-padded content cells and a minimal separator row:

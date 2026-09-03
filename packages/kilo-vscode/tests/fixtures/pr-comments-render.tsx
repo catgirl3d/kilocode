@@ -351,7 +351,16 @@ setBadge({
   comments: {
     total: 1,
     unresolved: 1,
-    comments: [{ id: "feedback", author: "reviewer", body: "Fix this", resolved: false }],
+    comments: [
+      {
+        id: "feedback",
+        threadId: "PRRT_feedback",
+        author: "reviewer",
+        body: "Fix this",
+        resolved: false,
+        outdated: false,
+      },
+    ],
   },
 })
 await window.happyDOM.waitUntilComplete()
