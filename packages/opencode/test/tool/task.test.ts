@@ -20,6 +20,7 @@ import { SessionStatus } from "@/session/status"
 import { Provider } from "../../src/provider/provider" // kilocode_change
 import { KiloSession } from "../../src/kilocode/session" // kilocode_change
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
+import type * as Tool from "../../src/tool/tool"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -464,6 +465,359 @@ describe("tool.task", () => {
 
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isSuccess(exit)).toBe(true)
+    }),
+  )
+
+  background.instance("cancels a running background task with permission and supports bypass", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const cancelled: SessionID[] = []
+      const asked: unknown[] = []
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        cancel: (id) =>
+          Effect.gen(function* () {
+            cancelled.push(id)
+            yield* runState.cancel(id)
+          }),
+        prompt: () => Effect.never,
+      }
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: (input: Parameters<Tool.Context["ask"]>[0]) => Effect.sync(() => asked.push(input)),
+      }
+
+      const started = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        context,
+      )
+      const childID = started.metadata.sessionId
+      asked.length = 0
+      const result = yield* def.execute({ cancel: true, task_id: childID }, context)
+
+      // The background run's onInterrupt hook may invoke cancellation a second time.
+      expect(cancelled).toContain(childID)
+      expect(asked).toEqual([
+        {
+          permission: "task",
+          patterns: ["general"],
+          always: ["*"],
+          metadata: { description: "Cancel background task", subagent_type: "general" },
+        },
+      ])
+      expect(result.metadata).toMatchObject({ task: childID, status: "cancelled" })
+      expect(result.output).toContain("cancel")
+      expect((yield* jobs.get(childID))?.status).toBe("cancelled")
+
+      const second = yield* def.execute(
+        {
+          description: "second task",
+          prompt: "keep working",
+          subagent_type: "general",
+          background: true,
+        },
+        context,
+      )
+      asked.length = 0
+      const bypass = yield* def.execute(
+        { cancel: true, task_id: second.metadata.sessionId },
+        { ...context, extra: { promptOps, bypassAgentCheck: true } },
+      )
+      expect(bypass.output).toContain("cancel")
+      expect(asked).toHaveLength(0)
+      expect((yield* jobs.get(second.metadata.sessionId))?.status).toBe("cancelled")
+    }),
+  )
+
+  background.instance("does not inject a result after cancelling a background task", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const ready = yield* Deferred.make<void>()
+      let parentPrompts = 0
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        cancel: (id) => runState.cancel(id),
+        prompt: (input) => {
+          if (input.sessionID === chat.id) {
+            parentPrompts++
+            return Effect.succeed(reply(input, "unexpected parent injection"))
+          }
+          return Effect.gen(function* () {
+            yield* Deferred.succeed(ready, undefined)
+            return yield* Effect.never.pipe(Effect.as(reply(input, "child result")))
+          })
+        },
+      }
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+
+      const started = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into cancellation",
+          subagent_type: "general",
+          background: true,
+        },
+        context,
+      )
+      const childID = started.metadata.sessionId
+      yield* Deferred.await(ready)
+      const cancelled = yield* def.execute({ cancel: true, task_id: childID }, context)
+      const waited = yield* jobs.wait({ id: childID })
+      yield* Effect.yieldNow
+
+      expect(waited.info?.status).toBe("cancelled")
+      expect(cancelled.metadata).toMatchObject({ task: childID, status: "cancelled" })
+      expect(parentPrompts).toBe(0)
+    }),
+  )
+
+  background.instance("does not cancel an owned background task when permission is denied", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let cancelled = false
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        cancel: (id) =>
+          Effect.gen(function* () {
+            cancelled = true
+            yield* runState.cancel(id)
+          }),
+        prompt: () => Effect.never,
+      }
+      const base: Omit<Tool.Context, "ask"> = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps },
+        messages: [],
+        metadata: () => Effect.void,
+      }
+
+      const started = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into cancellation",
+          subagent_type: "general",
+          background: true,
+        },
+        { ...base, ask: () => Effect.void },
+      )
+      const childID = started.metadata.sessionId
+      const exit = yield* def
+        .execute(
+          { cancel: true, task_id: childID },
+          { ...base, ask: () => Effect.fail(new Error("permission denied")) as unknown as Effect.Effect<void> },
+        )
+        .pipe(Effect.exit)
+      const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+
+      expect(error instanceof Error ? error.message : String(error)).toContain("permission denied")
+      expect((yield* jobs.get(childID))?.status).toBe("running")
+      expect(cancelled).toBe(false)
+      yield* runState.cancel(childID)
+    }),
+  )
+
+  it.instance("rejects cancelling a task that is not a child of the current session", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const other = yield* sessions.create({ title: "Other parent" })
+      const child = yield* sessions.create({ parentID: other.id, title: "Foreign child" })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let asked = false
+      const exit = yield* def
+        .execute(
+          { cancel: true, task_id: child.id },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.sync(() => (asked = true)),
+          },
+        )
+        .pipe(Effect.exit)
+      const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+
+      expect(error instanceof Error ? error.message : String(error)).toContain("not a child")
+      expect(asked).toBe(false)
+    }),
+  )
+
+  it.instance("rejects cancelling an unknown task_id", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let asked = false
+      const exit = yield* def
+        .execute(
+          { cancel: true, task_id: "ses_missing" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.sync(() => (asked = true)),
+          },
+        )
+        .pipe(Effect.exit)
+      const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+
+      expect(error instanceof Error ? error.message : String(error)).toContain("Unknown task_id: ses_missing")
+      expect(asked).toBe(false)
+    }),
+  )
+
+  it.instance("rejects cancelling without a task_id", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const exit = yield* def
+        .execute(
+          { cancel: true },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+      const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+
+      expect(error instanceof Error ? error.message : String(error)).toContain("requires task_id")
+    }),
+  )
+
+  background.instance("cancels an already completed task without failing", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: {
+          promptOps: {
+            ...stubOps({ text: "done" }),
+            cancel: (id: SessionID) => runState.cancel(id),
+          },
+        },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+      const started = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        context,
+      )
+      const childID = started.metadata.sessionId
+      yield* jobs.wait({ id: childID })
+      const result = yield* def.execute({ cancel: true, task_id: childID }, context)
+      const again = yield* def.execute({ cancel: true, task_id: childID }, context)
+
+      // The job settled before the cancel took effect, so the message must
+      // admit the result may still be delivered instead of claiming it won't.
+      expect(result.output).toContain("already finished")
+      expect(result.output).not.toContain("will not be delivered")
+      expect(result.metadata).toMatchObject({ task: childID, status: "completed" })
+      expect(again.metadata).toMatchObject({ task: childID, status: "completed" })
+      expect((yield* jobs.get(childID))?.status).toBe("completed")
+    }),
+  )
+
+  it.instance("rejects launching a task without a prompt", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const exit = yield* def
+        .execute(
+          { description: "inspect bug", subagent_type: "general" },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.exit)
+      const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+
+      expect(error instanceof Error ? error.message : String(error)).toContain("Rewrite the input")
+    }),
+  )
+
+  it.instance("makes cancel optional and launch fields non-required in the JSON schema", () =>
+    Effect.gen(function* () {
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const required = def.jsonSchema?.required ?? []
+
+      expect(def.jsonSchema?.properties?.cancel).toBeDefined()
+      expect(required).not.toContain("description")
+      expect(required).not.toContain("prompt")
+      expect(required).not.toContain("subagent_type")
     }),
   )
 
