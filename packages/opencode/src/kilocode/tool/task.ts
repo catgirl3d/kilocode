@@ -1,6 +1,6 @@
 import { Effect, Exit, Schema } from "effect"
 import type { BackgroundJob } from "@/background/job"
-import type { SessionID } from "@/session/schema"
+import { SessionID } from "@/session/schema" // fork_change
 import path from "path"
 import { Permission } from "@/permission"
 import { guarded } from "../agent"
@@ -10,6 +10,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import type { Session } from "../../session/session"
+import type * as Tool from "../../tool/tool" // fork_change
 import type { Agent } from "../../agent/agent"
 import type { Config } from "../../config/config"
 import { Provider } from "../../provider/provider"
@@ -35,6 +36,38 @@ const ModelState = z
   .passthrough()
 
 export namespace KiloTask {
+  // fork_change start - model-facing task cancellation
+  export const cancelOwned = Effect.fn("KiloTask.cancelOwned")(function* (input: {
+    taskID?: string
+    sessionID: SessionID
+    sessions: Pick<Session.Interface, "get">
+    jobs: Pick<BackgroundJob.Interface, "get">
+    cancel: (sessionID: SessionID) => Effect.Effect<void>
+    ask: Tool.Context["ask"]
+    bypassAsk?: boolean
+  }) {
+    if (!input.taskID) return yield* Effect.fail(new Error("cancel=true requires task_id"))
+    const child = yield* input.sessions
+      .get(SessionID.make(input.taskID))
+      .pipe(Effect.catchTag("NotFoundError", () => Effect.fail(new Error(`Unknown task_id: ${input.taskID}`))))
+    if (child.parentID !== input.sessionID)
+      return yield* Effect.fail(new Error(`Cannot cancel task ${input.taskID}: not a child of the current session`))
+    if (!input.bypassAsk)
+      yield* input.ask({
+        permission: "task",
+        patterns: [child.agent || "*"],
+        always: ["*"],
+        metadata: { description: "Cancel background task", subagent_type: child.agent },
+      })
+    yield* input.cancel(child.id)
+    // Read back the job status: a job that settled completed/error before the
+    // cancel took effect keeps that status, and its notify fiber still injects
+    // the result — only "cancelled" guarantees no delivery.
+    const status = (yield* input.jobs.get(child.id))?.status
+    return { id: child.id, status }
+  })
+
+  // fork_change end
   export const ModelFields = {
     model: Schema.optional(Schema.NullOr(Schema.String)).annotate({
       description:

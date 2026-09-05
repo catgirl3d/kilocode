@@ -52,14 +52,24 @@ const BACKGROUND_UPDATED = [
 ].join("\n")
 
 const BaseParameterFields = {
-  description: Schema.String.annotate({ description: "A short (3-5 words) description of the task" }),
-  prompt: Schema.String.annotate({ description: "The task for the agent to perform" }),
-  subagent_type: Schema.String.annotate({ description: "The type of specialized agent to use for this task" }),
+  // kilocode_change start - launch fields optional for cancel mode; guarded at runtime
+  description: Schema.optional(Schema.String).annotate({ description: "A short (3-5 words) description of the task" }),
+  prompt: Schema.optional(Schema.String).annotate({ description: "The task for the agent to perform" }),
+  subagent_type: Schema.optional(Schema.String).annotate({
+    description: "The type of specialized agent to use for this task",
+  }),
+  // kilocode_change end
   task_id: Schema.optional(Schema.String).annotate({
     description:
-      "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
+      "Task session ID to resume a task, or to cancel a background task you launched in this session when cancel=true.", // kilocode_change
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
+  // kilocode_change start
+  cancel: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Set true with task_id to stop a running background task you launched in this session. Only task_id is required; description/prompt/subagent_type are only required when launching a task.",
+  }),
+  // kilocode_change end
 }
 
 const BaseParameters = Schema.Struct(BaseParameterFields)
@@ -112,6 +122,49 @@ export const TaskTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
+      // kilocode_change start
+      const ops = ctx.extra?.promptOps as TaskPromptOps | undefined
+      if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
+      if (params.cancel === true) {
+        const outcome = yield* KiloTask.cancelOwned({
+          taskID: params.task_id,
+          sessionID: ctx.sessionID,
+          sessions,
+          jobs: background,
+          cancel: ops.cancel,
+          ask: ctx.ask,
+          bypassAsk: ctx.extra?.bypassAgentCheck === true,
+        })
+        // Report the post-cancel job status truthfully:
+        // only "cancelled" guarantees the notify fiber skips result injection.
+        if (outcome.status === "cancelled")
+          return {
+            title: "Cancel task",
+            metadata: { task: outcome.id, status: outcome.status },
+            output: `Task cancelled: ${outcome.id}. Its background result will not be delivered.`,
+          }
+        if (outcome.status === "completed" || outcome.status === "error")
+          return {
+            title: "Cancel task",
+            metadata: { task: outcome.id, status: outcome.status },
+            output: `Task ${outcome.id} had already finished (status: ${outcome.status}) before the cancel took effect. Its result was or will be delivered as usual.`,
+          }
+        return {
+          title: "Cancel task",
+          metadata: { task: outcome.id, status: outcome.status ?? "unknown" },
+          output: `Cancel requested for task ${outcome.id} (job status: ${outcome.status ?? "unknown"}). The child session was stopped; if the job already finished, its result was or will be delivered as usual.`,
+        }
+      }
+      if (!params.description || !params.prompt || !params.subagent_type)
+        return yield* Effect.fail(
+          new Error(
+            "task requires description, prompt, and subagent_type when launching (cancel is not true). Rewrite the input.",
+          ),
+        )
+      const description = params.description // kilocode_change
+      const prompt = params.prompt // kilocode_change
+      const subagentType = params.subagent_type // kilocode_change
+      // kilocode_change end
       const cfg = yield* config.get()
       const selection = cfg.experimental?.task_model_selection === true // kilocode_change
       const runInBackground = params.background === true
@@ -143,21 +196,21 @@ export const TaskTool = Tool.define(
       if (!ctx.extra?.bypassAgentCheck) {
         yield* ctx.ask({
           permission: id,
-          patterns: [params.subagent_type],
+          patterns: [subagentType], // kilocode_change
           always: ["*"],
           metadata: {
-            description: params.description,
-            subagent_type: params.subagent_type,
+            description, // kilocode_change
+            subagent_type: subagentType, // kilocode_change
           },
         })
       }
 
-      const next = yield* agent.get(params.subagent_type)
+      const next = yield* agent.get(subagentType) // kilocode_change
       if (!next) {
-        return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
+        return yield* Effect.fail(new Error(`Unknown agent type: ${subagentType} is not a valid agent type`)) // kilocode_change
       }
       // kilocode_change start — reject primary agents; only subagent/all modes allowed
-      KiloTask.validate(next, params.subagent_type)
+      KiloTask.validate(next, subagentType)
       // kilocode_change end
 
       const canTask = depth + 1 < (cfg.subagent_depth ?? 1) // kilocode_change - honor upstream's opt-in depth limit
@@ -225,7 +278,7 @@ export const TaskTool = Tool.define(
         session ??
         (yield* sessions.create({
           parentID: ctx.sessionID,
-          title: params.description + ` (@${next.name} subagent)`,
+          title: description + ` (@${next.name} subagent)`,
           agent: next.name,
           platform, // kilocode_change
           permission: childPermission, // kilocode_change - persist inherited Kilo ceilings and upstream child denies
@@ -248,16 +301,13 @@ export const TaskTool = Tool.define(
       }
 
       yield* ctx.metadata({
-        title: params.description,
+        title: description, // kilocode_change
         metadata,
       })
 
-      const ops = ctx.extra?.promptOps as TaskPromptOps
-      if (!ops) return yield* Effect.fail(new Error("TaskTool requires promptOps in ctx.extra"))
-
       const runTask = Effect.fn("TaskTool.runTask")(
         function* () {
-          const parts = yield* ops.resolvePromptParts(params.prompt)
+          const parts = yield* ops.resolvePromptParts(prompt) // kilocode_change
           KiloSessionProcessor.markReviewTelemetry(parts, params.command) // kilocode_change - carry review command into child session telemetry
           // kilocode_change start
           const initial = yield* ops.prompt({
@@ -322,8 +372,8 @@ export const TaskTool = Tool.define(
                 state,
                 summary:
                   state === "completed"
-                    ? `Background task completed: ${params.description}`
-                    : `Background task failed: ${params.description}`,
+                    ? `Background task completed: ${description}`
+                    : `Background task failed: ${description}`,
                 text,
               }),
             },
@@ -392,7 +442,7 @@ export const TaskTool = Tool.define(
         })
       ) {
         return {
-          title: params.description,
+          title: description, // kilocode_change
           metadata: {
             ...metadata,
             background: true,
@@ -416,13 +466,13 @@ export const TaskTool = Tool.define(
         // kilocode_change end
         id: nextSession.id,
         type: id,
-        title: params.description,
+        title: description, // kilocode_change
         metadata,
         // kilocode_change start
         onPromote: notify(nextSession.id).pipe(
           Effect.andThen(
             ctx.metadata({
-              title: params.description,
+              title: description,
               metadata: { ...metadata, background: true, jobId: nextSession.id },
             }),
           ),
@@ -435,7 +485,7 @@ export const TaskTool = Tool.define(
 
       function backgroundResult() {
         return {
-          title: params.description,
+          title: description, // kilocode_change
           metadata: {
             ...metadata,
             background: true,
@@ -481,7 +531,7 @@ export const TaskTool = Tool.define(
             if (result?.status === "error") return yield* Effect.fail(new Error(result.error ?? "Task failed"))
             if (result?.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled"))
             return {
-              title: params.description,
+              title: description, // kilocode_change
               metadata,
               output: renderOutput({ sessionID: nextSession.id, state: "completed", text: result?.output ?? "" }),
             }
@@ -537,7 +587,10 @@ export const TaskTool = Tool.define(
               ...(selection ? KiloTask.ModelFields : {}),
             }),
           ),
-          execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
+          execute: (
+            params: Schema.Schema.Type<typeof Parameters>,
+            ctx: Tool.Context,
+          ): Effect.Effect<Tool.ExecuteResult> =>
             drain.track(ctx.sessionID, run(params, ctx).pipe(Effect.scoped)).pipe(Effect.orDie),
         }
       })
