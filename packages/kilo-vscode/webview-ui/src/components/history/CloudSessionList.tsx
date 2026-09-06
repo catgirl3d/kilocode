@@ -10,28 +10,10 @@ import { List } from "@kilocode/kilo-ui/list"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox"
 import { useVSCode } from "../../context/vscode"
 import { useLanguage } from "../../context/language"
-import { formatRelativeDate } from "../../utils/date"
+// fork_change start - reuse the shared date grouping helper
+import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../utils/date"
+// fork_change end
 import type { CloudSessionInfo, ExtensionMessage } from "../../types/messages"
-
-const DATE_GROUP_KEYS = ["time.today", "time.yesterday", "time.thisWeek", "time.thisMonth", "time.older"] as const
-
-function dateGroupKey(iso: string): (typeof DATE_GROUP_KEYS)[number] {
-  const now = new Date()
-  const then = new Date(iso)
-
-  const DAY_MS = 24 * 60 * 60 * 1000
-
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const yesterday = new Date(today.getTime() - DAY_MS)
-  const weekAgo = new Date(today.getTime() - 7 * DAY_MS)
-  const monthAgo = new Date(today.getTime() - 30 * DAY_MS)
-
-  if (then >= today) return DATE_GROUP_KEYS[0]
-  if (then >= yesterday) return DATE_GROUP_KEYS[1]
-  if (then >= weekAgo) return DATE_GROUP_KEYS[2]
-  if (then >= monthAgo) return DATE_GROUP_KEYS[3]
-  return DATE_GROUP_KEYS[4]
-}
 
 interface DisplaySession {
   id: string

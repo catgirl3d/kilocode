@@ -21,6 +21,7 @@
 - Add an on-demand consult_advisor tool with in-progress assistant context and a proposal channel, so agents can request a second opinion from a configured advisor model and reasoning variant during planning, when stuck, or before completing complex tasks.
 - Show simple live consult_advisor phases in the CLI and VS Code chat: preparation, waiting, reasoning, writing, and completion.
 - Improve Agent Manager Markdown document previews with cleaner typography, spacing, and optional comment annotations.
+- Group recent sessions by date on the welcome screen and show 7 recent sessions instead of 3.
 
 ### Fixes & Enhancements
 
