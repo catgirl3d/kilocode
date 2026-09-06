@@ -52,6 +52,9 @@ const SessionList: Component<SessionListProps> = (props) => {
   const [pendingRenameId, setPendingRenameId] = createSignal<string | null>(null)
   const [notice, setNotice] = createSignal("")
   let seq = 0
+  // fork_change start - Preserve history position while a session is removed.
+  let root: HTMLDivElement | undefined
+  // fork_change end
 
   const items = createMemo(() => {
     const ids = props.sessionIds?.()
@@ -59,6 +62,17 @@ const SessionList: Component<SessionListProps> = (props) => {
     return session.sessions().filter((item) => ids.has(item.id))
   })
 
+  // fork_change start - Scope scroll and focus restoration to this history list.
+  const scroller = () => root?.querySelector<HTMLElement>('[data-slot="list-scroll"]')
+
+  const neighborOf = (id: string) => {
+    const ids = items().map((s) => s.id)
+    const at = ids.indexOf(id)
+    if (at === -1) return undefined
+    return ids[at + 1] ?? ids[at - 1]
+  }
+
+  // fork_change end
   onMount(() => {
     console.log("[Kilo New] SessionList mounted, loading sessions")
     session.loadSessions()
@@ -105,6 +119,11 @@ const SessionList: Component<SessionListProps> = (props) => {
   }
 
   function confirmDelete(s: SessionInfo, restore?: HTMLElement) {
+    // fork_change start - Keep the list position and focus stable after deletion.
+    let done = false
+    let top = 0
+    let next: string | undefined
+    // fork_change end
     dialog.show(
       () => (
         <Dialog title={language.t("session.delete.title")} fit>
@@ -118,8 +137,26 @@ const SessionList: Component<SessionListProps> = (props) => {
                 variant="primary"
                 size="large"
                 onClick={() => {
+                  // fork_change start
+                  top = scroller()?.scrollTop ?? 0
+                  next = neighborOf(s.id)
+                  done = true
                   session.deleteSession(s.id)
                   dialog.close()
+                  requestAnimationFrame(() => {
+                    scroller()?.scrollTo(0, top)
+                    setTimeout(() => {
+                      const target = scroller()
+                      if (target) target.scrollTo(0, top)
+                      if (!next || !target) return
+                      const node = target.querySelector<HTMLElement>(`[data-slot="list-item"][data-key="${next}"]`)
+                      if (!node) return
+                      if (document.activeElement === document.body || !target.contains(document.activeElement)) {
+                        node.focus({ preventScroll: true } as FocusOptions)
+                      }
+                    }, 0)
+                  })
+                  // fork_change end
                 }}
               >
                 {language.t("session.delete.button")}
@@ -130,6 +167,9 @@ const SessionList: Component<SessionListProps> = (props) => {
       ),
       () => {
         queueMicrotask(() => {
+          // fork_change start
+          if (done) return
+          // fork_change end
           if (restore?.isConnected) restore.focus()
         })
       },
@@ -197,7 +237,7 @@ const SessionList: Component<SessionListProps> = (props) => {
   }
 
   return (
-    <div class="session-list">
+    <div class="session-list" ref={root /* fork_change */}>
       <List<SessionInfo>
         items={items()}
         key={(s) => s.id}

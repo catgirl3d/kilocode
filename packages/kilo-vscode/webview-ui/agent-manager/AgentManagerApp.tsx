@@ -1902,8 +1902,7 @@ const AgentManagerContent: Component = () => {
     const sel = selection()
     // Setup is still provisioning this worktree; the Setup tab shows progress.
     if (settingUpSelection()) return
-    expandSidebar()
-    if (sel === LOCAL) return addPendingTab()
+    if (sel === LOCAL) return addPendingTab() // fork_change: creating a session must not expand the sidebar
     if (sel) {
       // Deactivate any focused terminal so the new session is visible.
       terms.setActiveId(undefined)
