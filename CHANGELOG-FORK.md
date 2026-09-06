@@ -25,6 +25,7 @@
 
 ### Fixes & Enhancements
 
+- Hide the "Move your opencode configuration" notice.
 - Hide the "Feedback & Support" button and the "How Agent Manager works" reopen button from the welcome screens in VS Code chat and Agent Manager.
 - Remember explicitly selected models and reasoning variants for each mode when starting new tasks.
 - Isolate CLI unit tests from the developer's real Kilo setup: test runs no longer read global skills, rules, or VS Code MCP settings from the actual user profile, and docs and VS Code tasks now point at the isolated per-file test runner.
