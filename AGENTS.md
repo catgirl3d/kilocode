@@ -6,6 +6,7 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 - The default branch in this repo is `main`.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
 - You may be running in a git worktree. All changes must be made in your current working directory — never modify files in the main repo checkout.
+- **Exempt Files (NO MARKERS)**: Never put `fork_change` or `kilocode_change` comments inside test files (`*.test.ts`, `*.spec.ts`, `test/`, `tests/`), fixtures, Markdown docs (`*.md`), JSON/YAML configs, or Storybook stories — they are completely exempt from all markers.
 
 ## Build and Dev
 
