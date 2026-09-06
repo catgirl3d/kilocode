@@ -144,10 +144,26 @@ describe("recentSessions", () => {
       info("new-root", 5),
       info("blank-parent", 4, ""),
       info("mid-root", 3, null),
-      info("fourth-root", 2),
+      info("fourth-root", 4),
+      info("fifth-root", 3),
+      info("sixth-root", 3),
+      info("seventh-root", 3),
+      info("eighth-root", 2),
+      info("ninth-root", 10),
+      info("tenth-root", 9),
+      info("eleventh-root", 8),
+      info("twelfth-root", 7),
     ])
 
-    expect(result.map((session) => session.id)).toEqual(["new-root", "mid-root", "fourth-root"])
+    expect(result.map((session) => session.id)).toEqual([
+      "ninth-root",
+      "tenth-root",
+      "eleventh-root",
+      "twelfth-root",
+      "new-root",
+      "fourth-root",
+      "mid-root",
+    ])
   })
 
   it("does not mutate the session list while sorting recents", () => {

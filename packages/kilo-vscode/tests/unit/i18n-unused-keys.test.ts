@@ -69,6 +69,8 @@ const pools = [
       "settings.providers.note.",
       // fork_change: hidden on the welcome screen, key kept for upstream merges
       "feedback.button",
+      // fork_change: welcome screen header removed in favor of date groups
+      "session.recent",
     ],
   },
   // kilo-i18n also overrides upstream ui.* keys consumed by components in
