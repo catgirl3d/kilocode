@@ -18,5 +18,6 @@
   ],
   "project": ["src/**/*.ts", "webview-ui/**/*.{ts,tsx}"],
   "ignoreExportsUsedInFile": true,
+  "ignore": ["webview-ui/src/components/chat/FeedbackDialog.tsx"],
   "exclude": ["dependencies", "devDependencies", "optionalPeerDependencies", "unlisted", "unresolved", "binaries"]
 }
