@@ -1,16 +1,15 @@
-import { type Component, type JSX, For, Show } from "solid-js"
+// fork_change start - hide feedback button from the welcome screen
+import { type Component, For, Show } from "solid-js"
 import { Icon } from "@kilocode/kilo-ui/icon"
-import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { recentSessions } from "../../context/session-utils"
 import { formatRelativeDate } from "../../utils/date"
-import { FeedbackDialog } from "./FeedbackDialog"
+// fork_change end
 
 interface WelcomeEmptyStateProps {
   onSelectSession?: (id: string) => void
   onShowHistory?: () => void
-  footer?: JSX.Element
 }
 
 export const KiloLogo = () => {
@@ -29,7 +28,6 @@ export const KiloLogo = () => {
 export const WelcomeEmptyState: Component<WelcomeEmptyStateProps> = (props) => {
   const session = useSession()
   const language = useLanguage()
-  const dialog = useDialog()
   const recent = () => recentSessions(session.sessions())
 
   return (
@@ -57,11 +55,6 @@ export const WelcomeEmptyState: Component<WelcomeEmptyStateProps> = (props) => {
           </Show>
         </div>
       </Show>
-      <button class="feedback-button" onClick={() => dialog.show(() => <FeedbackDialog />)}>
-        <Icon name="bubble-5" size="small" />
-        {language.t("feedback.button")}
-      </button>
-      {props.footer}
     </div>
   )
 }

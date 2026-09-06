@@ -24,6 +24,7 @@
 
 ### Fixes & Enhancements
 
+- Hide the "Feedback & Support" button and the "How Agent Manager works" reopen button from the welcome screens in VS Code chat and Agent Manager.
 - Keep the Agent Manager sidebar collapsed when creating a new session, and preserve history scroll position after deleting a session.
 - Remember explicitly selected models and reasoning variants for each mode when starting new tasks.
 - Isolate CLI unit tests from the developer's real Kilo setup: test runs no longer read global skills, rules, or VS Code MCP settings from the actual user profile, and docs and VS Code tasks now point at the isolated per-file test runner.
