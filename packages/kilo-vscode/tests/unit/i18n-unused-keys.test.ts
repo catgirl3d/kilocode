@@ -61,7 +61,16 @@ const WEBVIEW_ROOTS = [
 ]
 
 const pools = [
-  { name: "app", dict: appEn, roots: WEBVIEW_ROOTS, runtime: ["settings.providers.note."] },
+  {
+    name: "app",
+    dict: appEn,
+    roots: WEBVIEW_ROOTS,
+    runtime: [
+      "settings.providers.note.",
+      // fork_change: hidden on the welcome screen, key kept for upstream merges
+      "feedback.button",
+    ],
+  },
   // kilo-i18n also overrides upstream ui.* keys consumed by components in
   // packages/ui/src (and the TUI), so those count as usage too.
   {
@@ -70,7 +79,16 @@ const pools = [
     roots: [...WEBVIEW_ROOTS, path.join(REPO, "packages/ui"), path.join(REPO, "packages/tui")],
     runtime: ["plan.followup.", "snapshot.slowRepo.", "settings.providers.note."],
   },
-  { name: "agent-manager", dict: amEn, roots: WEBVIEW_ROOTS, runtime: ["agentManager.setup.error."] },
+  {
+    name: "agent-manager",
+    dict: amEn,
+    roots: WEBVIEW_ROOTS,
+    runtime: [
+      "agentManager.setup.error.",
+      // fork_change: intro reopen button hidden, key kept for upstream merges
+      "agentManager.intro.reopen",
+    ],
+  },
   { name: "cli-backend", dict: cliEn, roots: [VSCODE], runtime: [] },
   { name: "host", dict: hostEn, roots: [VSCODE], runtime: [] },
 ] as const
