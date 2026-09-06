@@ -38,16 +38,13 @@ import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import * as Log from "@opencode-ai/core/util/log"
-import { Flag } from "@opencode-ai/core/flag/flag"
 import { Database } from "@opencode-ai/core/database/database"
-import { KilocodeConfig } from "@/kilocode/config/config"
 import { ClaudeMigration } from "@/kilocode/config/claude-migration"
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import { organization as catalogOrganization } from "@/kilocode/provider/catalog"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Storage } from "@/storage/storage"
-import { Instance } from "@/kilocode/instance"
 import { InstanceStore } from "@/project/instance-store"
 import { ModelCache } from "@/provider/model-cache"
 import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
@@ -379,19 +376,14 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
       })
     })
 
+    // fork_change start - removed "Move your opencode configuration" notice
     const notifications = Effect.fn("KiloGatewayHttpApi.notifications")(function* () {
-      // Locally-detected notice about leftover opencode config; appended so it reuses each client's dismissal path.
-      const notice = KilocodeConfig.opencodeConfigNotification({
-        directory: Instance.directory,
-        worktree: Instance.worktree,
-        scanProject: !Flag.KILO_DISABLE_PROJECT_CONFIG,
-      })
       const claude = yield* Effect.promise(() => ClaudeMigration.notification())
-      const append = <T>(list: T[]) => [...list, ...(notice ? [notice] : []), ...(claude ? [claude] : [])]
+      const append = <T>(list: T[]) => [...list, ...(claude ? [claude] : [])]
 
       const info = yield* auth.get("kilo").pipe(Effect.catch(() => Effect.succeed(undefined)))
       const token = getToken(info)
-      if (!token) return append([])
+      if (!token) return []
 
       const cloud = yield* Effect.promise(() =>
         fetchKilocodeNotifications({
@@ -399,8 +391,9 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
           kilocodeOrganizationId: getOrganizationId(info),
         }),
       )
-      return append(cloud)
+      return cloud
     })
+    // fork_change end
 
     const organization = Effect.fn("KiloGatewayHttpApi.organization")(function* (ctx) {
       const info = yield* auth.get("kilo").pipe(Effect.mapError(() => new HttpApiError.Unauthorized({})))
