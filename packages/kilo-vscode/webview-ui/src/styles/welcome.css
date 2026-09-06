@@ -331,17 +331,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 300px;
   gap: 4px;
-}
-
-.recent-sessions-label {
-  font-size: var(--kilo-font-size-11);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--vscode-descriptionForeground);
-  padding: 0 8px 4px;
-  text-align: left;
 }
 
 .recent-session-item {
@@ -372,8 +362,25 @@
   min-width: 0;
 }
 
+/* fork_change start - date groups on the welcome screen */
+.recent-session-group {
+  font-size: var(--kilo-font-size-11);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground);
+  padding: 8px 8px 0;
+  text-align: left;
+}
+
+.recent-session-group:first-of-type {
+  padding-top: 2px;
+}
+
+/* fork_change end */
+
 .show-history-btn {
   appearance: none;
+  box-sizing: border-box;
   border: 1px solid var(--vscode-button-secondaryBorder, var(--vscode-contrastBorder, transparent));
   border-radius: 4px;
   background: var(--vscode-button-secondaryBackground, transparent);
