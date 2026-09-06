@@ -38,32 +38,50 @@ export function createSessionVariants(options: Options) {
     return getAgentVariant(options.selections(), selection, options.find(selection), name, configured(name, selection))
   }
 
-  const current = (sessionID?: string) => {
+  // fork_change start - Allow commands to preserve configured target-agent defaults.
+  const current = (sessionID?: string, presetFirst = false) => {
     const sid = sessionID ?? options.session()
     const selection = options.selected(sid)
     if (!selection) return undefined
     const variants = list(sid)
     if (variants.length === 0) return undefined
     const name = options.agent(sid)
-    return getVariant(options.selections(), selection, variants, name, sid, configured(name, selection))
+    return getVariant(options.selections(), selection, variants, name, sid, configured(name, selection), presetFirst)
   }
 
-  const request = (sessionID?: string) =>
-    current(sessionID) ?? (list(sessionID).length > 0 ? DEFAULT_VARIANT : undefined)
+  const request = (sessionID?: string, presetFirst = false) =>
+    current(sessionID, presetFirst) ?? (list(sessionID).length > 0 ? DEFAULT_VARIANT : undefined)
+  // fork_change end
 
-  const select = (value: string | undefined, sessionID?: string) => {
+  // fork_change start - Persist explicit picker choices for future tasks.
+  const select = (value: string | undefined, sessionID?: string, remember = true) => {
     const sid = sessionID ?? options.session()
     const selection = options.selected(sid)
     if (!selection) return
-    const key = variantKey(selection, options.agent(sid), sid)
+    const name = options.agent(sid)
     const next = value ?? DEFAULT_VARIANT
+    if (!sid && !remember) return
+    const key = variantKey(selection, name, sid)
     options.set(key, next)
-    if (!sid) options.post({ type: "persistVariant", key, value: next })
+    if (!sid) {
+      options.post({ type: "persistVariant", key, value: next })
+      return
+    }
+    if (!remember) return
+    const remembered = variantKey(selection, name)
+    options.set(remembered, next)
+    options.post({ type: "persistVariant", key: remembered, value: next })
+    // fork_change end
   }
 
   const carry = (selection: ModelSelection, value: string | undefined, name: string, sessionID?: string) => {
     const list = Object.keys(options.find(selection)?.variants ?? {})
     if (list.length === 0) return
+    // fork_change start - Keep an existing target-model choice over inherited values.
+    const cached = options.selections()
+    if (cached[variantKey(selection, name)] !== undefined) return
+    if (sessionID && cached[variantKey(selection, name, sessionID)] !== undefined) return
+    // fork_change end
     // An absent value means the model default, not an explicit user choice.
     // Do not write a default sentinel here because it would shadow a cached
     // agent-level variant when this selection is resolved for a new session.

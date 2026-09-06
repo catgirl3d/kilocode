@@ -519,12 +519,13 @@ export const SessionProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "recordModelUsage", providerID, modelID })
   }
 
-  function applyModel(agentName: string, selection: ModelSelection, sessionID?: string) {
+  // fork_change start - Persist explicit model picks, not temporary command overrides.
+  function applyModel(agentName: string, selection: ModelSelection, sessionID?: string, remember = true) {
     pushRecent(selection)
     if (sessionID) {
       setStore("sessionOverrides", sessionID, selection)
-      return
     }
+    if (!remember) return
     // Always remember the per-mode model choice so switching modes restores
     // the last-used model (mirrors CLI TUI's model.json behavior).
     setUserSetAgents((prev) => ({ ...prev, [agentName]: true }))
@@ -537,6 +538,7 @@ export const SessionProvider: ParentComponent = (props) => {
       modelID: selection.modelID,
     })
   }
+  // fork_change end
 
   const variants = createSessionVariants({
     selections: () => store.variantSelections,
@@ -2370,18 +2372,35 @@ export const SessionProvider: ParentComponent = (props) => {
         selectAgent(overrides.agent, scope)
       }
       if (overrides?.model) {
-        selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope)
+        // fork_change start - Command model overrides must remain temporary.
+        selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope, false)
+        // fork_change end
       }
       if (overrides?.variant) {
-        selectVariant(overrides.variant, scope)
+        // fork_change start - Command overrides must not become persistent picker choices.
+        selectVariant(overrides.variant, scope, false)
+        // fork_change end
       }
       recordModelUsage(effectiveSelection.providerID, effectiveSelection.modelID)
     }
+    // fork_change start - Command agent/model overrides retain configured presets.
+    const preset = overrides?.agent !== undefined || overrides?.model !== undefined
+    // fork_change end
 
     const settings = (() => {
       if (!effectiveSelection) return
-      const { model, ...settings } = submission(scope, effectiveSelection)
-      return { ...model, ...settings }
+      return {
+        providerID: effectiveSelection.providerID,
+        modelID: effectiveSelection.modelID,
+        agent:
+          overrides?.agent ??
+          resolvePromptAgent({
+            sessionID: scope,
+            selections: store.agentSelections,
+            pending: pendingAgentSelection(),
+          }),
+        variant: variants.request(scope, preset),
+      }
     })()
     const messageID = overrides?.messageID ?? Identifier.ascending("message")
 

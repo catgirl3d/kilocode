@@ -40,11 +40,21 @@ export function getVariant(
   agent: string,
   session?: string,
   configured?: string,
+  // fork_change start - Commands may prefer the target agent's configured preset.
+  presetFirst = false,
+  // fork_change end
 ) {
   if (variants.length === 0) return undefined
   const scoped = session ? store[variantKey(sel, agent, session)] : undefined
+  // fork_change start - Explicit agent/model choices override configured presets.
+  const remembered = store[variantKey(sel, agent)]
+  // fork_change end
   const preset = configured && variants.includes(configured) ? configured : undefined
-  const stored = scoped ?? preset ?? store[variantKey(sel, agent)] ?? store[legacyVariantKey(sel)]
+  // fork_change start - Keep picker choices first except for explicit command targets.
+  const stored = presetFirst
+    ? (scoped ?? preset ?? remembered ?? store[legacyVariantKey(sel)])
+    : (scoped ?? remembered ?? preset ?? store[legacyVariantKey(sel)])
+  // fork_change end
   if (stored === undefined || stored === DEFAULT_VARIANT) return undefined
   return preserveVariant(stored, variants)
 }
