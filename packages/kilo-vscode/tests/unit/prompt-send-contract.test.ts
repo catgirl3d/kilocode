@@ -85,9 +85,11 @@ describe("sendCommand dismisses pending tool requests", () => {
     expect(body).toContain("if (overrides?.agent)")
     expect(body).toContain("selectAgent(overrides.agent, scope)")
     expect(body).toContain("if (overrides?.model)")
-    expect(body).toContain("selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope)")
+    expect(body).toContain("selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope, false)")
     expect(body).toContain("if (overrides?.variant)")
-    expect(body).toContain("selectVariant(overrides.variant, scope)")
+    expect(body).toContain("selectVariant(overrides.variant, scope, false)")
+    expect(body).toContain("const preset = overrides?.agent !== undefined || overrides?.model !== undefined")
+    expect(body.match(/variants\.request\(scope, preset\)/g)?.length).toBe(2)
   })
 })
 

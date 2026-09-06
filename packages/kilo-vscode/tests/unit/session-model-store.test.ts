@@ -48,7 +48,7 @@ const claude: ModelSelection = { providerID: "anthropic", modelID: "claude-sonne
 const gpt: ModelSelection = { providerID: "openai", modelID: "gpt-4.1" }
 
 describe("per-session model selection", () => {
-  it("selecting a model in session A does not write per-mode globally", () => {
+  it("selecting a model in session A remembers it per mode", () => {
     const store = emptyStore()
     const e = env()
 
@@ -59,9 +59,10 @@ describe("per-session model selection", () => {
     // Session A should see claude (via session override)
     expect(getSessionModel(updated, e, "session-a", "code")).toEqual(claude)
 
-    // Session B (no override) keeps the default model.
+    // New sessions use the remembered per-mode model.
     const sessionB = getSessionModel(updated, e, "session-b", "code")
-    expect(sessionB).toEqual(KILO_AUTO)
+    expect(sessionB).toEqual(claude)
+    expect(updated.modelSelections.code).toEqual(claude)
   })
 
   it("each session preserves its own model independently", () => {
@@ -166,15 +167,15 @@ describe("per-mode model memory", () => {
     expect(getAgentModel(store, configured, "code", true)).toEqual(claude)
   })
 
-  it("applyModel in a session writes only to sessionOverrides", () => {
+  it("applyModel in a session remembers the model by default", () => {
     const store = emptyStore()
     const result = applyModel(store, "code", claude, "session-a")
 
     expect(result.sessionOverrides["session-a"]).toEqual(claude)
-    expect(result.modelSelections["code"]).toBeUndefined()
+    expect(result.modelSelections["code"]).toEqual(claude)
   })
 
-  it("switching modes falls back to default after session override is cleared", () => {
+  it("switching modes restores the remembered model after session override is cleared", () => {
     let store = emptyStore()
     const e = env()
 
@@ -185,7 +186,7 @@ describe("per-mode model memory", () => {
     // Simulate mode switch: clear session override (like selectAgent does)
     const cleared = { ...store, sessionOverrides: {} }
 
-    expect(getSelected(cleared, e, "session-a", "code")).toEqual(KILO_AUTO)
+    expect(getSelected(cleared, e, "session-a", "code")).toEqual(claude)
   })
 
   it("different modes remember their own model independently", () => {
@@ -216,14 +217,23 @@ describe("per-mode model memory", () => {
     let result = applyModel(store, "code", claude, undefined)
     store = { ...store, ...result }
 
-    // Session A overrides with gpt
-    result = applyModel(store, "code", gpt, "session-a")
+    // Session A temporarily overrides with gpt
+    result = applyModel(store, "code", gpt, "session-a", false)
     store = { ...store, ...result }
 
     // Session A sees gpt (its override), not the global claude
     expect(getSelected(store, e, "session-a", "code")).toEqual(gpt)
     // Global modelSelections stays at the sidebar/default choice.
     expect(store.modelSelections["code"]).toEqual(claude)
+  })
+
+  it("can apply a temporary model override without changing the remembered model", () => {
+    const store = emptyStore()
+    const result = applyModel(store, "code", gpt, "session-a", false)
+
+    expect(result.sessionOverrides["session-a"]).toEqual(gpt)
+    expect(result.modelSelections["code"]).toBeUndefined()
+    expect(result.userSetAgents.code).toBeUndefined()
   })
 
   it("applyModel without session only writes to modelSelections, not sessionOverrides", () => {

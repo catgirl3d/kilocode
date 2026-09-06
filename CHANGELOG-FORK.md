@@ -24,6 +24,7 @@
 
 ### Fixes & Enhancements
 
+- Remember explicitly selected models and reasoning variants for each mode when starting new tasks.
 - Isolate CLI unit tests from the developer's real Kilo setup: test runs no longer read global skills, rules, or VS Code MCP settings from the actual user profile, and docs and VS Code tasks now point at the isolated per-file test runner.
 - Cap LLM retry waits at 60 seconds so provider quota windows no longer cause excessive session stalls.
 - Speed up Windows voice input by capturing audio natively through WASAPI instead of spawning FFmpeg on each recording.

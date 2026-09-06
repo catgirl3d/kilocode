@@ -3,6 +3,7 @@ import {
   cycleVariant,
   getAgentVariant,
   getVariant,
+  legacyVariantKey,
   preserveVariant,
   sessionVariantKeys,
   sessionVariants,
@@ -12,6 +13,7 @@ import {
 import type { ModelSelection } from "../../webview-ui/src/types/messages"
 
 const model: ModelSelection = { providerID: "anthropic", modelID: "claude-sonnet-4" }
+const otherModel: ModelSelection = { providerID: "openai", modelID: "gpt-5" }
 const variants = ["low", "medium", "high"]
 
 describe("per-session variant selection", () => {
@@ -56,14 +58,27 @@ describe("per-session variant selection", () => {
     expect(getAgentVariant({}, model, { variants: { high: {}, max: {} } }, "code", "max")).toBe("max")
   })
 
-  it.each(["anthropic/claude-sonnet-4", variantKey(model, "code")])(
-    "prefers the configured variant over the remembered preference %s",
-    (key) => {
-      const store = { [key]: "high" }
-      expect(getVariant(store, model, ["high", "max"], "code", "pending-new", "max")).toBe("max")
-      expect(getAgentVariant(store, model, { variants: { high: {}, max: {} } }, "code", "max")).toBe("max")
-    },
-  )
+  it("prefers the remembered agent/model choice over the configured variant", () => {
+    const store = { [variantKey(model, "code")]: "high" }
+    expect(getVariant(store, model, ["high", "max"], "code", "pending-new", "max")).toBe("high")
+    expect(getAgentVariant(store, model, { variants: { high: {}, max: {} } }, "code", "max")).toBe("high")
+  })
+
+  it("keeps the configured variant ahead of legacy provider/model memory", () => {
+    const store = { [legacyVariantKey(model)]: "high" }
+    expect(getVariant(store, model, ["high", "max"], "code", "pending-new", "max")).toBe("max")
+    expect(getAgentVariant(store, model, { variants: { high: {}, max: {} } }, "code", "max")).toBe("max")
+  })
+
+  it("restores separate remembered variants for each model", () => {
+    const store = {
+      [variantKey(model, "code")]: "max",
+      [variantKey(otherModel, "code")]: "medium",
+    }
+
+    expect(getVariant(store, model, ["medium", "max"], "code", "pending-model-a")).toBe("max")
+    expect(getVariant(store, otherModel, ["medium", "max"], "code", "pending-model-b")).toBe("medium")
+  })
 
   it.each(["low", ""])("preserves a session choice %s above configured and remembered variants", (value) => {
     const store = {
