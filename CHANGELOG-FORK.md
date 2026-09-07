@@ -25,6 +25,7 @@
 
 ### Fixes & Enhancements
 
+- Keep the Agent Manager sidebar collapsed when creating a new session.
 - Hide the "Move your opencode configuration" notice.
 - Hide the "Feedback & Support" button and the "How Agent Manager works" reopen button from the welcome screens in VS Code chat and Agent Manager.
 - Remember explicitly selected models and reasoning variants for each mode when starting new tasks.
