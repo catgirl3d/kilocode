@@ -60,7 +60,7 @@ export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) =>
   const { t } = useLanguage()
   const noticeText = () => notice(t, props.notice)
   const sendAllKeybind = () => reviewSendAllKeybind(t)
-  const { config } = useConfig()
+  const { config } = useConfig() // fork_change
   // fork_change start
   const speechMode = () => selectedSpeechToTextMode(config())
   // fork_change end
@@ -85,7 +85,9 @@ export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) =>
     commentsByFile,
     handleGutterClick,
     sendAllClick,
+    // fork_change start
   } = createReviewView({ ...props, mode: speechMode }, () => rootRef)
+  // fork_change end
 
   const [manualActiveFile, setManualActiveFile] = createSignal<Record<string, string | null>>({})
   const activeFile = createMemo(() => {

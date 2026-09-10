@@ -1,6 +1,9 @@
 import assert from "node:assert/strict"
 import { Window } from "happy-dom"
 import type { PRStatus, WebviewMessage } from "../../webview-ui/src/types/messages"
+import type { PRComment } from "../../webview-ui/agent-manager/pr/pr-types"
+import type { RemoteAnnotationMeta } from "../../webview-ui/diff-viewer/remote-comment-renderer"
+import type { DiffLineAnnotation } from "@pierre/diffs"
 
 const refreshed: WebviewMessage[] = []
 const reactions: WebviewMessage[] = []
@@ -59,14 +62,17 @@ Object.assign(globalThis, {
     postMessage: (message: WebviewMessage) => {
       if (message.type === "agentManager.refreshPR") refreshed.push(message)
       if (message.type === "agentManager.commentReaction") reactions.push(message)
-      if ((message as { type: string }).type === "agentManager.replyComment") replies.push(message)
-      if ((message as { type: string }).type === "agentManager.mutateComment") mutations.push(message)
-      if (message.type === "updateSetting") settings.push(message)
+      if ((message as { type: string }).type === "agentManager.replyComment")
+        replies.push(message as unknown as Record<string, unknown>)
+      if ((message as { type: string }).type === "agentManager.mutateComment")
+        mutations.push(message as unknown as Record<string, unknown>)
+      if (message.type === "updateSetting") settings.push(message as unknown as Record<string, unknown>)
     },
     getState: () => undefined,
     setState: () => undefined,
   }),
 })
+const messageWindow = window as unknown as Pick<globalThis.Window, "origin" | "dispatchEvent">
 
 const { render } = await import("solid-js/web")
 const { post } = await import("../../webview-ui/src/utils/webview-message")
@@ -102,7 +108,7 @@ const click = async (scope: Element, label: string) => {
 }
 const type = (field: HTMLTextAreaElement, body: string) => {
   field.value = body
-  field.dispatchEvent(new window.Event("input", { bubbles: true }))
+  field.dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
 }
 const colors = document.createElement("style")
 colors.textContent = ":root { --syntax-keyword: rgb(72, 160, 199); --syntax-string: rgb(206, 145, 120); }"
@@ -113,7 +119,7 @@ const HUNK =
   '@@ -1 +1,14 @@\n+import { File as BaseFile, type FileProps } from "@opencode-ai/ui/file"\n+import type { JSX } from "solid-js"\n+import { createDefaultOptions } from "../pierre"\n+\n export * from "@opencode-ai/ui/file"\n+\n+export function File<T>(props: FileProps<T>) {\n+  const View = BaseFile as unknown as (props: FileProps<T>) => JSX.Element\n+  if (props.mode === "text") return <View {...props} />\n+\n+  // Keep inline file diffs on the same Pierre defaults as the dedicated viewer.\n+  const options = { ...createDefaultOptions<T>(props.diffStyle), ...props } as FileProps<T>\n'
 
 const sent: unknown[] = []
-const [comments, setComments] = createSignal({
+const [comments, setComments] = createSignal<{ total: number; unresolved: number; comments: PRComment[] }>({
   total: 2,
   unresolved: 1,
   comments: [
@@ -229,7 +235,7 @@ const reactionResult = (reaction: string, add: boolean, success: boolean, id = "
       success,
       ...(success ? {} : { error: "GitHub rejected the update" }),
     },
-    window,
+    messageWindow,
   )
 }
 reactionResult("THUMBS_UP", true, false)
@@ -405,16 +411,23 @@ expand(composer()).click()
 await window.happyDOM.waitUntilComplete()
 assert.equal(input().value, "  Reply with **Markdown**\nand a second line  ", "Cancel preserves the multiline draft")
 const enter = new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
-input().dispatchEvent(enter)
+input().dispatchEvent(enter as unknown as Event)
 assert.equal(enter.defaultPrevented, false, "Enter retains native multiline input behavior")
 assert.equal(replies.length, 0, "Enter must not publish a reply")
 for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
   input().dispatchEvent(
-    new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true, ...modifier }),
+    new window.KeyboardEvent("keydown", {
+      key: "Enter",
+      bubbles: true,
+      isComposing: true,
+      ...modifier,
+    }) as unknown as Event,
   )
   assert.equal(replies.length, 0, "IME confirmation must not publish a reply")
 }
-input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, ctrlKey: true }))
+input().dispatchEvent(
+  new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, ctrlKey: true }) as unknown as Event,
+)
 await window.happyDOM.waitUntilComplete()
 assert.equal(replies.length, 1)
 assert.equal(replies[0]!.body, "  Reply with **Markdown**\nand a second line  ")
@@ -424,7 +437,9 @@ assert.equal(submit().disabled, true)
 assert.equal(input().disabled, true)
 submit().click()
 assert.equal(replies.length, 1)
-input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, metaKey: true }))
+input().dispatchEvent(
+  new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, metaKey: true }) as unknown as Event,
+)
 assert.equal(replies.length, 1, "keyboard submit cannot duplicate a pending request")
 const respond = (value: Record<string, unknown>) =>
   post({ ...replies.at(-1), type: "agentManager.replyCommentResult", ...value })
@@ -435,7 +450,9 @@ await window.happyDOM.waitUntilComplete()
 assert.match(composer().textContent ?? "", /Permission denied/)
 assert.match(input().value, /Reply with/)
 assert.equal(submit().disabled, false)
-input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, metaKey: true }))
+input().dispatchEvent(
+  new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, metaKey: true }) as unknown as Event,
+)
 await window.happyDOM.waitUntilComplete()
 assert.equal(replies.length, 2)
 // Collapse the card while the request is in flight. Its result still settles.
@@ -699,7 +716,10 @@ const Probe = () => {
       virtualized={false}
       visible
       annotations={annotations()}
-      renderAnnotation={remote.render}
+      renderAnnotation={(annotation: DiffLineAnnotation<RemoteAnnotationMeta>) => {
+        if (!annotation.metadata) return undefined
+        return remote.render(annotation.metadata)
+      }}
     />
   )
 }
@@ -1360,8 +1380,9 @@ remount()
 
 // PR summary: Fix with Kilo and jump-to-section per row, without scrolling.
 const terminalSent: unknown[] = []
-window.addEventListener("message", (ev: MessageEvent) => {
-  if (ev.data?.type === "appendReviewCommentsToTerminal") terminalSent.push(ev.data)
+window.addEventListener("message", (ev: InstanceType<typeof window.Event>) => {
+  const message = (ev as unknown as MessageEvent).data
+  if (message?.type === "appendReviewCommentsToTerminal") terminalSent.push(message)
 })
 const fourth = document.createElement("div")
 document.body.append(fourth)

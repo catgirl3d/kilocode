@@ -25,6 +25,7 @@ import { useProvider } from "./provider"
 import { useConfig } from "./config"
 import { useLanguage } from "./language"
 import { createCostAlertHandler } from "./cost-alert"
+import { shakeToast } from "./session-shake" // fork_change
 import { showToast } from "@kilocode/kilo-ui/toast"
 import type {
   SessionInfo,
@@ -855,32 +856,7 @@ export const SessionProvider: ParentComponent = (props) => {
     if (message.type === "sessionShakeCompleted") {
       if (shaking() === message.sessionID) setShaking(undefined)
       if (message.sessionID !== currentSessionID()) return true
-      showToast({
-        variant: "success",
-        title: language.t(
-          message.parts > 0
-            ? message.tokens > 0
-              ? "command.session.shake.cleared"
-              : "command.session.shake.clearedParts"
-            : "command.session.shake.empty",
-          message.parts > 0 && message.tokens > 0
-            ? { tokens: message.tokens.toLocaleString(language.locale()) }
-            : undefined,
-        ),
-        description: message.diagnostics
-          ? language.t("command.session.shake.diagnostics", {
-              sessionID: message.sessionID,
-              raw: message.diagnostics.rawMessages,
-              projection: message.diagnostics.projectionMessages,
-              tools: message.diagnostics.tools,
-              completed: message.diagnostics.completed,
-              protected: message.diagnostics.protected,
-              compacted: message.diagnostics.compacted,
-              candidates: message.diagnostics.candidates,
-              tokens: message.tokens.toLocaleString(language.locale()),
-            })
-          : undefined,
-      })
+      showToast(shakeToast(message, language))
       return true
     }
     if (message.type === "sessionShakeFailed") {
@@ -2332,6 +2308,27 @@ export const SessionProvider: ParentComponent = (props) => {
     return true
   }
 
+  // fork_change start
+  const resolveSelection = (
+    control: boolean,
+    draftID: string | undefined,
+    sid: string | undefined,
+    overrides: { agent?: string; model?: string; variant?: string; messageID?: string } | undefined,
+    providerID: string | undefined,
+    modelID: string | undefined,
+  ) => {
+    if (control) return null
+    if (overrides?.model) return parseModelString(overrides.model)
+    const scope = draftID ?? sid
+    const model = overrides?.agent
+      ? modelForAgent(overrides.agent)
+      : scope
+        ? selected(scope)
+        : getSelected(preferences(), environment(), undefined, pendingAgentSelection() ?? defaultAgent())
+    return model ?? (providerID && modelID ? { providerID, modelID } : null)
+  }
+
+  // fork_change end
   function sendCommand(
     command: string,
     args: string,
@@ -2350,17 +2347,9 @@ export const SessionProvider: ParentComponent = (props) => {
 
     const sid = origin === undefined ? currentSessionID() : (origin ?? undefined)
     const control = goalControl(command, args)
-    const effectiveSelection = (() => {
-      if (control) return null
-      if (overrides?.model) return parseModelString(overrides.model)
-      const scope = draftID ?? sid
-      const model = overrides?.agent
-        ? modelForAgent(overrides.agent)
-        : scope
-          ? selected(scope)
-          : getSelected(preferences(), environment(), undefined, pendingAgentSelection() ?? defaultAgent())
-      return model ?? (providerID && modelID ? { providerID, modelID } : null)
-    })()
+    // fork_change start
+    const effectiveSelection = resolveSelection(control, draftID, sid, overrides, providerID, modelID)
+    // fork_change end
     if (!control && !available(effectiveSelection)) return false
 
     const effectiveDraftID = !sid && !draftID ? crypto.randomUUID() : draftID
@@ -2387,6 +2376,7 @@ export const SessionProvider: ParentComponent = (props) => {
     const preset = overrides?.agent !== undefined || overrides?.model !== undefined
     // fork_change end
 
+    // fork_change start
     const settings = (() => {
       if (!effectiveSelection) return
       return {
@@ -2402,6 +2392,7 @@ export const SessionProvider: ParentComponent = (props) => {
         variant: variants.request(scope, preset),
       }
     })()
+    // fork_change end
     const messageID = overrides?.messageID ?? Identifier.ascending("message")
 
     // Cloud previews need import-then-command; post importAndSend with command metadata
@@ -2424,9 +2415,10 @@ export const SessionProvider: ParentComponent = (props) => {
       return true
     }
 
-    if (command !== "goal") dismiss(sid)
-
-    if (scope) {
+    // fork_change start
+    const prepare = () => {
+      if (command !== "goal") dismiss(sid)
+      if (!scope) return
       if (command !== "goal") {
         clearClose(scope)
         addOptimistic(scope, messageID, `/${command} ${args}`.trim(), files)
@@ -2437,6 +2429,10 @@ export const SessionProvider: ParentComponent = (props) => {
         setDraftSessionID(scope)
       }
     }
+    // fork_change end
+    // fork_change start
+    prepare()
+    // fork_change end
     vscode.postMessage({
       type: "sendCommand",
       command,

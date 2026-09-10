@@ -5,9 +5,13 @@ import type { DiffHandle } from "@kilocode/kilo-ui/pierre"
 import type { VirtualizerHandle } from "virtua/solid"
 import type { PRComment } from "../agent-manager/pr/pr-types"
 import { useLanguage } from "../src/context/language"
+// fork_change start
 import { useConfig } from "../src/context/config"
+// fork_change end
 import { useVSCode } from "../src/context/vscode"
+// fork_change start
 import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability"
+// fork_change end
 import type { WorktreeFileDiff } from "../src/types/messages"
 import type { SpeechToTextMode } from "../../src/speech-to-text/models" // fork_change
 import { lineCount, sanitizeReviewComments, type ReviewComment } from "./review-comments"
@@ -319,12 +323,16 @@ export interface ReviewViewProps {
   onRequestDiff?: (file: string) => void
   onOpenFile?: (file: string, line?: number) => void
   canComment?: boolean
+  // fork_change start
   mode?: Accessor<SpeechToTextMode>
+  // fork_change end
 }
 
 export function createReviewView(props: ReviewViewProps, root: Accessor<HTMLDivElement | undefined>) {
   const { t } = useLanguage()
+  // fork_change start
   const { config } = useConfig()
+  // fork_change end
   const vscode = useVSCode()
   const local = createReviewComposer()
   const state = createReviewOpenState(
@@ -389,7 +397,9 @@ export function createReviewView(props: ReviewViewProps, root: Accessor<HTMLDivE
     activeTerminalId: () => props.activeTerminalId,
     active: () => props.active !== false,
     canComment: () => props.canComment !== false,
+    // fork_change start
     mode: props.mode ?? (() => selectedSpeechToTextMode(config())),
+    // fork_change end
     onSendClick: props.onSendClick,
     onSendAll: props.onSendAll,
   })
