@@ -5,15 +5,21 @@ It does not describe OpenCode merge automation.
 
 ## Responsibilities
 
-- The coordinator is the main agent and is read-only.
-- The coordinator researches conflicts, intent, call chains, state, and contracts,
-  coordinates review, and may choose a clear resolution that prioritizes confirmed
-  fork features.
-- The executor is a subagent. It performs write operations such as fetch, rebase,
-  and an approved conflict resolution.
-- The executor must stop before `git rebase --continue` for any substantive
-  conflict and report the relevant facts to the coordinator.
-- The executor never invents semantic or architectural decisions.
+- The coordinator is the main agent and is read-only. It owns immutable baseline
+  SHAs, fork intent, cross-package decisions, approvals, and review findings.
+- Executors are package-scoped subagent sessions, with a root executor for root
+  files. Create them lazily and reuse the same session ID throughout the rebase;
+  do not start a fresh executor for each conflict.
+- Only one executor may mutate the worktree or index at a time. On every activation,
+  it re-reads `HEAD`, the replayed fork commit, unmerged paths, and staged paths
+  instead of trusting remembered Git state.
+- An executor may edit only its package. For a stop spanning packages, the relevant
+  executors act sequentially; only coupled cross-package behavior or contracts make
+  the stop Deep automatically.
+- Replace an executor only when its context is demonstrably unreliable, using a
+  concise handoff of the current Git state and approved decisions. Rotation is not
+  a routine per-conflict step.
+- Executors never invent semantic or architectural decisions.
 - The user decides only when analysis reveals a genuine architectural, product, or
   contract choice, not for every routine resolution.
 
@@ -35,16 +41,117 @@ platform-specific recipes to this process.
 
 ## Conflict Handling
 
-A substantive conflict touches executable code, configuration, tests, workflows, or a user-facing contract unless the coordinator demonstrates it is formatting-only.
+Classify each conflict unit: the conflicted hunk, its entire enclosing function,
+declaration, fixture case, or registry entry, and the directly coupled code defined
+below. A rebase stop takes the highest route among all its units:
+`Mechanical -> Bounded -> Deep`. Record one concise route line per stop; do not
+create a separate ledger file or investigation report.
 
-Do not mechanically combine substantive conflicts. Compare the common base,
-upstream intent, and fork intent (identified by `// fork_change` and `// kilocode_change`
-markers, or `CHANGELOG-FORK.md`). Determine whether the changes implement one
-contract or independent changes, then trace affected consumers, data, state,
-ordering, and failure paths.
+```text
+ROUTE stop=<commit> packages=<packages> mechanical=<units> bounded=<units> deep=<units> -> <highest-route>
+```
 
-Always preserve and adjust `// fork_change` markers during conflict resolution so
-fork modifications remain clearly annotated.
+During a rebase, never infer semantic ownership from `ours` or `theirs`. Use the
+common base, current upstream-based tree, and replayed fork commit. Never classify
+from conflict-marker lines or the final merged diff alone.
+
+### Mechanical Fast-Path
+
+Mechanical is a narrow, fail-closed exact-union path. Before granting it, inspect
+the complete index stage `1 -> 2` and `1 -> 3` deltas, or equivalent immutable
+snapshots, for every conflicted path in the current stop. Evaluate its conditions in
+order and stop at the first failure; a conclusive Scope failure routes the unit to
+Bounded or Deep without completing the remaining Mechanical checks.
+
+All four conditions must pass:
+
+1. **Scope**: The conflict and coupled side deltas contain only named `import type`
+   specifiers, recognized fork ownership annotations, or additions to a non-exported
+   flat module-level object map documented as order-independent and containing only
+   static unique keys and literal values. Removing annotation-only changes leaves
+   identical code tokens on all three sides.
+2. **Additive**: Each non-annotation delta is the base plus additions only. Neither
+   side modifies, deletes, renames, moves, or semantically reorders an existing
+   element. The result is the exact union, with every element once. Compare syntax
+   members rather than whitespace or canonical formatter sorting.
+3. **Collision-free**: Added bindings, keys, aliases, and canonical runtime or
+   protocol identities are distinct across the sides.
+4. **Independent**: The side deltas positively show non-overlapping intent. Commit
+   metadata, ownership markers, and `CHANGELOG-FORK.md` may corroborate that result;
+   names or missing changelog text never prove it.
+
+Runtime imports, executable code, tests, configuration, schemas, protocol unions,
+registries, directives, and generated contracts do not qualify as Mechanical. This
+exclusion routes them to Bounded or Deep; it does not make them Deep automatically.
+Do not launch research merely to make a Mechanical classification pass.
+
+When every unit in the stop is Mechanical, the relevant package executors resolve
+their units sequentially. After the applicable stop-level audit, the last active
+executor confirms no unmerged paths remain and may run `git rebase --continue`
+without coordinator approval. Mechanical stops do not trigger conflict-specific
+behavioral review later.
+
+### Bounded Resolution
+
+Bounded covers semantic edits whose two intents and exact composition are locally
+evident. Executable code, tests, fixtures, and configuration are eligible categories,
+not proof that a conflict is Bounded.
+
+Use only this fixed evidence boundary:
+
+- index stages and common base;
+- the relevant paths and hunks in the replayed fork commit, plus its message;
+- the entire enclosing function, declaration, fixture case, or registry entry;
+- imports and local definitions changed by either side and used in that scope;
+- one-hop package-local references to changed symbols, without tracing transitive
+  consumers;
+- the relevant fork annotation or changelog entry when present.
+
+Within that boundary, include auto-merged edits from both side deltas, including code
+between conflict hunks. Do not treat unmarked lines as unrelated when they share the
+same enclosing declaration or changed symbols. If the evidence boundary cannot prove
+one exact result, promote to Deep immediately; do not start research to make Bounded
+pass.
+
+Bounded must have no overlapping user-facing feature, state/lifecycle/timing/
+concurrency risk, order or precedence ambiguity, persistence or external contract
+change, or cross-package dependency. A fixture adapting to a locally obvious API
+change can be Bounded; a test changing expected product behavior cannot.
+
+The relevant package executors resolve their Bounded units sequentially. Once every
+unit is staged, the last active executor stops before `git rebase --continue`. Its
+compact approval packet contains the original commit, paths, both intents, staged
+diff, coupled regions, applicable post-rebase guard, and audit status. The
+coordinator verifies that packet and exact staged candidate without repeating the
+investigation. Any later index or worktree change invalidates the approval and
+requires resubmission.
+
+### Deep Resolution
+
+Deep covers overlapping implementations of the same feature, state/lifecycle/timing/
+concurrency behavior, ordering or precedence semantics, persistence or external
+contracts, ambiguous deletion or replacement, cross-package contracts, and any case
+whose intent or result is not proven inside the Bounded evidence boundary.
+
+The executor stops before editing. The coordinator investigates the concrete unknown
+and uses a review agent only when a named question requires it and that agent has the
+necessary tools. The user decides only genuine product, architecture, or contract
+choices. After a decision, the relevant executor implements it and submits the full
+staged candidate for coordinator verification before continuing the rebase.
+
+Always preserve or adjust valid fork annotations during conflict resolution and
+remove stale annotations as described below.
+
+### Audit Checkpoints
+
+- Before continuing a stop, run one
+  `bun run script/fork-audit.ts --worktree <paths...>` for the union of paths where
+  the actual diff moves, deletes, or reattaches fork markers or marker-owned code.
+  Do not rerun unaffected paths or dispatch a new executor per reported gap.
+- If the audit script is not yet present in the replayed tree, record the affected
+  paths and run them together as soon as it becomes available. If it is still absent
+  at final validation, fail closed and report the missing guard.
+- The final full-repository fork audit remains mandatory after all post-rebase fixes.
 
 ### Annotation Commit Conflicts
 
@@ -70,9 +177,9 @@ Two mechanical rules prevent audit failures when restoring or adjusting markers:
   block, and `start` before leading ones. fork-audit treats a block as a run of
   consecutive added lines; a single uncovered blank line marks the whole block
   as missing even though the code itself is wrapped.
-- Verify placements with `bun run script/fork-audit.ts --worktree <file>` and
-  prettier before folding fixes into the annotation commit; the committed audit
-  reads HEAD and silently ignores uncommitted edits.
+- Include every changed marker path in the stop-level audit above and run prettier
+  before folding fixes into the annotation commit; the committed audit reads HEAD
+  and silently ignores uncommitted edits.
 
 For `bun.lock` conflicts, never resolve manually; use:
 
@@ -83,12 +190,12 @@ bun install
 
 **If upstream independently implements the same or an overlapping feature, stop before
 choosing a resolution.** The coordinator must compare the resulting user-facing
-contract, behavior, maintenance cost, and relevant tests, then present `ours`,
-`upstream`, or a minimal merge to the user. Do not assume the fork implementation
-wins; upstream may be the better implementation.
+contract, behavior, maintenance cost, and relevant tests, then present the fork
+implementation, upstream implementation, or a minimal composition to the user. Do
+not assume the fork implementation wins; upstream may be the better implementation.
 
-The coordinator may resolve a clear non-overlapping case, prioritizing confirmed fork
-behavior.
+The coordinator may approve a clear non-overlapping Bounded resolution, prioritizing
+confirmed fork behavior.
 Stop and explain the facts briefly when an architectural, product, or contract
 decision is required. Do not expand scope for theoretical edge cases.
 
@@ -106,19 +213,34 @@ and actual behavior.
 ## Validation
 
 - After every rebase, including a conflict-free rebase, validate the packages and
-  contracts actually affected by the rebased fork commits or conflict resolutions.
-- For VS Code-only changes, run from `packages/kilo-vscode/`:
+  contracts containing replayed fork changes, manual resolutions, post-rebase fixes,
+  or direct consumers of a changed contract. Do not validate every package touched
+  only by the upstream range.
+- If dependency inputs changed, synchronize dependencies before any typecheck. Do
+  not investigate dependency type errors against stale `node_modules`.
+- Run deterministic checks before review agents: structural and annotation guards,
+  required generation, fixture and contract typechecks, package typecheck and lint,
+  then one aggregate behavior suite per affected package or validation domain. A
+  single repository-wide suite may replace them only when it demonstrably covers
+  every affected scope; shared or root fixes include all direct consumer packages.
+- For VS Code changes with Bounded or Deep resolutions, run sequentially from
+  `packages/kilo-vscode/`:
 
   ```bash
-  bun run typecheck
+  bun run check-types:fixtures
+  bun run check-types
+  bun run check-types:webview
   bun run lint
-  bun test tests/unit/<affected>.test.ts --dots
+  bun run test:unit
   ```
 
-  Run targeted unit tests for affected paths. Do not run unrelated CLI, JetBrains,
-  docs, gateway, or repository-wide test suites for a VS Code-only change.
+  Use targeted tests to diagnose a failure or when no aggregate suite exists; do not
+  duplicate them routinely before an aggregate suite. Do not run unrelated CLI,
+  JetBrains, docs, gateway, or repository-wide suites for a VS Code-only change.
+  For conflict-free or Mechanical-only VS Code changes, run the relevant checks from
+  `AGENTS.md` without requiring `test:unit` unless executable behavior is affected.
 - For CLI, server, or shared changes, use the package-specific checks and affected
-  tests listed in `AGENTS.md`; do not run unrelated package suites.
+  suite policy in `AGENTS.md`; do not run unrelated package suites.
 - Run a full-repository gate only when the user explicitly requests it or when the
   resolution changes a cross-package contract, build, or lockfile that cannot be
   validated at package scope.
@@ -135,19 +257,29 @@ and actual behavior.
 ### Regression Review
 
 Structural gates (range-diff, fork-audit, typecheck, lint) do not prove behavior
-preservation. Choose the regression-review depth by the risk of the rebase:
+preservation. Review the range-diff against both the pre-rebase fork HEAD and the new
+`upstream/main`, then use this fixed reviewer policy:
 
-- For docs/config/format-only changes or a conflict-free rebase with no substantive
-  executable overlap, use a lightweight review: inspect the range-diff and changed
-  paths, then run only checks relevant to those paths. Do not launch a multi-agent
-  behavioral investigation for a simple case.
-- Use deep review only for substantive conflict resolutions, overlapping executable
-  behavior, state/lifecycle/timing changes, cross-package contracts, or a broad
-  executable-file intersection. Dispatch several read-only agents: one compares
-  each original commit with its replay (`git show <old>` vs `git show <new>`), and
-  one adversarial agent inspects the merged regions in the final tree.
-- Compare against BOTH baselines when classifying: the pre-rebase fork HEAD and
-  the new `upstream/main`.
+- Do not launch review agents for a conflict-free or Mechanical-only rebase. Use the
+  coordinator's range-diff review and affected deterministic checks.
+- Classify manual post-rebase repairs with the same three routes. Any Bounded or Deep
+  repair triggers this reviewer policy even when the rebase itself was conflict-free
+  or Mechanical-only.
+- If any Bounded or Deep resolution occurred, first make deterministic checks green
+  or classify failures against a verified baseline. Freeze the resulting candidate
+  by recording `HEAD` with a clean worktree, then launch exactly two concurrent
+  read-only reviewer sessions.
+- The replay-fidelity reviewer compares only verified original/replayed commit pairs
+  containing Bounded or Deep resolutions.
+- The adversarial reviewer inspects only resolved units, their minimum coupled
+  regions, and direct dependencies needed to validate those regions. Findings stay
+  limited to consequences of the resolutions.
+- Any mutation after freezing the candidate invalidates both reviewer approvals.
+  Rerun affected deterministic checks, record a new clean `HEAD`, and resume both
+  existing reviewer session IDs against that SHA until both approve. Do not create a
+  third reviewer.
+- Reviewer and research prompts must require the concrete capabilities needed by the
+  question. An agent without Git access cannot answer a Git-history question.
 - Classify every finding as exactly one of:
   - **rebase regression** — caused by the resolution; fix before finishing, then
     re-run validation;
@@ -158,10 +290,6 @@ preservation. Choose the regression-review depth by the risk of the rebase:
 - Do not include translation/i18n searches in the default regression review. Audit
   localization only when the rebase changes locale files or translation keys, or
   when the user explicitly requests it.
-- Run the affected package's default unit suite when substantive executable package
-  behavior is in scope (for VS Code: `bun run test:unit` from
-  `packages/kilo-vscode/`). Do not require a package behavior suite for
-  docs/config/format-only changes.
 - A relevant test that hangs, times out, or cannot execute in the local
   environment is an explicit verification gap. Name it in the final report;
   do not treat the remaining green checks as full coverage.
