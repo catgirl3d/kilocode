@@ -248,6 +248,10 @@ and actual behavior.
 - Never run root `bun test`; it intentionally fails.
 - Keep `AGENTS.md` as the source of truth for additional affected guards.
 - Run `bun run check-kilocode-change` from `packages/kilo-vscode/` to ensure no illegal markers were added.
+- Upstream CI does not run fork-owned guards. After every rebase, run
+  `bun run check-types:fixtures` from `packages/kilo-vscode/` even when the
+  package's only new content is upstream: upstream files can pass upstream CI
+  and still fail the fork's fixture tsconfig.
 - Run `bun run script/check-opencode-annotations.ts --worktree` from the root when touching shared OpenCode files.
 - Run `bun run script/fork-audit.ts` to audit marker coverage and layer compliance across all rebased commits.
 - If rebased changes affect server endpoints in `packages/opencode/src/server/`, run `./script/generate.ts` from the repository root and verify the generated SDK changes.
