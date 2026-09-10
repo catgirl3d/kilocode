@@ -93,7 +93,8 @@ describe("sendCommand dismisses pending tool requests", () => {
     expect(body).toContain("if (overrides?.variant)")
     expect(body).toContain("selectVariant(overrides.variant, scope, false)")
     expect(body).toContain("const preset = overrides?.agent !== undefined || overrides?.model !== undefined")
-    expect(body.match(/variants\.request\(scope, preset\)/g)?.length).toBe(2)
+    expect(body.match(/variants\.request\(scope, preset\)/g)?.length).toBe(1)
+    expect(body.match(/\.\.\.settings/g)?.length).toBe(2)
   })
 })
 
@@ -321,24 +322,31 @@ describe("sendMessage / sendCommand draft id contract", () => {
     )
   })
 
-  it("sendCommand seeds the pending agent before resolving draft-scoped settings", () => {
+  it("sendCommand seeds the pending agent before resolving the effective command selection", () => {
     const body = extractFunctionBody(source, "sendCommand")
     expect(body).toMatch(
-      /if \(!sid && !draftID && effectiveDraftID\) agentDrafts\.seed\(effectiveDraftID\)[\s\S]*submission\(scope, effectiveSelection\)/,
+      /if \(!sid && !draftID && effectiveDraftID\) agentDrafts\.seed\(effectiveDraftID\)[\s\S]*const settings = \(\(\) =>/,
     )
   })
 
-  it("sendMessage and sendCommand post the settings returned by submission", () => {
+  it("sendMessage posts scoped settings and sendCommand posts the effective command selection", () => {
     expect(extractFunctionBody(source, "sendMessage")).toContain("const settings = submission(scope, selection)")
-    expect(extractFunctionBody(source, "sendCommand")).toContain(
-      "const { model, ...settings } = submission(scope, effectiveSelection)",
-    )
+    const command = extractFunctionBody(source, "sendCommand")
+    expect(command).toContain("const settings = (() => {")
+    expect(command).toContain("providerID: effectiveSelection.providerID")
+    expect(command).toContain("modelID: effectiveSelection.modelID")
+    expect(command).toContain("agent:")
+    expect(command).toContain("variant: variants.request(scope, preset)")
+    expect(command).not.toContain("commandAgent")
+    expect(command).toContain('const messageID = overrides?.messageID ?? Identifier.ascending("message")')
+    expect(command).toMatch(/type: "importAndSend"[\s\S]*messageID,[\s\S]*\.\.\.settings/)
+    expect(command).toMatch(/type: "sendCommand"[\s\S]*messageID,[\s\S]*\.\.\.settings/)
     expect(extractFunctionBody(source, "submission")).toContain("agent: resolvePromptAgent({")
   })
 
   it("does not resolve submission defaults for model-free Goal controls", () => {
     const body = extractFunctionBody(source, "sendCommand")
-    expect(body).toMatch(/if \(!effectiveSelection\) return\s+const \{ model, \.\.\.settings \} = submission/)
+    expect(body).toMatch(/const settings = \(\(\) => \{\s+if \(!effectiveSelection\) return/)
     expect(body).not.toContain("effectiveSelection ?? undefined")
   })
 
@@ -445,7 +453,12 @@ describe("PromptInput empty-chat continue contract", () => {
   const body = source.slice(start, end)
 
   it("allows an empty prompt to be sent regardless of chat history", () => {
-    expect(source).toContain('(speech.state() === "recording" || !speech.active())')
+    const sendStart = source.indexOf("const canSend = () =>")
+    const sendEnd = source.indexOf("const canSendContinue", sendStart)
+    const canSend = source.slice(sendStart, sendEnd)
+    expect(canSend).toContain('speech.state() === "recording"')
+    expect(canSend).toContain("!speech.active()")
+    expect(canSend).toContain("goal.active() ? goal.ready(text()) : true")
   })
 
   it("checks upstream resume before resolving the fork fallback", () => {

@@ -281,7 +281,6 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
                   variant="ghost"
                   label={t("command.review.toggle")}
                   aria-pressed={review()}
-                  class={review() ? "am-tab-diff-btn-active" : ""}
                   onClick={() => setReview((value) => !value)}
                 />
               </Tooltip>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { Window } from "happy-dom"
-import type { ModelSelection, WebviewMessage } from "../../webview-ui/src/types/messages"
+import type { Message, ModelSelection, Part, WebviewMessage } from "../../webview-ui/src/types/messages"
 
 const window = new Window({ url: "http://localhost" })
 Object.defineProperty(window, "origin", { value: window.location.origin })
@@ -62,7 +62,6 @@ const { SessionProvider, useSession, useSessionVisibility } = await import("../.
 const { initialMessage } = await import("../../webview-ui/agent-manager/initial-message")
 const { useBaseUpdate } = await import("../../webview-ui/agent-manager/update-from-base")
 const { post } = await import("../../webview-ui/src/utils/webview-message")
-const { MemoryProvider } = await import("../../webview-ui/src/context/memory")
 const { terminal } = await import("../../webview-ui/src/context/session-outcome")
 const { PromptInput } = await import("../../webview-ui/src/components/chat/PromptInput")
 const { IndexingProvider } = await import("../../webview-ui/src/context/indexing")
@@ -400,12 +399,13 @@ try {
       type: "agentManager.sendInitialMessage",
       projectId: "background-project",
       sessionId: id,
+      worktreeId: id,
       text: "Initial worktree prompt",
       providerID: "unloaded",
       modelID: "unloaded",
       agent: variant === undefined ? undefined : "ask",
       variant,
-      files: [{ mime: "image/png", url: "data:image/png;base64,cHJvbXB0", filename: "prompt.png" }],
+      files: [{ mime: "image/png", url: "data:image/png;base64,cHJvbXB0" }],
       browserFeedback: { version: 1, references: [{ id: "element", sessionId: id, selector: "button" }] },
     })
     assert(request)
@@ -416,9 +416,10 @@ try {
     assert.deepEqual(sent, { ...request, messageID: sent.messageID })
     assert.equal(value.currentSessionID(), "root")
     assert.equal(value.isSubmitting(id), true)
-    const optimistic = unwrap(value.allMessages()[id]?.at(0))
+    const optimistic: Message | undefined = unwrap(value.allMessages()[id]?.at(0))
+    assert(optimistic)
     assert.equal(optimistic?.id, sent.messageID)
-    const parts = structuredClone(unwrap(value.getParts(sent.messageID)))
+    const parts: Part[] = structuredClone(unwrap(value.getParts(sent.messageID)))
     assert.equal(parts.length, 2)
     assert.equal(parts.find((part) => part.type === "text")?.text, request.text)
     assert.equal(parts.at(1)?.type, "file")
@@ -977,7 +978,7 @@ try {
   }
   const submit = (enter: boolean) => {
     if (enter) {
-      input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+      input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event)
       return
     }
     const button = host.querySelector<HTMLButtonElement>(
@@ -1042,7 +1043,7 @@ try {
     assert(host.querySelector(".prompt-goal-header"))
     const text = "Fix the failing tests"
     input().value = text
-    input().dispatchEvent(new window.Event("input", { bubbles: true }))
+    input().dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
     await settle()
     const scope = `acceptance:session:${sid}`
     for (const success of [false, true]) {
@@ -1050,7 +1051,7 @@ try {
       assert(button)
       assert.equal(button.getAttribute("aria-disabled"), "false")
       const count = requests().length
-      const messages = value.messages().length
+      const messageCount: number = value.messages().length
       button.click()
       await settle()
       assert.equal(requests().length, count + 1)
@@ -1060,30 +1061,34 @@ try {
       assert.equal(request.type === "sendCommand" ? request.arguments : request.commandArgs, `-- ${text}`)
       assert.equal(request.modelID, recommended.modelID)
       assert.deepEqual(request.files, [{ mime: image.mime, url: image.dataUrl, filename: image.filename }])
-      assert.equal(value.messages().length, messages, "Goal sends must not add optimistic chat messages")
+      assert.equal(value.messages().length, messageCount, "Goal sends must not add optimistic chat messages")
       assert.equal(input().value, text, "Keep the Goal draft until its acknowledgement")
       assert.equal(button.getAttribute("aria-disabled"), "true")
       assert.equal(input().readOnly, true)
       assert.equal(input().getAttribute("aria-disabled"), "true")
       input().value = "Rejected pending edit"
-      input().dispatchEvent(new window.Event("input", { bubbles: true }))
+      input().dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
       for (const key of ["ArrowUp", "ArrowDown", "Backspace", "Tab", "Enter"]) {
         input().setSelectionRange(0, 0)
-        input().dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true }))
+        input().dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true }) as unknown as Event)
       }
       const clipboard = new window.DataTransfer()
       clipboard.items.add(new window.File(["image"], "extra.png", { type: "image/png" }))
       const paste = new window.ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: clipboard })
-      input().dispatchEvent(paste)
+      input().dispatchEvent(paste as unknown as Event)
       assert.equal(paste.defaultPrevented, true)
       const transfer = new window.DataTransfer()
       transfer.setData("application/vnd.code.uri-list", "file:///test/extra.txt")
-      const drop = new window.DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer })
-      input().dispatchEvent(drop)
+      const drop = new window.DragEvent("drop", {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer,
+      } as unknown as ConstructorParameters<typeof window.DragEvent>[1])
+      input().dispatchEvent(drop as unknown as Event)
       assert.equal(drop.defaultPrevented, true)
       const remove = host.querySelector<HTMLButtonElement>(".image-attachment-remove")
       assert(remove?.disabled)
-      remove.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))
+      remove.dispatchEvent(new window.MouseEvent("click", { bubbles: true }) as unknown as Event)
       await settle()
       assert.equal(input().value, text)
       assert.equal(requests().length, count + 1)
@@ -1110,14 +1115,14 @@ try {
       submit(false)
       await settle()
       input().value = "Retain this objective"
-      input().dispatchEvent(new window.Event("input", { bubbles: true }))
+      input().dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
       submit(false)
       await settle()
       const request = requests().at(-1)
       assert(request?.type === "sendCommand")
       assert.equal(input().readOnly, true)
       if (cancel === "escape")
-        input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+        input().dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event)
       if (cancel === "button") host.querySelector<HTMLButtonElement>(".prompt-goal-header button")!.click()
       await settle()
       assert.equal(host.querySelector(".prompt-goal-header"), null)
@@ -1127,7 +1132,7 @@ try {
       // Cancel must preserve even an unchanged draft when the accepted command later succeeds.
       if (!success) {
         input().value += " with a new edit"
-        input().dispatchEvent(new window.Event("input", { bubbles: true }))
+        input().dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
       }
       const draft = input().value
       await emit(
@@ -1150,7 +1155,7 @@ try {
     submit(false)
     await settle()
     input().value = "Original session objective"
-    input().dispatchEvent(new window.Event("input", { bubbles: true }))
+    input().dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
     submit(false)
     await settle()
     const request = requests().at(-1)
@@ -1163,7 +1168,7 @@ try {
     assert.equal(input().readOnly, false)
     assert.equal(input().value, "Other session draft")
     input().value += " edited"
-    input().dispatchEvent(new window.Event("input", { bubbles: true }))
+    input().dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
     await emit(
       success
         ? { type: "sessionCommandCompleted", messageID: request.messageID }

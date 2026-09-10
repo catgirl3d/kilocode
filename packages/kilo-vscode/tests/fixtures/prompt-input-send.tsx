@@ -125,7 +125,7 @@ async function run(resumable: boolean, attachment?: AttachmentCase) {
   try {
     await settle()
     await settle()
-    const button = root.querySelector<HTMLButtonElement>(".prompt-input-hint-actions button[aria-disabled]")
+    const button = root.querySelector<HTMLButtonElement>(".prompt-input-hint-actions button[data-icon='send']")
     assert.ok(button, "send button did not render")
     assert.equal(button.getAttribute("aria-disabled"), "false")
     button.click()

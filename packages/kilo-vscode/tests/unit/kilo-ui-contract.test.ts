@@ -105,9 +105,8 @@ describe("Sub-agent session title contract", () => {
     const list = fs.readFileSync(MESSAGE_LIST_FILE, "utf-8")
     const parts = fs.readFileSync(MESSAGE_PARTS_FILE, "utf-8")
 
-    expect(expanded).toContain(
-      'createMemo(() => i18n.t("ui.tool.agent", { type: props.input.subagent_type || props.tool }))',
-    )
+    expect(expanded).toContain('i18n.t("ui.tool.agent", { type: props.input.subagent_type })')
+    expect(expanded).toContain('i18n.t("ui.tool.agent.default")')
     expect(expanded).toContain(
       '<CopyButton value={() => childSessionId() ?? ""} label={language.t("session.action.copyId")} />',
     )
@@ -525,12 +524,17 @@ describe("Memory control placement contract (source)", () => {
     const context = fs.readFileSync(SESSION_CONTEXT_FILE, "utf-8")
     expect(context).toContain("setShaking(sessionID)")
     expect(context).toContain('message.type === "sessionShakeFailed"')
-    expect(context).toContain('"command.session.shake.cleared"')
-    expect(context).toContain("message.parts > 0")
-    expect(context).toContain('"command.session.shake.clearedParts"')
-    expect(context).toContain('"command.session.shake.empty"')
-    expect(context).toContain("message.diagnostics")
-    expect(context).toContain('"command.session.shake.diagnostics"')
+    expect(context).toContain("shakeToast(message, language)")
+    const shakeToastSource = fs.readFileSync(
+      path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/context/session-shake.ts"),
+      "utf-8",
+    )
+    expect(shakeToastSource).toContain('"command.session.shake.cleared"')
+    expect(shakeToastSource).toContain("message.parts > 0")
+    expect(shakeToastSource).toContain('"command.session.shake.clearedParts"')
+    expect(shakeToastSource).toContain('"command.session.shake.empty"')
+    expect(shakeToastSource).toContain("message.diagnostics")
+    expect(shakeToastSource).toContain('"command.session.shake.diagnostics"')
     expect(header).not.toContain("settings.context.compaction.title")
   })
 

@@ -1532,6 +1532,31 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return { match, entry }
   }
 
+  // fork_change start
+  const runAction = (matched: ReturnType<typeof command>["entry"]) => {
+    // Builtin actions use dedicated session endpoints; configured commands retain precedence.
+    const action = commandAction(matched, () => session.shake())
+    if (!action) return false
+    if (matched?.enabled && !matched.enabled()) return true
+    setText("")
+    clearReviewComments()
+    clear()
+    clearContexts()
+    imageAttach.clear()
+    mention.closeMention()
+    slash.close()
+    drafts.delete(draftKey())
+    reviewDrafts.delete(draftKey())
+    contextDrafts.delete(draftKey())
+    imageDrafts.delete(draftKey())
+    mentionDrafts.delete(draftKey())
+    scrollDrafts.delete(draftKey())
+    textareaRef?.style.setProperty("height", "auto")
+    action()
+    return true
+  }
+
+  // fork_change end
   const handleSend = async () => {
     // fork_change start
     let draft = text().trim()
@@ -1575,28 +1600,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const cmdMatch = parsed.match
     const matched = parsed.entry
 
-    // fork_change start
-    // Builtin actions use dedicated session endpoints; configured commands retain precedence.
-    const action = commandAction(matched, () => session.shake())
-    if (action) {
-      if (matched?.enabled && !matched.enabled()) return
-      setText("")
-      clearReviewComments()
-      clear()
-      clearContexts()
-      imageAttach.clear()
-      mention.closeMention()
-      slash.close()
-      drafts.delete(draftKey())
-      reviewDrafts.delete(draftKey())
-      contextDrafts.delete(draftKey())
-      imageDrafts.delete(draftKey())
-      mentionDrafts.delete(draftKey())
-      scrollDrafts.delete(draftKey())
-      textareaRef?.style.setProperty("height", "auto")
-      action()
-      return
-    }
+    if (runAction(matched)) return
     // fork_change end
 
     const imgs = imageAttach.images()

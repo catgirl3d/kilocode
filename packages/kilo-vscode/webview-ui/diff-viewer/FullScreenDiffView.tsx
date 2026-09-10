@@ -64,7 +64,7 @@ interface FullScreenDiffViewProps extends ReviewViewProps {
 }
 
 export const FullScreenDiffView: Component<FullScreenDiffViewProps> = (props) => {
-  const { config } = useConfig()
+  const { config } = useConfig() // fork_change
   // fork_change start
   const speechMode = () => selectedSpeechToTextMode(config())
   // fork_change end
