@@ -16,6 +16,7 @@ import type { Snapshot } from "@/snapshot"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionID } from "@/session/schema"
+import { opencodeSessionHeaders } from "@/kilocode/provider/opencode-session-headers" // fork_change
 
 const log = Log.create({ service: "memory.ports" })
 
@@ -134,6 +135,8 @@ function latest(messages: MessageV2.WithParts[]): Turn | undefined {
 }
 
 /** True when the turn was answered from memory (targeted recall ran); digesting it would echo memory back into itself. */
+// fork_change start
+// prettier-ignore
 function recalledMemory(turn: Turn) {
   return [turn.user, ...turn.assistants].flatMap((item) => item.parts).some((part) => {
     if (part.type === "tool") {
@@ -149,6 +152,7 @@ function recalledMemory(turn: Turn) {
     return marker?.type === "recall" && (marker.count ?? 0) > 0
   })
 }
+// fork_change end
 
 // --- Model resolution + invocation (host provider/`ai` -> port ModelHandle) --------------------
 
@@ -174,6 +178,7 @@ async function memoryText(input: {
   system: string
   prompt: string
   timeoutMs: number
+  sessionID: string // fork_change
   temperature?: number
   topP?: number
   topK?: number
@@ -193,6 +198,7 @@ async function memoryText(input: {
     topP: input.topP,
     topK: input.topK,
     maxRetries: 1,
+    headers: opencodeSessionHeaders({ providerID: input.source.providerID, sessionID: input.sessionID }), // fork_change
   }
   const work = async () => {
     if (!openai) return generateText(common)
@@ -239,6 +245,8 @@ type ModelHandle = ReturnType<typeof modelOptions>
 
 /** Host SessionPort: extracts a TurnView from opencode's message store + snapshot diffs so the
  * package orchestrator never touches the host message model. */
+// fork_change start
+// prettier-ignore
 export namespace MemorySession {
   export function port(input: {
     sessions: Session.Interface
@@ -281,9 +289,12 @@ export namespace MemorySession {
     }
   }
 }
+// fork_change end
 
 /** Host ModelPort: resolves the consolidation model through opencode's provider and runs it via the
  * `ai` SDK, exposing the resolved model to the package as an opaque handle. */
+// fork_change start
+// prettier-ignore
 export namespace MemoryModel {
   export function port(input: { provider: Provider.Interface }): MemoryPorts.ModelPort {
     return {
@@ -314,7 +325,9 @@ export namespace MemoryModel {
           const language = yield* input.provider.getLanguage(source)
           return { handle: modelOptions(source, language), ...(reason ? { fallback: { reason } } : {}) }
         }).pipe(Effect.mapError(MemoryError.from)),
-      run: ({ handle, system, prompt, timeoutMs, signal }) => {
+      // fork_change start
+      // prettier-ignore
+      run: ({ handle, sessionID, system, prompt, timeoutMs, signal }) => { // fork_change
         const resolved = handle as ModelHandle
         return memoryText({
           source: resolved.source,
@@ -323,12 +336,15 @@ export namespace MemoryModel {
           system,
           prompt,
           timeoutMs,
+          sessionID,
           temperature: resolved.temperature,
           topP: resolved.topP,
           topK: resolved.topK,
           signal,
         })
       },
+      // fork_change end
     }
   }
+// fork_change end
 }
