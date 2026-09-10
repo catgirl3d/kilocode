@@ -23,7 +23,7 @@ export namespace MemoryPorts {
 
   export interface SessionPort {
     readonly readTurn: (input: {
-      sessionID: string
+      sessionID: string // fork_change
       window: number
     }) => Effect.Effect<TurnView | undefined, MemoryError>
     readonly get: (input: { sessionID: string }) => Effect.Effect<{ parentID?: string } | undefined, MemoryError>
@@ -39,6 +39,7 @@ export namespace MemoryPorts {
     readonly resolve: (input: { configured?: string; session: ModelRef }) => Effect.Effect<ModelResolution, MemoryError>
     readonly run: (input: {
       handle: ModelHandle
+      sessionID: string // fork_change
       system: string
       prompt: string
       timeoutMs: number

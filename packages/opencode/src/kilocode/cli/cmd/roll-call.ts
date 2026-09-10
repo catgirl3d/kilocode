@@ -12,19 +12,26 @@ import { randomUUID } from "crypto"
 // Resolved once per process: roll-call's per-model path must not re-await import
 // resolution for every model.
 let cache: ReturnType<typeof loadDeps> | undefined
+// fork_change start
+// prettier-ignore
 function loadDeps() {
   return Promise.all([
     import("../../../effect/app-runtime"),
     import("../../../provider/provider"),
     import("../../../effect/runtime-flags"),
     import("ai"),
-  ]).then(([runtime, provider, flags, ai]) => ({
+    // fork_change start
+    import("../../provider/opencode-session-headers"),
+    // fork_change end
+  ]).then(([runtime, provider, flags, ai, headers]) => ({ // fork_change
     AppRuntime: runtime.AppRuntime,
     Provider: provider.Provider,
     RuntimeFlags: flags.RuntimeFlags,
     generateText: ai.generateText,
+    opencodeSessionHeaders: headers.opencodeSessionHeaders, // fork_change
   }))
 }
+// fork_change end
 function deps() {
   cache ??= loadDeps()
   return cache
@@ -310,7 +317,7 @@ async function call(
   start: number,
 ): Promise<Omit<Result, "model">> {
   try {
-    const { AppRuntime, RuntimeFlags, generateText } = await deps()
+    const { AppRuntime, RuntimeFlags, generateText, opencodeSessionHeaders } = await deps() // fork_change
     const language = await lang(model)
     const sessionID = randomUUID()
     const options = ProviderTransform.options({ model, sessionID })
@@ -332,6 +339,7 @@ async function call(
       topP,
       topK,
       providerOptions,
+      headers: opencodeSessionHeaders({ providerID: model.providerID, sessionID }), // fork_change
     })
 
     return {
