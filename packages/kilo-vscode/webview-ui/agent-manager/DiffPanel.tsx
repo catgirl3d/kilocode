@@ -78,7 +78,9 @@ export const DiffPanel: Component<DiffPanelProps> = (props) => {
     commentsByFile,
     handleGutterClick,
     sendAllClick,
+    // fork_change start
   } = createReviewView({ ...props, mode: speechMode }, () => rootRef)
+  // fork_change end
 
   const handleExpandAll = () => {
     setOpen(toggleOpenFiles(props.diffs, open()))

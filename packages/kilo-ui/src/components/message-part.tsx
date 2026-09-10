@@ -1239,11 +1239,7 @@ function McpTool(props: ToolProps) {
     }
     return ids
   })
-  // fork_change start
-  const labelKeys = ["description", "query", "url", "filePath", "path", "pattern", "name"]
-  const skipKeys = new Set(labelKeys)
-
-  // prefer the streamed state title (e.g. consult_advisor progress) over the raw tool name
+  // fork_change start - prefer the streamed state title (e.g. consult_advisor progress) over the raw tool name
   const title = createMemo(() => props.stateTitle || props.tool)
   // fork_change end
   const trigger = () => {
@@ -1267,6 +1263,9 @@ function McpTool(props: ToolProps) {
     return { title: title(), subtitle: subtitle(), args: inputArgs() }
     // fork_change end
   }
+  const labelKeys = ["description", "query", "url", "filePath", "path", "pattern", "name"]
+  const skipKeys = new Set(labelKeys)
+
   const subtitle = () =>
     labelKeys
       .map((key) => props.input?.[key])

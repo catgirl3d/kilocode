@@ -270,9 +270,9 @@ export async function activate(context: vscode.ExtensionContext) {
     for (const dir of agentManagerProvider.getSessionDirectories().values()) dirs.add(dir)
     return [...dirs]
   })
-  // fork_change end
   // Keep upstream notifications independently; omit its obsolete per-event approve callback
   // because the backend owns permission bypass.
+  // fork_change end
   const attention = new AttentionService(connectionService, {
     details: async (sessionID, directory) => {
       provider.rememberSession(sessionID, directory)

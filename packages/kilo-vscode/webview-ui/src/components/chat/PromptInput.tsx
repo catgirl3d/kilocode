@@ -712,9 +712,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const goalReady = () => !goal.pending() && (!goal.active() || (!enhancing() && !imageAttach.pending()))
   // fork_change start
   const canSend = () =>
-    sendReady() &&
-    (speech.state() === "recording" ||
-      (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
+    sendReady() && (speech.state() === "recording" || (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
   // fork_change end
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
@@ -1451,6 +1449,29 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return { match, entry }
   }
 
+  // fork_change start
+  const runAction = (matched: ReturnType<typeof command>["entry"]) => {
+    // Builtin actions use dedicated session endpoints; configured commands retain precedence.
+    const action = commandAction(matched, () => session.shake())
+    if (!action) return false
+    if (matched?.enabled && !matched.enabled()) return true
+    setText("")
+    clearReviewComments()
+    clear()
+    imageAttach.clear()
+    mention.closeMention()
+    slash.close()
+    drafts.delete(draftKey())
+    reviewDrafts.delete(draftKey())
+    imageDrafts.delete(draftKey())
+    mentionDrafts.delete(draftKey())
+    scrollDrafts.delete(draftKey())
+    textareaRef?.style.setProperty("height", "auto")
+    action()
+    return true
+  }
+
+  // fork_change end
   const handleSend = async () => {
     // fork_change start
     let draft = text().trim()
@@ -1493,25 +1514,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const matched = parsed.entry
 
     // fork_change start
-    // Builtin actions use dedicated session endpoints; configured commands retain precedence.
-    const action = commandAction(matched, () => session.shake())
-    if (action) {
-      if (matched?.enabled && !matched.enabled()) return
-      setText("")
-      clearReviewComments()
-      clear()
-      imageAttach.clear()
-      mention.closeMention()
-      slash.close()
-      drafts.delete(draftKey())
-      reviewDrafts.delete(draftKey())
-      imageDrafts.delete(draftKey())
-      mentionDrafts.delete(draftKey())
-      scrollDrafts.delete(draftKey())
-      textareaRef?.style.setProperty("height", "auto")
-      action()
-      return
-    }
+    if (runAction(matched)) return
     // fork_change end
 
     const imgs = imageAttach.images()

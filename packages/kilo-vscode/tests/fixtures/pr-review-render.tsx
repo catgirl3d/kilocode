@@ -90,13 +90,23 @@ const select = async (start: number, end: number, side: "addition" | "deletion",
       pointerId: 1,
       pointerType: "mouse",
       button: 0,
-    }),
+    }) as unknown as Event,
   )
   final.dispatchEvent(
-    new window.PointerEvent("pointermove", { bubbles: true, composed: true, pointerId: 1, pointerType: "mouse" }),
+    new window.PointerEvent("pointermove", {
+      bubbles: true,
+      composed: true,
+      pointerId: 1,
+      pointerType: "mouse",
+    }) as unknown as Event,
   )
   final.dispatchEvent(
-    new window.PointerEvent("pointerup", { bubbles: true, composed: true, pointerId: 1, pointerType: "mouse" }),
+    new window.PointerEvent("pointerup", {
+      bubbles: true,
+      composed: true,
+      pointerId: 1,
+      pointerType: "mouse",
+    }) as unknown as Event,
   )
   await wait()
 }
