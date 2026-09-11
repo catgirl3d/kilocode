@@ -123,9 +123,12 @@ describe("createSetupScriptTask", () => {
   it("times out, rejects, and stops the process tree", async () => {
     const ctx = harness({ timeoutMs: 5 })
     const result = ctx.task(config)
+    // Attach before yielding: on Windows the 5ms timer can fire before the 0ms
+    // wait resumes, and an already-rejected promise breaks the Bun test runner.
+    const timedOut = expect(result).rejects.toThrow("Setup script timed out after 5 minutes")
     await wait()
 
-    await expect(result).rejects.toThrow("Setup script timed out after 5 minutes")
+    await timedOut
     expect(ctx.stops).toEqual(["wt-1"])
 
     // A late exit after the timeout must not settle the promise again.

@@ -1600,6 +1600,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const cmdMatch = parsed.match
     const matched = parsed.entry
 
+    // fork_change start
     if (runAction(matched)) return
     // fork_change end
 

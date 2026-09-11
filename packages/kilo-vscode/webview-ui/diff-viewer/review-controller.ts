@@ -396,6 +396,7 @@ export interface ReviewViewProps {
   canComment?: boolean
   commentForm?: CommentFormMount
   commentsGithub?: CommentsGithub
+  // fork_change start
   mode?: Accessor<SpeechToTextMode>
   // fork_change end
 }
