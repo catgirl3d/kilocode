@@ -1,5 +1,6 @@
 import { describe, it, expect, spyOn } from "bun:test"
 import type { SessionStatus } from "@kilocode/sdk/v2/client"
+import * as path from "node:path"
 import * as vscode from "vscode"
 import type { PartUpdate } from "../../src/shared/stream-messages"
 import type { AbortRequest } from "../../webview-ui/src/types/messages/webview-messages"
@@ -1076,17 +1077,19 @@ describe("KiloProvider.handleLoadMessages / focus mode freshness", () => {
       ],
     })
     const { internal } = makeProvider(client)
+    // Produced by path.normalize + dirname, which use OS separators.
+    const directory = path.dirname(path.normalize("/repo/frontend/src/app.ts"))
     const calls: Array<{ directory?: string; sessionID?: string }> = []
     const recovered = defer<void>()
-    internal.refreshGitStatus = async (directory, sessionID) => {
-      calls.push({ directory, sessionID })
-      if (directory === "/repo/frontend/src") recovered.resolve()
+    internal.refreshGitStatus = async (resolved, sessionID) => {
+      calls.push({ directory: resolved, sessionID })
+      if (resolved === directory) recovered.resolve()
     }
 
     await internal.handleLoadMessages("s1")
     await recovered.promise
 
-    expect(calls).toContainEqual({ directory: "/repo/frontend/src", sessionID: "s1" })
+    expect(calls).toContainEqual({ directory, sessionID: "s1" })
   })
 
   it("stops background processes for the previous session when switching sessions", async () => {

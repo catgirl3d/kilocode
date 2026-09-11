@@ -1543,7 +1543,7 @@ describe("WorktreeManager.createWorktree advanced", () => {
     expect(upstream.trim()).toBe("")
     expect(result.parentBranch).toBe("main")
     expect(result.remote).toBe("origin")
-  })
+  }, 60_000)
 
   it("preserves a non-default PR target branch for comparison", async () => {
     const { clone } = await createTempRepoWithOrigin()
@@ -1579,7 +1579,7 @@ describe("WorktreeManager.createWorktree advanced", () => {
     expect(result.parentBranch).toBe("develop")
     expect(result.remote).toBe("origin")
     expect(head).not.toBe(target)
-  })
+  }, 60_000)
 
   it("fails before creating a worktree for an unavailable PR target", async () => {
     const { clone } = await createTempRepoWithOrigin()

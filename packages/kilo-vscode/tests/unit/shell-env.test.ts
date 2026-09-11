@@ -4,10 +4,17 @@ import * as os from "os"
 import * as path from "path"
 import { getShellEnvironment, execWithShellEnv, clearShellEnvCache } from "../../src/agent-manager/shell-env"
 
-// On Windows the environment comes from the extension host (Path / USERPROFILE);
-// elsewhere it is parsed from a login shell (PATH / HOME).
-const pathKey = process.platform === "win32" ? "Path" : "PATH"
+// On Windows the environment comes from the extension host (USERPROFILE); the
+// PATH casing depends on the launcher (cmd uses "Path", Git Bash uses "PATH").
+// Elsewhere it is parsed from a login shell (PATH / HOME).
+const pathKey = "PATH"
 const homeKey = process.platform === "win32" ? "USERPROFILE" : "HOME"
+
+/** Environment variable names are case-insensitive on Windows; find the stored key. */
+function value(env: Record<string, string>, name: string): string | undefined {
+  const key = Object.keys(env).find((item) => item.toLowerCase() === name.toLowerCase())
+  return key === undefined ? undefined : env[key]
+}
 
 afterEach(() => {
   clearShellEnvCache()
@@ -17,34 +24,35 @@ describe("getShellEnvironment", () => {
   it("returns an object with PATH", async () => {
     const env = await getShellEnvironment()
     expect(env).toBeDefined()
-    expect(typeof env[pathKey]).toBe("string")
-    expect(env[pathKey]!.length).toBeGreaterThan(0)
+    expect(typeof value(env, pathKey)).toBe("string")
+    expect(value(env, pathKey)!.length).toBeGreaterThan(0)
   })
 
   it("returns HOME", async () => {
     const env = await getShellEnvironment()
-    expect(typeof env[homeKey]).toBe("string")
+    expect(typeof value(env, homeKey)).toBe("string")
   })
 
   it("caches results across calls", async () => {
     const first = await getShellEnvironment()
     const second = await getShellEnvironment()
-    expect(first[pathKey]).toBe(second[pathKey])
+    expect(value(first, pathKey)).toBe(value(second, pathKey))
   })
 
   it("returns a copy (mutations don't corrupt cache)", async () => {
     const first = await getShellEnvironment()
-    first[pathKey] = "/mutated"
+    const key = Object.keys(first).find((item) => item.toLowerCase() === pathKey.toLowerCase())!
+    first[key] = "/mutated"
     const second = await getShellEnvironment()
-    expect(second[pathKey]).not.toBe("/mutated")
+    expect(value(second, pathKey)).not.toBe("/mutated")
   })
 
   it("handles multiline env values without corrupting PATH", async () => {
     // PATH should never contain newlines — verify it parses correctly
     // even if other env vars have multiline values (e.g. BASH_FUNC_*)
     const env = await getShellEnvironment()
-    expect(env[pathKey]).toBeDefined()
-    expect(env[pathKey]).not.toContain("\n")
+    expect(value(env, pathKey)).toBeDefined()
+    expect(value(env, pathKey)).not.toContain("\n")
   })
 })
 
@@ -81,7 +89,7 @@ describe("clearShellEnvCache", () => {
     clearShellEnvCache()
     const second = await getShellEnvironment()
     // Both should succeed and contain PATH
-    expect(first[pathKey]).toBeDefined()
-    expect(second[pathKey]).toBeDefined()
+    expect(value(first, pathKey)).toBeDefined()
+    expect(value(second, pathKey)).toBeDefined()
   })
 })

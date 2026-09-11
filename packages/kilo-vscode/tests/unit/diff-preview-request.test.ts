@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
 import path from "node:path"
 import { build } from "esbuild"
 import { solidPlugin } from "esbuild-plugin-solid"
@@ -6,6 +8,17 @@ import { solidPlugin } from "esbuild-plugin-solid"
 const WEBVIEW = path.resolve(import.meta.dir, "../../webview-ui")
 const PASS = "DIFF_PREVIEW_REQUEST_PASS"
 const FAIL = "DIFF_PREVIEW_REQUEST_FAIL:"
+
+// `bun -e <bundle>` exceeds the Windows command-line limit (~32k); run from a file instead.
+function spawnBundle(code: string) {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "kilo-diff-preview-")), "bundle.cjs")
+  fs.writeFileSync(file, code)
+  try {
+    return Bun.spawnSync(["bun", file], { cwd: WEBVIEW, stdout: "pipe", stderr: "pipe" })
+  } finally {
+    fs.rmSync(path.dirname(file), { recursive: true, force: true })
+  }
+}
 
 const SCRIPT = `
   const { createEffect, createRoot, createSignal, on } = await import("solid-js")
@@ -269,9 +282,12 @@ describe("diff preview detail requests", () => {
             ctx.onResolve({ filter: /^solid-js$/ }, () => ({ path: path.join(solid, "dist/solid.js") }))
             ctx.onResolve({ filter: /^solid-js\/web$/ }, () => ({ path: path.join(solid, "web/dist/server.js") }))
             ctx.onResolve({ filter: /.*/ }, (args) => {
+              // esbuild reports importer paths with OS separators; normalize so the
+              // check also matches "…\DiffViewerApp.tsx" on Windows.
+              const importer = args.importer.replaceAll("\\", "/")
               if (
                 args.path !== "probe:surface" &&
-                (!args.importer.endsWith("/DiffViewerApp.tsx") || ["solid-js", "./diff-state"].includes(args.path))
+                (!importer.endsWith("/DiffViewerApp.tsx") || ["solid-js", "./diff-state"].includes(args.path))
               )
                 return
               return { path: "surface", namespace: "probe" }
@@ -316,11 +332,7 @@ describe("diff preview detail requests", () => {
         solidPlugin({ solid: { generate: "ssr" } }),
       ],
     })
-    const child = Bun.spawnSync(["bun", "-e", result.outputFiles.at(0)!.text], {
-      cwd: WEBVIEW,
-      stdout: "pipe",
-      stderr: "pipe",
-    })
+    const child = spawnBundle(result.outputFiles.at(0)!.text)
     expect(child.exitCode, child.stdout.toString() + child.stderr.toString()).toBe(0)
   })
 })

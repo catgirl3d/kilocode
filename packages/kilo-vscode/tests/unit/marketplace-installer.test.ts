@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "bun:test"
+import { describe, it, expect, afterEach, afterAll, beforeAll } from "bun:test"
 import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
@@ -9,6 +9,20 @@ import { exec } from "../../src/util/process"
 import * as yaml from "yaml"
 
 const tmpDir = path.join(os.tmpdir(), `kilo-test-${Date.now()}`)
+
+// Git for Windows ships GNU tar first on PATH; it treats the "C:" drive prefix in
+// absolute paths as a remote host ("Cannot connect to C"). The extension host uses
+// the System32 bsdtar, which accepts drive-letter paths — prefer it here too.
+const pathBefore = process.env.PATH
+beforeAll(() => {
+  if (process.platform !== "win32") return
+  const root = process.env.SystemRoot ?? "C:\\Windows"
+  process.env.PATH = [path.join(root, "System32"), process.env.PATH].filter(Boolean).join(path.delimiter)
+})
+afterAll(() => {
+  if (pathBefore === undefined) delete process.env.PATH
+  else process.env.PATH = pathBefore
+})
 
 class TestPaths extends MarketplacePaths {
   override configPath(scope: "project" | "global", workspace?: string): string {
