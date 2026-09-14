@@ -256,8 +256,9 @@ This repository is a personal fork of Kilo Code (`upstream/main`).
 - Do not attempt exhaustive full-file reading to prove the absence of unrelated regressions; rely on targeted diffs and package tests.
 
 - **Finding Fork Changes & Verification**:
-  - **Single file / folder audit on disk**: `bun run script/fork-audit.ts --worktree path/to/file.ts` (or `git diff upstream/main -- path/to/file.ts`).
-  - **Single file / folder in commit history**: `bun run script/fork-audit.ts path/to/file.ts` (or `git diff upstream/main...HEAD -- path/to/file.ts`).
-  - **Full repository pre-commit/pre-push audit**: Run `bun run script/fork-audit.ts --worktree`.
-  - **Committed history audit (`upstream/main...HEAD`)**: Run `bun run script/fork-audit.ts`.
+  - **Local worktree audit (pre-commit)**: `bun run script/fork-audit.ts --worktree path/to/file.ts` defaults to `HEAD` and checks only current staged/unstaged changes. Do not omit this distinction when `upstream/main` has diverged.
+  - **Worktree against the fork's main**: use `bun run script/fork-audit.ts --worktree --base=origin/main path/to/file.ts` when committed changes on the current branch must be included.
+  - **Single file / folder audit in committed history**: `bun run script/fork-audit.ts path/to/file.ts` defaults to `upstream/main...HEAD` (or use `git diff upstream/main...HEAD -- path/to/file.ts`).
+  - **Full fork-history audit (pre-push / after rebase)**: Run `bun run script/fork-audit.ts` without `--worktree`; it checks the committed net fork diff `upstream/main...HEAD`.
+  - An explicit `--base=<ref>` overrides either default. Keep the `upstream` remote for rebase and deliberate upstream comparisons; do not remove it to silence local audit output.
   - Reports uncovered blocks, unbalanced markers, and layer violations; exits with code 1 on any finding, code 0 when clean.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import path from "node:path"
-import { formatMissingBlock, groupAddedLines } from "./fork-audit"
+import { formatMissingBlock, groupAddedLines, scope } from "./fork-audit"
 
 const root = path.resolve(import.meta.dir, "..")
 const script = path.join(root, "script", "fork-audit.ts")
@@ -22,24 +22,35 @@ describe("fork audit historical markers", () => {
       "packages/opencode/src/kilocode/bash-hierarchy.ts",
       "packages/opencode/src/kilocode/snapshot/track.ts",
     ]) {
-      const result = run(["--worktree", file])
+      const result = run(["--worktree", "--base=upstream/main", file])
       expect(result.code).toBe(0)
       expect(result.out).not.toContain("whole-file marker used on existing upstream file")
     }
+  }, 30_000)
+
+  it("keeps committed audits on upstream main by default", () => {
+    const result = run(["packages/core/src/pty/pty.bun.ts"])
+
+    expect(result.out).toContain("committed history (upstream/main...HEAD)")
+  })
+})
+
+describe("scope", () => {
+  it("uses HEAD for a worktree audit without an explicit base", () => {
+    expect(scope(["--worktree"])).toEqual({ base: "HEAD", worktree: true, ref: "HEAD", explicit: false })
   })
 
-  it("does not inspect historical markers when the selected base is HEAD", () => {
-    const result = run(["--worktree", "--base=HEAD", "packages/kilo-vscode/src/extension.ts"])
-
-    expect(result.code).toBe(0)
-    expect(result.out).not.toContain("[REDUNDANT]")
+  it("uses an explicit base for a worktree audit", () => {
+    expect(scope(["--worktree", "--base=origin/main"])).toEqual({
+      base: "origin/main",
+      worktree: true,
+      ref: "origin/main",
+      explicit: true,
+    })
   })
 
-  it("still reports a redundant fork marker", () => {
-    const result = run(["--worktree", "packages/kilo-vscode/src/commands/toggle-auto-approve.ts"])
-
-    expect(result.code).toBe(1)
-    expect(result.out).toContain("[REDUNDANT]")
+  it("uses upstream history for a committed audit", () => {
+    expect(scope([])).toEqual({ base: "upstream/main", worktree: false, ref: "upstream/main...HEAD", explicit: false })
   })
 })
 

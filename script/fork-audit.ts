@@ -13,7 +13,7 @@
  *
  * 🎯 EXAMPLES:
  *   bun run script/fork-audit.ts                       # Audit committed history (upstream/main...HEAD)
- *   bun run script/fork-audit.ts --worktree            # Audit current uncommitted / staged working tree
+ *   bun run script/fork-audit.ts --worktree            # Audit current changes against HEAD
  *   bun run script/fork-audit.ts path/to/file.ts       # Audit specific file in committed history
  *   bun run script/fork-audit.ts --worktree packages/  # Audit specific folder on working tree
  *   bun run script/fork-audit.ts --base=origin/main    # Audit against custom base branch
@@ -42,6 +42,13 @@ import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 
 const ROOT = path.resolve(import.meta.dir, "..")
+
+export function scope(args: string[]) {
+  const raw = args.find((arg) => arg.startsWith("--base="))
+  const worktree = args.includes("--worktree")
+  const base = raw?.split("=").at(1) || (worktree ? "HEAD" : "upstream/main")
+  return { base, worktree, ref: worktree ? base : `${base}...HEAD`, explicit: !!raw }
+}
 
 function runGit(cmdArgs: string[]): string {
   const res = spawnSync("git", cmdArgs, { cwd: ROOT, encoding: "utf8" })
@@ -426,7 +433,7 @@ function auditFile(cfg: { worktree: boolean; targetRef: string }, file: string, 
   const addedLinesSet = new Set(addedLines)
   const redundantMarkers: RedundantMarker[] = []
 
-  if (!isNew) {
+  if (!isNew && cfg.targetRef !== "HEAD") {
     for (const m of markers) {
       if (m.type === "whole_file") {
         // A historical whole-file marker that is unchanged from the selected
@@ -493,8 +500,8 @@ Usage:
   bun run script/fork-audit.ts [options] [paths...]
 
 Options:
-  --worktree           Audit dirty working tree + uncommitted/staged files against base
-  --base=<ref>         Target upstream base reference (default: 'upstream/main')
+  --worktree           Audit dirty working tree + uncommitted/staged files (default base: HEAD)
+  --base=<ref>         Comparison base (default: HEAD with --worktree, upstream/main otherwise)
   --help, -h           Show this help message
 
 Examples:
@@ -506,33 +513,32 @@ Examples:
     process.exit(0)
   }
 
-  const baseArg = args.find((a) => a.startsWith("--base="))
-  const base: string = (baseArg ? baseArg.split("=")[1] : undefined) || "upstream/main"
-  const worktree = args.includes("--worktree")
-  const targetRef = worktree ? base : `${base}...HEAD`
+  const opts = scope(args)
   const fileArgs = args.filter((a) => !a.startsWith("--"))
 
   // Validate base reference
-  const verify = spawnSync("git", ["rev-parse", "--verify", base], { cwd: ROOT, encoding: "utf8" })
+  const verify = spawnSync("git", ["rev-parse", "--verify", opts.base], { cwd: ROOT, encoding: "utf8" })
   if (verify.status !== 0) {
-    if (process.env.CI || !baseArg) {
-      console.warn(`⚠️ Base reference '${base}' not found in Git repository. Skipping fork audit.`)
+    if (process.env.CI || !opts.explicit) {
+      console.warn(`⚠️ Base reference '${opts.base}' not found in Git repository. Skipping fork audit.`)
       process.exit(0)
     }
-    console.error(`❌ Base reference '${base}' not found in Git repository. Check remotes or use --base=<ref>.`)
+    console.error(`❌ Base reference '${opts.base}' not found in Git repository. Check remotes or use --base=<ref>.`)
     process.exit(1)
   }
 
-  const cfg = { worktree, targetRef }
-  const modeLabel = worktree ? `working tree & uncommitted changes (${targetRef})` : `committed history (${targetRef})`
+  const cfg = { worktree: opts.worktree, targetRef: opts.ref }
+  const modeLabel = opts.worktree
+    ? `working tree & uncommitted changes (${opts.ref})`
+    : `committed history (${opts.ref})`
   console.log(`🔍 Scanning fork modifications against: ${modeLabel}...\n`)
 
-  const diffFilesOut = runGit(["diff", "--name-only", "--diff-filter=AMRT", targetRef])
+  const diffFilesOut = runGit(["diff", "--name-only", "--diff-filter=AMRT", opts.ref])
   const diffFilesList = diffFilesOut.split("\n").filter(Boolean)
-  const untrackedOut = worktree ? runGit(["ls-files", "--others", "--exclude-standard"]) : ""
+  const untrackedOut = opts.worktree ? runGit(["ls-files", "--others", "--exclude-standard"]) : ""
 
   let forkMarkerFiles: string[] = []
-  if (base !== "HEAD" && !targetRef.endsWith("HEAD...HEAD")) {
+  if (opts.base !== "HEAD" && !opts.ref.endsWith("HEAD...HEAD")) {
     try {
       const grepRes = spawnSync("git", ["grep", "-l", "fork_change"], { cwd: ROOT, encoding: "utf8" })
       if (grepRes.status === 0) {
@@ -558,7 +564,7 @@ Examples:
     }
   }
 
-  const newFilesOut = runGit(["diff", "--name-only", "--diff-filter=A", targetRef])
+  const newFilesOut = runGit(["diff", "--name-only", "--diff-filter=A", opts.ref])
   const newFilesSet = new Set([...newFilesOut.split("\n"), ...untrackedOut.split("\n")].filter(Boolean))
 
   const results: FileAudit[] = []
@@ -622,7 +628,7 @@ Examples:
 
   console.log("==========================================")
   console.log(`📊 FORK AUDIT SUMMARY:`)
-  console.log(`- Mode: ${worktree ? "Worktree (dirty / uncommitted)" : "Committed History (base...HEAD)"}`)
+  console.log(`- Mode: ${opts.worktree ? "Worktree (dirty / uncommitted)" : "Committed History (base...HEAD)"}`)
   console.log(`- Files audited: ${results.length}`)
   console.log(`- Total change blocks: ${totalBlocks}`)
   console.log(
