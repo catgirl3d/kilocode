@@ -1,3 +1,10 @@
 {
-  "$schema": "https://app.kilo.ai/config.json"
+  "$schema": "https://app.kilo.ai/config.json",
+  "mcp": {
+    "hindsight": {
+      "type": "local",
+      "command": ["npx", "-y", "mcp-remote", "http://localhost:8888/mcp/kilocode/"],
+      "enabled": false
+    }
+  }
 }
