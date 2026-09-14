@@ -21,7 +21,7 @@ if (process.versions.bun !== expectedBunVersion) {
 bun run --cwd packages/kilo-vscode format:check
 # fork_change start - fork verification guards
 bun run --cwd packages/kilo-vscode check-kilocode-change
-bun run script/fork-audit.ts --worktree
+bun run script/fork-audit.ts
 # fork_change end
 
 # kilocode_change start

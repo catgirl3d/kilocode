@@ -147,11 +147,15 @@ remove stale annotations as described below.
 - Before continuing a stop, run one
   `bun run script/fork-audit.ts --worktree <paths...>` for the union of paths where
   the actual diff moves, deletes, or reattaches fork markers or marker-owned code.
+  In `--worktree` mode the default base is `HEAD`, so this checks the unresolved local
+  changes rather than comparing them with a possibly diverged `upstream/main`.
+  Use `--base=origin/main` only when the current branch's committed changes are also
+  intentionally part of the audit.
   Do not rerun unaffected paths or dispatch a new executor per reported gap.
 - If the audit script is not yet present in the replayed tree, record the affected
   paths and run them together as soon as it becomes available. If it is still absent
   at final validation, fail closed and report the missing guard.
-- The final full-repository fork audit remains mandatory after all post-rebase fixes.
+- After all post-rebase fixes are committed, run `bun run script/fork-audit.ts` without `--worktree` to audit the committed net fork diff `upstream/main...HEAD`.
 
 ### Annotation Commit Conflicts
 
@@ -253,7 +257,6 @@ and actual behavior.
   package's only new content is upstream: upstream files can pass upstream CI
   and still fail the fork's fixture tsconfig.
 - Run `bun run script/check-opencode-annotations.ts --worktree` from the root when touching shared OpenCode files.
-- Run `bun run script/fork-audit.ts` to audit marker coverage and layer compliance across all rebased commits.
 - If rebased changes affect server endpoints in `packages/opencode/src/server/`, run `./script/generate.ts` from the repository root and verify the generated SDK changes.
 - Check every fork feature affected by the rebase (referenced in `CHANGELOG-FORK.md`).
 - For CI, inspect `trigger -> conditions -> needs -> runner -> required status`.
