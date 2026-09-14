@@ -1838,13 +1838,20 @@ export const layer = Layer.effect(
           msgs = KiloSessionPrompt.maybeStripHistoricalMedia(msgs)
           // kilocode_change end
 
+          // kilocode_change start
+          const stepNetworkRestricted = yield* SandboxPolicy.networkRestricted(sessionID).pipe(
+            Effect.provideService(Config.Service, config),
+            Effect.provideService(Database.Service, database),
+            Effect.provideService(InstanceRef, Instance.current),
+          )
+          // kilocode_change end
           // kilocode_change start - persistently prune stale tool outputs when payload is already large
           const [skills, env, mem, instructions, mcpInstructions] = yield* Effect.all([
             sys.skills(agent),
             sys.environment(model, lastUser.editorContext), // kilocode_change
             KiloSessionPrompt.memoryInject({ ctx, sessionID, record: step === 1, cache: memoryCache }), // kilocode_change
             instruction.system().pipe(Effect.orDie),
-            sys.mcp(agent, session.permission),
+            sys.mcp(agent, session.permission, stepNetworkRestricted), // kilocode_change
           ])
           let modelMsgs = yield* MessageV2.toModelMessagesEffect(msgs, model).pipe(
             Effect.provideService(Database.Service, database),

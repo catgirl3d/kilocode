@@ -20,6 +20,7 @@ import { useVSCode } from "../../context/vscode"
 import type {
   AgentInfo,
   FilePickerResultMessage,
+  McpConfig,
   SkillInfo,
   ValidateInstructionPathResultMessage,
 } from "../../types/messages"
@@ -28,7 +29,18 @@ import ModeEditView from "./ModeEditView"
 import ModeCreateView from "./ModeCreateView"
 import McpEditView from "./McpEditView"
 import WorkflowsTab from "./agent-behaviour/WorkflowsTab"
-import { mcpConfigScope, mcpEnabledPatch, removable, selectedDefaultAgentValue } from "./agent-behaviour-patches"
+// fork_change start
+import {
+  mcpConfigScope,
+  mcpDisplayEntry,
+  mcpStatusKey,
+  mcpStatusTone,
+  mcpSwitchChecked,
+  mcpToggle,
+  removable,
+  selectedDefaultAgentValue,
+} from "./agent-behaviour-patches"
+// fork_change end
 import { parseImport, MAX_IMPORT_SIZE } from "./mode-io"
 import type { ImportError } from "./mode-io"
 // fork_change start
@@ -98,8 +110,10 @@ const AgentBehaviourTab: Component = () => {
     collections,
     settings,
     globalConfig,
+    globalDraft,
     globalEffectiveConfig,
     projectConfig,
+    projectDraft,
     projectBinding,
     updateConfig,
     updateGlobalConfig,
@@ -832,30 +846,15 @@ const AgentBehaviourTab: Component = () => {
       setExpanded((prev) => ({ ...prev, [name]: !prev[name] }))
     }
 
-    const statusColor = (name: string) => {
-      const s = session.mcpStatus()[name]?.status
-      if (s === "connected") return "var(--vscode-testing-iconPassed, #4caf50)"
-      if (s === "failed") return "var(--vscode-testing-iconFailed, #f44336)"
-      if (s === "needs_auth" || s === "needs_client_registration")
-        return "var(--vscode-editorWarning-foreground, #ff9800)"
-      if (s === "disabled") return "var(--vscode-disabledForeground, #888)"
-      return "var(--vscode-disabledForeground, #888)"
-    }
-
-    const statusLabel = (name: string) => {
+    // fork_change start
+    const statusLabel = (name: string, entry: McpConfig | undefined) => {
       const s = session.mcpStatus()[name]?.status
       if (!s) return ""
-      const key = {
-        connected: "mcp.status.connected",
-        failed: "mcp.status.failed",
-        needs_auth: "mcp.status.needs_auth",
-        disabled: "mcp.status.disabled",
-        needs_client_registration: "mcp.status.needs_registration",
-      }[s]
+      const tone = mcpStatusTone(s, entry?.enabled !== false, entry?.on_demand === true)
+      const key = mcpStatusKey(s, tone)
       return key ? language.t(key) : s
     }
-
-    const isConnected = (name: string) => session.mcpStatus()[name]?.status === "connected"
+    // fork_change end
 
     if (editingMcp()) {
       return (
@@ -903,6 +902,35 @@ const AgentBehaviourTab: Component = () => {
             <For each={mcpEntries()}>
               {([name, mcp], index) => {
                 const open = () => expanded()[name] ?? false
+                // fork_change start
+                const scope = mcpConfigScope(name, collections())
+                const effective = () => {
+                  const scoped =
+                    scope === "project"
+                      ? projectConfig().mcp?.[name]
+                      : scope === "global"
+                        ? globalConfig().mcp?.[name]
+                        : undefined
+                  const draft =
+                    scope === "project"
+                      ? projectDraft?.().mcp?.[name]
+                      : scope === "global"
+                        ? globalDraft().mcp?.[name]
+                        : undefined
+                  return mcpDisplayEntry(mcp, scoped, draft)
+                }
+                // fork_change end
+                // fork_change start
+                const statusColor = () => {
+                  const status = session.mcpStatus()[name]?.status
+                  const tone = mcpStatusTone(status, effective()?.enabled !== false, effective()?.on_demand === true)
+                  if (tone === "connected") return "var(--vscode-testing-iconPassed, #4caf50)"
+                  if (tone === "failed") return "var(--vscode-testing-iconFailed, #f44336)"
+                  if (tone === "attention") return "var(--vscode-editorWarning-foreground, #ff9800)"
+                  if (tone === "available") return "var(--vscode-testing-iconQueued, #cca700)"
+                  return "var(--vscode-disabledForeground, #888)"
+                }
+                // fork_change end
                 const env = () => Object.entries(mcp.environment ?? mcp.env ?? {})
                 const error = () => {
                   const s = session.mcpStatus()[name]
@@ -943,18 +971,30 @@ const AgentBehaviourTab: Component = () => {
                             width: "6px",
                             height: "6px",
                             "border-radius": "50%",
-                            "background-color": statusColor(name),
+                            "background-color": statusColor(), // fork_change
                             "flex-shrink": "0",
                           }}
                         />
                         <div style={{ "font-weight": "500" }}>{name}</div>
+                        {/* fork_change start */}
+                        <Show when={effective()?.on_demand === true}>
+                          <span
+                            style={{
+                              "font-size": "var(--kilo-font-size-10)",
+                              color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
+                            }}
+                          >
+                            {language.t("settings.agentBehaviour.editMcp.onDemand.badge")}
+                          </span>
+                        </Show>
+                        {/* fork_change end */}
                         <span
                           style={{
                             "font-size": "var(--kilo-font-size-10)",
                             color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
                           }}
                         >
-                          {statusLabel(name) || (mcp.url ? "remote" : "stdio")}
+                          {statusLabel(name, effective()) || (mcp.url ? "remote" : "stdio")} {/* fork_change */}
                         </span>
                       </div>
                       <div style={{ display: "flex", gap: "4px", "align-items": "center" }}>
@@ -971,25 +1011,39 @@ const AgentBehaviourTab: Component = () => {
                           </div>
                         </Show>
                         <div onClick={(e: MouseEvent) => e.stopPropagation()}>
+                          {/* fork_change start */}
                           <Switch
-                            checked={isConnected(name)}
+                            checked={mcpSwitchChecked(
+                              session.mcpStatus()[name]?.status,
+                              effective()?.enabled !== false,
+                              effective()?.on_demand === true,
+                            )}
                             disabled={session.mcpLoading() === name}
                             onChange={(enabled: boolean) => {
-                              const scope = mcpConfigScope(name, collections())
-                              if (scope) {
-                                const update = scope === "project" ? updateProjectConfig : updateGlobalConfig
-                                update(mcpEnabledPatch(name, enabled))
-                              }
-                              if (!enabled) {
-                                session.disconnectMcp(name)
-                                return
-                              }
-                              session.connectMcp(name)
+                              const onDemand = effective()?.on_demand === true
+                              mcpToggle(
+                                name,
+                                collections(),
+                                enabled,
+                                onDemand,
+                                (scope, patch) => {
+                                  if (scope === "project") updateProjectConfig(patch)
+                                  if (scope === "global") updateGlobalConfig(patch)
+                                },
+                                (action, target) => {
+                                  if (action === "disconnect") {
+                                    session.disconnectMcp(target)
+                                    return
+                                  }
+                                  session.connectMcp(target)
+                                },
+                              )
                             }}
                             hideLabel
                           >
                             {name}
                           </Switch>
+                          {/* fork_change end */}
                         </div>
                         <IconButton
                           size="small"

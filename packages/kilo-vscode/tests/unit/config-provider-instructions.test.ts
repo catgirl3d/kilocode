@@ -66,9 +66,18 @@ const SCRIPT = `
   const loaded = {
     type: "configLoaded",
     config: { instructions: ["global.md", "project.md"] },
-    globalConfig: { instructions: ["global.md"] },
-    globalEffectiveConfig: { instructions: ["global.md", "project.md"] },
-    projectConfig: { instructions: ["project.md"] },
+    globalConfig: {
+      instructions: ["global.md"],
+      mcp: { server: { type: "remote", url: "https://example.com/mcp", description: "old", on_demand: true } },
+    },
+    globalEffectiveConfig: {
+      instructions: ["global.md", "project.md"],
+      mcp: { server: { type: "remote", url: "https://example.com/mcp", description: "old", on_demand: true } },
+    },
+    projectConfig: {
+      instructions: ["project.md"],
+      mcp: { server: { type: "remote", url: "https://project.example/mcp", description: "project", on_demand: true } },
+    },
     bindings: { global: binding("global-binding", "global"), project: binding("project-binding", "project") },
     features: { indexing: false, sandboxControls: false },
   }
@@ -80,6 +89,8 @@ const SCRIPT = `
   }
   api.updateGlobalConfig({ instructions_disabled: ["global.md"] })
   api.updateProjectConfig({ instructions_disabled: ["project.md"] })
+  api.updateGlobalConfig({ mcp: { server: { url: undefined, description: undefined, enabled: false } } })
+  api.updateProjectConfig({ mcp: { server: { url: undefined, description: undefined } } })
   api.saveConfig()
 
   const updates = sent.filter((message) => message.type === "updateConfig")
@@ -88,24 +99,42 @@ const SCRIPT = `
     process.exit(2)
   }
   const update = updates[0]
-  if (JSON.stringify(update.config) !== JSON.stringify({ instructions_disabled: ["global.md"] })) {
-    console.log("${FAIL}global config leaked or was lost: " + JSON.stringify(update))
+  if (JSON.stringify(update.config.instructions_disabled) !== JSON.stringify(["global.md"])) {
+    console.log("${FAIL}global instruction config leaked or was lost: " + JSON.stringify(update))
     process.exit(2)
   }
-  if (JSON.stringify(update.projectConfig) !== JSON.stringify({ instructions_disabled: ["project.md"] })) {
-    console.log("${FAIL}project config leaked or was lost: " + JSON.stringify(update))
+  if (JSON.stringify(update.projectConfig.instructions_disabled) !== JSON.stringify(["project.md"])) {
+    console.log("${FAIL}project instruction config leaked or was lost: " + JSON.stringify(update))
     process.exit(2)
   }
   if (update.globalBindingId !== "global-binding" || update.projectBindingId !== "project-binding") {
     console.log("${FAIL}binding ids were not preserved: " + JSON.stringify(update))
     process.exit(2)
   }
+  if (update.config.mcp?.server?.url !== undefined || update.config.mcp?.server?.description !== undefined) {
+    console.log("${FAIL}cleared MCP fields leaked into config: " + JSON.stringify(update))
+    process.exit(2)
+  }
+  if (update.config.mcp?.server?.enabled !== false) {
+    console.log("${FAIL}MCP enabled state was not persisted: " + JSON.stringify(update))
+    process.exit(2)
+  }
+  const unset = JSON.stringify(update.globalUnset)
+  if (!unset.includes('["mcp","server","url"]') || !unset.includes('["mcp","server","description"]')) {
+    console.log("${FAIL}cleared MCP fields were not sent as unset paths: " + JSON.stringify(update))
+    process.exit(2)
+  }
+  const projectUnset = JSON.stringify(update.projectUnset)
+  if (!projectUnset.includes('["mcp","server","url"]') || !projectUnset.includes('["mcp","server","description"]')) {
+    console.log("${FAIL}project MCP fields were not sent as unset paths: " + JSON.stringify(update))
+    process.exit(2)
+  }
   dispose()
   console.log("${PASS}")
 `
 
-describe("ConfigProvider instruction scope persistence", () => {
-  it("posts separate global and project instruction updates with their bindings", () => {
+describe("ConfigProvider scoped config persistence", () => {
+  it("posts scoped updates with bindings and MCP unset paths", () => {
     const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", SCRIPT], {
       cwd: WEBVIEW,
       stdout: "pipe",

@@ -234,7 +234,19 @@ export const Info = Schema.Struct({
     description: "Custom provider configurations and model overrides",
   }),
   mcp: Schema.optional(
-    Schema.Record(Schema.String, Schema.Union([ConfigMCPV1.Info, Schema.Struct({ enabled: Schema.Boolean })])),
+    // kilocode_change start - allow partial MCP project overrides
+    Schema.Record(
+      Schema.String,
+      Schema.Union([
+        ConfigMCPV1.Info,
+        Schema.Struct({
+          enabled: Schema.optional(Schema.Boolean),
+          on_demand: Schema.optional(Schema.Boolean),
+          description: Schema.optional(Schema.String),
+        }),
+      ]),
+    ),
+    // kilocode_change end
   ).annotate({ description: "MCP (Model Context Protocol) server configurations" }),
   formatter: Schema.optional(ConfigFormatterV1.Info).annotate({
     description:

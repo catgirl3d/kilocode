@@ -34990,6 +34990,12 @@
           "enabled": {
             "type": "boolean"
           },
+          "on_demand": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
           "timeout": {
             "type": "integer",
             "exclusiveMinimum": 0
@@ -35035,6 +35041,12 @@
           },
           "enabled": {
             "type": "boolean"
+          },
+          "on_demand": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
           },
           "headers": {
             "type": "object",
@@ -35449,9 +35461,14 @@
                   "properties": {
                     "enabled": {
                       "type": "boolean"
+                    },
+                    "on_demand": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": "string"
                     }
                   },
-                  "required": ["enabled"],
                   "additionalProperties": false
                 }
               ]

@@ -248,6 +248,7 @@ export const dict = {
   "mcp.status.needs_auth": "needs auth",
   "mcp.status.needs_registration": "needs client registration",
   "mcp.status.disabled": "disabled",
+  "mcp.status.ready_on_demand": "ready on demand",
 
   "toast.session.rename.invalid.title": "Invalid session title",
 
@@ -1029,6 +1030,15 @@ export const dict = {
   "settings.agentBehaviour.editMcp.transportRemote": "Remote server (SSE/HTTP transport)",
   "settings.agentBehaviour.editMcp.env": "Environment Variables",
   "settings.agentBehaviour.editMcp.env.help": "Variables passed to the MCP server process.",
+  // fork_change start
+  "settings.agentBehaviour.editMcp.onDemand": "On demand",
+  "settings.agentBehaviour.editMcp.onDemand.help": "The server will not start until the agent connects it.",
+  "settings.agentBehaviour.editMcp.description": "Description",
+  "settings.agentBehaviour.editMcp.description.help":
+    "A short one-line description shown to the agent in the on-demand catalog.",
+  "settings.agentBehaviour.editMcp.description.placeholder": "e.g. Search documentation",
+  "settings.agentBehaviour.editMcp.onDemand.badge": "On demand",
+  // fork_change end
   "settings.agentBehaviour.addMcp.command": "Command",
   "settings.agentBehaviour.addMcp.command.placeholder": "e.g. npx",
   "settings.agentBehaviour.addMcp.args": "Arguments",

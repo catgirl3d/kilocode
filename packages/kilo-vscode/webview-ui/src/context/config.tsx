@@ -49,6 +49,9 @@ interface ConfigContextValue {
   globalConfig: Accessor<Config>
   globalDraft: Accessor<Partial<Config>>
   // fork_change start
+  projectDraft?: Accessor<Partial<Config>>
+  // fork_change end
+  // fork_change start
   globalEffectiveConfig: Accessor<Config>
   // fork_change end
   projectConfig: Accessor<Config>
@@ -471,6 +474,9 @@ export const ConfigProvider: ParentComponent = (props) => {
     config,
     globalConfig,
     globalDraft,
+    // fork_change start
+    projectDraft,
+    // fork_change end
     // fork_change start
     globalEffectiveConfig,
     // fork_change end

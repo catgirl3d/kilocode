@@ -501,6 +501,30 @@ export const McpEditViewLocal: Story = {
   ),
 }
 
+export const McpEditViewOnDemand: Story = {
+  name: "McpEditView — on-demand server",
+  render: () => (
+    <StoryProviders
+      config={
+        {
+          mcp: {
+            "on-demand-mcp": {
+              type: "local",
+              command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+              on_demand: true,
+              description: "Search project files when needed",
+            },
+          },
+        } as any
+      }
+    >
+      <div style={{ "max-height": "700px", overflow: "auto" }}>
+        <McpEditView name="on-demand-mcp" onBack={noop} onRemove={noop} />
+      </div>
+    </StoryProviders>
+  ),
+}
+
 export const McpEditViewLocalWithEnv: Story = {
   name: "McpEditView — local server with env vars",
   render: () => (

@@ -2451,6 +2451,8 @@ export type McpLocalConfig = {
     [key: string]: string
   }
   enabled?: boolean
+  on_demand?: boolean
+  description?: string
   timeout?: number
 }
 
@@ -2472,6 +2474,8 @@ export type McpRemoteConfig = {
    */
   url: string
   enabled?: boolean
+  on_demand?: boolean
+  description?: string
   headers?: {
     [key: string]: string
   }
@@ -2619,7 +2623,9 @@ export type Config = {
       | McpLocalConfig
       | McpRemoteConfig
       | {
-          enabled: boolean
+          enabled?: boolean
+          on_demand?: boolean
+          description?: string
         }
   }
   /**

@@ -12,6 +12,7 @@ import { NotebookEditTool, NotebookExecuteTool, NotebookReadTool } from "./noteb
 import { MemoryRecallTool } from "./memory-recall"
 import { MemorySaveTool } from "./memory-save"
 import { NotifyUserTool } from "./notify-user"
+import { McpTool } from "./mcp" // fork_change
 import { OpenPlanTool } from "./open-plan"
 import { ScheduleWakeupTool } from "./schedule-wakeup"
 import { SendFileTool } from "./send-file"
@@ -23,8 +24,10 @@ import * as Network from "@/kilocode/sandbox/network"
 import { Notebook } from "@/kilocode/notebook/service"
 import { AgentManager, HostError } from "@/kilocode/agent-manager/service"
 import { KiloSessions } from "@/kilo-sessions/kilo-sessions"
+import { MCP } from "@/mcp" // fork_change
+import * as McpOnDemand from "@/kilocode/mcp/on-demand" // fork_change
 import * as Log from "@opencode-ai/core/util/log"
-import type { Config } from "@/config/config"
+import { Config } from "@/config/config" // fork_change
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { BoardEnabled } from "@/kilocode/board/enabled"
 import { Agent } from "@/agent/agent"
@@ -90,6 +93,14 @@ export namespace KiloToolRegistry {
       // context here and injects it into the tool's init Effect.
       const sessions = yield* KiloSessions.Service
       const notify = yield* NotifyUserTool.pipe(Effect.provideService(KiloSessions.Service, sessions))
+      // fork_change start
+      const mcp = yield* MCP.Service
+      const config = yield* Config.Service
+      const mcpTool = yield* McpTool.pipe(
+        Effect.provideService(MCP.Service, mcp),
+        Effect.provideService(Config.Service, config),
+      )
+      // fork_change end
       const openPlan = yield* OpenPlanTool
       const send = yield* SendFileTool
       // Wakeup.Service is provided by Wakeup.node in the tool-registry node graph.
@@ -113,6 +124,7 @@ export namespace KiloToolRegistry {
           chart,
           image,
           notify,
+          mcp: mcpTool, // fork_change
           openPlan,
           send,
           schedule,
@@ -136,6 +148,7 @@ export namespace KiloToolRegistry {
         chart,
         image,
         notify,
+        mcp: mcpTool, // fork_change
         openPlan,
         send,
         schedule,
@@ -161,6 +174,7 @@ export namespace KiloToolRegistry {
       chart: Tool.Info
       image: Tool.Info
       notify: Tool.Info
+      mcp?: Tool.Info // fork_change
       openPlan?: Tool.Info
       send: Tool.Info
       schedule?: Tool.Info
@@ -187,6 +201,7 @@ export namespace KiloToolRegistry {
         chart: Tool.init(tools.chart),
         image: Tool.init(tools.image),
         notify: Tool.init(tools.notify),
+        mcp: tools.mcp ? Tool.init(tools.mcp) : Effect.succeed(undefined), // fork_change
         send: Tool.init(tools.send),
         ...(tools.advisor ? { advisor: Tool.init(tools.advisor) } : {}), // fork_change
       })
@@ -219,6 +234,7 @@ export namespace KiloToolRegistry {
         schedule,
         cancel,
         notify: base.notify,
+        mcp: base.mcp, // fork_change
         send: base.send,
       }
     })
@@ -281,6 +297,7 @@ export namespace KiloToolRegistry {
       chart: Tool.Def
       image: Tool.Def
       notify: Tool.Def
+      mcp?: Tool.Def // fork_change
       openPlan?: Tool.Def
       send: Tool.Def
       schedule?: Tool.Def
@@ -336,6 +353,7 @@ export namespace KiloToolRegistry {
         ? [tools.notebookRead, tools.notebookEdit, tools.notebookExecute]
         : []),
       tools.notify,
+      ...(tools.mcp ? [tools.mcp] : []), // fork_change
       ...(Flag.KILO_CLIENT === "vscode" && tools.openPlan ? [tools.openPlan] : []),
       tools.send,
       ...(cfg.experimental?.advisor_model && tools.advisor ? [tools.advisor] : []), // fork_change
@@ -381,7 +399,12 @@ export namespace KiloToolRegistry {
     })
   }
   /** Hide Kilo memory tools from the model when project memory is disabled. */
-  export const applyVisibility = Effect.fn("KiloToolRegistry.applyVisibility")(function* (tools: Tool.Def[]) {
+  // fork_change start
+  export const applyVisibility = Effect.fn("KiloToolRegistry.applyVisibility")(function* (
+    tools: Tool.Def[],
+    cfg: Config.Info,
+    networkRestricted?: boolean,
+  ) {
     const ctx = yield* InstanceState.context
     const memoryEnabled = yield* memoryToolsEnabled({ ctx })
     const browser = tools.some((tool) => tool.id === "browser_open")
@@ -395,9 +418,11 @@ export namespace KiloToolRegistry {
     return tools.filter((tool) => {
       if (tool.id.startsWith("kilo_memory_")) return memoryEnabled
       if (tool.id === "browser_open") return browser
+      if (tool.id === "mcp") return McpOnDemand.visible(cfg, networkRestricted ?? false)
       return true
     })
   })
+  // fork_change end
 
   export function describe(tools: Tool.Def[], extra: { semantic?: Tool.Def }): Tool.Def[] {
     if (!extra.semantic) return tools
