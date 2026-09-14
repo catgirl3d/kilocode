@@ -373,7 +373,9 @@ const layer = Layer.effect(
 
         return true
       })
-      const kiloFiltered = yield* KiloToolRegistry.applyVisibility(filtered) // kilocode_change
+      // kilocode_change start
+      const kiloFiltered = yield* KiloToolRegistry.applyVisibility(filtered, cfg, input.networkRestricted)
+      // kilocode_change end
 
       const codeModeDescription = filtered.some((tool) => tool.id === "execute")
         ? yield* describeCodeMode(input)

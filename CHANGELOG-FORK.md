@@ -19,6 +19,7 @@
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
 - Show live sub-agent status dots on task cards: green while running, gray when completed, and red on error.
 - Add an on-demand consult_advisor tool with in-progress assistant context and a proposal channel, so agents can request a second opinion from a configured advisor model and reasoning variant during planning, when stuck, or before completing complex tasks.
+- Support on-demand MCP servers that load only when the agent connects them, with catalog descriptions, configurable connection permission, and agent-controlled disconnects to release resources when they are no longer needed.
 - Show simple live consult_advisor phases in the CLI and VS Code chat: preparation, waiting, reasoning, writing, and completion.
 - Improve Agent Manager Markdown document previews with cleaner typography, spacing, and optional comment annotations.
 - Group recent sessions by date on the welcome screen and show 7 recent sessions instead of 3.

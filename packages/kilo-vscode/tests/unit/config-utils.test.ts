@@ -47,6 +47,28 @@ describe("deepMerge", () => {
     expect(result.agent?.code?.disable).toBe(false)
     expect(result.agent?.code?.hidden).toBe(false)
   })
+
+  it("preserves MCP fields when applying an enabled patch", () => {
+    const target = {
+      mcp: {
+        server: {
+          type: "remote",
+          url: "https://example.com/mcp",
+          description: "keep",
+          on_demand: true,
+        },
+      },
+    } as Config
+    const result = deepMerge(target, { mcp: { server: { enabled: false } } })
+
+    expect(result.mcp?.server).toEqual({
+      type: "remote",
+      url: "https://example.com/mcp",
+      description: "keep",
+      on_demand: true,
+      enabled: false,
+    })
+  })
 })
 
 describe("scoped config normalization", () => {
