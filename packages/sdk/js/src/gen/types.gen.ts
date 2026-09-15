@@ -1366,6 +1366,14 @@ export type Config = {
   }
   experimental?: {
     /**
+     * Enable task-aware pruning for large read, grep, and bash tool outputs
+     */
+    swe_pruner?: boolean
+    /**
+     * Exact provider/model ID for SWE-Pruner
+     */
+    swe_pruner_model?: string
+    /**
      * Model ID to use for on-demand advisor consultations
      */
     advisor_model?: string

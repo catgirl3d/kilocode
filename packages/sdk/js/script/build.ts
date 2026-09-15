@@ -188,7 +188,29 @@ try {
   if (!patched.includes(advisorVariant)) {
     throw new Error(`Legacy Config advisor_variant patch did not apply (${legacyTypesPath})`)
   }
-  await Bun.write(legacyTypesPath, patched)
+  const pruner = `    /**
+     * Enable task-aware pruning for large read, grep, and bash tool outputs
+     */
+    swe_pruner?: boolean
+`
+  const enabled = patched.includes(pruner)
+    ? patched
+    : patched.replace("  experimental?: {\n", "  experimental?: {\n" + pruner)
+  if (!enabled.includes(pruner)) {
+    throw new Error(`Legacy Config swe_pruner patch did not apply (${legacyTypesPath})`)
+  }
+  const model = `    /**
+     * Exact provider/model ID for SWE-Pruner
+     */
+    swe_pruner_model?: string
+`
+  const final = enabled.includes(model)
+    ? enabled
+    : enabled.replace("    swe_pruner?: boolean\n", "    swe_pruner?: boolean\n" + model)
+  if (!final.includes(model)) {
+    throw new Error(`Legacy Config swe_pruner_model patch did not apply (${legacyTypesPath})`)
+  }
+  await Bun.write(legacyTypesPath, final)
   // kilocode_change end
 
   // kilocode_change start

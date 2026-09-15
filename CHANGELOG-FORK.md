@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Restore opt-in SWE-Pruner for task-focused `read`, `grep`, and `bash` output pruning, with explicit model selection, bounded no-retry requests, and fail-open safeguards.
 - Allow agents to stop background subagent tasks they launched via the task tool.
 - Choose the execution shell for agent commands and Kilo terminals from VS Code Settings, with presets and a custom executable path.
 - Show a live "Thinking..." row in running sub-agent task lists while the agent reasons, instead of a frozen tool list, with one row per reasoning phase rather than one per step.

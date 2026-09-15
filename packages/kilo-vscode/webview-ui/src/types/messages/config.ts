@@ -58,6 +58,10 @@ export interface ExperimentalConfig {
   shared_agent_board?: boolean
   image_generation_model?: string
   task_model_selection?: boolean
+  // fork_change start
+  swe_pruner?: boolean
+  swe_pruner_model?: string | null
+  // fork_change end
   native_notebook_tools?: boolean
   speech_to_text_model?: string
   speech_to_text_mode?: "transcribe" | "translate" // fork_change
