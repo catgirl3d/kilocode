@@ -139,6 +139,18 @@ for (const [label, config] of [
   })
 }
 
+// `consult_advisor` is a read-only consultation: it only reads the session transcript and
+// calls the configured advisor model. The read-only guards' catch-all deny must carry an
+// explicit allow, or the mode silently drops the tool from the request the model sees.
+for (const name of ["plan", "ask"] as const) {
+  test(`${name} mode keeps the consult_advisor tool available`, async () => {
+    const agent = await get({}, name)
+    expect(agent).toBeDefined()
+    expect(Permission.evaluate("consult_advisor", "*", agent!.permission).action).toBe("allow")
+    expect(Permission.disabled(["consult_advisor"], agent!.permission)).toEqual(new Set())
+  })
+}
+
 // MCP rules are spread into the guards, so a server named `agent` emits `agent_*`, which
 // wildcard-matches `agent_manager`. The guarded denies have to be emitted after them.
 test("read-only agents keep guarded tools denied against colliding MCP server names", async () => {
