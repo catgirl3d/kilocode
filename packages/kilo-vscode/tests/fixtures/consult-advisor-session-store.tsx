@@ -4,6 +4,7 @@ import type { AssistantMessage, Part as SDKPart, ToolPart } from "@kilocode/sdk/
 
 const window = new Window({ url: "http://localhost" })
 Object.defineProperty(window, "origin", { value: window.location.origin })
+const hostMessages: { type?: string; id?: string; text?: string }[] = []
 Object.assign(globalThis, {
   window,
   document: window.document,
@@ -24,6 +25,11 @@ Object.assign(globalThis, {
   getComputedStyle: window.getComputedStyle.bind(window),
   requestAnimationFrame: window.requestAnimationFrame.bind(window),
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+  acquireVsCodeApi: () => ({
+    postMessage: (message: { type?: string; id?: string; text?: string }) => hostMessages.push(message),
+    getState: () => undefined,
+    setState: () => {},
+  }),
 })
 
 const { Show } = await import("solid-js")
@@ -140,6 +146,28 @@ update({
 await window.happyDOM.waitUntilComplete()
 assert.equal(title("expanded"), "Advisor completed")
 assert.equal(title("compact"), "Advisor completed")
+
+const trigger = root
+  .querySelector<HTMLElement>('[data-view="expanded"] [data-component="tool-trigger"]')
+  ?.closest("button")
+assert.ok(trigger, "advisor tool trigger did not render")
+trigger.click()
+await window.happyDOM.waitUntilComplete()
+
+const label = root.querySelector<HTMLElement>('[data-view="expanded"] [data-slot="mcp-section-label"]')
+assert.ok(label, "advisor output section did not render")
+assert.match(label.textContent ?? "", /Output/)
+const copy = label.querySelector<HTMLButtonElement>("button")
+assert.ok(copy, "advisor output copy button did not render")
+
+copy.click()
+await window.happyDOM.waitUntilComplete()
+const clipboard = hostMessages.find((entry) => entry.type === "copyToClipboard")
+assert.equal(clipboard?.text, "guidance")
+
+post({ type: "clipboardWriteResult", id: clipboard!.id, ok: true })
+await window.happyDOM.waitUntilComplete()
+assert.equal(copy.getAttribute("aria-label"), "Copied")
 
 dispose()
 await window.happyDOM.close()

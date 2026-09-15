@@ -658,3 +658,34 @@ describe("Generic tool state title contract (source)", () => {
     expect(message).toContain("trigger={trigger()}")
   })
 })
+
+describe("MCP tool output contract (source)", () => {
+  const message = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
+  const basicToolCss = fs.readFileSync(KILO_BASIC_TOOL_CSS_FILE, "utf-8")
+
+  it("renders the tool answer on the output section header with a copy action", () => {
+    const mcp = message.match(/function McpTool\(props: ToolProps\) \{[\s\S]*?(?=\nPART_MAPPING\["tool"\])/)?.[0] ?? ""
+    expect(mcp).not.toBe("")
+    expect(mcp).toContain('<CopyButton value={() => props.output ?? ""} label={i18n.t("ui.message.copy")} />')
+  })
+
+  it("does not inherit the tool-output pre-wrap whitespace into rendered markdown", () => {
+    const output =
+      basicToolCss.match(
+        /\[data-slot="mcp-section-label"\] \+ \[data-component="tool-output"\] \{[\s\S]*?\n  \}/,
+      )?.[0] ?? ""
+    expect(output).not.toBe("")
+    expect(output).toMatch(/\[data-component="markdown"\] \{[\s\S]*?white-space: normal;/)
+  })
+})
+
+describe("Tool card column contract (source)", () => {
+  const basicToolCss = fs.readFileSync(KILO_BASIC_TOOL_CSS_FILE, "utf-8")
+
+  it("keeps wide tool content from widening the tool card column", () => {
+    const content = basicToolCss.match(/\[data-slot="collapsible-content"\] \{[\s\S]*?\n {4}\}/)?.[0] ?? ""
+    expect(content).not.toBe("")
+    expect(content).toContain("display: grid;")
+    expect(content).toMatch(/> \* \{[\s\S]*?min-width: 0;/)
+  })
+})
