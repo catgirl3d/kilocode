@@ -27,6 +27,7 @@
 
 ### Fixes & Enhancements
 
+- Make the on-demand `consult_advisor` tool available in plan and ask modes, so second opinions are reachable at planning checkpoints and without leaving a read-only mode.
 - Keep the Agent Manager sidebar collapsed when creating a new session.
 - Hide the "Move your opencode configuration" notice.
 - Hide the "Feedback & Support" button and the "How Agent Manager works" reopen button from the welcome screens in VS Code chat and Agent Manager.

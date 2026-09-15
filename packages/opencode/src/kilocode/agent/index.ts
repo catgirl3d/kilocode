@@ -155,6 +155,7 @@ function askGuard(mcp: Record<string, "allow" | "ask" | "deny"> = {}, enabled = 
     webfetch: "allow",
     websearch: "allow",
     semantic_search: "allow",
+    consult_advisor: "allow", // fork_change
     external_directory: {
       [Truncate.GLOB]: "allow",
     },
@@ -309,6 +310,7 @@ function planGuard(worktree: string, mcp: Record<string, "allow" | "ask" | "deny
     skill: "allow",
     plan_exit: "allow",
     open_plan: "allow",
+    consult_advisor: "allow", // fork_change
     task: {
       "*": "allow",
       general: "deny",
