@@ -1360,7 +1360,12 @@ function McpTool(props: ToolProps) {
               <Show when={formatted()}>
                 <div data-slot="mcp-tool-divider" />
               </Show>
-              <div data-slot="mcp-section-label">{i18n.t("ui.messagePart.mcp.output")}</div>
+              {/* fork_change start - copy action for the tool's answer (e.g. consult_advisor guidance) */}
+              <div data-slot="mcp-section-label">
+                {i18n.t("ui.messagePart.mcp.output")}
+                <CopyButton value={() => props.output ?? ""} label={i18n.t("ui.message.copy")} />
+              </div>
+              {/* fork_change end */}
               <div data-component="tool-output" data-scrollable>
                 <Markdown text={text()} />
               </div>
