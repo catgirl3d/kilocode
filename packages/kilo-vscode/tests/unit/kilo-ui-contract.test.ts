@@ -37,6 +37,8 @@ const MESSAGE_LIST_FILE = path.join(
 )
 const MESSAGE_PARTS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/types/messages/parts.ts")
 const SHELL_ROLLING_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/shell-rolling-results.tsx")
+const CONTEXT_TOOL_RESULTS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/context-tool-results.tsx")
+const TOOL_UTILS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/tool-utils.ts")
 const ASSISTANT_MESSAGE_FILE = path.join(
   MONOREPO_ROOT,
   "packages/kilo-vscode/webview-ui/src/components/chat/AssistantMessage.tsx",
@@ -415,6 +417,34 @@ describe("Expanded tool motion and typography (source)", () => {
     expect(src).toContain("if (props.message.time.completed) return true")
     expect(src).toContain("return index >= 0 && index < all.length - 1")
     expect(src).toContain("settled={settled()}")
+  })
+})
+
+describe("SWE-Pruner indicator contract (source)", () => {
+  it("extracts validated metadata through the shared tool utility", () => {
+    const source = fs.readFileSync(TOOL_UTILS_FILE, "utf-8")
+    expect(source).toContain("export function swePruned(part: ToolPart)")
+    expect(source).toContain('part.state.status !== "completed"')
+    expect(source).toContain("Number.isInteger")
+  })
+
+  it("shows per-tool read and grep counts only in the expanded context list", () => {
+    const source = fs.readFileSync(CONTEXT_TOOL_RESULTS_FILE, "utf-8")
+    const expanded = source.match(
+      /export function ContextToolExpandedList[\s\S]*?(?=export function ContextToolRollingResults)/,
+    )?.[0]
+    expect(expanded).toContain("swePruned(part)")
+    expect(expanded).toContain('part.tool === "read" || part.tool === "grep"')
+    expect(expanded).toContain('i18n.t("ui.tool.swePruned"')
+    expect(expanded).toContain('data-slot="swe-pruner-status"')
+  })
+
+  it("shows bash counts only after shell completion", () => {
+    const source = fs.readFileSync(SHELL_ROLLING_FILE, "utf-8")
+    expect(source).toContain("const pruned = createMemo(() => swePruned(props.part))")
+    expect(source).toContain("<Show when={!pending() && pruned()}>")
+    expect(source).toContain('i18n.t("ui.tool.swePruned"')
+    expect(source).toContain('data-slot="swe-pruner-status"')
   })
 })
 

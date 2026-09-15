@@ -331,6 +331,13 @@ export const Info = Schema.Struct({
       task_model_selection: Schema.optional(Schema.Boolean).annotate({
         description: "Allow task subagents to select a model, provider, and reasoning effort",
       }),
+      swe_pruner: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable task-aware pruning for large read, grep, and bash tool outputs (default: false)",
+      }),
+      swe_pruner_model: Schema.optional(Schema.String).annotate({
+        description:
+          "Exact provider/model ID for SWE-Pruner. Falls back to the configured small_model; without either model, output remains unchanged.",
+      }),
       speech_to_text_model: Schema.optional(Schema.String).annotate({
         description: "Speech-to-text transcription model ID to use for voice input",
       }),

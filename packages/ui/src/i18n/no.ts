@@ -243,6 +243,7 @@ export const dict: Record<Keys, string> = {
   "ui.messagePart.board.empty": "Ingen meldinger fra agenter",
   "ui.messagePart.board.stored": "Kun lagret. Levering og lesing er ikke bekreftet.",
   // kilocode_change end
+  "ui.tool.swePruned": "SWE-Pruner · kept {{kept}} of {{total}} lines", // kilocode_change
   "ui.question.answer.dismissed": "Dismissed",
   "ui.question.subtitle.dismissed": "{{count}} dismissed",
   "ui.sessionTurn.diffs.changed": "Endret",

@@ -2702,6 +2702,8 @@ export type Config = {
     image_generation_model?: string
     native_notebook_tools?: boolean
     task_model_selection?: boolean
+    swe_pruner?: boolean
+    swe_pruner_model?: string
     speech_to_text_model?: string
     speech_to_text_base_url?: string
     speech_to_text_api_key?: string
