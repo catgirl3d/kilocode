@@ -76,4 +76,7 @@ packages/*/.kilo/tui.jsonc
 # Test Artifacts
 packages/app/.artifacts/
 packages/opencode/.artifacts/
+
+#fork
 docs/internal/*
+.mcp-brain/*
