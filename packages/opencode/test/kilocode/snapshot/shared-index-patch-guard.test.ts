@@ -3,6 +3,7 @@ import { describe, expect, spyOn, test } from "bun:test"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppProcess, type RunResult } from "@opencode-ai/core/process"
+import { ChildProcess } from "effect/unstable/process"
 import { Database } from "@opencode-ai/core/database/database"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -10,8 +11,8 @@ import { Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import path from "path"
 import { Config } from "../../../src/config/config"
 import { InstanceState } from "../../../src/effect/instance-state"
-import { KiloSnapshotTrack } from "../../../src/kilocode/snapshot/track"
-import { Snapshot } from "../../../src/snapshot"
+const { KiloSnapshotTrack } = await import("../../../src/kilocode/snapshot/track")
+const { Snapshot } = await import("../../../src/snapshot")
 import { provideTmpdirInstance } from "../../fixture/fixture"
 import { awaitWithTimeout, testEffect } from "../../lib/effect"
 
@@ -31,12 +32,15 @@ const it = testEffect(
   ),
 )
 
-const isSnapshotCommand = (command: Parameters<AppProcess.Service["run"]>[0], directory: string) =>
-  command._tag === "StandardCommand" &&
-  /(?:^|[\\/])git(?:\.exe)?$/i.test(command.command) &&
-  (command.args.some((arg, index) => arg === "--git-dir" && command.args.at(index + 1) != null) ||
-    (command.options?.env?.GIT_DIR != null && command.options.env.GIT_DIR !== "") ||
-    command.args.some((arg, index) => arg === "--work-tree" && command.args.at(index + 1) === directory))
+const isSnapshotCommand = (command: Parameters<AppProcess.Interface["run"]>[0], directory: string) => {
+  const std = ChildProcess.isStandardCommand(command) ? command : undefined
+  if (!std || !/(?:^|[\\/])git(?:\.exe)?$/i.test(std.command)) return false
+  return (
+    std.args.some((arg, index) => arg === "--git-dir" && std.args.at(index + 1) != null) ||
+    (std.options?.env?.GIT_DIR != null && std.options.env.GIT_DIR !== "") ||
+    std.args.some((arg, index) => arg === "--work-tree" && std.args.at(index + 1) === directory)
+  )
+}
 
 describe("shared Snapshot service patch guard", () => {
   test("setup precondition: loads both configured budgets before constructing the public service", () => {
@@ -65,7 +69,9 @@ describe("shared Snapshot service patch guard", () => {
             let snapshotCalls = 0
             let stalled = false
             const spy = spyOn(app, "run").mockImplementation((command, opts) => {
-              const isSnapshotDiffFiles = isSnapshotCommand(command, directory) && command.args.includes("diff-files")
+              const std = ChildProcess.isStandardCommand(command) ? command : undefined
+              const isSnapshotDiffFiles =
+                std != null && isSnapshotCommand(command, directory) && std.args.includes("diff-files")
               if (!isSnapshotDiffFiles) return run(command, opts)
               snapshotCalls += 1
               if (stalled) {
@@ -80,7 +86,7 @@ describe("shared Snapshot service patch guard", () => {
                 return yield* Effect.never.pipe(
                   Effect.ensuring(Deferred.succeed(interrupted, undefined)),
                   Effect.as({
-                    command: command.command,
+                    command: std.command,
                     exitCode: 0,
                     stdout: Buffer.from(""),
                     stderr: Buffer.from(""),

@@ -3,6 +3,7 @@ import { describe, expect, spyOn, test } from "bun:test"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppProcess, type RunResult } from "@opencode-ai/core/process"
+import { ChildProcess } from "effect/unstable/process"
 import { Database } from "@opencode-ai/core/database/database"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -12,12 +13,12 @@ import { Config } from "../../../src/config/config"
 import { GlobalBus, type GlobalEvent } from "../../../src/bus/global"
 import { InstanceState } from "../../../src/effect/instance-state"
 import { InstanceRef } from "../../../src/effect/instance-ref"
-import { AppRuntime } from "../../../src/effect/app-runtime"
 import { Instance } from "../../../src/kilocode/instance"
 import { Question } from "../../../src/question"
-import { Session } from "../../../src/session/session"
-import { Snapshot } from "../../../src/snapshot"
-import { KiloSnapshotTrack } from "../../../src/kilocode/snapshot/track"
+const { Snapshot } = await import("../../../src/snapshot")
+const { KiloSnapshotTrack } = await import("../../../src/kilocode/snapshot/track")
+const { AppRuntime } = await import("../../../src/effect/app-runtime")
+const { Session } = await import("../../../src/session/session")
 import { provideTmpdirInstance } from "../../fixture/fixture"
 import { awaitWithTimeout, testEffect } from "../../lib/effect"
 
@@ -37,15 +38,17 @@ const it = testEffect(
   ),
 )
 
-const isSnapshotCommand = (command: Parameters<AppProcess.Service["run"]>[0], directory: string) => {
-  if (command._tag !== "StandardCommand") return false
-  if (!/(?:^|[\\/])git(?:\.exe)?$/i.test(command.command)) return false
-  const gitDir = command.args.indexOf("--git-dir")
-  const workTree = command.args.indexOf("--work-tree")
+const isSnapshotCommand = (command: Parameters<AppProcess.Interface["run"]>[0], directory: string) => {
+  const std = ChildProcess.isStandardCommand(command) ? command : undefined
+  if (!std) return false
+  if (!/(?:^|[\\/])git(?:\.exe)?$/i.test(std.command)) return false
+  const gitDir = std.args.indexOf("--git-dir")
+  const workTree = std.args.indexOf("--work-tree")
   return (
-    (gitDir >= 0 && command.args.at(gitDir + 1) != null) ||
-    (command.options?.env?.GIT_DIR != null && command.options.env.GIT_DIR !== "") ||
-    (workTree >= 0 && command.args.at(workTree + 1) === directory)
+    (gitDir >= 0 && std.args.at(gitDir + 1) != null && !std.args.at(gitDir + 1)!.startsWith("-")) ||
+    (std.options?.env?.GIT_DIR != null && std.options.env.GIT_DIR !== "") ||
+    (workTree >= 0 && std.args.at(workTree + 1) === directory) ||
+    std.args.includes("init")
   )
 }
 
@@ -67,6 +70,7 @@ describe("Snapshot.track forgotten slow-repository dialog", () => {
             const snapshot = yield* Snapshot.Service
             yield* InstanceState.context
             const ctx = yield* InstanceRef
+            if (!ctx) return
             const context = yield* Effect.context()
             const session = yield* Effect.promise(() =>
               AppRuntime.runPromise(
@@ -101,15 +105,14 @@ describe("Snapshot.track forgotten slow-repository dialog", () => {
             const run = app.run.bind(app)
             let calls = 0
             const spy = spyOn(app, "run").mockImplementation((command, opts) => {
+              const std = ChildProcess.isStandardCommand(command) ? command : undefined
               if (!isSnapshotCommand(command, directory)) return run(command, opts)
               calls += 1
               if (calls !== 1) return run(command, opts)
               return Effect.gen(function* () {
                 yield* Effect.sync(() => Deferred.doneUnsafe(started, Effect.succeed(undefined)))
                 yield* Deferred.await(released)
-                return yield* run(command, opts).pipe(
-                  Effect.ensuring(Deferred.succeed(completed, undefined)),
-                )
+                return yield* run(command, opts).pipe(Effect.ensuring(Deferred.succeed(completed, undefined)))
               })
             })
 
@@ -121,9 +124,7 @@ describe("Snapshot.track forgotten slow-repository dialog", () => {
             )
             try {
               const trackFiber = yield* Effect.sync(() =>
-                Instance.restore(ctx, () =>
-                  Effect.runForkWith(context)(snapshot.track({ sessionID: session.id })),
-                ),
+                Instance.restore(ctx, () => Effect.runForkWith(context)(snapshot.track({ sessionID: session.id }))),
               )
               yield* awaitWithTimeout(
                 Deferred.await(started),

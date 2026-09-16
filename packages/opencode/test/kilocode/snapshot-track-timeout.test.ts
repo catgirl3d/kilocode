@@ -393,7 +393,7 @@ describe("KiloSnapshotTrack.protect", () => {
       const first = yield* KiloSnapshotTrack.protect({
         inner: Effect.sync(() => {
           started += 1
-        }).pipe(Effect.andThen(failingInner(new Error("snapshot failure")))),
+        }).pipe(Effect.andThen(failingInner(new Error("snapshot failure"))), Effect.as(fallback)),
         state,
         fallback,
         operation: "track",
@@ -407,7 +407,7 @@ describe("KiloSnapshotTrack.protect", () => {
         inner: Effect.sync(() => {
           started += 1
           return "should-not-start"
-        }),
+        }).pipe(Effect.as(fallback)),
         state,
         fallback,
         operation: "patch",

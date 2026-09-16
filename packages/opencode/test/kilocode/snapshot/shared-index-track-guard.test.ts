@@ -3,6 +3,7 @@ import { describe, expect, spyOn, test } from "bun:test"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppProcess, type RunResult } from "@opencode-ai/core/process"
+import { ChildProcess } from "effect/unstable/process"
 import { Database } from "@opencode-ai/core/database/database"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -10,8 +11,8 @@ import { Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import path from "path"
 import { Config } from "../../../src/config/config"
 import { InstanceState } from "../../../src/effect/instance-state"
-import { Snapshot } from "../../../src/snapshot"
-import { KiloSnapshotTrack } from "../../../src/kilocode/snapshot/track"
+const { Snapshot } = await import("../../../src/snapshot")
+const { KiloSnapshotTrack } = await import("../../../src/kilocode/snapshot/track")
 import { provideTmpdirInstance } from "../../fixture/fixture"
 import { awaitWithTimeout, testEffect } from "../../lib/effect"
 
@@ -52,15 +53,17 @@ describe("shared Snapshot service track guard", () => {
             const run = app.run.bind(app)
             let snapshotCalls = 0
             const spy = spyOn(app, "run").mockImplementation((command, opts) => {
-              const git = /(?:^|[\\/])git(?:\.exe)?$/i.test(command.command)
-              const gitDir = command.args.indexOf("--git-dir")
-              const workTree = command.args.indexOf("--work-tree")
+              const std = ChildProcess.isStandardCommand(command) ? command : undefined
+              const git = std != null && /(?:^|[\\/])git(?:\.exe)?$/i.test(std.command)
+              const gitDir = std?.args.indexOf("--git-dir") ?? -1
+              const workTree = std?.args.indexOf("--work-tree") ?? -1
               const snapshotCommand =
-                command._tag === "StandardCommand" &&
+                std != null &&
                 git &&
-                ((gitDir >= 0 && command.args.at(gitDir + 1) != null) ||
-                  (command.options?.env?.GIT_DIR != null && command.options.env.GIT_DIR !== "") ||
-                  (workTree >= 0 && command.args.at(workTree + 1) === directory))
+                ((gitDir >= 0 && std.args.at(gitDir + 1) != null && !std.args.at(gitDir + 1)!.startsWith("-")) ||
+                  (std.options?.env?.GIT_DIR != null && std.options.env.GIT_DIR !== "") ||
+                  (workTree >= 0 && std.args.at(workTree + 1) === directory) ||
+                  std.args.includes("init"))
               if (!snapshotCommand) return run(command, opts)
               snapshotCalls += 1
               if (snapshotCalls !== 1) return run(command, opts)
@@ -72,7 +75,7 @@ describe("shared Snapshot service track guard", () => {
                   })
                 }).pipe(
                   Effect.as({
-                    command: command.command,
+                    command: std.command,
                     exitCode: 0,
                     stdout: Buffer.from(""),
                     stderr: Buffer.from(""),
