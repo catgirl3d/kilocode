@@ -10,8 +10,8 @@ import { Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import path from "path"
 import { Config } from "../../../src/config/config"
 import { InstanceState } from "../../../src/effect/instance-state"
-import { Snapshot } from "../../../src/snapshot"
 import { KiloSnapshotTrack } from "../../../src/kilocode/snapshot/track"
+import { Snapshot } from "../../../src/snapshot"
 import { provideTmpdirInstance } from "../../fixture/fixture"
 import { awaitWithTimeout, testEffect } from "../../lib/effect"
 
@@ -31,14 +31,21 @@ const it = testEffect(
   ),
 )
 
-describe("shared Snapshot service track guard", () => {
-  test("setup precondition: loads the configured track and turn budgets", () => {
+const isSnapshotCommand = (command: Parameters<AppProcess.Service["run"]>[0], directory: string) =>
+  command._tag === "StandardCommand" &&
+  /(?:^|[\\/])git(?:\.exe)?$/i.test(command.command) &&
+  (command.args.some((arg, index) => arg === "--git-dir" && command.args.at(index + 1) != null) ||
+    (command.options?.env?.GIT_DIR != null && command.options.env.GIT_DIR !== "") ||
+    command.args.some((arg, index) => arg === "--work-tree" && command.args.at(index + 1) === directory))
+
+describe("shared Snapshot service patch guard", () => {
+  test("setup precondition: loads both configured budgets before constructing the public service", () => {
     expect(KiloSnapshotTrack.TIMEOUT_MS).toBe(30_000)
     expect(KiloSnapshotTrack.TURN_TIMEOUT_MS).toBe(5_000)
   })
 
   it.live(
-    "real service applies the turn-level track guard when the inner git boundary is stalled",
+    "returns the patch fallback after interruption and permits a later real patch",
     () =>
       provideTmpdirInstance(
         (directory) =>
@@ -46,31 +53,32 @@ describe("shared Snapshot service track guard", () => {
             const app = yield* AppProcess.Service
             const snapshot = yield* Snapshot.Service
             yield* InstanceState.context
-            yield* Effect.promise(() => Bun.write(path.join(directory, "tracked.txt"), "content"))
+            yield* Effect.promise(() => Bun.write(path.join(directory, "patched.txt"), "content"))
+            const hash = yield* snapshot.track()
+            expect(hash).toBeString()
+            if (!hash) return
+
             const started = yield* Deferred.make<void>()
-            const completed = yield* Deferred.make<void>()
+            const interrupted = yield* Deferred.make<void>()
+            const secondStarted = yield* Deferred.make<void>()
             const run = app.run.bind(app)
             let snapshotCalls = 0
+            let stalled = false
             const spy = spyOn(app, "run").mockImplementation((command, opts) => {
-              const git = /(?:^|[\\/])git(?:\.exe)?$/i.test(command.command)
-              const gitDir = command.args.indexOf("--git-dir")
-              const workTree = command.args.indexOf("--work-tree")
-              const snapshotCommand =
-                command._tag === "StandardCommand" &&
-                git &&
-                ((gitDir >= 0 && command.args.at(gitDir + 1) != null) ||
-                  (command.options?.env?.GIT_DIR != null && command.options.env.GIT_DIR !== "") ||
-                  (workTree >= 0 && command.args.at(workTree + 1) === directory))
-              if (!snapshotCommand) return run(command, opts)
+              const isSnapshotDiffFiles = isSnapshotCommand(command, directory) && command.args.includes("diff-files")
+              if (!isSnapshotDiffFiles) return run(command, opts)
               snapshotCalls += 1
-              if (snapshotCalls !== 1) return run(command, opts)
+              if (stalled) {
+                return Effect.gen(function* () {
+                  yield* Effect.sync(() => Deferred.doneUnsafe(secondStarted, Effect.succeed(undefined)))
+                  return yield* run(command, opts)
+                })
+              }
+              stalled = true
               return Effect.gen(function* () {
                 yield* Effect.sync(() => Deferred.doneUnsafe(started, Effect.succeed(undefined)))
-                return yield* Effect.callback<RunResult>((_resume) => {
-                  return Effect.sync(() => {
-                    Deferred.doneUnsafe(completed, Effect.succeed(undefined))
-                  })
-                }).pipe(
+                return yield* Effect.never.pipe(
+                  Effect.ensuring(Deferred.succeed(interrupted, undefined)),
                   Effect.as({
                     command: command.command,
                     exitCode: 0,
@@ -84,29 +92,28 @@ describe("shared Snapshot service track guard", () => {
             })
 
             try {
-              const fiber = yield* snapshot.track().pipe(Effect.forkChild)
+              const first = yield* snapshot.patch(hash).pipe(Effect.forkChild)
               yield* Deferred.await(started)
               const result = yield* awaitWithTimeout(
-                Fiber.join(fiber),
-                "the shared Snapshot service did not apply the turn-level track guard",
+                Fiber.join(first),
+                "the public Snapshot.patch service did not apply its turn guard",
                 Duration.seconds(10),
               )
-
-              expect(result).toBeUndefined()
-              expect(snapshotCalls).toBe(1)
-
+              expect(result).toEqual({ hash, files: [] })
               yield* awaitWithTimeout(
-                Deferred.await(completed),
-                "the stalled snapshot git call was not interrupted before retry",
+                Deferred.await(interrupted),
+                "the stalled patch Git call was not interrupted",
                 Duration.seconds(10),
               )
 
               const beforeRetry = snapshotCalls
+              const retry = yield* snapshot.patch(hash).pipe(Effect.forkChild)
               yield* awaitWithTimeout(
-                snapshot.track(),
-                "the snapshot service did not retry after the stalled operation",
+                Deferred.await(secondStarted),
+                "the later public Snapshot.patch call did not reach Git",
                 Duration.seconds(10),
               )
+              expect(yield* Fiber.join(retry)).toEqual({ hash, files: [] })
               expect(snapshotCalls).toBeGreaterThan(beforeRetry)
             } finally {
               spy.mockRestore()

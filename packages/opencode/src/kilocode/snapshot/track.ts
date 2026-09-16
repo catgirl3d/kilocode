@@ -10,15 +10,16 @@
 //   1. Runs the real `track()` in a forked fiber.
 //   2. Waits up to `TIMEOUT_MS` for it to complete.
 //   3. If it times out AND we have a sessionID to target, either waits
-//      silently when the caller selected that product policy, or asks the user:
+//      silently when the caller selected that product policy, or asks the user.
+//      While the question is open, its time is excluded from the turn budget:
 //        - "Continue with snapshots": keep waiting on this turn; snapshot
 //          finishes eventually and undo/redo stays functional. Future turns
 //          are fast because the snapshot index is built.
 //        - "Disable for this project": interrupt the in-flight snapshot,
 //          persist `"snapshot": false` to `.kilo/kilo.json`, and skip. All
 //          future sessions on this project load with snapshots off.
-//        - Dismissed / no sessionID: interrupt and skip. Mark the active
-//          Snapshot.Service guard so later calls through it do not prompt again.
+//        - Dismissed / no sessionID: interrupt and skip only this operation.
+//          A dismissal suppresses another prompt but does not disable snapshots.
 //
 // While the snapshot is running, we inject a transient synthetic text part
 // into the live assistant message. Kilo clients render it as a status badge,
@@ -28,6 +29,8 @@
 //   - `state.asked` is scoped to the active Snapshot.Service closure, not the
 //     directory-keyed snapshot state. It suppresses follow-up prompts until a
 //     continued snapshot successfully produces a hash.
+//   - Each `Operation` owns its prompt pause and active-time budget. A prompt
+//     in one operation cannot extend or cancel the budget of another operation.
 //   - We do NOT call `Config.update()` when the user picks "Disable" because
 //     that finalizer runs `Instance.dispose()` and tears down the live turn.
 //     Instead we write the file directly via `KilocodeConfig.updateProjectConfig`
@@ -35,11 +38,13 @@
 //   - If the user picks "Continue", the fiber keeps running; we just `join` it
 //     and return its value. Any error during the in-flight snapshot is logged
 //     and swallowed so the turn can proceed.
+//   - Timeouts and prompt dismissal skip only the current operation. Explicit
+//     Disable and non-interruption failures are the paths that disable a guard.
 //
 // All of this is Kilo-specific — the upstream snapshot module remains a thin
 // shim that calls into here.
 
-import { Duration, Effect, Fiber, Option } from "effect"
+import { Cause, Clock, Duration, Effect, Fiber, Option } from "effect"
 import { applyEdits, modify } from "jsonc-parser"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Question } from "@/question"
@@ -95,7 +100,9 @@ export namespace KiloSnapshotTrack {
       return fallback
     })
 
-  export const TIMEOUT_MS = duration("KILO_SNAPSHOT_TRACK_TIMEOUT_MS", 10_000)
+  // fork_change start - wait longer before asking about a slow repository
+  export const TIMEOUT_MS = duration("KILO_SNAPSHOT_TRACK_TIMEOUT_MS", 45_000)
+  // fork_change end
   export const TURN_TIMEOUT_MS = duration("KILO_SNAPSHOT_TURN_TIMEOUT_MS", 120_000)
 
   // Wire values — also function as i18n keys via `labelKey`/`headerKey`.
@@ -141,6 +148,19 @@ export namespace KiloSnapshotTrack {
     owner?: symbol
   }
 
+  export interface Operation {
+    readonly id: symbol
+    paused: number
+    opened?: number
+    changed: PromiseWithResolvers<void>
+  }
+
+  export const makeOperation = (): Operation => ({
+    id: Symbol(),
+    paused: 0,
+    changed: Promise.withResolvers<void>(),
+  })
+
   export const makeState = (): State => ({
     disabledForSession: false,
     asked: false,
@@ -162,46 +182,131 @@ export namespace KiloSnapshotTrack {
     readonly state: State
     readonly fallback: A
     readonly operation: "track" | "patch"
+    readonly attempt?: Operation
     readonly timeoutMs?: number
   }
 
+  const claim = (state: State, attempt: Operation) =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis
+      return yield* Effect.sync(() => {
+        if (state.asked || state.owner) return false
+        state.asked = true
+        state.owner = attempt.id
+        attempt.opened = now
+        const changed = attempt.changed
+        attempt.changed = Promise.withResolvers<void>()
+        changed.resolve()
+        return true
+      })
+    })
+
+  const resume = (attempt: Operation) =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis
+      yield* Effect.sync(() => {
+        const opened = attempt.opened
+        if (opened === undefined) return
+        attempt.paused += Math.max(0, now - opened)
+        attempt.opened = undefined
+        const changed = attempt.changed
+        attempt.changed = Promise.withResolvers<void>()
+        changed.resolve()
+      })
+    })
+
+  const active = (attempt: Operation, started: number, now: number) => {
+    const paused = attempt.paused + (attempt.opened === undefined ? 0 : Math.max(0, now - attempt.opened))
+    return Math.max(0, now - started - paused)
+  }
+
+  const waitForChange = (attempt: Operation) =>
+    Effect.promise((signal) => {
+      const wait = Promise.withResolvers<void>()
+      const finish = () => {
+        signal.removeEventListener("abort", finish)
+        wait.resolve()
+      }
+      if (signal.aborted) {
+        wait.resolve()
+        return wait.promise
+      }
+      signal.addEventListener("abort", finish, { once: true })
+      void attempt.changed.promise.then(finish)
+      return wait.promise
+    })
+
   /**
    * Enforces the turn-facing snapshot availability budget without waiting for
-   * cancellation. Snapshot tracking and patching are optional metadata work;
-   * once either exceeds this budget, later calls in the same directory bypass
-   * the potentially poisoned lock owner for the lifetime of this service.
+   * cancellation. Prompt time is paused for the operation that owns it, while
+   * a timeout skips only the current optional metadata operation.
    */
   export const protect = <A>(input: ProtectInput<A>): Effect.Effect<A> =>
     Effect.gen(function* () {
       if (input.state.disabledForSession) return input.fallback
       const timeoutMs = input.timeoutMs ?? TURN_TIMEOUT_MS
+      const attempt = input.attempt
       return yield* Effect.acquireUseRelease(
         Effect.forkDetach(input.inner, { startImmediately: true }),
         (fiber) =>
           Effect.gen(function* () {
-            const result = yield* Fiber.join(fiber).pipe(
-              Effect.timeoutOption(Duration.millis(timeoutMs)),
-              Effect.catchCause((cause) => {
-                input.state.disabledForSession = true
-                log.error("snapshot turn operation failed; bypassing snapshots for this directory", {
-                  cause,
-                  operation: input.operation,
-                })
-                return Effect.succeed(Option.some(input.fallback))
-              }),
+            const started = yield* Clock.currentTimeMillis
+            const join = Fiber.join(fiber).pipe(
+              Effect.catchCauseIf(
+                (cause) => !Cause.hasInterruptsOnly(cause),
+                (cause) => {
+                  input.state.disabledForSession = true
+                  log.error("snapshot turn operation failed; bypassing snapshots for this directory", {
+                    cause,
+                    operation: input.operation,
+                  })
+                  return Effect.succeed(input.fallback)
+                },
+              ),
             )
-            if (Option.isSome(result)) return result.value
-            input.state.disabledForSession = true
-            log.warn("snapshot turn operation exceeded availability budget; bypassing snapshots for this directory", {
-              operation: input.operation,
-              timeoutMs,
-            })
-            return input.fallback
+
+            while (true) {
+              if (attempt == null) {
+                const result = yield* join.pipe(Effect.timeoutOption(Duration.millis(timeoutMs)))
+                if (Option.isSome(result)) return result.value
+                log.warn("snapshot turn operation exceeded availability budget; skipping this operation", {
+                  operation: input.operation,
+                  timeoutMs,
+                })
+                return input.fallback
+              }
+
+              if (attempt.opened !== undefined) {
+                const result = yield* Effect.raceFirst(
+                  join.pipe(Effect.map((value) => ({ type: "done" as const, value }))),
+                  waitForChange(attempt).pipe(Effect.as({ type: "changed" as const })),
+                )
+                if (result.type === "done") return result.value
+                continue
+              }
+
+              const now = yield* Clock.currentTimeMillis
+              const remaining = Math.max(0, timeoutMs - active(attempt, started, now))
+              const result = yield* Effect.raceFirst(
+                join.pipe(
+                  Effect.timeoutOption(Duration.millis(remaining)),
+                  Effect.map((value) => ({ type: "wait" as const, value })),
+                ),
+                waitForChange(attempt).pipe(Effect.as({ type: "changed" as const })),
+              )
+              if (result.type === "changed") continue
+              if (Option.isSome(result.value)) return result.value.value
+
+              const checked = yield* Clock.currentTimeMillis
+              if (attempt.opened !== undefined || active(attempt, started, checked) < timeoutMs) continue
+              log.warn("snapshot turn operation exceeded availability budget; skipping this operation", {
+                operation: input.operation,
+                timeoutMs,
+              })
+              return input.fallback
+            }
           }),
-        (fiber) =>
-          Effect.sync(() => {
-            setTimeout(() => Effect.runFork(Fiber.interrupt(fiber)), 0)
-          }),
+        (fiber) => Fiber.interrupt(fiber),
       )
     })
 
@@ -240,6 +345,7 @@ export namespace KiloSnapshotTrack {
   export interface WrapInput {
     readonly inner: Effect.Effect<string | undefined>
     readonly state: State
+    readonly attempt?: Operation
     readonly snapshotInitialization?: SnapshotInitialization
     readonly sessionID?: SessionID
     /**
@@ -250,7 +356,7 @@ export namespace KiloSnapshotTrack {
      */
     readonly messageID?: MessageID
     readonly hooks?: Hooks
-    /** Override the 10s default for tests. */
+    /** Override the 45s default for tests. */
     readonly timeoutMs?: number
     /**
      * Override the delay before the indicator appears.
@@ -276,6 +382,7 @@ export namespace KiloSnapshotTrack {
 
       const hooks = input.hooks ?? defaultHooks
       const timeoutMs = input.timeoutMs ?? TIMEOUT_MS
+      const attempt = input.attempt ?? makeOperation()
       const progressDelayMs = input.progressDelayMs ?? PROGRESS_DELAY_MS
       const cleanupTimeoutMs = input.progressCleanupTimeoutMs ?? PROGRESS_CLEANUP_TIMEOUT_MS
       // Progress cleanup can outlive this fiber, but its events must retain the project directory.
@@ -294,7 +401,6 @@ export namespace KiloSnapshotTrack {
               ended: false,
             }
           : undefined
-      const owner = Symbol()
       let cleared = false
       let removal: Promise<void> | undefined
       let reset = false
@@ -396,12 +502,15 @@ export namespace KiloSnapshotTrack {
       return yield* Effect.acquireUseRelease(
         Effect.forkDetach(input.inner),
         (fiber) => {
-          const cancelSnapshot = Fiber.interrupt(fiber).pipe(Effect.forkDetach, Effect.asVoid)
+          const cancelSnapshot = Fiber.interrupt(fiber)
           const cleanup = Effect.gen(function* () {
             yield* stopProgress
-            if (input.state.owner !== owner) return
-            if (reset) input.state.asked = false
-            input.state.owner = undefined
+            yield* resume(attempt)
+            yield* Effect.sync(() => {
+              if (input.state.owner !== attempt.id) return
+              if (reset) input.state.asked = false
+              input.state.owner = undefined
+            })
           })
           return Effect.gen(function* () {
             const quick = yield* Fiber.join(fiber).pipe(
@@ -434,17 +543,40 @@ export namespace KiloSnapshotTrack {
             // Slow path. No target session to prompt against, or we've already
             // prompted through this service scope — skip silently.
             if (!input.sessionID || input.state.asked || input.state.owner) {
-              log.warn("snapshot track slow; skipping for this service scope", { timeoutMs })
-              if (!input.state.owner) input.state.disabledForSession = true
+              log.warn("snapshot track slow; skipping this operation without prompting", { timeoutMs })
               yield* cancelSnapshot
               yield* stopProgress
               return undefined
             }
-            input.state.asked = true
-            input.state.owner = owner
+
+            const claimed = yield* claim(input.state, attempt)
+            if (!claimed) {
+              log.warn("snapshot track slow; another prompt owns this service scope", { timeoutMs })
+              yield* cancelSnapshot
+              yield* stopProgress
+              return undefined
+            }
 
             const sessionID = input.sessionID
-            const answer = yield* Effect.promise((signal) => hooks.ask({ sessionID }, signal))
+            const question = yield* Effect.forkChild(Effect.promise((signal) => hooks.ask({ sessionID }, signal)))
+            const outcome = yield* Effect.raceFirst(
+              Fiber.join(question).pipe(Effect.map((answer) => ({ type: "answer" as const, answer }))),
+              Fiber.join(fiber).pipe(
+                Effect.catch((err) => {
+                  log.warn("snapshot track failed while prompt was open", { err })
+                  return Effect.succeed(undefined as string | undefined)
+                }),
+                Effect.map((value) => ({ type: "snapshot" as const, value })),
+              ),
+            ).pipe(Effect.ensuring(Fiber.interrupt(question).pipe(Effect.asVoid)))
+            yield* resume(attempt)
+
+            if (outcome.type === "snapshot") {
+              if (outcome.value) reset = true
+              return outcome.value
+            }
+
+            const answer = outcome.answer
 
             if (answer === "continue") {
               log.info("user chose to keep waiting for snapshot; joining fiber")
@@ -464,11 +596,11 @@ export namespace KiloSnapshotTrack {
               return finished
             }
 
-            input.state.disabledForSession = true
             yield* cancelSnapshot
             yield* stopProgress
 
             if (answer === "disable") {
+              input.state.disabledForSession = true
               log.info("user chose to disable snapshot for this project")
               // Restore instance context across the Promise boundary; Effect.promise
               // drops it, and persistDisable needs the project directory.
@@ -478,13 +610,13 @@ export namespace KiloSnapshotTrack {
                 }),
               )
             } else {
-              log.info("user dismissed snapshot prompt; disabling for this service scope only")
+              log.info("user dismissed snapshot prompt; skipping this operation only")
             }
 
             return undefined
           }).pipe(Effect.ensuring(cleanup))
         },
-        (fiber) => Fiber.interrupt(fiber).pipe(Effect.forkDetach, Effect.asVoid),
+        (fiber) => Fiber.interrupt(fiber),
       )
     })
 

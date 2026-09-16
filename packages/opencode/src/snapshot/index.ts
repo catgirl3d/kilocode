@@ -985,15 +985,18 @@ export const layer: Layer.Layer<Service, never, Requirements> =
           if ((yield* config.get()).snapshot === false) return undefined
           const ctx = yield* InstanceState.context
           const guard = trackState(ctx.worktree)
+          const attempt = KiloSnapshotTrack.makeOperation()
           return yield* KiloSnapshotTrack.protect({
             inner: KiloSnapshotTrack.wrap({
               inner: InstanceState.useEffect(state, (s) => s.track(opts)),
               state: guard,
+              attempt,
               snapshotInitialization: opts?.snapshotInitialization,
               sessionID: opts?.sessionID,
               messageID: opts?.messageID,
             }),
             state: guard,
+            attempt,
             fallback: undefined,
             operation: "track",
           })

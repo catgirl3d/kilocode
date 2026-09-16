@@ -78,7 +78,7 @@ const makeHooks = (
 }
 
 describe("KiloSnapshotTrack.protect", () => {
-  it.effect("returns at the availability deadline without waiting for cancellation", () =>
+  it.effect("returns at the availability deadline without disabling snapshots", () =>
     Effect.gen(function* () {
       const state = KiloSnapshotTrack.makeState()
       const started = yield* Deferred.make<void>()
@@ -104,12 +104,12 @@ describe("KiloSnapshotTrack.protect", () => {
       yield* TestClock.adjust(100)
 
       expect(yield* Fiber.join(fiber)).toEqual(fallback)
-      expect(finalized).toBe(false)
-      expect(state.disabledForSession).toBe(true)
+      expect(finalized).toBe(true)
+      expect(state.disabledForSession).toBe(false)
     }),
   )
 
-  it.effect("bypasses later operations after a deadline opens the directory circuit", () =>
+  it.effect("allows a later operation after a deadline", () =>
     Effect.gen(function* () {
       const state = KiloSnapshotTrack.makeState()
       const started = yield* Deferred.make<void>()
@@ -127,18 +127,349 @@ describe("KiloSnapshotTrack.protect", () => {
       yield* Deferred.await(started)
       yield* TestClock.adjust(100)
       expect(yield* Fiber.join(first)).toBeUndefined()
+      expect(state.disabledForSession).toBe(false)
 
       const second = yield* KiloSnapshotTrack.protect({
         inner: Effect.sync(() => {
           calls += 1
-          return "unexpected"
+          return "retry"
         }),
         state,
         fallback: undefined,
         operation: "track",
       })
-      expect(second).toBeUndefined()
-      expect(calls).toBe(1)
+      expect(second).toBe("retry")
+      expect(calls).toBe(2)
+    }),
+  )
+
+  it.effect("does not spend the availability budget while its prompt is open", () =>
+    Effect.gen(function* () {
+      const state = KiloSnapshotTrack.makeState()
+      const attempt = KiloSnapshotTrack.makeOperation()
+      const asked = Promise.withResolvers<void>()
+      const answer = Promise.withResolvers<KiloSnapshotTrack.Answer>()
+      const hash = yield* Deferred.make<string | undefined>()
+      const { hooks: base } = makeHooks(answer.promise)
+      const hooks: KiloSnapshotTrack.Hooks = {
+        ...base,
+        async ask() {
+          asked.resolve()
+          return answer.promise
+        },
+      }
+
+      const fiber = yield* KiloSnapshotTrack.protect({
+        inner: KiloSnapshotTrack.wrap({
+          inner: Deferred.await(hash),
+          state,
+          attempt,
+          sessionID: SESSION,
+          messageID: MESSAGE,
+          hooks,
+          timeoutMs: 10,
+          progressDelayMs: 0,
+        }),
+        state,
+        attempt,
+        fallback: undefined,
+        operation: "track",
+        timeoutMs: 100,
+      }).pipe(Effect.forkChild)
+
+      yield* TestClock.adjust(10)
+      yield* Effect.promise(() => asked.promise)
+      yield* TestClock.adjust(100)
+
+      expect(state.disabledForSession).toBe(false)
+      answer.resolve("continue")
+      yield* Deferred.succeed(hash, "late-hash")
+      expect(yield* Fiber.join(fiber)).toBe("late-hash")
+    }),
+  )
+
+  it.effect("resumes with the remaining active budget after the prompt", () =>
+    Effect.gen(function* () {
+      const state = KiloSnapshotTrack.makeState()
+      const attempt = KiloSnapshotTrack.makeOperation()
+      const asked = Promise.withResolvers<void>()
+      const answer = Promise.withResolvers<KiloSnapshotTrack.Answer>()
+      const hash = yield* Deferred.make<string | undefined>()
+      const done = yield* Deferred.make<string | undefined>()
+      const { hooks: base } = makeHooks(answer.promise)
+      const hooks: KiloSnapshotTrack.Hooks = {
+        ...base,
+        async ask() {
+          asked.resolve()
+          return answer.promise
+        },
+      }
+
+      const fiber = yield* KiloSnapshotTrack.protect({
+        inner: KiloSnapshotTrack.wrap({
+          inner: Deferred.await(hash),
+          state,
+          attempt,
+          sessionID: SESSION,
+          messageID: MESSAGE,
+          hooks,
+          timeoutMs: 10,
+          progressDelayMs: 0,
+        }),
+        state,
+        attempt,
+        fallback: undefined,
+        operation: "track",
+        timeoutMs: 100,
+      }).pipe(
+        Effect.flatMap((value) => Deferred.succeed(done, value)),
+        Effect.forkChild,
+      )
+
+      yield* TestClock.adjust(10)
+      yield* Effect.promise(() => asked.promise)
+      yield* TestClock.adjust(50)
+      answer.resolve("continue")
+      yield* Effect.yieldNow
+
+      yield* TestClock.adjust(89)
+      expect(yield* Deferred.isDone(done)).toBe(false)
+      yield* TestClock.adjust(1)
+      expect(yield* Deferred.isDone(done)).toBe(true)
+      expect(yield* Deferred.await(done)).toBeUndefined()
+      expect(yield* Fiber.join(fiber)).toBe(true)
+    }),
+  )
+
+  it.effect("pauses only the operation that owns the prompt", () =>
+    Effect.gen(function* () {
+      const state = KiloSnapshotTrack.makeState()
+      const firstAttempt = KiloSnapshotTrack.makeOperation()
+      const secondAttempt = KiloSnapshotTrack.makeOperation()
+      const asked = Promise.withResolvers<void>()
+      const answer = Promise.withResolvers<KiloSnapshotTrack.Answer>()
+      const hash = yield* Deferred.make<string | undefined>()
+      const secondDone = yield* Deferred.make<string>()
+      const { hooks: base } = makeHooks(answer.promise)
+      const hooks: KiloSnapshotTrack.Hooks = {
+        ...base,
+        async ask() {
+          asked.resolve()
+          return answer.promise
+        },
+      }
+
+      const first = yield* KiloSnapshotTrack.protect({
+        inner: KiloSnapshotTrack.wrap({
+          inner: Deferred.await(hash),
+          state,
+          attempt: firstAttempt,
+          sessionID: SESSION,
+          messageID: MESSAGE,
+          hooks,
+          timeoutMs: 10,
+          progressDelayMs: 0,
+        }),
+        state,
+        attempt: firstAttempt,
+        fallback: undefined,
+        operation: "track",
+        timeoutMs: 100,
+      }).pipe(Effect.forkChild)
+
+      yield* TestClock.adjust(10)
+      yield* Effect.promise(() => asked.promise)
+
+      const second = yield* KiloSnapshotTrack.protect({
+        inner: Effect.never,
+        state,
+        attempt: secondAttempt,
+        fallback: "second-fallback",
+        operation: "patch",
+        timeoutMs: 100,
+      }).pipe(
+        Effect.flatMap((value) => Deferred.succeed(secondDone, value)),
+        Effect.forkChild,
+      )
+
+      yield* TestClock.adjust(100)
+      expect(yield* Deferred.isDone(secondDone)).toBe(true)
+      expect(yield* Fiber.join(second)).toBe(true)
+      expect(yield* Deferred.await(secondDone)).toBe("second-fallback")
+
+      answer.resolve("continue")
+      yield* Deferred.succeed(hash, "first-hash")
+      expect(yield* Fiber.join(first)).toBe("first-hash")
+    }),
+  )
+
+  it.effect("does not disable snapshots when the caller is interrupted", () =>
+    Effect.gen(function* () {
+      const state = KiloSnapshotTrack.makeState()
+      const started = yield* Deferred.make<void>()
+      const inner = Effect.gen(function* () {
+        yield* Deferred.succeed(started, undefined)
+        yield* Effect.never
+      })
+      const fiber = yield* KiloSnapshotTrack.protect({
+        inner,
+        state,
+        fallback: undefined,
+        operation: "track",
+        timeoutMs: 100,
+      }).pipe(Effect.forkChild)
+
+      yield* Deferred.await(started)
+      yield* Fiber.interrupt(fiber)
+      expect(state.disabledForSession).toBe(false)
+    }),
+  )
+
+  it.effect("dismissal skips only the current slow call and preserves later availability", () =>
+    Effect.gen(function* () {
+      const state = KiloSnapshotTrack.makeState()
+      const asked = yield* Deferred.make<void>()
+      const firstCancelled = yield* Deferred.make<void>()
+      const secondStarted = yield* Deferred.make<void>()
+      const secondCancelled = yield* Deferred.make<void>()
+      let askCount = 0
+      const hooks: KiloSnapshotTrack.Hooks = {
+        ...makeHooks("dismissed").hooks,
+        async ask() {
+          askCount += 1
+          Deferred.doneUnsafe(asked, Effect.succeed(undefined))
+          return "dismissed"
+        },
+      }
+      const firstInner = Effect.never.pipe(Effect.ensuring(Deferred.succeed(firstCancelled, undefined)))
+      const secondInner = Effect.succeed(undefined).pipe(
+        Effect.andThen(Deferred.succeed(secondStarted, undefined)),
+        Effect.andThen(Effect.never),
+        Effect.ensuring(Deferred.succeed(secondCancelled, undefined)),
+      )
+
+      const first = yield* KiloSnapshotTrack.wrap({
+        inner: firstInner,
+        state,
+        attempt: KiloSnapshotTrack.makeOperation(),
+        sessionID: SESSION,
+        messageID: MESSAGE,
+        hooks,
+        timeoutMs: 10,
+        progressDelayMs: 0,
+      }).pipe(Effect.forkChild)
+
+      yield* TestClock.adjust(10)
+      yield* Deferred.await(asked)
+      expect(yield* Fiber.join(first)).toBeUndefined()
+      yield* Deferred.await(firstCancelled)
+
+      const second = yield* KiloSnapshotTrack.wrap({
+        inner: secondInner,
+        state,
+        attempt: KiloSnapshotTrack.makeOperation(),
+        sessionID: SESSION,
+        messageID: MESSAGE,
+        hooks,
+        timeoutMs: 10,
+        progressDelayMs: 0,
+      }).pipe(Effect.forkChild)
+
+      yield* Deferred.await(secondStarted)
+      yield* TestClock.adjust(10)
+      expect(yield* Fiber.join(second)).toBeUndefined()
+      yield* Deferred.await(secondCancelled)
+
+      expect(askCount).toBe(1)
+      expect(state.disabledForSession).toBe(false)
+    }),
+  )
+
+  it.effect("disables snapshots after a real protect failure and skips later inner work", () =>
+    Effect.gen(function* () {
+      const state = KiloSnapshotTrack.makeState()
+      const fallback = { hash: "fallback", files: [] as string[] }
+      let started = 0
+      const first = yield* KiloSnapshotTrack.protect({
+        inner: Effect.sync(() => {
+          started += 1
+        }).pipe(Effect.andThen(failingInner(new Error("snapshot failure")))),
+        state,
+        fallback,
+        operation: "track",
+      })
+
+      expect(first).toEqual(fallback)
+      expect(started).toBe(1)
+      expect(state.disabledForSession).toBe(true)
+
+      const second = yield* KiloSnapshotTrack.protect({
+        inner: Effect.sync(() => {
+          started += 1
+          return "should-not-start"
+        }),
+        state,
+        fallback,
+        operation: "patch",
+      })
+
+      expect(second).toEqual(fallback)
+      expect(started).toBe(1)
+    }),
+  )
+
+  it.effect("parent interruption aborts the prompt, cleans its owner, and preserves later availability", () =>
+    Effect.gen(function* () {
+      const state = KiloSnapshotTrack.makeState()
+      const asked = yield* Deferred.make<void>()
+      const aborted = yield* Deferred.make<void>()
+      const cancelled = yield* Deferred.make<void>()
+      const hooks: KiloSnapshotTrack.Hooks = {
+        ...makeHooks("dismissed").hooks,
+        async ask(_input, signal) {
+          Deferred.doneUnsafe(asked, Effect.succeed(undefined))
+          return new Promise<KiloSnapshotTrack.Answer>((resolve) => {
+            signal?.addEventListener(
+              "abort",
+              () => {
+                Deferred.doneUnsafe(aborted, Effect.succeed(undefined))
+                resolve("dismissed")
+              },
+              { once: true },
+            )
+          })
+        },
+      }
+      const inner = Effect.never.pipe(Effect.ensuring(Deferred.succeed(cancelled, undefined)))
+      const fiber = yield* KiloSnapshotTrack.wrap({
+        inner,
+        state,
+        attempt: KiloSnapshotTrack.makeOperation(),
+        sessionID: SESSION,
+        messageID: MESSAGE,
+        hooks,
+        timeoutMs: 10,
+        progressDelayMs: 0,
+      }).pipe(Effect.forkChild)
+
+      yield* TestClock.adjust(10)
+      yield* Deferred.await(asked)
+      yield* Fiber.interrupt(fiber)
+      yield* Deferred.await(aborted)
+      yield* Deferred.await(cancelled)
+
+      expect(state.owner).toBeUndefined()
+      expect(state.disabledForSession).toBe(false)
+      expect(
+        yield* KiloSnapshotTrack.wrap({
+          inner: fastInner("available-after-interruption"),
+          state,
+          sessionID: SESSION,
+          messageID: MESSAGE,
+          hooks,
+          timeoutMs: 10,
+        }),
+      ).toBe("available-after-interruption")
     }),
   )
 
@@ -292,7 +623,7 @@ describe("KiloSnapshotTrack.wrap", () => {
     expect(await run).toBeUndefined()
   })
 
-  test('timeout + "dismissed" interrupts and disables, but does NOT persist', async () => {
+  test('timeout + "dismissed" interrupts without disabling or persisting', async () => {
     const state = KiloSnapshotTrack.makeState()
     const { hooks, calls } = makeHooks("dismissed")
 
@@ -311,11 +642,11 @@ describe("KiloSnapshotTrack.wrap", () => {
     expect(result).toBeUndefined()
     expect(calls.ask).toBe(1)
     expect(calls.persist).toBe(0)
-    expect(state.disabledForSession).toBe(true)
+    expect(state.disabledForSession).toBe(false)
     expect(state.asked).toBe(true)
   })
 
-  test("timeout without sessionID skips the prompt and disables silently", async () => {
+  test("timeout without sessionID skips the prompt without disabling", async () => {
     const state = KiloSnapshotTrack.makeState()
     const { hooks, calls } = makeHooks("continue")
 
@@ -332,10 +663,20 @@ describe("KiloSnapshotTrack.wrap", () => {
     expect(result).toBeUndefined()
     expect(calls.ask).toBe(0)
     expect(calls.persist).toBe(0)
-    expect(state.disabledForSession).toBe(true)
+    expect(state.disabledForSession).toBe(false)
     expect(state.asked).toBe(false)
     // No messageID either → progress indicator is suppressed entirely.
     expect(calls.progress).toEqual([])
+
+    const recovered = await Effect.runPromise(
+      KiloSnapshotTrack.wrap({
+        inner: fastInner("recovered-hash"),
+        state,
+        hooks,
+        timeoutMs: 10,
+      }),
+    )
+    expect(recovered).toBe("recovered-hash")
   })
 
   test("subsequent call after disable returns undefined without starting the inner", async () => {
@@ -568,6 +909,53 @@ describe("KiloSnapshotTrack.wrap", () => {
     expect(calls.ask).toBe(0)
     expect(state.disabledForSession).toBe(false)
   })
+
+  test("auto-closes the prompt when the snapshot finishes first", async () => {
+    const state = KiloSnapshotTrack.makeState()
+    const attempt = KiloSnapshotTrack.makeOperation()
+    let aborted = false
+    const { hooks: base, calls } = makeHooks("dismissed")
+    const hooks: KiloSnapshotTrack.Hooks = {
+      ...base,
+      async ask(_input, signal) {
+        return new Promise<KiloSnapshotTrack.Answer>((resolve) => {
+          signal?.addEventListener(
+            "abort",
+            () => {
+              aborted = true
+              resolve("dismissed")
+            },
+            { once: true },
+          )
+        })
+      },
+    }
+
+    const result = await Effect.runPromise(
+      KiloSnapshotTrack.wrap({
+        inner: slowInner(50, "auto-hash"),
+        state,
+        attempt,
+        sessionID: SESSION,
+        messageID: MESSAGE,
+        hooks,
+        timeoutMs: 10,
+        progressDelayMs: 0,
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: "500 millis",
+          orElse: () => Effect.succeed("timed-out" as string | undefined),
+        }),
+      ),
+    )
+
+    expect(result).toBe("auto-hash")
+    expect(aborted).toBe(true)
+    expect(calls.persist).toBe(0)
+    expect(state.disabledForSession).toBe(false)
+    expect(state.asked).toBe(false)
+    expect(state.owner).toBeUndefined()
+  })
 })
 
 describe("KiloSnapshotTrack progress indicator", () => {
@@ -771,49 +1159,51 @@ describe("KiloSnapshotTrack progress indicator", () => {
     expect(calls.progress.at(-1)).toEqual({ kind: "end" })
   })
 
-  test.each(["disable", "dismissed"] as const)("%s path does not wait for snapshot cleanup", async (answer) => {
-    const state = KiloSnapshotTrack.makeState()
-    const { hooks, calls } = makeHooks(answer)
-    const cleaning = Promise.withResolvers<void>()
-    const cleanup = Promise.withResolvers<void>()
-    const inner = Effect.never.pipe(
-      Effect.ensuring(
-        Effect.promise(async () => {
-          cleaning.resolve()
-          await cleanup.promise
+  test.each(["disable", "dismissed"] as const)(
+    "%s path waits for snapshot cleanup before returning",
+    async (answer) => {
+      const state = KiloSnapshotTrack.makeState()
+      const { hooks, calls } = makeHooks(answer)
+      const cleaning = Promise.withResolvers<void>()
+      const cleanup = Promise.withResolvers<void>()
+      const inner = Effect.never.pipe(
+        Effect.ensuring(
+          Effect.promise(async () => {
+            cleaning.resolve()
+            await cleanup.promise
+          }),
+        ),
+      )
+
+      const run = Effect.runPromise(
+        KiloSnapshotTrack.wrap({
+          inner,
+          state,
+          sessionID: SESSION,
+          messageID: MESSAGE,
+          hooks,
+          timeoutMs: 20,
+          progressDelayMs: 2,
         }),
-      ),
-    )
+      )
+      const cleaned = await Promise.race([
+        cleaning.promise.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+      ])
+      expect(cleaned).toBe(true)
 
-    const run = Effect.runPromise(
-      KiloSnapshotTrack.wrap({
-        inner,
-        state,
-        sessionID: SESSION,
-        messageID: MESSAGE,
-        hooks,
-        timeoutMs: 20,
-        progressDelayMs: 2,
-      }),
-    )
-    const completed = await Effect.runPromise(
-      awaitWithTimeout(
-        Effect.promise(() => run),
-        "snapshot wrapper waited for cleanup",
-      ).pipe(
-        Effect.as(true),
-        Effect.catch(() => Effect.succeed(false)),
-      ),
-    )
-    const last = calls.progress.at(-1)
+      const completed = await Promise.race([
+        run.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 50)),
+      ])
+      expect(completed).toBe(false)
 
-    cleanup.resolve()
-    await run
-    await cleaning.promise
+      cleanup.resolve()
+      await run
 
-    expect(completed).toBe(true)
-    expect(last).toEqual({ kind: "end" })
-  })
+      expect(calls.progress.at(-1)).toEqual({ kind: "end" })
+    },
+  )
 
   test("stalled progress removal does not block completion and is retried", async () => {
     const state = KiloSnapshotTrack.makeState()
@@ -1119,11 +1509,11 @@ describe("KiloSnapshotTrack persistDisable", () => {
 })
 
 describe("KiloSnapshotTrack constants", () => {
-  test("TIMEOUT_MS defaults to 10s and respects env override", () => {
+  test("TIMEOUT_MS defaults to 45s and respects env override", () => {
     // The constant is evaluated once at module load, so we can only assert
     // on the default in this run. The env override is exercised by running
     // with KILO_SNAPSHOT_TRACK_TIMEOUT_MS, which this test suite does not set.
-    expect(KiloSnapshotTrack.TIMEOUT_MS).toBe(10_000)
+    expect(KiloSnapshotTrack.TIMEOUT_MS).toBe(45_000)
   })
 
   test("exposes stable answer labels", () => {

@@ -28,6 +28,7 @@
 ### Fixes & Enhancements
 
 - Exclude the locale key validation suite (`i18n-keys.test.ts`) from VS Code unit test runs, matching the existing `i18n-unused-keys` exclusion.
+- Keep snapshots available when slow-repository initialization is left waiting, dismissed, or times out, so a busy machine cannot silently remove rollback support for later turns.
 - Make the on-demand `consult_advisor` tool available in plan and ask modes, so second opinions are reachable at planning checkpoints and without leaving a read-only mode.
 - Keep the Agent Manager sidebar collapsed when creating a new session.
 - Hide the "Move your opencode configuration" notice.
