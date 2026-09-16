@@ -1590,7 +1590,8 @@ try {
     sent
       .slice(start)
       .filter(
-        (message) => message.type === "streamSessionVisible" && String(message.sessionID).startsWith("inspector-"),
+        (message): message is Extract<WebviewMessage, { type: "streamSessionVisible" }> =>
+          message.type === "streamSessionVisible" && String(message.sessionID).startsWith("inspector-"),
       )
       .map((message) => [message.sessionID, message.visible])
   assert.deepEqual(marks(), [

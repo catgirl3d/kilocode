@@ -1609,7 +1609,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
     if (!browserData) draft = resolvePrompt(draft, pending.length > 0, imgs.length > 0)
-    const message = [review, push, browserText, contextText, draft].filter(Boolean).join("\n\n")
+    const message = [review, browserText, push, contextText, draft].filter(Boolean).join("\n\n")
     const data = review ? { version: 1 as const, comments: pending } : undefined
     if ((!message && imgs.length === 0) || !sendReady() || speech.active()) return
 

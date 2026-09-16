@@ -69,11 +69,15 @@ await wait()
 assert.match(node('[data-slot="comment-preview"]', local).textContent ?? "", /Preview this/)
 button("write", local).click()
 assert.equal(document.activeElement, input(local))
-input(local).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }))
+input(local).dispatchEvent(
+  new window.KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }) as unknown as Event,
+)
 assert.equal(saved.length, 0, "Shift+Enter does not submit")
-input(local).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }))
+input(local).dispatchEvent(
+  new window.KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }) as unknown as Event,
+)
 assert.equal(saved.length, 0, "IME confirmation does not submit")
-input(local).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+input(local).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event)
 assert.deepEqual(saved, ["Preview **this**"])
 assert.equal(messages.length, 0, "local save never requests a GitHub write")
 type(local, "Send this")

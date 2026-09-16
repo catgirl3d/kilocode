@@ -50,12 +50,6 @@ describe("splitConfigByScope", () => {
     expect(split.global).toEqual({
       shared_agent_board: true,
     })
-
-    expect(split.global).toEqual({
-      experimental: {
-        shared_agent_board: true,
-      },
-    })
     expect(split.project).toEqual({})
   })
 
