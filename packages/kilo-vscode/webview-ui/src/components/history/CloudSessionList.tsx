@@ -10,9 +10,7 @@ import { List } from "@kilocode/kilo-ui/list"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox"
 import { useVSCode } from "../../context/vscode"
 import { useLanguage } from "../../context/language"
-// fork_change start - reuse the shared date grouping helper
-import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../utils/date"
-// fork_change end
+import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../utils/date" // fork_change
 import type { CloudSessionInfo, ExtensionMessage } from "../../types/messages"
 
 interface DisplaySession {

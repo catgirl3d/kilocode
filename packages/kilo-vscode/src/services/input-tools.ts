@@ -8,9 +8,7 @@ type Msg = {
   type: string
   requestId?: string
   model?: string
-  // fork_change start
-  mode?: "transcribe" | "translate"
-  // fork_change end
+  mode?: "transcribe" | "translate" // fork_change
   language?: string
 }
 
@@ -31,12 +29,10 @@ export async function routeInputToolMessage(message: Msg, ctx: Ctx): Promise<boo
 
   if (message.type === "speechToTextStart") {
     if (!message.requestId) return true
-    // fork_change start
     handleSpeechToTextStart(
-      { requestId: message.requestId, model: message.model, mode: message.mode, language: message.language },
+      { requestId: message.requestId, model: message.model, mode: message.mode, language: message.language }, // fork_change
       ctx.post,
     )
-    // fork_change end
     return true
   }
 

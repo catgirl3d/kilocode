@@ -840,7 +840,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
         inactive={!props.compact && !activeModel()}
         contentClass={props.compact ? "model-quick-switcher-tooltip" : undefined}
       >
-        {/* fork_change end */}
         <PopupSelector
           expanded={expanded()}
           preferredWidth={350}
@@ -860,9 +859,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           triggerProps={{
             variant: "secondary",
             size: "normal",
-            // fork_change start
             class: props.compact ? "model-selector-quick-open" : undefined,
-            // fork_change end
             get disabled() {
               return props.blocked || !canOpen()
             },
@@ -875,7 +872,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           }}
           trigger={
             <>
-              {/* fork_change start */}
               <Show
                 when={props.compact}
                 fallback={
@@ -902,7 +898,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
               >
                 <Icon name="models" size="small" />
               </Show>
-              {/* fork_change end */}
             </>
           }
         >
@@ -1065,7 +1060,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           const preActive = () => isPreActive(row.key)
                           const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
                           const showSelect = () => expanded() && preActive() && !isActive(model)
-                          // fork_change start
                           const index = () =>
                             session
                               ?.favoriteModels()
@@ -1080,7 +1074,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                             if (!session) return
                             session.moveFavorite(model.providerID, model.id, direction)
                           }
-                          // fork_change end
                           const starLabel = () =>
                             `${starred() ? language.t("model.favorite.remove") : language.t("model.favorite.add")}: ${sanitizeName(model.name)}`
                           return (
@@ -1153,7 +1146,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   <span class="model-selector-item-provider-tag">{model.providerName}</span>
                                 </div>
                               </div>
-                              {/* fork_change start */}
                               <Show
                                 when={row.kind === "favorite" && session && props.favorites !== false && index() >= 0}
                               >
@@ -1191,7 +1183,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   </button>
                                 </div>
                               </Show>
-                              {/* fork_change end */}
                               <Show when={session && props.favorites !== false}>
                                 <button
                                   type="button"
@@ -1244,6 +1235,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           }}
         </PopupSelector>
       </Tooltip>
+      {/* fork_change end */}
     </>
   )
 }
@@ -1255,9 +1247,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 interface ModelSelectorProps {
   sessionID?: Accessor<string | undefined>
   blocked?: boolean
-  // fork_change start
-  compact?: boolean
-  // fork_change end
+  compact?: boolean // fork_change
 }
 
 export const ModelSelector: Component<ModelSelectorProps> = (props) => {
@@ -1277,9 +1267,7 @@ export const ModelSelector: Component<ModelSelectorProps> = (props) => {
       onCancel={() => {
         requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("focusPrompt", { detail: { restore: true } })))
       }}
-      // fork_change start
-      compact={props.compact}
-      // fork_change end
+      compact={props.compact} /* fork_change */
     />
   )
 }

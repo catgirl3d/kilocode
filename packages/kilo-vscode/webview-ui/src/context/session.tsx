@@ -850,9 +850,7 @@ export const SessionProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "moveFavorite", providerID, modelID, direction })
   }
 
-  // fork_change end
   function handleStreamMessage(message: ExtensionMessage): boolean {
-    // fork_change start
     if (message.type === "sessionShakeCompleted") {
       if (shaking() === message.sessionID) setShaking(undefined)
       if (message.sessionID !== currentSessionID()) return true
@@ -865,7 +863,6 @@ export const SessionProvider: ParentComponent = (props) => {
       showToast({ variant: "error", title: language.t("command.session.shake.failed"), description: message.error })
       return true
     }
-    // fork_change end
     if (message.type === "partUpdated") {
       handlePartUpdated(message.sessionID, message.messageID, message.part, message.delta)
       return true
@@ -887,6 +884,7 @@ export const SessionProvider: ParentComponent = (props) => {
 
     return false
   }
+  // fork_change end
 
   function handleModelUsageMessage(message: ExtensionMessage): boolean {
     if (message.type !== "sessionModelUsageLoaded") return false
@@ -2347,36 +2345,28 @@ export const SessionProvider: ParentComponent = (props) => {
 
     const sid = origin === undefined ? currentSessionID() : (origin ?? undefined)
     const control = goalControl(command, args)
-    // fork_change start
-    const effectiveSelection = resolveSelection(control, draftID, sid, overrides, providerID, modelID)
-    // fork_change end
+    const effectiveSelection = resolveSelection(control, draftID, sid, overrides, providerID, modelID) // fork_change
     if (!control && !available(effectiveSelection)) return false
 
     const effectiveDraftID = !sid && !draftID ? crypto.randomUUID() : draftID
     const scope = effectiveDraftID ?? sid
     if (!sid && !draftID && effectiveDraftID) agentDrafts.seed(effectiveDraftID)
 
+    // fork_change start - Command model overrides must remain temporary.
     if (effectiveSelection) {
       if (overrides?.agent) {
         selectAgent(overrides.agent, scope)
       }
       if (overrides?.model) {
-        // fork_change start - Command model overrides must remain temporary.
         selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope, false)
-        // fork_change end
       }
       if (overrides?.variant) {
-        // fork_change start - Command overrides must not become persistent picker choices.
         selectVariant(overrides.variant, scope, false)
-        // fork_change end
       }
       recordModelUsage(effectiveSelection.providerID, effectiveSelection.modelID)
     }
-    // fork_change start - Command agent/model overrides retain configured presets.
     const preset = overrides?.agent !== undefined || overrides?.model !== undefined
-    // fork_change end
 
-    // fork_change start
     const settings = (() => {
       if (!effectiveSelection) return
       return {
@@ -2429,8 +2419,6 @@ export const SessionProvider: ParentComponent = (props) => {
         setDraftSessionID(scope)
       }
     }
-    // fork_change end
-    // fork_change start
     prepare()
     // fork_change end
     vscode.postMessage({

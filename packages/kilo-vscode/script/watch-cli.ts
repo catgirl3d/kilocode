@@ -6,9 +6,7 @@
  * Used during development so the VS Code extension always has an up-to-date
  * CLI backend without manual rebuild steps.
  */
-// fork_change start
-import { watch, chmodSync, copyFileSync, mkdirSync } from "node:fs"
-// fork_change end
+import { watch, chmodSync, copyFileSync, mkdirSync } from "node:fs" // fork_change
 import { join, relative } from "node:path"
 import { $ } from "bun"
 import { copySandboxResources, copyTreeSitterResources } from "../src/services/cli-backend/cli-resources"

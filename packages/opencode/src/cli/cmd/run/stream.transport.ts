@@ -1229,6 +1229,7 @@ function createLayer(input: StreamInput) {
             ],
           }
           const command = next.prompt.command
+          // kilocode_change start
           const send =
             next.prompt.mode === "shell"
               ? Effect.sync(() => {
@@ -1271,7 +1272,6 @@ function createLayer(input: StreamInput) {
                       ),
                   ),
                 )
-// kilocode_change start
               : DirectAction.matches(command)
                 ? Effect.sync(() => {
                     input.trace?.write("send.shake", { sessionID: input.sessionID })

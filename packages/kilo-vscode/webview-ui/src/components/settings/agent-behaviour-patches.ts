@@ -9,8 +9,6 @@ export function mcpConfigScope(name: string, collections: ConfigCollections): "g
   const source = collections.mcp?.find((entry) => entry.key === name)?.source
   return source === "project" || source === "global" ? source : undefined
 }
-// fork_change end
-// fork_change start
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value)
 }
@@ -99,7 +97,6 @@ export function mcpToggle(
   const action = mcpSwitchAction(enabled, onDemand)
   if (action !== "none") run(action, name)
 }
-
 // fork_change end
 export function selectedDefaultAgentValue(value: string): string | null {
   return value || null

@@ -78,7 +78,6 @@ function isResume(input: { sessionID?: unknown; messageID?: unknown; requestID?:
     typeof input.sessionID === "string" && typeof input.messageID === "string" && typeof input.requestID === "string"
   )
 }
-
 // fork_change start
 async function routeSessionMessage(
   message: { type: string; sessionID?: unknown; messageID?: unknown; requestID?: unknown },
@@ -100,7 +99,6 @@ export async function routeEarlyMessage(
 ): Promise<boolean> {
   const session = await routeSessionMessage(message, ctx)
   if (session !== undefined) return session
-  // fork_change end
   if (message.type === "copyToClipboard") {
     if (typeof message.id !== "string") return true
     if (typeof message.text !== "string") {
@@ -173,3 +171,4 @@ export async function routeEarlyMessage(
     }))
   )
 }
+// fork_change end

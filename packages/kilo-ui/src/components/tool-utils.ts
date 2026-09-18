@@ -19,7 +19,6 @@ export function createThrottledValue(
   getValue: () => string,
   getInterval: () => number = () => TEXT_RENDER_THROTTLE_MS,
 ) {
-  // fork_change end
   const [value, setValue] = createSignal(getValue())
   let timeout: ReturnType<typeof setTimeout> | undefined
   let pending: string | undefined
@@ -74,6 +73,7 @@ export function createThrottledValue(
 
   return value
 }
+// fork_change end
 
 export function busy(status: string | undefined) {
   return status === "pending" || status === "running"

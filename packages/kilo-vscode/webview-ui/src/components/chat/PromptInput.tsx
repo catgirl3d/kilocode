@@ -757,10 +757,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sendReady = () => !isDisabled() && goalReady() && !terminal.pending() && !git.pending() && !props.blocked?.()
   const canContinue = () => !goal.active() && speech.state() === "idle" && !hasInput() && session.canResume()
   const goalReady = () => !goal.pending() && (!goal.active() || (!enhancing() && !imageAttach.pending()))
-  // fork_change start
   const canSend = () =>
-    sendReady() && (speech.state() === "recording" || (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
-  // fork_change end
+    sendReady() && (speech.state() === "recording" || (!speech.active() && (goal.active() ? goal.ready(text()) : true))) // fork_change
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
@@ -1556,11 +1554,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return true
   }
 
-  // fork_change end
   const handleSend = async () => {
-    // fork_change start
     let draft = text().trim()
-    // fork_change end
     if (
       !goal.prepare(draft, () => {
         setText("")
@@ -1600,10 +1595,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const cmdMatch = parsed.match
     const matched = parsed.entry
 
-    // fork_change start
     if (runAction(matched)) return
-    // fork_change end
-
     const imgs = imageAttach.images()
     const pending = reviewComments()
     const review = pending.length > 0 ? formatReviewCommentsMarkdown(pending) : ""
@@ -1616,12 +1608,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       session.resume()
       return
     }
-    // fork_change start
     if (!browserData) draft = resolvePrompt(draft, pending.length > 0, imgs.length > 0)
-    // fork_change end
-    // fork_change start
     const message = [review, push, browserText, contextText, draft].filter(Boolean).join("\n\n")
-    // fork_change end
     const data = review ? { version: 1 as const, comments: pending } : undefined
     if ((!message && imgs.length === 0) || !sendReady() || speech.active()) return
 
@@ -1722,6 +1710,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     clearDraft(key, draft)
   }
+  // fork_change end
 
   const clearDraft = (key: string, value = key === draftKey() ? text().trim() : (drafts.get(key) ?? "").trim()) => {
     history.append(value)

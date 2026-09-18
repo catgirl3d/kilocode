@@ -108,7 +108,7 @@ export interface ApplyResult {
   userSetAgents: Record<string, boolean>
 }
 
-// fork_change start - Persist active model picks unless explicitly temporary.
+// fork_change start
 /**
  * Apply a user-initiated model selection.
  *
@@ -116,21 +116,21 @@ export interface ApplyResult {
  * session-scoped selections also write to the per-session override.
  * Temporary callers can disable the remembered selection.
  */
+// fork_change end
 export function applyModel(
   store: ModelStore,
   agentName: string,
   selection: ModelSelection,
   sessionID: string | undefined,
-  remember = true,
+  remember = true, // fork_change
 ): ApplyResult {
-  const modelSelections = remember ? { ...store.modelSelections, [agentName]: selection } : { ...store.modelSelections }
+  const modelSelections = remember ? { ...store.modelSelections, [agentName]: selection } : { ...store.modelSelections } // fork_change
   const sessionOverrides = { ...store.sessionOverrides }
 
   if (sessionID) {
     sessionOverrides[sessionID] = selection
   }
 
-  const userSetAgents = remember ? { ...store.userSetAgents, [agentName]: true } : { ...store.userSetAgents }
+  const userSetAgents = remember ? { ...store.userSetAgents, [agentName]: true } : { ...store.userSetAgents } // fork_change
   return { modelSelections, sessionOverrides, userSetAgents }
 }
-// fork_change end

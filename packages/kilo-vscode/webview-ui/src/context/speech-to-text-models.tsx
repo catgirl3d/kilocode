@@ -32,14 +32,14 @@ export const SpeechToTextModelsProvider: ParentComponent = (props) => {
   const request = () => vscode.postMessage({ type: "requestSpeechToTextModels" })
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "speechToTextModelsLoaded") return
+    // fork_change start
     setCatalog((prev) =>
       reduceSpeechToTextCatalog(prev, {
         ...message,
-        // fork_change start
         models: mergeSpeechToTextModels(message.models),
-        // fork_change end
       }),
     )
+    // fork_change end
   })
 
   request()

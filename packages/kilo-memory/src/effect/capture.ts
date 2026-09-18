@@ -86,7 +86,6 @@ function typedItems(memory: MemoryService.Interface, root: string) {
     .pipe(Effect.map((sources) => MemorySchema.Sources.flatMap((file) => itemSource(file, sources[file]))))
 }
 
-// fork_change start
 // prettier-ignore
 export namespace MemoryCapture {
   export const turn = Effect.fn("MemoryCapture.turn")(function* (input: {
@@ -241,8 +240,6 @@ export namespace MemoryCapture {
           )
           const result = yield* Effect.tryPromise({
             try: () =>
-              // fork_change start
-              // prettier-ignore
               input.model.run({
                 handle: model!,
                 sessionID: input.sessionID, // fork_change
@@ -251,7 +248,6 @@ export namespace MemoryCapture {
                 timeoutMs: state.capture.timeoutMs,
                 signal,
               }),
-              // fork_change end
             catch: (error) => error,
           }).pipe(
             Effect.map((result) => ({ ok: true as const, result })),
@@ -364,8 +360,6 @@ export namespace MemoryCapture {
           )
           const result = yield* Effect.tryPromise({
             try: () =>
-              // fork_change start
-              // prettier-ignore
               input.model.run({
                 handle: model!,
                 sessionID: input.sessionID, // fork_change
@@ -374,7 +368,6 @@ export namespace MemoryCapture {
                 timeoutMs: state.capture.timeoutMs,
                 signal,
               }),
-              // fork_change end
             catch: (error) => error,
           }).pipe(
             Effect.map((result) => ({ ok: true as const, result })),
@@ -502,7 +495,6 @@ export namespace MemoryCapture {
   },
   // Release the per-root abort controller acquired at the top once the turn settles (any exit path).
   (effect, input) => effect.pipe(Effect.ensuring(Effect.sync(() => MemoryTimers.release(input.root)))))
-// fork_change end
 
   export function report(cause: Cause.Cause<unknown>) {
     // Brief message only: API errors carry response headers/bodies that would flood the host log.

@@ -1,8 +1,6 @@
 import type { Message, Part } from "../types/messages"
 import { visibleParts, type MessageTurn, type RevertBoundary } from "./session-queue"
-// fork_change start
-import { snapshotStatus, type SnapshotStatus } from "./session-utils"
-// fork_change end
+import { snapshotStatus, type SnapshotStatus } from "./session-utils" // fork_change
 
 interface TranscriptMeta {
   turn: string
@@ -137,9 +135,7 @@ function equal(a: TranscriptRow, b: TranscriptRow) {
     return a.message === b.message && same(a.parts, b.parts) && a.copy === b.copy && sameTiming(a.timing, b.timing)
   }
   if (a.type === "diff" && b.type === "diff") {
-    // fork_change start
-    return diffEqual(a, b)
-    // fork_change end
+    return diffEqual(a, b) // fork_change
   }
   if (a.type === "error" && b.type === "error") {
     return a.message === b.message && a.error === b.error

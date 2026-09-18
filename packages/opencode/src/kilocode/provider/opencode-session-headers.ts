@@ -1,4 +1,4 @@
-// fork_change start
+// kilocode_change - new file
 import { USER_AGENT } from "@/installation"
 
 /**
@@ -15,4 +15,3 @@ export function opencodeSessionHeaders(input: { providerID: string; sessionID: s
       }
     : {}
 }
-// fork_change end

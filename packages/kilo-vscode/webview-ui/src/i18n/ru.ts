@@ -94,6 +94,7 @@ export const dict = {
   "revert.banner.workspace.enableSnapshots": "Включить снимки",
   "revert.disabled.agentBusy": "Дождитесь завершения агента",
   "command.session.compact": "Сжать сессию",
+  // fork_change start
   "command.session.shake": "Очистить тяжёлые выводы инструментов",
   "command.session.shake.cleared": "Освобождено примерно {{tokens}} токенов",
   "command.session.shake.clearedParts": "Вывод инструментов очищен",
@@ -101,6 +102,7 @@ export const dict = {
   "command.session.shake.diagnostics":
     "Диагностика: сессия {{sessionID}}; raw {{raw}} -> context {{projection}}; tools {{tools}}, completed {{completed}}, protected {{protected}}, уже очищено {{compacted}}, кандидатов {{candidates}}, примерно {{tokens}} токенов",
   "command.session.shake.failed": "Не удалось очистить вывод инструментов",
+  // fork_change end
   "command.session.export": "Экспортировать запись сеанса",
 
   "dialog.provider.search.placeholder": "Поиск провайдеров",
@@ -1065,7 +1067,7 @@ export const dict = {
   "settings.agentBehaviour.pushFixes.title": "Отправлять исправления пул-реквеста",
   "settings.agentBehaviour.pushFixes.description":
     "Когда вы отправляете агенту ошибки CI или комментарии ревью из пул-реквеста либо обновляете worktree из базовой ветки, попросить его сделать коммит и push, чтобы пул-реквест обновился. Запросы разрешений по-прежнему действуют. Отключите, чтобы делать коммиты вручную.",
-  "settings.agentBehaviour.instructionFiles.notFound": "Файл инструкций не существует: {{path}}",
+  "settings.agentBehaviour.instructionFiles.notFound": "Файл инструкций не существует: {{path}}", // fork_change
   "settings.agentBehaviour.claudeCompat.heading": "Совместимость с Claude Code",
   "settings.agentBehaviour.claudeCompat.title": "Загружать файлы Claude Code",
   "settings.agentBehaviour.claudeCompat.description":
@@ -1162,6 +1164,7 @@ export const dict = {
   "chat.memory.project.disabled": "Память проекта отключена",
   "chat.memory.project.empty": "This project doesn't have any memory yet. It will start showing after you use Kilo.",
   "chat.memory.command.failed": "Команда памяти не выполнена",
+  // fork_change start
   "chat.memory.status.loading": "Загрузка состояния памяти",
   "chat.memory.status.active": "Память активна в этом сеансе",
   "chat.memory.project.enabled": "Память проекта включена",
@@ -1180,6 +1183,7 @@ export const dict = {
   "chat.memory.activity.saved.item": "сохранено: {{item}}",
   "chat.memory.badge.recalled": "Память извлечена",
   "chat.memory.badge.items": "{{count}} элементов",
+  // fork_change end
   "chat.memory.updated": "Memory updated",
   "chat.memory.rebuild": "Memory index rebuilt",
 

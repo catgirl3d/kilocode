@@ -32,11 +32,11 @@ import { Config } from "@/config/config"
 import { PermissionProvenance } from "@/kilocode/permission/provenance"
 import { McpApps } from "@/kilocode/mcp/apps"
 import { BoardEnabled } from "@/kilocode/board/enabled"
-import { KiloSnapshotMutation } from "@/kilocode/snapshot/mutation" // kilocode_change
-import { ShellPermission } from "@/tool/shell" // kilocode_change
-import { Shell } from "@opencode-ai/core/shell" // kilocode_change
-import { InstanceState } from "@/effect/instance-state" // kilocode_change
-import path from "path" // kilocode_change
+import { KiloSnapshotMutation } from "@/kilocode/snapshot/mutation"
+import { ShellPermission } from "@/tool/shell"
+import { Shell } from "@opencode-ai/core/shell"
+import { InstanceState } from "@/effect/instance-state"
+import path from "path"
 // kilocode_change end
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -295,7 +295,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const ctx = context(toRecord(args), opts)
             // kilocode_change start
             if (hooked || KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.list, args: toRecord(args) }))
-              yield* input.processor.ensureSnapshot() // kilocode_change
+              yield* input.processor.ensureSnapshot()
             // kilocode_change end
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
@@ -382,7 +382,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               hooked ||
               KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.listTemplates, args: toRecord(args) })
             )
-              yield* input.processor.ensureSnapshot() // kilocode_change
+              yield* input.processor.ensureSnapshot()
             // kilocode_change end
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
@@ -470,7 +470,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             const ctx = context(toRecord(args), opts)
             // kilocode_change start
             if (hooked || KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.read, args: toRecord(args) }))
-              yield* input.processor.ensureSnapshot() // kilocode_change
+              yield* input.processor.ensureSnapshot()
             // kilocode_change end
             const clients = yield* mcp.clients()
             const client = clients[parsed.server]

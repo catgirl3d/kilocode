@@ -1,18 +1,14 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
 import { join } from "node:path"
-// fork_change start
-import { existsSync, mkdirSync, rmSync, chmodSync, copyFileSync } from "node:fs"
-// fork_change end
+import { existsSync, mkdirSync, rmSync, chmodSync, copyFileSync } from "node:fs" // fork_change
 import {
   copyKiloSandboxWorker,
   copySandboxResources,
   copyTreeSitterResources,
 } from "../src/services/cli-backend/cli-resources"
 import { ensureFfmpegForTarget } from "./ffmpeg-helper"
-// fork_change start
-import { ensureMicForTarget } from "./mic-helper"
-// fork_change end
+import { ensureMicForTarget } from "./mic-helper" // fork_change
 
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
 const packageJson = await Bun.file(packageJsonPath).json()
@@ -84,9 +80,7 @@ for (const config of targets) {
   }
 
   console.log(`  📥 Copying binary from ${config.cliDir}/bin/${config.binary}...`)
-  // fork_change start
-  copyFileSync(sourceBinary, targetBinary)
-  // fork_change end
+  copyFileSync(sourceBinary, targetBinary) // fork_change
   await copyTreeSitterResources(sourceBinary, targetBinary)
   await copySandboxResources(sourceBinary, targetBinary)
   await copyKiloSandboxWorker(sourceBinary, targetBinary)

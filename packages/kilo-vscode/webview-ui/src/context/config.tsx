@@ -24,9 +24,7 @@ import type {
 } from "../types/messages"
 import {
   configUnsetPaths,
-  // fork_change start
-  acceptsConfig,
-  // fork_change end
+  acceptsConfig, // fork_change
   deepMerge,
   mergeScopedConfig,
   pruneConfigSet,
@@ -50,12 +48,8 @@ interface ConfigContextValue {
   globalDraft: Accessor<Partial<Config>>
   // fork_change start
   projectDraft?: Accessor<Partial<Config>>
-  // fork_change end
-  // fork_change start
   globalEffectiveConfig: Accessor<Config>
-  // fork_change end
   projectConfig: Accessor<Config>
-  // fork_change start
   projectBinding: Accessor<SettingsConfigBinding | undefined>
   // fork_change end
   collections: Accessor<ConfigCollections>
@@ -109,9 +103,7 @@ export const ConfigProvider: ParentComponent = (props) => {
 
   const [config, setConfig] = createSignal<Config>({})
   const [globalConfig, setGlobalConfig] = createSignal<Config>({})
-  // fork_change start
-  const [globalEffectiveConfig, setGlobalEffectiveConfig] = createSignal<Config>({})
-  // fork_change end
+  const [globalEffectiveConfig, setGlobalEffectiveConfig] = createSignal<Config>({}) // fork_change
   const [projectConfig, setProjectConfig] = createSignal<Config>({})
   const [collections, setCollections] = createSignal<ConfigCollections>({})
   const [settings, setSettings] = createSignal<Record<string, unknown>>({})
@@ -141,9 +133,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   // True while a saveConfig() write is in-flight — used to clear draft on success
   // and to guard against stale configLoaded messages overwriting optimistic state.
   const [saving, setSaving] = createSignal(false)
-  // fork_change start
-  const [blocked, setBlocked] = createSignal(false)
-  // fork_change end
+  const [blocked, setBlocked] = createSignal(false) // fork_change
   // Error from the most recent saveConfig() attempt, or null if no error.
   // Cleared when the user edits the draft again or starts a new save.
   const [saveError, setSaveError] = createSignal<SaveError | null>(null)
@@ -238,9 +228,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     if (message.type !== "configBindingExpired") return
     setBindings({})
     if (isDirty()) {
-      // fork_change start
-      setBlocked(true)
-      // fork_change end
+      setBlocked(true) // fork_change
       setSaveError({ message: "The Settings project changed. Discard or reload before saving." })
       return
     }
@@ -277,9 +265,7 @@ export const ConfigProvider: ParentComponent = (props) => {
       setSaved(message.config)
     }
     if (message.bindings) setBindings(message.bindings)
-    // fork_change start
-    if (message.globalEffectiveConfig !== undefined) setGlobalEffectiveConfig(message.globalEffectiveConfig)
-    // fork_change end
+    if (message.globalEffectiveConfig !== undefined) setGlobalEffectiveConfig(message.globalEffectiveConfig) // fork_change
     setSaveError({ message: message.message, details: message.details })
   })
   const unsubscribeIndexing = vscode.onMessage((message: ExtensionMessage) => {
@@ -343,9 +329,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   })
 
   function updateConfig(partial: Partial<Config>) {
-    // fork_change start
-    if (blocked()) return
-    // fork_change end
+    if (blocked()) return // fork_change
     // Optimistically update local state with deep merge + null stripping
     setConfig((prev) => stripNulls(deepMerge(prev, partial)))
     // Accumulate in draft — will be sent on saveConfig()
@@ -356,27 +340,21 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function updateGlobalConfig(partial: Partial<Config>) {
-    // fork_change start
-    if (blocked()) return
-    // fork_change end
+    if (blocked()) return // fork_change
     setGlobalConfig((prev) => mergeScopedConfig(prev, partial))
     setGlobalDraft((prev) => deepMerge(prev as Config, partial))
     setSaveError(null)
   }
 
   function updateProjectConfig(partial: Partial<Config>) {
-    // fork_change start
-    if (blocked()) return
-    // fork_change end
+    if (blocked()) return // fork_change
     setProjectConfig((prev) => mergeScopedConfig(prev, partial))
     setProjectDraft((prev) => deepMerge(prev as Config, partial))
     setSaveError(null)
   }
 
   function updateSetting(key: string, value: unknown) {
-    // fork_change start
-    if (blocked()) return
-    // fork_change end
+    if (blocked()) return // fork_change
     setSettings((prev) => ({ ...prev, [key]: value }))
     setSettingsDraft((prev) => ({ ...prev, [key]: value }))
     setSaveError(null)
@@ -402,9 +380,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function saveConfig() {
-    // fork_change start
-    if (blocked()) return
-    // fork_change end
+    if (blocked()) return // fork_change
     const changes = draft()
     const globals = globalDraft()
     const projects = projectDraft()
@@ -447,9 +423,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function discardConfig() {
-    // fork_change start
-    const reload = blocked()
-    // fork_change end
+    const reload = blocked() // fork_change
     setConfig(saved())
     setGlobalConfig(savedGlobal())
     setProjectConfig(savedProject())
@@ -458,9 +432,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     setProjectDraft({})
     setSettings(savedSettings())
     setSettingsDraft({})
-    // fork_change start
-    setBlocked(false)
-    // fork_change end
+    setBlocked(false) // fork_change
     setSaveError(null)
     // fork_change start
     if (reload) {
@@ -476,12 +448,8 @@ export const ConfigProvider: ParentComponent = (props) => {
     globalDraft,
     // fork_change start
     projectDraft,
-    // fork_change end
-    // fork_change start
     globalEffectiveConfig,
-    // fork_change end
     projectConfig,
-    // fork_change start
     projectBinding: () => bindings().project,
     // fork_change end
     collections,
@@ -490,9 +458,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     loading,
     isDirty,
     saving,
-    // fork_change start
-    blocked,
-    // fork_change end
+    blocked, // fork_change
     saveError,
     updateConfig,
     updateGlobalConfig,

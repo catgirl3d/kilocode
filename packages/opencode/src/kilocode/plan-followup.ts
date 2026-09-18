@@ -36,16 +36,15 @@ export const PlanFollowupRuntime = {
   },
   async modelIfAvailable(providerID: ProviderV2.ID, modelID: ModelV2.ID): Promise<Provider.Model | undefined> {
     const { AppRuntime } = await import("@/effect/app-runtime")
+    // fork_change start
     return AppRuntime.runPromise(
-      // fork_change start
-      Provider.Service.use(
-        (svc) =>
-          svc
-            .getModel(providerID, modelID)
-            .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined))),
-        // fork_change end
+      Provider.Service.use((svc) =>
+        svc
+          .getModel(providerID, modelID)
+          .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined))),
       ),
     )
+    // fork_change end
   },
   todo: {
     get(sessionID: SessionID) {
@@ -211,10 +210,10 @@ export namespace PlanFollowup {
 
   // fork_change start
   async function pick(ref: { providerID: string; modelID: string } | undefined, variant?: string) {
-    // fork_change end
     if (!ref) return
     return stamp(ref, variant)
   }
+  // fork_change end
 
   async function resolveCodeModel(input: Pick<MessageV2.User, "model">) {
     const state = Flag.KILO_CLIENT === "cli" ? await KilocodeModelState.get().catch(() => undefined) : undefined

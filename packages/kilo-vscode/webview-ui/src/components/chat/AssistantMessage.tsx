@@ -31,14 +31,12 @@ import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 // fork_change start
 import { useMemory } from "../../context/memory"
-// fork_change end
 import { useServer } from "../../context/server"
 import { planDisplayPath } from "../../utils/plan-path"
 import { isRenderable, UPSTREAM_SUPPRESSED_TOOLS } from "../../utils/transcript-parts"
-// fork_change start
 import { MemoryMarkerMeta } from "@kilocode/kilo-memory/marker-meta"
-// fork_change end
 import { messageThroughput, formatTG } from "../../context/session-utils"
+// fork_change end
 import { formatClock, formatDuration } from "../../utils/message-time"
 import type { TurnTiming } from "../../context/transcript-rows"
 import { color as timelineColor } from "../../utils/timeline/colors"
@@ -230,9 +228,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
   const data = useData()
   const session = useSession()
   const display = useDisplay()
-  // fork_change start
-  const mem = useMemory()
-  // fork_change end
+  const mem = useMemory() // fork_change
   const language = useLanguage()
   const { config } = useConfig()
   const open = createMemo(() => config().terminal_command_display !== "collapsed")

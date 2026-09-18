@@ -161,9 +161,9 @@ export const TaskTool = Tool.define(
             "task requires description, prompt, and subagent_type when launching (cancel is not true). Rewrite the input.",
           ),
         )
-      const description = params.description // kilocode_change
-      const prompt = params.prompt // kilocode_change
-      const subagentType = params.subagent_type // kilocode_change
+      const description = params.description
+      const prompt = params.prompt
+      const subagentType = params.subagent_type
       // kilocode_change end
       const cfg = yield* config.get()
       const selection = cfg.experimental?.task_model_selection === true // kilocode_change

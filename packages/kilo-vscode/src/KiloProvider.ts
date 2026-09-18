@@ -1813,10 +1813,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         sessionID
           ? this.getWorkspaceDirectory(sessionID)
           : (this.getProjectDirectory(this.currentSession?.id) ?? this.getWorkspaceDirectory(this.currentSession?.id)),
-      // fork_change end
       diff: this.diffVirtualProvider,
       openPRComment: (comment, sessionID) => this.openChanges(sessionID, undefined, comment),
-      // fork_change start
       openMarkdown: (file, sessionID, line, column) => {
         if (!this.documentViewerProvider) return false
         this.documentViewerProvider.openFromCommand({
@@ -2365,14 +2363,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     parentSessionID?: string,
     scope: "task" | "inspector" = "task",
   ): Promise<void> {
-    // fork_change end
     if (!this.client) return
-    // fork_change start
     if (this.syncedChildSessions.has(sessionID)) {
       if (scope === "inspector") await this.fetchChildSessionStatus(sessionID, this.getWorkspaceDirectory(sessionID))
       return
     }
-    // fork_change end
 
     this.syncedChildSessions.add(sessionID)
     this.trackedSessionIds.add(sessionID)
@@ -2396,7 +2391,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       if (project && this.opts.routeService) {
         this.owners.set(sessionID, { dir: workspaceDir, project: project.projectId })
       }
-      void this.fetchChildSessionStatus(sessionID, workspaceDir) // fork_change
+      void this.fetchChildSessionStatus(sessionID, workspaceDir)
       const [info, history] = await Promise.all([
         retry(() => this.client!.session.get({ sessionID, directory: workspaceDir }, { throwOnError: true })),
         retry(() => this.client!.session.messages({ sessionID, directory: workspaceDir }, { throwOnError: true })),
@@ -2432,8 +2427,6 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       console.error("[Kilo New] KiloProvider: Failed to sync child session:", err)
     }
   }
-
-  // fork_change start
   private async fetchChildSessionStatus(sessionID: string, directory: string): Promise<void> {
     const revision = this.statusRevisions.get(sessionID) ?? 0
     try {
@@ -2618,9 +2611,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.lastReconciledAt.delete(sessionID)
     this.checkpoints.delete(sessionID)
     this.revisions.delete(sessionID)
-    // fork_change start
-    this.statusRevisions.delete(sessionID)
-    // fork_change end
+    this.statusRevisions.delete(sessionID) // fork_change
     this.refreshes.delete(sessionID)
     this.epochs.delete(sessionID)
     this.sessionStatusMap.delete(sessionID)
@@ -3841,8 +3832,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         completed.push("project")
       }
     } catch (error) {
-      if (globalBinding) this.configBindings.consume(globalBinding.id) // fork_change
-      if (projectBinding) this.configBindings.consume(projectBinding.id) // fork_change
+      if (globalBinding) this.configBindings.consume(globalBinding.id)
+      if (projectBinding) this.configBindings.consume(projectBinding.id)
       this.postConfigFailure(error, completed, snapshot, dir)
       this.pending--
       void this.fetchAndSendConfig() // fork_change
@@ -5289,9 +5280,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (event.type === "session.status") {
       const sid = event.properties.sessionID
       if (this.removedSessionIds.has(sid)) return
-      // fork_change start
-      this.statusRevisions.set(sid, (this.statusRevisions.get(sid) ?? 0) + 1)
-      // fork_change end
+      this.statusRevisions.set(sid, (this.statusRevisions.get(sid) ?? 0) + 1) // fork_change
       const status = event.properties.status
       this.mark(sid, directory)
       this.aborts.observe(sid, status.type, directory)

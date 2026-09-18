@@ -12,9 +12,7 @@ import { cancelWasapiCapture, startWasapiCapture, stopWasapiCapture } from "./wa
 type Input = {
   requestId: string
   model: string
-  // fork_change start
-  mode?: SpeechToTextMode
-  // fork_change end
+  mode?: SpeechToTextMode // fork_change
   language?: string
 }
 
@@ -33,9 +31,7 @@ type Audio = {
   data: string
   format: "m4a" | "wav" // fork_change
   model: string
-  // fork_change start
-  mode?: SpeechToTextMode
-  // fork_change end
+  mode?: SpeechToTextMode // fork_change
   language?: string
 }
 
@@ -107,9 +103,7 @@ export async function startSpeechCapture(input: Input): Promise<boolean> {
       })
       if (wasapi) return true
     }
-    // fork_change end
     const bin = await resolveFFmpeg()
-    // fork_change start
     const args = await inputArgSets(bin)
     try {
       const state = await startWithArgs(bin, file, input, args)
@@ -126,11 +120,10 @@ export async function startSpeechCapture(input: Input): Promise<boolean> {
   }
 }
 
+// fork_change start
 export async function stopSpeechCapture(requestId: string): Promise<Audio> {
-  // fork_change start
   const wasapi = await stopWasapiCapture(requestId)
   if (wasapi) return wasapi
-  // fork_change end
   const state = requireActive(requestId)
   state.stopped = true
   active = undefined
@@ -151,7 +144,6 @@ export async function stopSpeechCapture(requestId: string): Promise<Audio> {
 
   const file = await readFile(state.file)
   await removeFile(state.file)
-  // fork_change start
   return {
     data: file.toString("base64"),
     format: "m4a",
@@ -159,13 +151,10 @@ export async function stopSpeechCapture(requestId: string): Promise<Audio> {
     mode: state.mode,
     language: state.language,
   }
-  // fork_change end
 }
 
 export async function cancelSpeechCapture(requestId: string): Promise<void> {
-  // fork_change start
   if (await cancelWasapiCapture(requestId)) return
-  // fork_change end
   const state = active
   if (!state || state.requestId !== requestId) return
   state.stopped = true
@@ -173,6 +162,7 @@ export async function cancelSpeechCapture(requestId: string): Promise<void> {
   await stopProcess(state)
   await removeFile(state.file)
 }
+// fork_change end
 
 async function waitForStart(state: Recording): Promise<void> {
   await new Promise<void>((resolve, reject) => {

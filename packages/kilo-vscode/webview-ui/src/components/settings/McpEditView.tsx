@@ -3,17 +3,13 @@ import { TextField } from "@kilocode/kilo-ui/text-field"
 import { Card } from "@kilocode/kilo-ui/card"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
-// fork_change start
-import { Switch } from "@kilocode/kilo-ui/switch"
-// fork_change end
+import { Switch } from "@kilocode/kilo-ui/switch" // fork_change
 
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 import type { McpConfig } from "../../types/messages"
 import SettingsRow from "./SettingsRow"
-// fork_change start
-import { mcpConfigPatch, mcpConfigScope, mcpDisplayEntry } from "./agent-behaviour-patches"
-// fork_change end
+import { mcpConfigPatch, mcpConfigScope, mcpDisplayEntry } from "./agent-behaviour-patches" // fork_change
 
 interface Props {
   name: string
@@ -35,9 +31,7 @@ const McpEditView: Component<Props> = (props) => {
     updateGlobalConfig,
     updateProjectConfig,
   } = useConfig()
-  // fork_change end
 
-  // fork_change start
   const cfg = createMemo<McpConfig>(() => {
     const scope = mcpConfigScope(props.name, collections())
     const scoped =

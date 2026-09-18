@@ -310,18 +310,16 @@ export namespace KiloToolRegistry {
       notebookEdit?: Tool.Def
       notebookExecute?: Tool.Def
     },
-    // fork_change start
     cfg: {
       experimental?: {
         image_generation?: boolean
         native_notebook_tools?: boolean
         task_model_selection?: boolean
-        shared_agent_board?: boolean
+        shared_agent_board?: boolean // fork_change
         advisor_model?: string // fork_change
       }
       shared_agent_board?: boolean
     },
-    // fork_change end
     flags: Pick<RuntimeFlags.Info, "experimentalSharedAgentBoard">,
   ): Tool.Def[] {
     const enabled = BoardEnabled.resolve({

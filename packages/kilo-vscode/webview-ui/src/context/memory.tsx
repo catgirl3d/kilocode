@@ -1,6 +1,4 @@
-// fork_change start
-import { createContext, createEffect, createMemo, createSignal, onCleanup, untrack, useContext } from "solid-js"
-// fork_change end
+import { createContext, createEffect, createMemo, createSignal, onCleanup, untrack, useContext } from "solid-js" // fork_change
 import type { Accessor, ParentComponent } from "solid-js"
 import { useServer } from "./server"
 import { useSession } from "./session"
@@ -23,16 +21,12 @@ export interface MemoryContextValue {
   totalTokens: Accessor<number>
   // fork_change start
   activity: Accessor<MemoryActivity[]>
-  // fork_change end
   refresh: () => void
-  // fork_change start
   showMemory: () => void
-  // fork_change end
   inspect: () => void
   enable: () => void
   disable: () => void
   auto: (mode: "on" | "off") => void
-  // fork_change start
   verbose: (mode: "on" | "off") => void
   rebuild: () => void
   remember: () => void
@@ -202,15 +196,12 @@ export const MemoryProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "memoryShow", sessionID: id() })
   }
 
-  // fork_change end
   const event = (message: Extract<ExtensionMessage, { type: "memoryEvent" }>) => {
     if (!current(message.sessionID)) return
-    // fork_change start
     if (message.detail.type === "saved") {
       setSaved((items) => addMemoryActivity(items, message.detail, Date.now()))
       return
     }
-    // fork_change end
     if (message.detail.type !== "error") return
     if (!message.detail.message) return
     const dedupeKey = `${message.sessionID ?? ""}:${message.detail.type ?? ""}:${message.detail.message}`
@@ -219,6 +210,7 @@ export const MemoryProvider: ParentComponent = (props) => {
     last = { key: dedupeKey, time: now }
     showToast({ variant: "error", title: message.detail.message })
   }
+  // fork_change end
 
   const loaded = (message: Extract<ExtensionMessage, { type: "memoryLoaded" }>) => {
     if (!current(message.sessionID)) return
@@ -253,9 +245,7 @@ export const MemoryProvider: ParentComponent = (props) => {
   }
 
   const receive = (message: ExtensionMessage) => {
-    // fork_change start
-    track(message)
-    // fork_change end
+    track(message) // fork_change
     if (message.type === "memoryEvent") {
       event(message)
       return
@@ -283,9 +273,7 @@ export const MemoryProvider: ParentComponent = (props) => {
     if (scope !== next) {
       scope = next
       clear()
-      // fork_change start
-      untrack(scan)
-      // fork_change end
+      untrack(scan) // fork_change
     }
     if (!connected) {
       setLoading(false)
@@ -324,16 +312,12 @@ export const MemoryProvider: ParentComponent = (props) => {
     totalTokens: total,
     // fork_change start
     activity,
-    // fork_change end
     refresh,
-    // fork_change start
     showMemory,
-    // fork_change end
     inspect,
     enable: () => operation("enable"),
     disable: () => operation("disable"),
     auto,
-    // fork_change start
     verbose: (mode) => operation("verbose", mode),
     rebuild: () => operation("rebuild"),
     remember: () => prompt("remember"),

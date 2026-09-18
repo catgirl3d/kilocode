@@ -135,7 +135,6 @@ function latest(messages: MessageV2.WithParts[]): Turn | undefined {
 }
 
 /** True when the turn was answered from memory (targeted recall ran); digesting it would echo memory back into itself. */
-// fork_change start
 // prettier-ignore
 function recalledMemory(turn: Turn) {
   return [turn.user, ...turn.assistants].flatMap((item) => item.parts).some((part) => {
@@ -152,7 +151,6 @@ function recalledMemory(turn: Turn) {
     return marker?.type === "recall" && (marker.count ?? 0) > 0
   })
 }
-// fork_change end
 
 // --- Model resolution + invocation (host provider/`ai` -> port ModelHandle) --------------------
 
@@ -245,7 +243,6 @@ type ModelHandle = ReturnType<typeof modelOptions>
 
 /** Host SessionPort: extracts a TurnView from opencode's message store + snapshot diffs so the
  * package orchestrator never touches the host message model. */
-// fork_change start
 // prettier-ignore
 export namespace MemorySession {
   export function port(input: {
@@ -289,11 +286,9 @@ export namespace MemorySession {
     }
   }
 }
-// fork_change end
 
 /** Host ModelPort: resolves the consolidation model through opencode's provider and runs it via the
  * `ai` SDK, exposing the resolved model to the package as an opaque handle. */
-// fork_change start
 // prettier-ignore
 export namespace MemoryModel {
   export function port(input: { provider: Provider.Interface }): MemoryPorts.ModelPort {
@@ -325,7 +320,6 @@ export namespace MemoryModel {
           const language = yield* input.provider.getLanguage(source)
           return { handle: modelOptions(source, language), ...(reason ? { fallback: { reason } } : {}) }
         }).pipe(Effect.mapError(MemoryError.from)),
-      // fork_change start
       // prettier-ignore
       run: ({ handle, sessionID, system, prompt, timeoutMs, signal }) => { // fork_change
         const resolved = handle as ModelHandle
@@ -336,15 +330,13 @@ export namespace MemoryModel {
           system,
           prompt,
           timeoutMs,
-          sessionID,
+          sessionID, // fork_change
           temperature: resolved.temperature,
           topP: resolved.topP,
           topK: resolved.topK,
           signal,
         })
       },
-      // fork_change end
     }
   }
-// fork_change end
 }

@@ -58,9 +58,8 @@ export function createIntro(opts: {
   }
 }
 
-// fork_change start - hide "How Agent Manager works" reopen button
 interface EmptyProps extends Omit<IntroProps, "onDismiss"> {
-  intro: Pick<ReturnType<typeof createIntro>, "visible" | "dismiss">
+  intro: Pick<ReturnType<typeof createIntro>, "visible" | "dismiss"> // fork_change
   onSelectSession?: (id: string) => void
   onShowHistory?: () => void
 }
@@ -69,13 +68,12 @@ function AgentManagerEmptyState(props: EmptyProps) {
   return (
     <Show
       when={props.intro.visible()}
-      fallback={<WelcomeEmptyState onSelectSession={props.onSelectSession} onShowHistory={props.onShowHistory} />}
+      fallback={<WelcomeEmptyState onSelectSession={props.onSelectSession} onShowHistory={props.onShowHistory} />} // fork_change
     >
       <Introduction {...props} onDismiss={props.intro.dismiss} />
     </Show>
   )
 }
-// fork_change end
 
 function Introduction(props: IntroProps) {
   const { t } = useLanguage()

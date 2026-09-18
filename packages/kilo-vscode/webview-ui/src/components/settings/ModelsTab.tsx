@@ -19,8 +19,6 @@ import {
   getSpeechToTextModel,
   type SpeechToTextMode,
 } from "../../../../src/speech-to-text/models"
-// fork_change end
-// fork_change start
 import {
   canConfigureSpeechToText,
   hasSpeechToTextAccess,
@@ -29,12 +27,10 @@ import {
   selectedSpeechToTextMode,
   hasCustomSpeechToTextSource,
 } from "../speech-to-text/availability"
-// fork_change end
 import { speechToTextModelOptions } from "../speech-to-text/model-selector"
 import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autocomplete-model-selector"
 import { preserveVariant } from "../../context/session-variant-store"
 
-// fork_change start
 const SPEECH_MODE_OPTIONS: Array<{ value: SpeechToTextMode; label: string }> = [
   { value: "transcribe", label: "settings.models.speechToTextResult.transcribe" },
   { value: "translate", label: "settings.models.speechToTextResult.translate" },
@@ -73,17 +69,14 @@ const ModelsTab: Component = () => {
   const advisorModel = createMemo(() => parseModelString(config().experimental?.advisor_model ?? undefined))
   const advisorVariants = createMemo(() => Object.keys(provider.findModel(advisorModel())?.variants ?? {}))
   const advisorVariant = createMemo(() => config().experimental?.advisor_variant ?? undefined)
-  // fork_change end
   const speechModel = createMemo(() => selectedSpeechToTextModel(config(), speechModels.models()))
   const speechOptions = createMemo(() => speechToTextModelOptions(speechModels.models()))
   const speechOption = createMemo(() => speechOptions().find((item) => item.value === speechModel()))
-  // fork_change start
   const speechMode = createMemo(() => selectedSpeechToTextMode(config()))
   const speechModeOption = createMemo(() => SPEECH_MODE_OPTIONS.find((item) => item.value === speechMode()))
   const speechReady = createMemo(() => hasSpeechToTextAccess(config(), provider.authStates()))
   const customSpeech = createMemo(() => hasCustomSpeechToTextSource(config()))
   const speechConfigurable = createMemo(() => canConfigureSpeechToText(config(), provider.authStates()))
-
   function updateSpeech(patch: Record<string, string | null>) {
     updateConfig({ experimental: { ...config().experimental, ...patch } })
   }

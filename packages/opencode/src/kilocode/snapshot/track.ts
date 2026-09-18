@@ -100,9 +100,7 @@ export namespace KiloSnapshotTrack {
       return fallback
     })
 
-  // fork_change start - wait longer before asking about a slow repository
-  export const TIMEOUT_MS = duration("KILO_SNAPSHOT_TRACK_TIMEOUT_MS", 45_000)
-  // fork_change end
+  export const TIMEOUT_MS = duration("KILO_SNAPSHOT_TRACK_TIMEOUT_MS", 45_000) // fork_change
   export const TURN_TIMEOUT_MS = duration("KILO_SNAPSHOT_TURN_TIMEOUT_MS", 120_000)
 
   // Wire values — also function as i18n keys via `labelKey`/`headerKey`.

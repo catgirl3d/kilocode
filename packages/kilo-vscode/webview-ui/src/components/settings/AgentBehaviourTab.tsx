@@ -13,10 +13,8 @@ import { useConfig } from "../../context/config"
 import { useSession } from "../../context/session"
 // fork_change start
 import { useServer } from "../../context/server"
-// fork_change end
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
-// fork_change start
 import type {
   AgentInfo,
   FilePickerResultMessage,
@@ -24,12 +22,10 @@ import type {
   SkillInfo,
   ValidateInstructionPathResultMessage,
 } from "../../types/messages"
-// fork_change end
 import ModeEditView from "./ModeEditView"
 import ModeCreateView from "./ModeCreateView"
 import McpEditView from "./McpEditView"
 import WorkflowsTab from "./agent-behaviour/WorkflowsTab"
-// fork_change start
 import {
   mcpConfigScope,
   mcpDisplayEntry,
@@ -40,10 +36,8 @@ import {
   removable,
   selectedDefaultAgentValue,
 } from "./agent-behaviour-patches"
-// fork_change end
 import { parseImport, MAX_IMPORT_SIZE } from "./mode-io"
 import type { ImportError } from "./mode-io"
-// fork_change start
 import {
   add as addInstruction,
   kind as instructionKind,
@@ -94,17 +88,13 @@ const SHELL_OPTIONS: ShellOption[] = [
   ...SHELL_PRESETS.map((preset) => ({ value: preset, labelKey: `settings.shell.${preset}` })),
   { value: "custom", labelKey: "settings.shell.custom" },
 ]
-// fork_change end
 // View states for the agents subtab
 type AgentView = "list" | "create" | "edit"
-// fork_change start
 type InstructionScope = "global" | "project"
 type InstructionRequest = { id: string; scope: InstructionScope; binding?: string }
-// fork_change end
 
 const AgentBehaviourTab: Component = () => {
   const language = useLanguage()
-  // fork_change start
   const {
     config,
     collections,
@@ -120,20 +110,14 @@ const AgentBehaviourTab: Component = () => {
     updateProjectConfig,
     updateSetting,
   } = useConfig()
-  // fork_change end
   const session = useSession()
-  // fork_change start
   const server = useServer()
-  // fork_change end
   const dialog = useDialog()
   const vscode = useVSCode()
   const [activeSubtab, setActiveSubtab] = createSignal<SubtabId>("agents")
-  // fork_change start
   const [search, setSearch] = createSignal("")
-  // fork_change end
   const [newSkillPath, setNewSkillPath] = createSignal("")
   const [newSkillUrl, setNewSkillUrl] = createSignal("")
-  // fork_change start
   const [newGlobalInstruction, setNewGlobalInstruction] = createSignal("")
   const [newProjectInstruction, setNewProjectInstruction] = createSignal("")
   const [globalInstructionError, setGlobalInstructionError] = createSignal("")
@@ -145,7 +129,6 @@ const AgentBehaviourTab: Component = () => {
   const requests = { value: 0 }
   const picks = new Map<string, InstructionRequest>()
   const checks: Partial<Record<InstructionScope, InstructionRequest>> = {}
-  // fork_change end
 
   // Load the VS Code setting for Claude Code compatibility
   vscode.postMessage({ type: "requestClaudeCompatSetting" })
@@ -191,7 +174,6 @@ const AgentBehaviourTab: Component = () => {
     ]
   })
 
-  // fork_change start
   const [customMode, setCustomMode] = createSignal(false)
   const [customShell, setCustomShell] = createSignal("")
 
@@ -246,8 +228,6 @@ const AgentBehaviourTab: Component = () => {
     if (next === globalConfig().shell) return
     updateGlobalConfig({ shell: next })
   }
-  // fork_change end
-  // fork_change start
   const globalInstructions = createMemo(() => listInstructions(globalEffectiveConfig(), globalConfig()))
   const projectInstructions = createMemo(() => listInstructions(projectConfig()))
 
@@ -373,16 +353,13 @@ const AgentBehaviourTab: Component = () => {
   })
   onCleanup(unsub)
 
-  // fork_change end
   const skillPaths = () => config().skills?.paths ?? []
   const skillUrls = () => config().skills?.urls ?? []
-  // fork_change start
   const filtered = createMemo(() => {
     const query = search().trim().toLowerCase()
     if (!query) return session.skills()
     return session.skills().filter((skill) => skill.name.toLowerCase().includes(query))
   })
-  // fork_change end
 
   const addSkillPath = () => {
     const value = newSkillPath().trim()
@@ -534,7 +511,6 @@ const AgentBehaviourTab: Component = () => {
 
     return (
       <div>
-        {/* fork_change start */}
         <Card style={{ "margin-bottom": "12px" }}>
           <SettingsRow
             title={language.t("settings.shell.title")}
@@ -572,7 +548,6 @@ const AgentBehaviourTab: Component = () => {
             </SettingsRow>
           </Show>
         </Card>
-        {/* fork_change end */}
         {/* Default agent */}
         <Card style={{ "margin-bottom": "12px" }}>
           <SettingsRow
@@ -846,7 +821,6 @@ const AgentBehaviourTab: Component = () => {
       setExpanded((prev) => ({ ...prev, [name]: !prev[name] }))
     }
 
-    // fork_change start
     const statusLabel = (name: string, entry: McpConfig | undefined) => {
       const s = session.mcpStatus()[name]?.status
       if (!s) return ""
@@ -854,7 +828,6 @@ const AgentBehaviourTab: Component = () => {
       const key = mcpStatusKey(s, tone)
       return key ? language.t(key) : s
     }
-    // fork_change end
 
     if (editingMcp()) {
       return (
@@ -902,7 +875,6 @@ const AgentBehaviourTab: Component = () => {
             <For each={mcpEntries()}>
               {([name, mcp], index) => {
                 const open = () => expanded()[name] ?? false
-                // fork_change start
                 const scope = mcpConfigScope(name, collections())
                 const effective = () => {
                   const scoped =
@@ -919,8 +891,6 @@ const AgentBehaviourTab: Component = () => {
                         : undefined
                   return mcpDisplayEntry(mcp, scoped, draft)
                 }
-                // fork_change end
-                // fork_change start
                 const statusColor = () => {
                   const status = session.mcpStatus()[name]?.status
                   const tone = mcpStatusTone(status, effective()?.enabled !== false, effective()?.on_demand === true)
@@ -930,7 +900,6 @@ const AgentBehaviourTab: Component = () => {
                   if (tone === "available") return "var(--vscode-testing-iconQueued, #cca700)"
                   return "var(--vscode-disabledForeground, #888)"
                 }
-                // fork_change end
                 const env = () => Object.entries(mcp.environment ?? mcp.env ?? {})
                 const error = () => {
                   const s = session.mcpStatus()[name]
@@ -971,12 +940,11 @@ const AgentBehaviourTab: Component = () => {
                             width: "6px",
                             height: "6px",
                             "border-radius": "50%",
-                            "background-color": statusColor(), // fork_change
+                            "background-color": statusColor(),
                             "flex-shrink": "0",
                           }}
                         />
                         <div style={{ "font-weight": "500" }}>{name}</div>
-                        {/* fork_change start */}
                         <Show when={effective()?.on_demand === true}>
                           <span
                             style={{
@@ -987,14 +955,13 @@ const AgentBehaviourTab: Component = () => {
                             {language.t("settings.agentBehaviour.editMcp.onDemand.badge")}
                           </span>
                         </Show>
-                        {/* fork_change end */}
                         <span
                           style={{
                             "font-size": "var(--kilo-font-size-10)",
                             color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
                           }}
                         >
-                          {statusLabel(name, effective()) || (mcp.url ? "remote" : "stdio")} {/* fork_change */}
+                          {statusLabel(name, effective()) || (mcp.url ? "remote" : "stdio")}
                         </span>
                       </div>
                       <div style={{ display: "flex", gap: "4px", "align-items": "center" }}>
@@ -1011,7 +978,6 @@ const AgentBehaviourTab: Component = () => {
                           </div>
                         </Show>
                         <div onClick={(e: MouseEvent) => e.stopPropagation()}>
-                          {/* fork_change start */}
                           <Switch
                             checked={mcpSwitchChecked(
                               session.mcpStatus()[name]?.status,
@@ -1043,7 +1009,6 @@ const AgentBehaviourTab: Component = () => {
                           >
                             {name}
                           </Switch>
-                          {/* fork_change end */}
                         </div>
                         <IconButton
                           size="small"
@@ -1182,7 +1147,6 @@ const AgentBehaviourTab: Component = () => {
           </Card>
         }
       >
-        {/* fork_change start */}
         <div style={{ "margin-bottom": "8px" }}>
           <TextField
             label={language.t("settings.agentBehaviour.skillSearch")}
@@ -1235,7 +1199,6 @@ const AgentBehaviourTab: Component = () => {
             </For>
           </Card>
         </Show>
-        {/* fork_change end */}
       </Show>
 
       {/* Skill paths */}
@@ -1387,7 +1350,6 @@ const AgentBehaviourTab: Component = () => {
           </div>
         </div>
 
-        {/* fork_change start */}
         <div style={{ display: "grid", gap: "12px", padding: "8px 0" }}>
           <section style={{ display: "grid", gap: "8px" }}>
             <div style={{ "font-weight": "500" }}>{language.t("settings.config.scope.global")}</div>
@@ -1511,7 +1473,6 @@ const AgentBehaviourTab: Component = () => {
             </section>
           </Show>
         </div>
-        {/* fork_change end */}
       </Card>
 
       {/* Claude Code compatibility */}
@@ -1614,5 +1575,6 @@ const AgentBehaviourTab: Component = () => {
     </div>
   )
 }
+// fork_change end
 
 export default AgentBehaviourTab

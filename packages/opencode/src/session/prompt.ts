@@ -1851,7 +1851,7 @@ export const layer = Layer.effect(
             sys.environment(model, lastUser.editorContext), // kilocode_change
             KiloSessionPrompt.memoryInject({ ctx, sessionID, record: step === 1, cache: memoryCache }), // kilocode_change
             instruction.system().pipe(Effect.orDie),
-            sys.mcp(agent, session.permission, stepNetworkRestricted), // kilocode_change
+            sys.mcp(agent, session.permission, stepNetworkRestricted),
           ])
           let modelMsgs = yield* MessageV2.toModelMessagesEffect(msgs, model).pipe(
             Effect.provideService(Database.Service, database),

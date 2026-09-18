@@ -28,7 +28,7 @@ import { KiloSessionOverflow } from "@/kilocode/session/overflow"
 import { KiloRoutedModel } from "@/kilocode/session/routed-model"
 import { KiloResponseMetadata } from "@/kilocode/session/response-metadata"
 import { Suggestion } from "@/kilocode/suggestion"
-import { KiloSnapshotGate } from "@/kilocode/snapshot/gate" // kilocode_change
+import { KiloSnapshotGate } from "@/kilocode/snapshot/gate"
 // kilocode_change end
 import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
@@ -50,7 +50,7 @@ export interface Handle {
     toolCallID: string,
     input: { title?: string; metadata?: Record<string, any> },
   ) => Effect.Effect<void>
-  readonly ensureSnapshot: () => Effect.Effect<string | undefined> // kilocode_change
+  readonly ensureSnapshot: () => Effect.Effect<string | undefined>
   // kilocode_change end
   readonly completeToolCall: (
     toolCallID: string,

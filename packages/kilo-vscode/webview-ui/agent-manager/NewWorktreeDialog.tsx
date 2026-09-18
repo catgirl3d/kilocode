@@ -176,9 +176,7 @@ export const NewWorktreeDialog: Component<{
   const speechModels = useSpeechToTextModels()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates())
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
-  // fork_change start
-  const speechMode = () => selectedSpeechToTextMode(config())
-  // fork_change end
+  const speechMode = () => selectedSpeechToTextMode(config()) // fork_change
   let prior: string | null = null
   let request: string | undefined
   const cancel = () => {
@@ -529,9 +527,7 @@ export const NewWorktreeDialog: Component<{
   }
 
   const startSpeech = () => {
-    // fork_change start
-    speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText })
-    // fork_change end
+    speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText }) // fork_change
   }
 
   const shortcut = createSpeechShortcut({

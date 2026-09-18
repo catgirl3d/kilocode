@@ -541,7 +541,7 @@ export const node = LayerNode.suspend(() =>
       Auth.node,
       Env.node, // kilocode_change - websearch resolves its config via Env.Service
       SessionStatus.node,
-      LLM.node, // kilocode_change - consult_advisor uses the canonical LLM service
+      LLM.node,
       AgentManager.node,
       Notebook.node,
       RepositoryCache.node,

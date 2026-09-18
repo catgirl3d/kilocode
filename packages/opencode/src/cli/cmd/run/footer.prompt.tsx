@@ -179,7 +179,6 @@ export function parseSlashCommand(text: string, commands: RunCommand[] | undefin
 
   const item = commands.find((candidate) => slashMatches(candidate, head.name))
   if (!item) {
-    // kilocode_change
     return { type: "none" as const }
   }
 

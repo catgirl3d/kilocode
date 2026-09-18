@@ -5,16 +5,14 @@ type Deps = {
   agent: (session?: string) => string
   selected: (session?: string) => ModelSelection | null
   variant: (session?: string) => string | undefined
-  // fork_change start - Let command overrides opt out of model persistence.
-  apply: (agent: string, selection: ModelSelection, session?: string, remember?: boolean) => void
-  // fork_change end
+  apply: (agent: string, selection: ModelSelection, session?: string, remember?: boolean) => void // fork_change
   set: (session: string, selection: ModelSelection) => void
   carry: (selection: ModelSelection, value: string | undefined, agent: string, session?: string) => void
   hide: (session: string) => void
 }
 
 export function createModelSelector(deps: Deps) {
-  // fork_change start - Persist explicit model picks while keeping temporary overrides scoped.
+  // fork_change start
   const select = (providerID: string, modelID: string, sessionID?: string, remember = true) => {
     const session = sessionID ?? deps.current()
     const agent = deps.agent(session)

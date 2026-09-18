@@ -15,9 +15,7 @@ import { Icon } from "@kilocode/kilo-ui/icon"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox"
 // fork_change start
 import { Switch } from "@kilocode/kilo-ui/switch"
-// fork_change end
 import { useSession } from "../../context/session"
-// fork_change start
 import { useMemory } from "../../context/memory"
 // fork_change end
 import { calcTokenUsage, collapseCostBreakdown } from "../../context/session-utils"
@@ -34,10 +32,8 @@ import { hasModelUsage, tokenSummary } from "../../context/model-usage"
 import { SessionRenameEditor } from "../shared/SessionRenameEditor"
 // fork_change start
 import { DeferredPopover } from "../shared/DeferredPopover"
-// fork_change end
 import { target as todoTarget } from "../../context/todo-revert"
 import type { Part, TodoItem, ExtensionMessage } from "../../types/messages"
-// fork_change start
 import type { MemoryActivity } from "../../utils/memory-activity"
 // fork_change end
 
@@ -48,9 +44,7 @@ interface TaskHeaderProps {
 
 export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const session = useSession()
-  // fork_change start
-  const memory = useMemory()
-  // fork_change end
+  const memory = useMemory() // fork_change
   const language = useLanguage()
   const search = useTranscriptSearch()
 
@@ -59,9 +53,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const hasMessages = createMemo(() => session.messages().length > 0)
   const busy = createMemo(() => session.status() === "busy")
   const canCompact = createMemo(() => !busy() && session.visibleMessages().length > 0 && !!session.selected())
-  // fork_change start
-  const canShake = createMemo(() => !busy() && session.visibleMessages().length > 0 && !session.shaking())
-  // fork_change end
+  const canShake = createMemo(() => !busy() && session.visibleMessages().length > 0 && !session.shaking()) // fork_change
 
   const money = createMemo(() => new Intl.NumberFormat(language.locale(), { style: "currency", currency: "USD" }))
   const fmt = (n: number) => money().format(n)

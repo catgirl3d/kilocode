@@ -135,11 +135,9 @@ export function ContextToolExpandedList(props: { parts: ToolPart[]; expanded: bo
               const pruned = createMemo(() =>
                 part.tool === "read" || part.tool === "grep" ? swePruned(part) : undefined,
               )
-              // fork_change end
               return (
                 <div data-component="context-tool-expanded-row">
                   <span data-slot="context-tool-expanded-action">{label().action}</span>
-                  {/* fork_change start */}
                   <span data-slot="context-tool-expanded-detail">
                     {label().detail}
                     <Show when={pruned()}>
@@ -150,9 +148,9 @@ export function ContextToolExpandedList(props: { parts: ToolPart[]; expanded: bo
                       )}
                     </Show>
                   </span>
-                  {/* fork_change end */}
                 </div>
               )
+              // fork_change end
             }}
           </For>
         </div>

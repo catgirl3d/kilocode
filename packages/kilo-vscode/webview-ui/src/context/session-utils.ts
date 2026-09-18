@@ -154,14 +154,12 @@ export function snapshotStatus(parts: SnapshotPart[]): SnapshotStatus | undefine
   if (!running && events.length === 0) return undefined
   return { running, events }
 }
-
 export function snapshotProgress(part: SnapshotPart | undefined): boolean {
   if (part?.type !== "text") return false
   if (!part.synthetic) return false
   return part.metadata?.[SNAPSHOT_RUNNING_KEY] === true || (part.text ?? "").includes("Initializing snapshot")
 }
 // fork_change end
-
 type ParentSession = { parentID?: string | null }
 
 type RecentSession = ParentSession & { updatedAt: string }
@@ -170,14 +168,12 @@ export function isRootSession(session: ParentSession): boolean {
   return session.parentID === undefined || session.parentID === null
 }
 
-// fork_change start - show 7 recent sessions on the welcome screen
 export function recentSessions<T extends RecentSession>(sessions: T[]): T[] {
   return [...sessions]
     .filter(isRootSession)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 7)
+    .slice(0, 7) // fork_change
 }
-// fork_change end
 
 /** Minimal message shape for cost breakdown helpers. */
 export type CostMessage = { id: string; role: string; cost?: number }

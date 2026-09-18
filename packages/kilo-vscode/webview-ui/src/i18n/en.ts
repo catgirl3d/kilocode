@@ -90,6 +90,7 @@ export const dict = {
   "revert.banner.workspace.enableSnapshots": "Enable snapshots",
   "revert.disabled.agentBusy": "Wait for agent to finish",
   "command.session.compact": "Compact session",
+  // fork_change start
   "command.session.shake": "Clear heavy tool output",
   "command.session.shake.cleared": "Cleared ~{{tokens}} tokens",
   "command.session.shake.clearedParts": "Cleared tool output",
@@ -97,6 +98,7 @@ export const dict = {
   "command.session.shake.diagnostics":
     "Debug: session {{sessionID}}; raw {{raw}} -> context {{projection}}; tools {{tools}}, completed {{completed}}, protected {{protected}}, already cleared {{compacted}}, candidates {{candidates}}, ~{{tokens}} tokens",
   "command.session.shake.failed": "Failed to clear tool output",
+  // fork_change end
   "command.session.export": "Export session transcript",
 
   "dialog.provider.search.placeholder": "Search providers",
@@ -248,7 +250,7 @@ export const dict = {
   "mcp.status.needs_auth": "needs auth",
   "mcp.status.needs_registration": "needs client registration",
   "mcp.status.disabled": "disabled",
-  "mcp.status.ready_on_demand": "ready on demand",
+  "mcp.status.ready_on_demand": "ready on demand", // fork_change
 
   "toast.session.rename.invalid.title": "Invalid session title",
 
@@ -523,7 +525,7 @@ export const dict = {
   "session.tabs.switcher.current": "Current",
   "session.tabs.switcher.pending": "New",
   "session.tabs.switcher.busy": "Working",
-  "session.action.copyId": "Copy session ID",
+  "session.action.copyId": "Copy session ID", // fork_change
   "session.tab.local": "Local",
   "session.tab.cloud": "Cloud",
   "session.tab.worktree": "Worktree",
@@ -651,6 +653,7 @@ export const dict = {
   "settings.autocomplete.title": "Autocomplete",
   "settings.notifications.title": "Notifications",
   "settings.context.title": "Context",
+  // fork_change start
   "settings.shell.title": "Execution Shell",
   "settings.shell.description":
     "Shell Kilo uses to run agent commands and Kilo terminal sessions. It does not change the VS Code integrated terminal.",
@@ -664,6 +667,7 @@ export const dict = {
   "settings.shell.customPath.description":
     "Executable name or absolute path on the machine running the Kilo CLI. Leave empty to fall back to Auto.",
   "settings.shell.customPath.placeholder": "e.g. pwsh or C:\\Program Files\\Git\\bin\\bash.exe",
+  // fork_change end
   "settings.indexing.title": "Indexing",
   "settings.indexing.status.title": "Status",
   "settings.indexing.enable.title": "Enable indexing",
@@ -917,10 +921,10 @@ export const dict = {
   "settings.experimental.imageGenerationModel.placeholder": "Default (Auto Router)",
 
   "settings.models.speechToText.disabledDescription":
-    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.",
+    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.", // fork_change
   "settings.models.speechToTextModel.title": "Speech to Text Model",
   "settings.models.speechToTextModel.description":
-    "Choose the transcription model for voice input. Kilo Gateway models use your Kilo account; Groq models use your API key.",
+    "Choose the transcription model for voice input. Kilo Gateway models use your Kilo account; Groq models use your API key.", // fork_change
   "settings.models.speechToTextModel.customDescription":
     "Model ID sent to your custom transcription endpoint, for example whisper-1. Voice input is unavailable until you set one.",
   "settings.models.speechToTextModel.customPlaceholder": "whisper-1",
@@ -932,11 +936,13 @@ export const dict = {
   "settings.models.speechToTextApiKey.description":
     "Bearer token sent to the custom transcription base URL. Stored in your Kilo config file.",
   "settings.models.speechToTextApiKey.placeholder": "sk-...",
+  // fork_change start
   "settings.models.speechToTextResult.title": "Voice Input Result",
   "settings.models.speechToTextResult.description":
     "Choose whether Groq Whisper returns the original spoken language or an English translation.",
   "settings.models.speechToTextResult.transcribe": "Original spoken language",
   "settings.models.speechToTextResult.translate": "Translate to English",
+  // fork_change end
   "settings.experimental.nativeNotebookTools.title": "Native Notebook Tools",
   "settings.experimental.nativeNotebookTools.description":
     "Enable experimental tools for reading, editing, and executing VS Code notebooks",
@@ -1000,10 +1006,10 @@ export const dict = {
   "settings.agentBehaviour.badge.disabled": "disabled",
   "settings.agentBehaviour.badge.deprecated": "deprecated",
   "settings.agentBehaviour.discoveredSkills": "Discovered Skills",
-  "settings.agentBehaviour.skillSearch": "Search skills by name",
+  "settings.agentBehaviour.skillSearch": "Search skills by name", // fork_change
   "settings.agentBehaviour.noSkillsFound":
     "No skills discovered. Add skill folder paths or URLs below to make skills available.",
-  "settings.agentBehaviour.noSkillsMatch": "No skills match your search.",
+  "settings.agentBehaviour.noSkillsMatch": "No skills match your search.", // fork_change
   "settings.agentBehaviour.noAgentsFound": "No agents found.",
   "settings.agentBehaviour.removeAgent.title": "Remove agent",
   "settings.agentBehaviour.removeAgent.confirm":
@@ -1022,7 +1028,7 @@ export const dict = {
   "settings.agentBehaviour.pushFixes.title": "Push Pull Request Fixes",
   "settings.agentBehaviour.pushFixes.description":
     "When you send pull request CI failures or review comments to the agent, or update a worktree from its base, ask it to commit and push so the pull request updates. Permission prompts still apply. Turn off to keep commits manual.",
-  "settings.agentBehaviour.instructionFiles.notFound": "Instruction file does not exist: {{path}}",
+  "settings.agentBehaviour.instructionFiles.notFound": "Instruction file does not exist: {{path}}", // fork_change
   "settings.agentBehaviour.claudeCompat.heading": "Claude Code Compatibility",
   "settings.agentBehaviour.claudeCompat.title": "Load Claude Code Files",
   "settings.agentBehaviour.claudeCompat.description":
@@ -1179,6 +1185,7 @@ export const dict = {
   "chat.memory.project.disabled": "Project memory disabled",
   "chat.memory.project.empty": "This project doesn't have any memory yet. It will start showing after you use Kilo.",
   "chat.memory.command.failed": "Memory command failed",
+  // fork_change start
   "chat.memory.status.loading": "Memory status loading",
   "chat.memory.status.active": "Memory active this session",
   "chat.memory.project.enabled": "Project memory enabled",
@@ -1197,6 +1204,7 @@ export const dict = {
   "chat.memory.activity.saved.item": "saved: {{item}}",
   "chat.memory.badge.recalled": "Memory recalled",
   "chat.memory.badge.items": "{{count}} items",
+  // fork_change end
   "chat.memory.updated": "Memory updated",
   "chat.memory.rebuild": "Memory index rebuilt",
 
@@ -1257,10 +1265,12 @@ export const dict = {
   "settings.providers.subagentModel.title": "Subagent Model",
   "settings.providers.subagentModel.description":
     "Default model and reasoning effort for task-tool subagents. Leave unset to inherit the calling agent's model.",
+  // fork_change start
   "settings.providers.advisor.title": "Enable Advisor",
   "settings.providers.advisor.description": "Enable the consult_advisor tool.",
   "settings.providers.advisorModel.title": "Advisor Model",
   "settings.providers.advisorModel.description": "Choose the model and reasoning effort for second opinions.",
+  // fork_change end
   "settings.models.hidePromptTraining.title": "Hide Prompt-Training Models",
   "settings.models.hidePromptTraining.description":
     "Hide Kilo Gateway models whose providers may use your prompts for training.",

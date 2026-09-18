@@ -12,7 +12,6 @@ import { randomUUID } from "crypto"
 // Resolved once per process: roll-call's per-model path must not re-await import
 // resolution for every model.
 let cache: ReturnType<typeof loadDeps> | undefined
-// fork_change start
 // prettier-ignore
 function loadDeps() {
   return Promise.all([
@@ -20,9 +19,7 @@ function loadDeps() {
     import("../../../provider/provider"),
     import("../../../effect/runtime-flags"),
     import("ai"),
-    // fork_change start
-    import("../../provider/opencode-session-headers"),
-    // fork_change end
+    import("../../provider/opencode-session-headers"), // fork_change
   ]).then(([runtime, provider, flags, ai, headers]) => ({ // fork_change
     AppRuntime: runtime.AppRuntime,
     Provider: provider.Provider,
@@ -31,7 +28,6 @@ function loadDeps() {
     opencodeSessionHeaders: headers.opencodeSessionHeaders, // fork_change
   }))
 }
-// fork_change end
 function deps() {
   cache ??= loadDeps()
   return cache

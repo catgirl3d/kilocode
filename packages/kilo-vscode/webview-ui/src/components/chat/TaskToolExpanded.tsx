@@ -9,9 +9,7 @@
 
 import { Component, createEffect, createMemo, createSignal, Index, Show, on, onCleanup } from "solid-js"
 import { BasicTool, initialOpen, rememberOpen } from "@kilocode/kilo-ui/basic-tool"
-// fork_change start
-import { CopyButton, ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part"
-// fork_change end
+import { CopyButton, ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part" // fork_change
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { AgentAvatar } from "@kilocode/kilo-ui/agent-avatar"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
@@ -33,7 +31,7 @@ import {
   taskBackground,
   taskResult,
   taskRunning,
-  taskSessionStatus,
+  taskSessionStatus, // fork_change
   taskStoredOpen,
   taskVisible,
 } from "./task-tool-state"

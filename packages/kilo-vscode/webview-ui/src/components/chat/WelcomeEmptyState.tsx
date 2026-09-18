@@ -1,9 +1,9 @@
-// fork_change start - hide feedback button from the welcome screen
-import { type Component, For, Show, createMemo } from "solid-js"
+import { type Component, For, Show, createMemo } from "solid-js" // fork_change
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { recentSessions } from "../../context/session-utils"
+// fork_change start
 import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../utils/date"
 import type { SessionInfo } from "../../types/messages"
 // fork_change end

@@ -75,9 +75,7 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
   const { t } = useLanguage()
   const code = useCodeComponent()
   const [source, setSource] = createSignal(false)
-  // fork_change start
-  const [review, setReview] = createSignal(false)
-  // fork_change end
+  const [review, setReview] = createSignal(false) // fork_change
   const [draft, setDraft] = createSignal<ReviewDraft | null>(null)
   const [editing, setEditing] = createSignal<string | null>(null)
   const composer: ReviewComposer = createReviewComposer()
@@ -225,9 +223,7 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
       { defer: true },
     ),
   )
-  // fork_change start
-  createEffect(on(file, () => setReview(false), { defer: true }))
-  // fork_change end
+  createEffect(on(file, () => setReview(false), { defer: true })) // fork_change
 
   const close = (id: string, focus: { restore: () => void }) => {
     props.onClose(id)
@@ -252,12 +248,12 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
           <span class="am-document-count">{props.tabs().length}</span>
         </div>
         <div class="am-document-actions">
+          {/* fork_change start */}
           <Show when={selected()}>
             <Tooltip
               value={source() ? t("agentManager.documents.preview") : t("agentManager.documents.source")}
               placement="top"
             >
-              {/* fork_change start */}
               <IconButton
                 icon={source() ? "eye" : "code"}
                 size="small"
@@ -265,14 +261,10 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
                 label={source() ? t("agentManager.documents.preview") : t("agentManager.documents.source")}
                 onClick={() => {
                   setSource((value) => !value)
-                  // fork_change start
                   setReview(false)
-                  // fork_change end
                 }}
               />
-              {/* fork_change end */}
             </Tooltip>
-            {/* fork_change start */}
             <Show when={markdown()}>
               <Tooltip value={t("command.review.toggle")} placement="top">
                 <IconButton
@@ -285,7 +277,6 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
                 />
               </Tooltip>
             </Show>
-            {/* fork_change end */}
             <Tooltip value={t("agentManager.diff.openFile")} placement="top">
               <IconButton
                 icon="go-to-file"
@@ -296,6 +287,7 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
               />
             </Tooltip>
           </Show>
+          {/* fork_change end */}
           <IconButton
             icon="close"
             size="small"
@@ -354,8 +346,8 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
             <img src={`data:${data()?.mime};base64,${data()?.data}`} alt={file()} class="am-document-image" />
           </div>
         </Show>
+        {/* fork_change start */}
         <Show when={!data()?.loading && !data()?.error && data()?.kind !== "image"}>
-          {/* fork_change start */}
           <div
             class="am-document-content"
             classList={{
@@ -381,8 +373,8 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
               />
             </Show>
           </div>
-          {/* fork_change end */}
         </Show>
+        {/* fork_change end */}
       </Show>
       <Show when={props.comments.length > 0}>
         <div class="am-diff-comments-footer">

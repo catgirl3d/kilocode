@@ -405,7 +405,7 @@ export const ShellPermission = Effect.gen(function* () {
 
       if (tokens.length && (!cmd || !CWD.has(cmd))) {
         scan.patterns.add(source(node))
-        scan.always.add(BashHierarchy.always(tokens, source(node))) // kilocode_change
+        scan.always.add(BashHierarchy.always(tokens, source(node)))
       }
     }
 
@@ -471,7 +471,6 @@ export const ShellPermission = Effect.gen(function* () {
   })
   // kilocode_change end
 
-  // kilocode_change start - classify shell access only for snapshot policy
   const snapshotAccess = Effect.fn("ShellTool.snapshotAccess")(function* (input: {
     command: string
     cwd: string
@@ -535,9 +534,8 @@ export const ShellPermission = Effect.gen(function* () {
       }),
     )
   })
-  // kilocode_change end
 
-  return { ask: check, resolve, decompose, snapshotAccess } // kilocode_change
+  return { ask: check, resolve, decompose, snapshotAccess }
 })
 // kilocode_change end
 

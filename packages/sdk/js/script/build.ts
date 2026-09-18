@@ -36,7 +36,7 @@ try {
 
   const document = (await Bun.file("./openapi.json").json()) as {
     components?: { schemas?: Record<string, unknown> }
-    paths?: Record<string, unknown> // kilocode_change
+    paths?: Record<string, unknown>
     [key: string]: unknown
   }
   const schemas = document.components?.schemas
@@ -92,9 +92,7 @@ try {
       },
     ],
   })
-  // kilocode_change end
 
-  // kilocode_change start
   await retry("Session history types patch", async () => {
     const generatedTypes = await Bun.file("./src/v2/gen/types.gen.ts").text()
     if (/export type SessionNext\w+1 =/.test(generatedTypes)) {
@@ -121,9 +119,7 @@ try {
     }
     await Bun.write("./src/v2/gen/sdk.gen.ts", historySdkPatched)
   })
-  // kilocode_change end
 
-  // kilocode_change start
   // The legacy SDK generator is retired, but this public Config type remains exported.
   // Keep Kilo's released sandbox settings aligned with the current generated client.
   const legacyTypesPath = "./src/gen/types.gen.ts"
@@ -153,8 +149,6 @@ try {
   if (!legacyPatched.includes(sandbox)) {
     throw new Error(`Legacy Config sandbox patch did not apply (${legacyTypesPath})`)
   }
-  // kilocode_change end
-  // kilocode_change start
   const instructions = `  /**
    * Instruction entries disabled in this config scope
    */
@@ -211,9 +205,6 @@ try {
     throw new Error(`Legacy Config swe_pruner_model patch did not apply (${legacyTypesPath})`)
   }
   await Bun.write(legacyTypesPath, final)
-  // kilocode_change end
-
-  // kilocode_change start
   await retry("Prettier", () => $`bun prettier --write src/gen src/v2`)
   await $`rm -rf dist tsconfig.tsbuildinfo`
   await $`bun tsc`

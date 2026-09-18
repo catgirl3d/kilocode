@@ -63,7 +63,7 @@ const EXEMPT_SCOPES = [
 ]
 // fork_change start
 const EXEMPT_FILES = [".test.ts", ".spec.ts", ".md", ".json", ".yml", ".yaml", ".stories.tsx", ".stories.ts"]
-const EXEMPT_DIRS = new Set(["test", "tests", "fixture", "__snapshots__"])
+const EXEMPT_DIRS = new Set(["test", "tests", "fixture", "fixtures", "__snapshots__"])
 // fork_change end
 
 const args = process.argv.slice(2)
@@ -336,7 +336,7 @@ console.error(
     "  - script/upstream/**",
     "  - Kilo-specific annotation checker support files",
     "  - Files ending in *.test.ts, *.spec.ts, *.md, *.json, *.yml, *.yaml, *.stories.tsx, or *.stories.ts",
-    "  - Any path segment named test/, tests/, fixture/, or __snapshots__/",
+    "  - Any path segment named test/, tests/, fixture/, fixtures/, or __snapshots__/",
     "",
     "See AGENTS.md for details.",
   ].join("\n"),

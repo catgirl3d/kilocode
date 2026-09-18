@@ -1,17 +1,13 @@
 import * as vscode from "vscode"
 // fork_change start
 import { isMemoryOperation, type MemoryOperation as SharedMemoryOperation } from "@kilocode/kilo-memory/commands"
-// fork_change end
 import { MemorySchema } from "@kilocode/kilo-memory/schema"
-// fork_change start
 import type { KiloClient, MemoryShowResponse, MemoryStatusResponse, Session } from "@kilocode/sdk/v2/client"
-// fork_change end
 import { retry } from "../services/cli-backend/retry"
 import { getErrorMessage } from "../kilo-provider-utils"
 
 type MemorySourceFile = MemorySchema.Source
 type MemoryApi = KiloClient["memory"]
-// fork_change start
 type MemoryOperation = SharedMemoryOperation
 type MemoryPromptOperation = "remember" | "forget"
 // fork_change end
@@ -233,7 +229,6 @@ export class KiloProviderMemory {
   }
 
   private async doShow(sessionID?: string, mode?: "status" | "show"): Promise<void> {
-    // fork_change end
     const client = this.input.client()
     if (!client) {
       this.input.post({
@@ -261,10 +256,8 @@ export class KiloProviderMemory {
         this.input.post({ type: "memoryLoaded", sessionID, error: NO_PROJECT })
         return
       }
-      // fork_change start
       const { data: show } = await retry(() => api.show({ directory }, { throwOnError: true }))
       const { data: status } = await retry(() => api.status({ directory }, { throwOnError: true }))
-      // fork_change end
       const msg = {
         type: "memoryLoaded",
         sessionID,
@@ -272,7 +265,6 @@ export class KiloProviderMemory {
       }
       this.cache(directory, msg)
       this.input.post(msg)
-      // fork_change start
       if (mode) {
         this.picker(show, status, mode)
         return
@@ -316,7 +308,6 @@ export class KiloProviderMemory {
       await vscode.workspace
         .openTextDocument({ content, language: "markdown" })
         .then((doc) => vscode.window.showTextDocument(doc, { preview: true }))
-      // fork_change end
     } catch (err) {
       console.error("[Kilo New] KiloProvider: Failed to show memory:", err)
       this.input.post({
@@ -327,7 +318,6 @@ export class KiloProviderMemory {
     }
   }
 
-  // fork_change start
   private picker(show: MemoryShowResponse, status: MemoryStatusResponse, mode: "status" | "show") {
     const items = stored(show.items)
     if (mode === "show" && items.length === 0) {
@@ -486,9 +476,7 @@ export class KiloProviderMemory {
     if (op === "rebuild") return (await api.rebuild({ directory }, { throwOnError: true })).data
     if (op === "purge") return this.purge(api, directory, message)
     if (op === "auto") return this.auto(api, directory, message)
-    // fork_change start
-    if (op === "verbose") return this.verbose(api, directory, message)
-    // fork_change end
+    if (op === "verbose") return this.verbose(api, directory, message) // fork_change
     if (op === "remember") return this.remember(api, directory, message)
     if (op === "correct") return this.correct(api, directory, message)
     return this.forget(api, directory, message)

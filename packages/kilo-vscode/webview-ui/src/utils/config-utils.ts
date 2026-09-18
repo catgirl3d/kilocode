@@ -102,9 +102,7 @@ export class ConfigState {
   draft: Partial<Config> = {}
   dirty = false
   saving = false
-  // fork_change start
-  blocked = false
-  // fork_change end
+  blocked = false // fork_change
   loading = true
 
   /** Accumulate a partial change (same as the toggle click path). */
@@ -116,9 +114,7 @@ export class ConfigState {
 
   /** Handle an incoming configLoaded push from the extension. */
   handleConfigLoaded(server: Config) {
-    // fork_change start
-    if (!acceptsConfig(this.saving, this.blocked)) return
-    // fork_change end
+    if (!acceptsConfig(this.saving, this.blocked)) return // fork_change
     this.config = resolveConfig(server, this.draft, this.dirty)
     this.saved = server
     this.loading = false
@@ -126,9 +122,7 @@ export class ConfigState {
 
   /** Handle an incoming configUpdated push from the extension. */
   handleConfigUpdated(server: Config) {
-    // fork_change start
-    if (this.blocked && !this.saving) return
-    // fork_change end
+    if (this.blocked && !this.saving) return // fork_change
     if (this.saving) {
       this.saving = false
       this.draft = {}
@@ -157,15 +151,13 @@ export class ConfigState {
     this.config = resolveConfig(server, this.draft, this.dirty)
   }
 
+  // fork_change start
   /** Send the draft to the backend. */
   saveConfig() {
-    // fork_change start
     if (this.saving || this.blocked || Object.keys(this.draft).length === 0) return
-    // fork_change end
     this.saving = true
   }
 
-  // fork_change start
   expireConfig() {
     if (this.dirty) this.blocked = true
   }
@@ -176,8 +168,6 @@ export class ConfigState {
     this.config = this.saved
     this.draft = {}
     this.dirty = false
-    // fork_change start
-    this.blocked = false
-    // fork_change end
+    this.blocked = false // fork_change
   }
 }

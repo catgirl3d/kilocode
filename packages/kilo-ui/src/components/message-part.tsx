@@ -36,9 +36,7 @@ import { checkFile } from "../file-link-validator"
 import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { useClipboard } from "../context/clipboard"
-// fork_change start
-import { type UiI18n, type UiI18nKey, useI18n } from "../context/i18n"
-// fork_change end
+import { type UiI18n, type UiI18nKey, useI18n } from "../context/i18n" // fork_change
 import { BasicTool, useToolApprovalLine } from "./basic-tool"
 import { BoardMessage, BoardParticipantStack, BoardRoute } from "./board-message"
 import { preview } from "./board-route"
@@ -1250,9 +1248,7 @@ function McpTool(props: ToolProps) {
     }
     return ids
   })
-  // fork_change start - prefer the streamed state title (e.g. consult_advisor progress) over the raw tool name
-  const title = createMemo(() => props.stateTitle || props.tool)
-  // fork_change end
+  const title = createMemo(() => props.stateTitle || props.tool) // fork_change
   const trigger = () => {
     if (props.tool === "board_post")
       return (
@@ -1270,9 +1266,7 @@ function McpTool(props: ToolProps) {
       const rows = messages()
       return { title: i18n.t("ui.messagePart.board.read"), subtitle: rows ? String(rows.length) : undefined }
     }
-    // fork_change start - prefer the streamed state title over the raw tool name
-    return { title: title(), subtitle: subtitle(), args: inputArgs() }
-    // fork_change end
+    return { title: title(), subtitle: subtitle(), args: inputArgs() } // fork_change
   }
   const labelKeys = ["description", "query", "url", "filePath", "path", "pattern", "name"]
   const skipKeys = new Set(labelKeys)
@@ -2575,9 +2569,7 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const i18n = useI18n()
-    // fork_change start
-    const childSessionId = () => (props.metadata.sessionId ?? props.partMetadata?.sessionId) as string | undefined
-    // fork_change end
+    const childSessionId = () => (props.metadata.sessionId ?? props.partMetadata?.sessionId) as string | undefined // fork_change
     const type = createMemo(() => {
       const raw = props.input.subagent_type
       if (typeof raw !== "string" || !raw) return undefined
@@ -2672,33 +2664,31 @@ ToolRegistry.register({
   },
 })
 
-// fork_change start
-export function CopyButton(props: { value: () => string; label: string }) {
+export function CopyButton(props: { value: () => string; label: string }) { // fork_change
   const i18n = useI18n()
-  const clipboard = useClipboard()
+  const clipboard = useClipboard() // fork_change
   const [copied, setCopied] = createSignal(false)
-  const handler = async (e: MouseEvent) => {
-    e.stopPropagation()
+  const handler = async (e: MouseEvent) => { // fork_change
+    e.stopPropagation() // fork_change
     const text = props.value()
     if (!text) return
-    await clipboard.write(text)
+    await clipboard.write(text) // fork_change
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
   return (
-    <Tooltip value={copied() ? i18n.t("ui.message.copied") : props.label} placement="bottom" gutter={4}>
+    <Tooltip value={copied() ? i18n.t("ui.message.copied") : props.label} placement="bottom" gutter={4}> {/* fork_change */}
       <IconButton
         icon={copied() ? "check" : "copy"}
         size="small"
         variant="ghost"
-        onMouseDown={(e: MouseEvent) => e.preventDefault()}
+        onMouseDown={(e: MouseEvent) => e.preventDefault()} // fork_change
         onClick={handler}
-        aria-label={copied() ? i18n.t("ui.message.copied") : props.label}
+        aria-label={copied() ? i18n.t("ui.message.copied") : props.label} // fork_change
       />
     </Tooltip>
   )
 }
-// fork_change end
 
 function BashHighlightedOutput(props: { cmd: string; output: string; outputPath?: string; active?: boolean }) {
   const data = useData()

@@ -1099,8 +1099,8 @@ export const RunCommand = effectCmd({
               return
             }
             if (builtin) {
-              const data = KiloRun.builtinCompletion(builtin, result) // kilocode_change
-              if (data) emit("shake", data) // kilocode_change
+              const data = KiloRun.builtinCompletion(builtin, result)
+              if (data) emit("shake", data)
             }
             await drain.wait(client, cwd)
             // kilocode_change start - an empty model response must not exit 0: a caller

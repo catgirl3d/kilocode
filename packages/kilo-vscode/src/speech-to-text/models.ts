@@ -3,78 +3,62 @@ import { GROQ_TRANSCRIPTION_MODELS, type SpeechToTextMode } from "@kilocode/kilo
 
 export type { SpeechToTextMode }
 
-// fork_change end
 export interface SpeechToTextModelDef {
   readonly id: string
   readonly label: string
   readonly provider: string
-  // fork_change start
   readonly providerID: "kilo" | "groq" | "custom"
   readonly modes?: readonly SpeechToTextMode[]
-  // fork_change end
   readonly verbatim?: boolean
 }
+// fork_change end
 
 const models: SpeechToTextModelDef[] = [
   {
     id: "nvidia/parakeet-tdt-0.6b-v3",
     label: "Parakeet TDT 0.6B v3",
     provider: "NVIDIA",
-    // fork_change start
-    providerID: "kilo",
-    // fork_change end
+    providerID: "kilo", // fork_change
   },
   {
     id: "openai/whisper-large-v3-turbo",
     label: "Whisper Large V3 Turbo",
     provider: "OpenAI-compatible",
-    // fork_change start
-    providerID: "kilo",
-    // fork_change end
+    providerID: "kilo", // fork_change
   },
   {
     id: "openai/gpt-4o-mini-transcribe",
     label: "GPT-4o Mini Transcribe",
     provider: "OpenAI",
-    // fork_change start
-    providerID: "kilo",
-    // fork_change end
+    providerID: "kilo", // fork_change
     verbatim: true,
   },
   {
     id: "openai/gpt-4o-transcribe",
     label: "GPT-4o Transcribe",
     provider: "OpenAI",
-    // fork_change start
-    providerID: "kilo",
-    // fork_change end
+    providerID: "kilo", // fork_change
     verbatim: true,
   },
   {
     id: "openai/whisper-1",
     label: "Whisper 1",
     provider: "OpenAI",
-    // fork_change start
-    providerID: "kilo",
-    // fork_change end
+    providerID: "kilo", // fork_change
   },
   {
     id: "openai/whisper-large-v3",
     label: "Whisper Large V3",
     provider: "OpenAI-compatible",
-    // fork_change start
-    providerID: "kilo",
-    // fork_change end
+    providerID: "kilo", // fork_change
   },
+  // fork_change start
   {
     id: "google/chirp-3",
     label: "Chirp 3",
     provider: "Google",
-    // fork_change start
     providerID: "kilo",
-    // fork_change end
   },
-  // fork_change start
   ...GROQ_TRANSCRIPTION_MODELS.map((model) => ({
     id: `groq/${model.id}`,
     label: model.label,

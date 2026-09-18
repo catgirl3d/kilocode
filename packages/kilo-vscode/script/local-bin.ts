@@ -2,9 +2,7 @@
 import { $ } from "bun"
 import { createHash } from "node:crypto"
 import { join, relative, dirname, basename } from "node:path"
-// fork_change start
-import { chmodSync, statSync, rmSync, readdirSync, existsSync, copyFileSync, mkdirSync } from "node:fs"
-// fork_change end
+import { chmodSync, statSync, rmSync, readdirSync, existsSync, copyFileSync, mkdirSync } from "node:fs" // fork_change
 import {
   copyKiloSandboxWorker,
   copySandboxResources,
@@ -16,9 +14,7 @@ import {
 } from "../src/services/cli-backend/cli-resources"
 import { currentBwrapTarget, ensureBwrapForTarget } from "./bwrap-helper"
 import { currentFfmpegTarget, ensureFfmpegForTarget } from "./ffmpeg-helper"
-// fork_change start
-import { ensureMicForTarget } from "./mic-helper"
-// fork_change end
+import { ensureMicForTarget } from "./mic-helper" // fork_change
 
 const forceRebuild = process.argv.includes("--force")
 const compiledOnly = process.argv.includes("--compiled")
@@ -289,9 +285,7 @@ async function bundleKiloSandboxWorker() {
 
 async function ensureLocalHelpers() {
   await ensureFfmpegForTarget(currentFfmpegTarget(), targetBinDir)
-  // fork_change start
-  await ensureMicForTarget(currentFfmpegTarget(), targetBinDir)
-  // fork_change end
+  await ensureMicForTarget(currentFfmpegTarget(), targetBinDir) // fork_change
   if (process.env.KILO_SKIP_BUNDLED_BWRAP === "1") return
   if (await sanitizeSandboxResources(targetBinDir, true)) return
   await ensureBwrapForTarget(currentBwrapTarget())
@@ -303,9 +297,7 @@ async function writeSourceWrapper() {
   }
 
   const bun = Bun.which("bun") ?? "bun"
-  // fork_change start
-  mkdirSync(targetBinDir, { recursive: true })
-  // fork_change end
+  mkdirSync(targetBinDir, { recursive: true }) // fork_change
   await Bun.write(
     targetBinPath,
     [

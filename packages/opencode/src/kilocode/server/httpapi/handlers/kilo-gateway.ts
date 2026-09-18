@@ -376,14 +376,13 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
       })
     })
 
-    // fork_change start - removed "Move your opencode configuration" notice
     const notifications = Effect.fn("KiloGatewayHttpApi.notifications")(function* () {
       const claude = yield* Effect.promise(() => ClaudeMigration.notification())
-      const append = <T>(list: T[]) => [...list, ...(claude ? [claude] : [])]
+      const append = <T>(list: T[]) => [...list, ...(claude ? [claude] : [])] // fork_change
 
       const info = yield* auth.get("kilo").pipe(Effect.catch(() => Effect.succeed(undefined)))
       const token = getToken(info)
-      if (!token) return []
+      if (!token) return [] // fork_change
 
       const cloud = yield* Effect.promise(() =>
         fetchKilocodeNotifications({
@@ -391,9 +390,8 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
           kilocodeOrganizationId: getOrganizationId(info),
         }),
       )
-      return cloud
+      return cloud // fork_change
     })
-    // fork_change end
 
     const organization = Effect.fn("KiloGatewayHttpApi.organization")(function* (ctx) {
       const info = yield* auth.get("kilo").pipe(Effect.mapError(() => new HttpApiError.Unauthorized({})))
@@ -513,9 +511,11 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
       // create_session test's module init. Run the helper's Effect on the
       // request Effect (yield*) so the request-scoped InstanceRef/WorkspaceRef
       // reach the persistence path instead of the AppRuntime default context.
-      const { CloudSessionImportInProcess } = yield* Effect.promise(() =>
-        import("@/kilocode/server/import-cloud-session-in-process"),
+      // fork_change start
+      const { CloudSessionImportInProcess } = yield* Effect.promise(
+        () => import("@/kilocode/server/import-cloud-session-in-process"),
       )
+      // fork_change end
       const outcome = yield* CloudSessionImportInProcess.importSession(ctx.payload.sessionId).pipe(
         Effect.provideService(Auth.Service, auth),
         Effect.provideService(EventV2Bridge.Service, events),

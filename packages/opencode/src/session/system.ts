@@ -31,7 +31,7 @@ import { KilocodeSystemPrompt } from "../kilocode/system-prompt"
 import { isLing } from "../kilocode/model-match"
 import { Config } from "@/config/config"
 import * as KiloReference from "@/kilocode/reference"
-import * as McpOnDemand from "../kilocode/mcp/on-demand" // kilocode_change
+import * as McpOnDemand from "../kilocode/mcp/on-demand"
 // kilocode_change end
 
 // kilocode_change start

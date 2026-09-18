@@ -15,9 +15,7 @@ import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { formatRelativeDate } from "../../utils/date"
-// fork_change start - date grouping moved to utils/date for reuse
-import { DATE_GROUP_KEYS, dateGroupKey } from "../../utils/date"
-// fork_change end
+import { DATE_GROUP_KEYS, dateGroupKey } from "../../utils/date" // fork_change
 import type { SessionInfo } from "../../types/messages"
 import { SessionRenameEditor } from "../shared/SessionRenameEditor"
 

@@ -23,8 +23,6 @@ export async function loadCommands(client: KiloClient, dir: string): Promise<unk
           hints: [],
         }
       }
-      // fork_change end
-      // fork_change start
       return {
         name: cmd.name,
         description: cmd.description,

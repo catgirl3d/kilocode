@@ -51,9 +51,6 @@ export function createSessionVariants(options: Options) {
 
   const request = (sessionID?: string, presetFirst = false) =>
     current(sessionID, presetFirst) ?? (list(sessionID).length > 0 ? DEFAULT_VARIANT : undefined)
-  // fork_change end
-
-  // fork_change start - Persist explicit picker choices for future tasks.
   const select = (value: string | undefined, sessionID?: string, remember = true) => {
     const sid = sessionID ?? options.session()
     const selection = options.selected(sid)
@@ -71,17 +68,13 @@ export function createSessionVariants(options: Options) {
     const remembered = variantKey(selection, name)
     options.set(remembered, next)
     options.post({ type: "persistVariant", key: remembered, value: next })
-    // fork_change end
   }
-
   const carry = (selection: ModelSelection, value: string | undefined, name: string, sessionID?: string) => {
     const list = Object.keys(options.find(selection)?.variants ?? {})
     if (list.length === 0) return
-    // fork_change start - Keep an existing target-model choice over inherited values.
     const cached = options.selections()
     if (cached[variantKey(selection, name)] !== undefined) return
     if (sessionID && cached[variantKey(selection, name, sessionID)] !== undefined) return
-    // fork_change end
     // An absent value means the model default, not an explicit user choice.
     // Do not write a default sentinel here because it would shadow a cached
     // agent-level variant when this selection is resolved for a new session.
@@ -91,6 +84,7 @@ export function createSessionVariants(options: Options) {
     options.set(key, next)
     if (!sessionID) options.post({ type: "persistVariant", key, value: next })
   }
+  // fork_change end
 
   const load = () => {
     const unsub = options.listen((message) => {

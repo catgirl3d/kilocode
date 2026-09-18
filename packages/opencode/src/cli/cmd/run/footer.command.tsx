@@ -462,7 +462,6 @@ export function RunCommandMenuBody(props: {
         (item) =>
           ({
             action: "slash",
-            // kilocode_change
             category:
               item.source === "builtin"
                 ? "Builtin Actions"
@@ -478,8 +477,8 @@ export function RunCommandMenuBody(props: {
                 : `/${item.name} ${item.name} ${item.description ?? ""}`,
           }) satisfies CommandEntry,
       )
-    // kilocode_change end
       .sort((a, b) => categoryRank(a.category) - categoryRank(b.category) || a.display.localeCompare(b.display))
+    // kilocode_change end
 
     return [
       ...session,
