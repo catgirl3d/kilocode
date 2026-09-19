@@ -299,11 +299,28 @@ preservation. Review the range-diff against both the pre-rebase fork HEAD and th
   do not treat the remaining green checks as full coverage.
 
 Finish only when the working tree is clean, `git diff --check upstream/main..main`
-passes, the range-diff has been reviewed, and this tracked-file conflict-marker
+passes, the range-diff has been reviewed, affected package unit tests pass, and this tracked-file conflict-marker
 scan has empty output and exits 1 as expected:
 
 ```bash
 git grep -nE '^(<{7}|\|{7}|={7}|>{7})( |$)'
 ```
+
+### Post-Rebase Merge Artifact Gate
+
+Before finalizing or pushing, audit for subtle merge artifacts that bypass TypeScript compilation:
+
+1. **Unit test pass on affected packages**:
+   Always run package-level unit tests for packages containing replayed or resolved commits (e.g. `bun --cwd packages/kilo-vscode/tests test unit/` in `packages/kilo-vscode/`, and `bun run test` in `packages/opencode/`). Typechecks do not catch dual assertions or runtime order shifts.
+2. **Dual-inclusion & duplicate assertion audit**:
+   Inspect the fork diff against merge-base (`git diff $(git merge-base HEAD upstream/main)..HEAD`) for conflicting or duplicate assertions in tests where both the pre-migration and post-migration expectations were inadvertently retained (such as conflicting `expect()` calls).
+3. **Semantic reordering & contract drift**:
+   Verify that string concatenation orders, message pipelines, or array compositions (such as prompt assembly in `PromptInput.tsx`) preserve contract ordering required by downstream parsers (tested by `prompt-send-contract.test.ts`, `code-context.test.ts`).
+4. **Retired config key cleanup**:
+   When upstream moves or deprecates config keys (e.g. from `experimental.*` to top-level), search for lingering old references across tests and fork additions:
+
+   ```bash
+   git grep "<old_config_key>"
+   ```
 
 `zdiff3` helps show the common base in a conflict; it does not validate behavior.
