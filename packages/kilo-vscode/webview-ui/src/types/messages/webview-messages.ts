@@ -1672,6 +1672,14 @@ export interface ToggleFavoriteRequest {
   modelID: string
 }
 
+// fork_change start
+export interface MoveFavoriteRequest {
+  type: "moveFavorite"
+  providerID: string
+  modelID: string
+  direction: "up" | "down"
+}
+// fork_change end
 export interface RequestFavoritesMessage {
   type: "requestFavorites"
 }
@@ -2017,6 +2025,7 @@ export type WebviewMessage =
   | PersistModelSelectorExpandedRequest
   | RequestModelSelectorExpandedMessage
   | ToggleFavoriteRequest
+  | MoveFavoriteRequest // fork_change
   | RequestFavoritesMessage
   | ToggleRemoteMessage
   | ToggleCaffeinationMessage
