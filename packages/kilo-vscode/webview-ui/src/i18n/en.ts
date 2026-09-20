@@ -640,6 +640,21 @@ export const dict = {
   "settings.autocomplete.title": "Autocomplete",
   "settings.notifications.title": "Notifications",
   "settings.context.title": "Context",
+  // fork_change start
+  "settings.shell.title": "Execution Shell",
+  "settings.shell.description":
+    "Shell Kilo uses to run agent commands and Kilo terminal sessions. It does not change the VS Code integrated terminal.",
+  "settings.shell.auto": "Auto",
+  "settings.shell.bash": "Bash",
+  "settings.shell.pwsh": "PowerShell (pwsh)",
+  "settings.shell.powershell": "Windows PowerShell",
+  "settings.shell.cmd": "Command Prompt",
+  "settings.shell.custom": "Custom",
+  "settings.shell.customPath.title": "Custom shell executable",
+  "settings.shell.customPath.description":
+    "Executable name or absolute path on the machine running the Kilo CLI. Leave empty to fall back to Auto.",
+  "settings.shell.customPath.placeholder": "e.g. pwsh or C:\\Program Files\\Git\\bin\\bash.exe",
+  // fork_change end
   "settings.indexing.title": "Indexing",
   "settings.indexing.status.title": "Status",
   "settings.indexing.enable.title": "Enable indexing",
@@ -972,8 +987,10 @@ export const dict = {
   "settings.agentBehaviour.badge.disabled": "disabled",
   "settings.agentBehaviour.badge.deprecated": "deprecated",
   "settings.agentBehaviour.discoveredSkills": "Discovered Skills",
+  "settings.agentBehaviour.skillSearch": "Search skills by name", // fork_change
   "settings.agentBehaviour.noSkillsFound":
     "No skills discovered. Add skill folder paths or URLs below to make skills available.",
+  "settings.agentBehaviour.noSkillsMatch": "No skills match your search.", // fork_change
   "settings.agentBehaviour.noAgentsFound": "No agents found.",
   "settings.agentBehaviour.removeAgent.title": "Remove agent",
   "settings.agentBehaviour.removeAgent.confirm":
@@ -992,6 +1009,7 @@ export const dict = {
   "settings.agentBehaviour.pushFixes.title": "Push Pull Request Fixes",
   "settings.agentBehaviour.pushFixes.description":
     "When you send pull request CI failures or review comments to the agent, or update a worktree from its base, ask it to commit and push so the pull request updates. Permission prompts still apply. Turn off to keep commits manual.",
+  "settings.agentBehaviour.instructionFiles.notFound": "Instruction file does not exist: {{path}}", // fork_change
   "settings.agentBehaviour.claudeCompat.heading": "Claude Code Compatibility",
   "settings.agentBehaviour.claudeCompat.title": "Load Claude Code Files",
   "settings.agentBehaviour.claudeCompat.description":

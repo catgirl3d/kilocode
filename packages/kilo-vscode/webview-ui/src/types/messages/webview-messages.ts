@@ -210,6 +210,15 @@ export interface ValidateFilesRequest {
   paths: string[]
 }
 
+// fork_change start
+export interface ValidateInstructionPathRequest {
+  type: "validateInstructionPath"
+  requestId: string
+  path: string
+  scope: "global" | "project"
+  bindingId?: string
+}
+// fork_change end
 export interface CancelLoginRequest {
   type: "cancelLogin"
 }
@@ -1736,6 +1745,7 @@ export type WebviewMessage =
   | RequestFileSearchMessage
   | RequestSessionSearchMessage
   | RequestFilePickerMessage
+  | ValidateInstructionPathRequest // fork_change
   | RequestTerminalContextMessage
   | RequestGitChangesContextMessage
   | ChatCompletionAcceptedMessage
