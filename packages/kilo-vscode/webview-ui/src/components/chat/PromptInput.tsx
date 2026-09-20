@@ -1643,11 +1643,39 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return { match, entry }
   }
 
+  // fork_change start
+  const runAction = (matched: ReturnType<typeof command>["entry"]) => {
+    // Builtin actions use dedicated session endpoints; configured commands retain precedence.
+    const action = commandAction(matched, () => session.shake())
+    if (!action) return false
+    if (matched?.enabled && !matched.enabled()) return true
+    setText("")
+    clearReviewComments()
+    clear()
+    clearContexts()
+    imageAttach.clear()
+    mention.closeMention()
+    slash.close()
+    drafts.delete(draftKey())
+    reviewDrafts.delete(draftKey())
+    contextDrafts.delete(draftKey())
+    imageDrafts.delete(draftKey())
+    mentionDrafts.delete(draftKey())
+    scrollDrafts.delete(draftKey())
+    pasteDrafts.delete(draftKey())
+    textareaRef?.style.setProperty("height", "auto")
+    action()
+    return true
+  }
+
+  // fork_change end
   const handleSend = async () => {
     // Collapsed pastes are expanded to their full content before anything reads
     // the draft: sending, attachments, slash detection, and history all see the
     // real text, never the placeholder.
-    const draft = paste.plainText(text()).trim()
+    // fork_change start
+    let draft = paste.plainText(text()).trim()
+    // fork_change end
     if (
       !goal.prepare(draft, () => {
         setText("")
@@ -1688,27 +1716,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const cmdMatch = parsed.match
     const matched = parsed.entry
 
-    // Client-side slash command — runs locally without a backend round-trip
-    if (matched?.action) {
-      if (matched.enabled && !matched.enabled()) return
-      setText("")
-      clearReviewComments()
-      clear()
-      clearContexts()
-      imageAttach.clear()
-      mention.closeMention()
-      slash.close()
-      drafts.delete(draftKey())
-      reviewDrafts.delete(draftKey())
-      contextDrafts.delete(draftKey())
-      imageDrafts.delete(draftKey())
-      mentionDrafts.delete(draftKey())
-      scrollDrafts.delete(draftKey())
-      pasteDrafts.delete(draftKey())
-      if (textareaRef) textareaRef.style.height = "auto"
-      matched.action()
-      return
-    }
+    // fork_change start
+    if (runAction(matched)) return
+    // fork_change end
 
     const imgs = imageAttach.images()
     const pending = reviewComments()

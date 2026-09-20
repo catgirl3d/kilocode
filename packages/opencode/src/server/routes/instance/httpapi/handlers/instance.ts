@@ -11,6 +11,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
+import { list as listCommandCatalog } from "@/kilocode/command/catalog" // kilocode_change
 
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
@@ -74,7 +75,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     })
 
     const getCommand = Effect.fn("InstanceHttpApi.command")(function* () {
-      return yield* command.list()
+      return listCommandCatalog(yield* command.list()) // kilocode_change
     })
 
     const getAgent = Effect.fn("InstanceHttpApi.agent")(function* () {

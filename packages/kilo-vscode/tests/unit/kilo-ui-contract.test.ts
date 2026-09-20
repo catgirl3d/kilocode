@@ -479,9 +479,33 @@ describe("Memory control placement contract (source)", () => {
   const settings = fs.readFileSync(CONTEXT_TAB_FILE, "utf-8")
   const prompt = fs.readFileSync(PROMPT_INPUT_FILE, "utf-8")
 
-  it("keeps memory controls out of the task header", () => {
-    expect(header).not.toContain("useMemory")
-    expect(header).not.toContain('name="memory"')
+  it("keeps the last Context memory popover separate from the direct compact action", () => {
+    expect(header).toContain("useMemory")
+    expect(header).toContain('name="server"')
+    expect(header).toContain('name="memory"')
+    expect(header).toContain("memory.enable()")
+    expect(header).toContain("memory.disable()")
+    expect(header).toContain('icon="compress"')
+    expect(header).toContain('icon="collapse"')
+    expect(header).toContain("session.shake()")
+    expect(header).toContain("command.session.shake")
+    expect(header).toContain("!session.shaking()")
+    const context = fs.readFileSync(SESSION_CONTEXT_FILE, "utf-8")
+    expect(context).toContain("createSessionShake")
+    const shakeToastSource = fs.readFileSync(
+      path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/context/session-shake.ts"),
+      "utf-8",
+    )
+    expect(shakeToastSource).toContain("setShaking(sessionID)")
+    expect(shakeToastSource).toContain('message.type === "sessionShakeFailed"')
+    expect(shakeToastSource).toContain("shakeToast(message, deps.language)")
+    expect(shakeToastSource).toContain('"command.session.shake.cleared"')
+    expect(shakeToastSource).toContain("message.parts > 0")
+    expect(shakeToastSource).toContain('"command.session.shake.clearedParts"')
+    expect(shakeToastSource).toContain('"command.session.shake.empty"')
+    expect(shakeToastSource).toContain("message.diagnostics")
+    expect(shakeToastSource).toContain('"command.session.shake.diagnostics"')
+    expect(header).not.toContain("settings.context.compaction.title")
   })
 
   it("shows storage inspection in settings without a manual rebuild action", () => {

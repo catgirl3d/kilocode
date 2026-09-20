@@ -852,6 +852,7 @@ manage sessions
 Commands:
   kilo session list                list sessions
   kilo session delete <sessionID>  delete a session
+  kilo session cleanup             preview or remove stale child sessions
 
 Options:
   --help     Show help  [boolean]
@@ -883,6 +884,21 @@ Positionals:
 Options:
   --help     Show help  [boolean]
   --version  Show version number  [boolean]
+```
+
+### kilo session cleanup
+
+```
+preview or remove stale child sessions
+
+Options:
+  --help        Show help  [boolean]
+  --version     Show version number  [boolean]
+  --older-than  only target child sessions older than N days  [number] [default: 7]
+  --limit       maximum number of child sessions to remove in one run  [number] [default: 100]
+  --apply       perform deletion; without this flag the command is a dry-run  [boolean] [default: false]
+  --yes         confirm the requested deletion  [boolean] [default: false]
+  --vacuum      compact SQLite after deletion  [boolean] [default: false]
 ```
 
 ## kilo remote
