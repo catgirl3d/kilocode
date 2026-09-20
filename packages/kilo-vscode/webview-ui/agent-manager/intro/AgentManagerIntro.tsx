@@ -5,9 +5,8 @@ import { useLanguage } from "../../src/context/language"
 import { useVSCode } from "../../src/context/vscode"
 import { useConfig } from "../../src/context/config"
 import type { SessionInfo } from "../../src/types/messages"
-import { KiloLogo } from "../../src/components/chat/WelcomeEmptyState"
+import { KiloLogo, WelcomeEmptyState } from "../../src/components/chat/WelcomeEmptyState" // fork_change
 import { createSplashIntro } from "../splash"
-import { Reopen } from "../splash/Splash"
 import { IntroGraph } from "./IntroGraph"
 import "./intro.css"
 
@@ -94,7 +93,7 @@ export function createIntro(opts: IntroOptions): Intro {
 }
 
 interface EmptyProps extends Omit<IntroProps, "onDismiss"> {
-  intro: { visible: () => boolean; open: () => void; dismiss: () => void }
+  intro: Pick<ReturnType<typeof createIntro>, "visible" | "dismiss"> // fork_change
   sessions?: () => SessionInfo[]
   onSelectSession?: (id: string) => void
   onShowHistory?: () => void
@@ -106,13 +105,12 @@ function AgentManagerEmptyState(props: EmptyProps) {
     <Show
       when={props.intro.visible()}
       fallback={
-        <Reopen
+        <WelcomeEmptyState // fork_change
           sessions={props.sessions}
           onSelectSession={props.onSelectSession}
           onShowHistory={props.onShowHistory}
-          hints={props.hints}
-          onOpen={props.intro.open}
         />
+        // fork_change
       }
     >
       <Introduction {...props} onDismiss={props.intro.dismiss} />
