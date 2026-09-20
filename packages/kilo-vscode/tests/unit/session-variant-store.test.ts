@@ -3,6 +3,7 @@ import {
   cycleVariant,
   getAgentVariant,
   getVariant,
+  legacyVariantKey,
   preserveVariant,
   sessionVariantKeys,
   sessionVariants,
@@ -12,6 +13,7 @@ import {
 import type { ModelSelection } from "../../webview-ui/src/types/messages"
 
 const model: ModelSelection = { providerID: "anthropic", modelID: "claude-sonnet-4" }
+const otherModel: ModelSelection = { providerID: "openai", modelID: "gpt-5" }
 const variants = ["low", "medium", "high"]
 
 describe("per-session variant selection", () => {
@@ -56,21 +58,59 @@ describe("per-session variant selection", () => {
     expect(getAgentVariant({}, model, { variants: { high: {}, max: {} } }, "code", "max")).toBe("max")
   })
 
-  it.each(["anthropic/claude-sonnet-4", variantKey(model, "code")])(
-    "keeps the configured variant %s above the remembered preference",
-    (key) => {
-      const store = { [key]: "high" }
-      expect(getVariant(store, model, ["high", "max"], "code", "pending-new", "max")).toBe("max")
-      expect(getAgentVariant(store, model, { variants: { high: {}, max: {} } }, "code", "max")).toBe("max")
-    },
-  )
-
-  it.each(["low", ""])("preserves a session choice %s above configured and remembered variants", (value) => {
+  it("prefers the remembered agent/model choice over configured and legacy variants", () => {
     const store = {
       [variantKey(model, "code")]: "high",
-      [variantKey(model, "code", "session-a")]: value,
+      [legacyVariantKey(model)]: "medium",
     }
-    expect(getVariant(store, model, ["low", "high", "max"], "code", "session-a", "max")).toBe(value || undefined)
+    expect(getVariant(store, model, ["high", "max", "medium"], "code", "pending-new", "max")).toBe("high")
+    expect(getAgentVariant(store, model, { variants: { high: {}, max: {}, medium: {} } }, "code", "max")).toBe("high")
+  })
+
+  it("command presets beat remembered variants only when presetFirst is true", () => {
+    const store = { [variantKey(model, "code")]: "high" }
+    expect(getVariant(store, model, ["high", "max"], "code", "pending-new", "max")).toBe("high")
+    expect(getVariant(store, model, ["high", "max"], "code", "pending-new", "max", true)).toBe("max")
+    expect(getAgentVariant(store, model, { variants: { high: {}, max: {} } }, "code", "max")).toBe("high")
+  })
+
+  it("keeps a scoped selection ahead of command presets", () => {
+    const store = {
+      [variantKey(model, "code")]: "high",
+      [variantKey(model, "code", "pending-new")]: "low",
+    }
+    expect(getVariant(store, model, ["low", "high", "max"], "code", "pending-new", "max", true)).toBe("low")
+  })
+
+  it("keeps configured variants ahead of legacy provider/model memory", () => {
+    const store = { [legacyVariantKey(model)]: "high" }
+    expect(getVariant(store, model, ["high", "max"], "code", "pending-new", "max")).toBe("max")
+    expect(getAgentVariant(store, model, { variants: { high: {}, max: {} } }, "code", "max")).toBe("max")
+  })
+
+  it("restores separate remembered variants for each model", () => {
+    const store = {
+      [variantKey(model, "code")]: "max",
+      [variantKey(otherModel, "code")]: "medium",
+    }
+
+    expect(getVariant(store, model, ["medium", "max"], "code", "pending-model-a")).toBe("max")
+    expect(getVariant(store, otherModel, ["medium", "max"], "code", "pending-model-b")).toBe("medium")
+  })
+
+  it("preserves a non-default session choice above configured and remembered variants", () => {
+    const store = {
+      [variantKey(model, "code")]: "high",
+      [variantKey(model, "code", "session-a")]: "low",
+    }
+    expect(getVariant(store, model, ["low", "high", "max"], "code", "session-a", "max")).toBe("low")
+  })
+
+  it("keeps a scoped Default stored while displaying no effort", () => {
+    const key = variantKey(model, "code", "session-a")
+    const store = { [key]: "" }
+    expect(Object.hasOwn(store, key)).toBe(true)
+    expect(getVariant(store, model, ["low", "high", "max"], "code", "session-a", "max")).toBeUndefined()
   })
 
   it("ignores a configured variant that the model does not support", () => {
@@ -79,7 +119,10 @@ describe("per-session variant selection", () => {
 
   it("uses the model default when no variant is selected", () => {
     expect(getVariant({}, model, variants, "code")).toBeUndefined()
-    expect(getVariant({ [variantKey(model, "code")]: "" }, model, variants, "code")).toBeUndefined()
+    const store = { [variantKey(model, "code")]: "" }
+    expect(Object.hasOwn(store, variantKey(model, "code"))).toBe(true)
+    expect(getVariant(store, model, variants, "code")).toBeUndefined()
+    expect(getAgentVariant(store, model, { variants: { low: {}, medium: {}, high: {}, max: {} } }, "code")).toBeUndefined()
   })
 
   it("preserves a provider variant named default", () => {

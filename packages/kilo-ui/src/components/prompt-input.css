@@ -50,38 +50,36 @@
  * and need to look like the legacy `SelectDropdown` triggers.
  */
 
-[data-component="prompt-input-form"] [data-slot="prompt-input-toolbar"] > div:first-child,
-.prompt-input-hint-selectors {
-  [data-component="button"] {
-    height: auto !important;
-    min-height: 22px;
-    padding: 4px 6px !important;
-    font-size: var(--kilo-font-size-12);
-    line-height: normal;
-    border-radius: 6px;
-    background: var(--surface-base);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: none;
-    opacity: 1;
-    gap: 6px;
-    white-space: nowrap;
-    transition: all 150ms;
-    color: var(--text-base, var(--vscode-foreground));
+[data-component="prompt-input-form"] [data-slot="prompt-input-toolbar"] > div:first-child [data-component="button"],
+.prompt-input-hint-selectors [data-component="button"] {
+  height: auto !important;
+  min-height: 22px;
+  padding: 4px 6px !important;
+  font-size: var(--kilo-font-size-12);
+  line-height: normal;
+  border-radius: 6px;
+  background: var(--surface-base);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  opacity: 1;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 150ms;
+  color: var(--text-base, var(--vscode-foreground));
 
-    &[data-expanded] {
-      background: var(--surface-base-hover) !important;
-      background-color: var(--surface-base-hover) !important;
-    }
+  &[data-expanded] {
+    background: var(--surface-base-hover) !important;
+    background-color: var(--surface-base-hover) !important;
+  }
 
-    &:hover:not(:disabled) {
-      background: var(--surface-base-hover);
-      background-color: var(--surface-base-hover);
-    }
+  &:hover:not(:disabled) {
+    background: var(--surface-base-hover);
+    background-color: var(--surface-base-hover);
+  }
 
-    &:focus-visible {
-      outline: none;
-      box-shadow: 0 0 0 1px var(--border-focus);
-    }
+  &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--border-focus);
   }
 }
 
