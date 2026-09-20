@@ -377,7 +377,9 @@ const ConfigWrapper: ParentComponent<{
       config: createMemo(() => cfg()),
       globalConfig: createMemo(() => (scoped ? global() : cfg())),
       globalDraft: () => ({}),
+      globalEffectiveConfig: createMemo(() => (scoped ? global() : cfg())), // fork_change
       projectConfig: createMemo(() => (scoped ? project() : cfg())),
+      projectBinding: () => undefined, // fork_change
       collections: () => ({}),
       settings,
       shortcuts: () => ({ bindings: {}, selection: false }),
@@ -385,6 +387,7 @@ const ConfigWrapper: ParentComponent<{
       loading: () => false,
       isDirty: dirty,
       saving: () => false,
+      blocked: () => false, // fork_change
       saveError: () => null,
       updateConfig: (partial: Partial<Config>) => {
         setCfg((prev) => {

@@ -276,6 +276,7 @@ type SandboxSupportClient = {
 }
 type ConfigSnapshot = {
   effective: Config
+  global?: Config // fork_change
   targets: { global: ConfigTarget; project: ConfigTarget }
 }
 
@@ -732,6 +733,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.cachedConfigMessage = null
     this.postMessage({ type: "workspaceDirectoryChanged", directory: directory ?? "" })
     this.postMessage({ type: "configBindingExpired", reason: "project-changed" })
+    if (this.client && this.connectionState === "connected") void this.fetchAndSendConfig() // fork_change
   }
 
   public setDiffVirtualProvider(provider: import("./DiffVirtualProvider").DiffVirtualProvider): void {
@@ -4039,11 +4041,19 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           this.validConfigProject(project),
         )
       : undefined
+    // fork_change start
     if ((hasGlobal && !globalBinding) || (hasProject && !projectBinding)) {
       this.postMessage({ type: "configUpdateFailed", message: "Settings changed or expired. Reload before saving." })
+      void this.fetchAndSendConfig()
       return
     }
 
+    if (hasProject && this.projectDirectory === null) {
+      this.postMessage({ type: "configUpdateFailed", message: "No project selected for local settings" })
+      return
+    }
+
+    // fork_change end
     this.pending++
     const dir = projectBinding?.directory ?? globalBinding?.directory ?? this.settingsDirectory()
     const completed: Array<"global" | "project"> = []
@@ -4086,12 +4096,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         completed.push("project")
       }
     } catch (error) {
-      if (completed.length > 0) {
-        if (globalBinding) this.configBindings.consume(globalBinding.id)
-        if (projectBinding) this.configBindings.consume(projectBinding.id)
-      }
+      if (globalBinding) this.configBindings.consume(globalBinding.id)
+      if (projectBinding) this.configBindings.consume(projectBinding.id)
       this.postConfigFailure(error, completed, snapshot, dir)
       this.pending--
+      void this.fetchAndSendConfig() // fork_change
       return
     }
     if (globalBinding) this.configBindings.consume(globalBinding.id)
@@ -4103,6 +4112,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       // Issue bindings after async reads so a concurrent refresh cannot expire them before publication.
       const bindings = this.bindingsFor(dir, snapshot.targets)
       const global = snapshot.targets.global.raw as Config
+      const globalEffectiveConfig = (snapshot.global ?? global) as Config // fork_change
       const projectConfig = bindings.project ? (snapshot.targets.project.raw as Config) : undefined
       // Capture the previous source before cachedGlobalConfig moves, so a source
       // change still triggers a catalog refresh.
@@ -4112,6 +4122,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         type: "configLoaded",
         config: snapshot.effective,
         globalConfig: global,
+        globalEffectiveConfig, // fork_change
         projectConfig,
         bindings,
         settings: this.configSettings(),
@@ -4122,6 +4133,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         type: "configUpdated",
         config: snapshot.effective,
         globalConfig: global,
+        globalEffectiveConfig, // fork_change
         projectConfig,
         bindings,
         settings: this.configSettings(),
@@ -4148,6 +4160,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (dir !== this.settingsDirectory()) return
     const bindings = this.bindingsFor(dir, snapshot.targets)
     const globalConfig = (snapshot.targets?.global.raw ?? snapshot.globalConfig) as Config
+    const globalEffectiveConfig = snapshot.globalConfig as Config // fork_change
     const projectConfig = bindings.project ? (snapshot.targets?.project.raw as Config) : undefined
     const previousSpeech = this.speechToTextSource()
     this.cachedGlobalConfig = globalConfig ?? null
@@ -4155,6 +4168,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       type: "configLoaded",
       config: snapshot.config,
       globalConfig,
+      globalEffectiveConfig, // fork_change
       projectConfig,
       bindings,
       collections: snapshot.collections,
@@ -4166,6 +4180,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       type,
       config: snapshot.config,
       globalConfig,
+      globalEffectiveConfig, // fork_change
       projectConfig,
       bindings,
       collections: snapshot.collections,
@@ -4195,6 +4210,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       completedScopes: completed,
       config: snapshot?.effective,
       globalConfig: snapshot?.targets.global.raw,
+      globalEffectiveConfig: snapshot?.global, // fork_change
       projectConfig: bindings?.project ? snapshot?.targets.project.raw : undefined,
       bindings,
     })

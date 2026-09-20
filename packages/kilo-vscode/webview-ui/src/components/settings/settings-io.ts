@@ -23,6 +23,7 @@ export const KNOWN_KEYS: ReadonlyArray<string> = [
   "mcp",
   "command",
   "instructions",
+  "instructions_disabled", // fork_change
   "skills",
   "snapshot",
   "retention",
@@ -46,6 +47,7 @@ export const KNOWN_KEYS: ReadonlyArray<string> = [
   "sandbox",
   "indexing",
   "experimental",
+  "shell", // fork_change
 ]
 
 export type ImportError = "invalidJson" | "invalidConfig" | "tooLarge"
