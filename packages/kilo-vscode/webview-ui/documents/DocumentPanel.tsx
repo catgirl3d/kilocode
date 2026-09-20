@@ -75,6 +75,7 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
   const { t } = useLanguage()
   const code = useCodeComponent()
   const [source, setSource] = createSignal(false)
+  const [review, setReview] = createSignal(false) // fork_change
   const [draft, setDraft] = createSignal<ReviewDraft | null>(null)
   const [editing, setEditing] = createSignal<string | null>(null)
   const composer: ReviewComposer = createReviewComposer()
@@ -93,6 +94,11 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
   }
   const file = () => selected()?.file ?? ""
   const content = () => data()?.content ?? ""
+  // fork_change start
+  const markdown = () => !source() && isMarkdownPath(file())
+  const reading = () => markdown() && !review()
+  const reviewing = () => markdown() && review()
+  // fork_change end
   const diff = () => virtualDiff(file(), content())
 
   const updateComments = (next: ReviewComment[]) => props.onCommentsChange(next)
@@ -171,6 +177,15 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
     composer.draft = draftMeta
     setDraft(next)
   }
+  // fork_change start
+  const marks = () => (review() ? annotations() : [])
+  const draw = () => (review() ? renderAnnotation : undefined)
+  const pick = () => (review() ? gutter : undefined)
+  const jump = () => {
+    if (!review()) return undefined
+    return (event: { annotationSide: AnnotationSide; lineNumber: number }) => props.onOpenFile(file(), event.lineNumber)
+  }
+  // fork_change end
   const sendAll = () => {
     if (props.comments.length === 0) return
     sendReviewComments(props.comments, props.activeTerminalId)
@@ -208,6 +223,7 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
       { defer: true },
     ),
   )
+  createEffect(on(file, () => setReview(false), { defer: true })) // fork_change
 
   const close = (id: string, focus: { restore: () => void }) => {
     props.onClose(id)
@@ -232,6 +248,7 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
           <span class="am-document-count">{props.tabs().length}</span>
         </div>
         <div class="am-document-actions">
+          {/* fork_change start */}
           <Show when={selected()}>
             <Tooltip
               value={source() ? t("agentManager.documents.preview") : t("agentManager.documents.source")}
@@ -242,9 +259,24 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
                 size="small"
                 variant="ghost"
                 label={source() ? t("agentManager.documents.preview") : t("agentManager.documents.source")}
-                onClick={() => setSource((value) => !value)}
+                onClick={() => {
+                  setSource((value) => !value)
+                  setReview(false)
+                }}
               />
             </Tooltip>
+            <Show when={markdown()}>
+              <Tooltip value={t("command.review.toggle")} placement="top">
+                <IconButton
+                  icon="comment"
+                  size="small"
+                  variant="ghost"
+                  label={t("command.review.toggle")}
+                  aria-pressed={review()}
+                  onClick={() => setReview((value) => !value)}
+                />
+              </Tooltip>
+            </Show>
             <Tooltip value={t("agentManager.diff.openFile")} placement="top">
               <IconButton
                 icon="go-to-file"
@@ -255,6 +287,7 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
               />
             </Tooltip>
           </Show>
+          {/* fork_change end */}
           <IconButton
             icon="close"
             size="small"
@@ -313,10 +346,17 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
             <img src={`data:${data()?.mime};base64,${data()?.data}`} alt={file()} class="am-document-image" />
           </div>
         </Show>
+        {/* fork_change start */}
         <Show when={!data()?.loading && !data()?.error && data()?.kind !== "image"}>
-          <div class="am-document-content">
+          <div
+            class="am-document-content"
+            classList={{
+              "am-document-reading": reading(),
+              "am-document-review": reviewing(),
+            }}
+          >
             <Show
-              when={!source() && isMarkdownPath(file())}
+              when={markdown()}
               fallback={
                 <Dynamic component={code} file={{ name: file(), contents: content() }} class="am-document-code" />
               }
@@ -325,15 +365,16 @@ export const DocumentPanel: Component<DocumentPanelProps> = (props) => {
                 text={content()}
                 side="additions"
                 cache={`${file()}:document`}
-                annotations={annotations()}
-                renderAnnotation={renderAnnotation}
-                enableGutterUtility={true}
-                onGutterUtilityClick={gutter}
-                onLineNumberClick={(event) => props.onOpenFile(file(), event.lineNumber)}
+                annotations={marks()}
+                renderAnnotation={draw()}
+                enableGutterUtility={review()}
+                onGutterUtilityClick={pick()}
+                onLineNumberClick={jump()}
               />
             </Show>
           </div>
         </Show>
+        {/* fork_change end */}
       </Show>
       <Show when={props.comments.length > 0}>
         <div class="am-diff-comments-footer">
