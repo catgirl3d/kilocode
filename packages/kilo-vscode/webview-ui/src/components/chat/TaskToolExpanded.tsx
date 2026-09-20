@@ -8,8 +8,8 @@
  */
 
 import { Component, createEffect, createMemo, createSignal, Index, Show, on, onCleanup } from "solid-js"
-import { ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part"
 import { BasicTool, initialOpen, rememberOpen } from "@kilocode/kilo-ui/basic-tool"
+import { CopyButton, ToolRegistry, ToolProps, getToolInfo } from "@kilocode/kilo-ui/message-part" // fork_change
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { AgentAvatar } from "@kilocode/kilo-ui/agent-avatar"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
@@ -251,6 +251,9 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
             />
           </Tooltip>
         </Show>
+        {/* fork_change start */}
+        <CopyButton value={() => childSessionId() ?? ""} label={language.t("session.action.copyId")} />
+        {/* fork_change end */}
         <IconButton
           icon="square-arrow-top-right"
           size="small"

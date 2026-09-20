@@ -1,7 +1,14 @@
 // Tool state for tool parts
 export type ToolState =
   | { status: "pending"; input: Record<string, unknown> }
-  | { status: "running"; input: Record<string, unknown>; title?: string }
+  // fork_change start
+  | {
+      status: "running"
+      input: Record<string, unknown>
+      title?: string
+      metadata?: Record<string, unknown>
+    }
+  // fork_change end
   | {
       status: "completed"
       input: Record<string, unknown>
