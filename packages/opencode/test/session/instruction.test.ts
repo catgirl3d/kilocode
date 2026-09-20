@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import path from "path"
 import { Effect, FileSystem, Layer } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 
 import { Instruction } from "../../src/session/instruction"
@@ -32,9 +33,13 @@ const it = testEffect(
 
 const configLayer = Layer.succeed(Config.Service, TestConfig.make())
 
-const instructionLayer = (global: Partial<Global.Interface>, flags: Partial<RuntimeFlags.Info> = {}) =>
+const instructionLayer = (
+  global: Partial<Global.Interface>,
+  flags: Partial<RuntimeFlags.Info> = {},
+  cfg = configLayer,
+) =>
   AppNodeBuilder.build(Instruction.node, [
-    [Config.node, configLayer],
+    [Config.node, cfg],
     [Global.node, Global.layerWith(global)],
     [RuntimeFlags.node, RuntimeFlags.layer(flags)],
   ])
@@ -43,6 +48,11 @@ const provideInstruction =
   (global: Partial<Global.Interface>, flags?: Partial<RuntimeFlags.Info>) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
     self.pipe(Effect.provide(instructionLayer(global, flags)))
+
+const provideInstructionConfig =
+  (global: Partial<Global.Interface>, cfg: Layer.Layer<Config.Service>, flags?: Partial<RuntimeFlags.Info>) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>) =>
+    self.pipe(Effect.provide(instructionLayer(global, flags, cfg)))
 
 const write = (filepath: string, content: string) =>
   Effect.gen(function* () {
@@ -206,10 +216,172 @@ describe("Instruction.resolve", () => {
     ),
   )
 
-  test.todo("fetches remote instructions from config URLs via HttpClient", () => {})
+  it.live("fetches enabled remote instructions and skips disabled URLs", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+      const enabled = "https://example.test/enabled.md"
+      const disabled = "http://example.test/disabled.md"
+      const requests: string[] = []
+      const client = HttpClient.make((request) => {
+        requests.push(request.url)
+        return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("# Remote Enabled")))
+      })
+      const cfg = TestConfig.layer({
+        get: () =>
+          Effect.succeed({
+            instructions: [enabled, disabled],
+            instructions_disabled: [disabled],
+          }),
+      })
+      const layer = AppNodeBuilder.build(Instruction.node, [
+        [Config.node, cfg],
+        [Global.node, Global.layerWith({ home: globalTmp, config: globalTmp })],
+        [RuntimeFlags.node, RuntimeFlags.layer()],
+        [LayerNodePlatform.httpClient, Layer.succeed(HttpClient.HttpClient, client)],
+      ])
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const out = yield* svc.system()
+
+        expect(requests).toEqual([enabled])
+        expect(out).toEqual([`Instructions from: ${enabled}\n# Remote Enabled`])
+        expect(out.join("\n")).not.toContain(disabled)
+      }).pipe(provideInstance(projectTmp), Effect.provide(layer))
+    }),
+  )
 })
 
 describe("Instruction.system", () => {
+  it.live("keeps global and local instruction sections separate and honors disabled entries", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectTmp = yield* tmpdirScoped()
+
+      yield* writeFiles(globalTmp, {
+        "global-enabled.md": "# Global Enabled",
+        "global-disabled.md": "# Global Disabled",
+      })
+      yield* writeFiles(projectTmp, {
+        "local-enabled.md": "# Local Enabled",
+        "local-disabled.md": "# Local Disabled",
+      })
+
+      const cfg = TestConfig.layer({
+        get: () =>
+          Effect.succeed({
+            instructions: [
+              path.join(globalTmp, "global-enabled.md"),
+              path.join(globalTmp, "global-disabled.md"),
+              path.join(projectTmp, "local-enabled.md"),
+              path.join(projectTmp, "local-disabled.md"),
+            ],
+            instructions_disabled: [
+              path.join(globalTmp, "global-disabled.md"),
+              path.join(projectTmp, "local-disabled.md"),
+            ],
+            instruction_origins: {
+              [path.join(globalTmp, "global-enabled.md")]: {
+                trusted: true,
+                source: path.join(globalTmp, "kilo.json"),
+              },
+              [path.join(globalTmp, "global-disabled.md")]: {
+                trusted: true,
+                source: path.join(globalTmp, "kilo.json"),
+              },
+              [path.join(projectTmp, "local-enabled.md")]: {
+                trusted: false,
+                source: path.join(projectTmp, "kilo.json"),
+                root: projectTmp,
+              },
+              [path.join(projectTmp, "local-disabled.md")]: {
+                trusted: false,
+                source: path.join(projectTmp, "kilo.json"),
+                root: projectTmp,
+              },
+            },
+          }),
+      })
+
+      yield* Effect.gen(function* () {
+        const svc = yield* Instruction.Service
+        const out = yield* svc.system()
+
+        expect(out).toEqual([
+          `Instructions from: ${path.join(globalTmp, "global-enabled.md")}\n# Global Enabled`,
+          `Instructions from: ${path.join(projectTmp, "local-enabled.md")}\n# Local Enabled`,
+        ])
+      }).pipe(provideInstance(projectTmp), provideInstructionConfig({ home: globalTmp, config: globalTmp }, cfg))
+    }),
+  )
+
+  it.live("keeps disabled instruction state isolated per project", () =>
+    Effect.gen(function* () {
+      const globalTmp = yield* tmpdirScoped()
+      const projectA = yield* tmpdirScoped()
+      const projectB = yield* tmpdirScoped()
+
+      yield* writeFiles(globalTmp, { "global.md": "# Global" })
+      yield* writeFiles(projectA, { "local.md": "# Project A" })
+      yield* writeFiles(projectB, { "local.md": "# Project B" })
+
+      const run = (dir: string, cfg: Layer.Layer<Config.Service>) =>
+        Effect.gen(function* () {
+          const svc = yield* Instruction.Service
+          return yield* svc.system()
+        }).pipe(provideInstance(dir), provideInstructionConfig({ home: globalTmp, config: globalTmp }, cfg))
+
+      const a = yield* run(
+        projectA,
+        TestConfig.layer({
+          get: () =>
+            Effect.succeed({
+              instructions: [path.join(globalTmp, "global.md"), path.join(projectA, "local.md")],
+              instructions_disabled: [path.join(projectA, "local.md")],
+              instruction_origins: {
+                [path.join(globalTmp, "global.md")]: {
+                  trusted: true,
+                  source: path.join(globalTmp, "kilo.json"),
+                },
+                [path.join(projectA, "local.md")]: {
+                  trusted: false,
+                  source: path.join(projectA, "kilo.json"),
+                  root: projectA,
+                },
+              },
+            }),
+        }),
+      )
+      const b = yield* run(
+        projectB,
+        TestConfig.layer({
+          get: () =>
+            Effect.succeed({
+              instructions: [path.join(globalTmp, "global.md"), path.join(projectB, "local.md")],
+              instruction_origins: {
+                [path.join(globalTmp, "global.md")]: {
+                  trusted: true,
+                  source: path.join(globalTmp, "kilo.json"),
+                },
+                [path.join(projectB, "local.md")]: {
+                  trusted: false,
+                  source: path.join(projectB, "kilo.json"),
+                  root: projectB,
+                },
+              },
+            }),
+        }),
+      )
+
+      expect(a).toEqual([`Instructions from: ${path.join(globalTmp, "global.md")}\n# Global`])
+      expect(b).toEqual([
+        `Instructions from: ${path.join(globalTmp, "global.md")}\n# Global`,
+        `Instructions from: ${path.join(projectB, "local.md")}\n# Project B`,
+      ])
+    }),
+  )
+
   it.live("loads both project and global AGENTS.md when both exist", () =>
     Effect.gen(function* () {
       const globalTmp = yield* tmpWithFiles({ "AGENTS.md": "# Global Instructions" })

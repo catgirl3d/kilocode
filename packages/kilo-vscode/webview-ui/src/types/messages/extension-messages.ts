@@ -663,6 +663,15 @@ export interface FilePickerResultMessage {
   requestId: string
 }
 
+// fork_change start
+export interface ValidateInstructionPathResultMessage {
+  type: "validateInstructionPathResult"
+  requestId: string
+  path: string
+  valid: boolean
+  bindingId?: string
+}
+// fork_change end
 export interface TerminalContextResultMessage {
   type: "terminalContextResult"
   requestId: string
@@ -767,6 +776,7 @@ export interface ConfigLoadedMessage {
   type: "configLoaded"
   config: Config
   globalConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
   collections?: ConfigCollections
@@ -778,6 +788,7 @@ export interface ConfigUpdatedMessage {
   type: "configUpdated"
   config: Config
   globalConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
   collections?: ConfigCollections
@@ -792,6 +803,7 @@ export interface ConfigUpdateFailedMessage {
   completedScopes?: Array<"global" | "project">
   config?: Config
   globalConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   projectConfig?: Config
   bindings?: { global?: SettingsConfigBinding; project?: SettingsConfigBinding }
 }
@@ -1867,6 +1879,7 @@ export type ExtensionMessage =
   | FileSearchResultMessage
   | SessionSearchResultMessage
   | FilePickerResultMessage
+  | ValidateInstructionPathResultMessage // fork_change
   | TerminalContextResultMessage
   | TerminalContextErrorMessage
   | GitChangesContextResultMessage
