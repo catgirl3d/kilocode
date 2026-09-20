@@ -44,6 +44,7 @@ const skillNode = AppNodeBuilder.build(Skill.node, [
 const skillIt = testEffect(
   Layer.mergeAll(skillNode, AppNodeBuilder.build(CrossSpawnSpawner.node), testInstanceStoreLayer),
 )
+const skillHandoff = process.platform === "win32" ? skillIt.live.skip : skillIt.live
 
 const withPaths = <A, E, R>(home: string, config: string, state: string, self: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
@@ -101,7 +102,7 @@ describe("Claude migration handoff", () => {
     ),
   )
 
-  skillIt.live("discovers the copied skill and excludes the global Claude skill after handoff", () =>
+  skillHandoff("discovers the copied skill and excludes the global Claude skill after handoff", () =>
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         const global = yield* tmpdirScoped()

@@ -34,6 +34,7 @@ async function withRepo(run: (cwd: string) => Promise<void>): Promise<void> {
   const cwd = await fs.mkdtemp(nodePath.join(os.tmpdir(), "kilo-gitops-test-"))
   try {
     runGit(cwd, ["init"])
+    runGit(cwd, ["config", "core.autocrlf", "false"]) // fork_change
     await run(cwd)
   } finally {
     await fs.rm(cwd, { recursive: true, force: true })
