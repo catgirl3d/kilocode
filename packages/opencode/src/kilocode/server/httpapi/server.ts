@@ -30,6 +30,7 @@ import { remoteHandlers } from "./handlers/remote"
 import { sandboxHandlers } from "./handlers/sandbox"
 import { sessionHostHandlers } from "./handlers/session-host"
 import { sessionImportHandlers } from "./handlers/session-import"
+import { sessionShakeHandlers } from "./handlers/session" // kilocode_change
 import { suggestionHandlers } from "./handlers/suggestion"
 import { telemetryHandlers } from "./handlers/telemetry"
 
@@ -53,6 +54,7 @@ export const provide = Layer.provide([
   sandboxHandlers,
   sessionHostHandlers.pipe(Layer.provide(SessionHost.layer())),
   sessionImportHandlers,
+  sessionShakeHandlers, // kilocode_change
   suggestionHandlers,
   telemetryHandlers,
 ])
