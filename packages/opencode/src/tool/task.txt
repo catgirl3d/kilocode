@@ -1,6 +1,8 @@
 Launch a new agent to handle complex, multistep tasks autonomously.
 
-When using the Task tool, you must specify a subagent_type parameter to select which agent type to use.
+When launching a task (cancel is not true), you must specify a subagent_type parameter to select which agent type to use.
+
+Stopping a task: to stop a running background task you launched, call this tool again with cancel=true and its task_id (from <task id="...">). You can only cancel tasks whose parent session is yours; foreground tasks cannot be cancelled this way. When cancel=true, only task_id is required.
 
 When NOT to use the Task tool:
 - If you want to read a specific file path, use the Read or Glob tool instead of the Task tool, to find the match more quickly
