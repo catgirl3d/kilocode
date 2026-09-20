@@ -124,7 +124,11 @@ const withRestrictedCodeMode = testEffect(
   registryLayer({
     flags: { experimentalCodeMode: true },
     config: {
-      get: () => Effect.succeed({ sandbox: { enabled: true, network: "deny" } }),
+      get: () =>
+        Effect.succeed({
+          sandbox: { enabled: true, network: "deny" },
+          mcp: { server: { type: "local", command: ["node", "fixture"], on_demand: true } },
+        }),
     },
     mcp: Layer.mock(MCP.Service, {
       tools: () =>

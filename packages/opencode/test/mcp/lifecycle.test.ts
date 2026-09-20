@@ -1,6 +1,7 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { expect } from "bun:test"
+import { expect, spyOn } from "bun:test"
+import { Client as MCPClient } from "@modelcontextprotocol/sdk/client/index.js"
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
 import {
@@ -385,6 +386,29 @@ it.instance("disconnect removes protocol data and reconnect establishes a new se
     yield* mcp.connect("reconnect-server")
     expect((yield* mcp.status())["reconnect-server"]?.status).toBe("connected")
     expect(Object.keys(yield* mcp.tools())).toEqual(["reconnect-server_test_tool"])
+  }),
+)
+
+it.instance("records MCP close failures instead of reporting a disabled server", () =>
+  Effect.gen(function* () {
+    const server = yield* lifecycleServer()
+    const mcp = yield* MCP.Service
+    yield* mcp.add("close-failure", remote(server.url))
+    const close = spyOn(MCPClient.prototype, "close").mockImplementationOnce(async () => {
+      throw new Error("close failed")
+    })
+    const result = yield* Effect.gen(function* () {
+      yield* mcp.disconnect("close-failure")
+      expect((yield* mcp.status())["close-failure"]).toEqual({ status: "failed", error: "close failed" })
+      expect(Object.keys(yield* mcp.clients())).toEqual([])
+      expect(Object.keys(yield* mcp.tools())).toEqual([])
+      return yield* mcp.disconnect("close-failure")
+    }).pipe(Effect.ensuring(Effect.sync(() => close.mockRestore())))
+
+    expect(result).toBeUndefined()
+    expect((yield* mcp.status())["close-failure"]).toEqual({ status: "disabled" })
+    expect(Object.keys(yield* mcp.clients())).toEqual([])
+    expect(Object.keys(yield* mcp.tools())).toEqual([])
   }),
 )
 

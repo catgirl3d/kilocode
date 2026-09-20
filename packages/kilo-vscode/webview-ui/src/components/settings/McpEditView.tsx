@@ -4,13 +4,14 @@ import { Card } from "@kilocode/kilo-ui/card"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Select } from "@kilocode/kilo-ui/select"
+import { Switch } from "@kilocode/kilo-ui/switch" // fork_change
 
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 import type { McpConfig } from "../../types/messages"
-import { mcpConfigScope, mcpEditPatch } from "./agent-behaviour-patches"
 import { oauthMode, oauthPatch, validateOauth, type OauthFields, type OauthMode } from "./mcp-oauth-config"
 import SettingsRow from "./SettingsRow"
+import { mcpConfigPatch, mcpConfigScope, mcpDisplayEntry } from "./agent-behaviour-patches" // fork_change
 
 interface Props {
   name: string
@@ -34,15 +35,37 @@ function oauthFieldsOf(cfg: McpConfig): OauthFields {
 
 const McpEditView: Component<Props> = (props) => {
   const language = useLanguage()
-  const { config, globalConfig, projectConfig, collections, updateConfig, updateGlobalConfig, updateProjectConfig } =
-    useConfig()
+  // fork_change start
+  const {
+    config,
+    collections,
+    globalConfig,
+    globalDraft,
+    projectConfig,
+    projectDraft,
+    updateConfig,
+    updateGlobalConfig,
+    updateProjectConfig,
+  } = useConfig()
 
-  const target = () => mcpConfigScope(props.name, collections())
   const cfg = createMemo<McpConfig>(() => {
-    const scoped = target() === "project" ? projectConfig() : target() === "global" ? globalConfig() : config()
-    return scoped.mcp?.[props.name] ?? config().mcp?.[props.name] ?? {}
+    const scope = mcpConfigScope(props.name, collections())
+    const scoped =
+      scope === "project"
+        ? projectConfig().mcp?.[props.name]
+        : scope === "global"
+          ? globalConfig().mcp?.[props.name]
+          : undefined
+    const draft =
+      scope === "project"
+        ? projectDraft?.().mcp?.[props.name]
+        : scope === "global"
+          ? globalDraft().mcp?.[props.name]
+        : undefined
+    return mcpDisplayEntry(config().mcp?.[props.name], scoped, draft) ?? {}
   })
   const initialOauth = oauthFieldsOf(cfg())
+  // fork_change end
 
   const [envKey, setEnvKey] = createSignal("")
   const [envVal, setEnvVal] = createSignal("")
@@ -60,16 +83,18 @@ const McpEditView: Component<Props> = (props) => {
   // project-scoped server's edits from being silently relocated to the
   // global config file.
   const update = (partial: Partial<McpConfig>) => {
-    const next = mcpEditPatch(props.name, cfg(), partial)
-    if (target() === "project") {
-      updateProjectConfig(next)
+    // fork_change start
+    const result = mcpConfigPatch(props.name, collections(), partial)
+    if (result.scope === "project") {
+      updateProjectConfig(result.patch)
       return
     }
-    if (target() === "global") {
-      updateGlobalConfig(next)
+    if (result.scope === "global") {
+      updateGlobalConfig(result.patch)
       return
     }
-    updateConfig(next)
+    updateConfig(result.patch)
+    // fork_change end
   }
 
   const transport = () => cfg().type ?? (cfg().url ? "remote" : "local")
@@ -164,6 +189,28 @@ const McpEditView: Component<Props> = (props) => {
         </div>
       </Card>
 
+      {/* fork_change start */}
+      <Card style={{ "margin-bottom": "12px" }}>
+        <Switch checked={cfg().on_demand === true} onChange={(value: boolean) => update({ on_demand: value })}>
+          {language.t("settings.agentBehaviour.editMcp.onDemand")}
+        </Switch>
+        <div data-slot="settings-row-label-subtitle" style={{ "margin-top": "4px", "margin-bottom": "12px" }}>
+          {language.t("settings.agentBehaviour.editMcp.onDemand.help")}
+        </div>
+        <div data-slot="settings-row-label-title" style={{ "margin-bottom": "4px" }}>
+          {language.t("settings.agentBehaviour.editMcp.description")}
+        </div>
+        <div data-slot="settings-row-label-subtitle" style={{ "margin-bottom": "8px" }}>
+          {language.t("settings.agentBehaviour.editMcp.description.help")}
+        </div>
+        <TextField
+          value={cfg().description ?? ""}
+          placeholder={language.t("settings.agentBehaviour.editMcp.description.placeholder")}
+          onChange={(val) => update({ description: val.trim() === "" ? undefined : val })}
+        />
+      </Card>
+
+      {/* fork_change end */}
       {/* Command / URL */}
       <Show when={transport() === "local"}>
         <Card style={{ "margin-bottom": "12px" }}>

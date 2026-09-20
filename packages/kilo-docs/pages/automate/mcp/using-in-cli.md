@@ -69,6 +69,8 @@ Local MCP servers run on your machine and communicate via standard input/output.
 | `command` | Array | Yes | Command and arguments to run the MCP server. |
 | `environment` | Object | No | Environment variables to set when running the server. |
 | `enabled` | Boolean | No | Enable or disable the MCP server on startup. |
+| `on_demand` | Boolean | No | Keep the server stopped until the agent connects it on demand. |
+| `description` | String | No | Short one-line description shown in the agent's on-demand server catalog. |
 | `timeout` | Number | No | Timeout in ms for fetching tools from the MCP server. Default: 5000. |
 
 ### Remote Servers
@@ -97,6 +99,8 @@ Remote MCP servers are accessed over HTTP/HTTPS. Set `type` to `"remote"`.
 | `type` | String | Yes | Must be `"remote"`. |
 | `url` | String | Yes | URL of the remote MCP server. |
 | `enabled` | Boolean | No | Enable or disable the MCP server on startup. |
+| `on_demand` | Boolean | No | Keep the server stopped until the agent connects it on demand. |
+| `description` | String | No | Short one-line description shown in the agent's on-demand server catalog. |
 | `headers` | Object | No | HTTP headers to send with requests. |
 | `timeout` | Number | No | Timeout in ms for fetching tools from the MCP server. Default: 5000. |
 
@@ -111,6 +115,14 @@ You can manage MCP servers from the CLI:
 | `kilo mcp auth` | Authenticate with an MCP server |
 
 Inside the interactive TUI, use the `/mcps` slash command to toggle MCP servers on or off.
+
+## On-demand servers
+
+Set `on_demand` to `true` to keep a server stopped at session initialization and avoid loading its tools until the agent needs it. Add `description` to give the agent a short summary in the on-demand server catalog. The agent uses the `mcp` tool with the `list` and `connect` actions; after `connect`, the server starts and its native tools become available on the next step.
+
+Setting `enabled` to `false` takes precedence over `on_demand`: the server is excluded from the catalog and cannot be connected through the tool. In network-restricted (sandboxed) sessions, the on-demand catalog and the `mcp` tool are hidden.
+
+Connecting a server requires the `mcp` permission. Normal `code` agents auto-allow it by default; set `permission: { "mcp": "ask" }` to require approval or `"deny"` to forbid connections.
 
 ## Examples
 

@@ -307,6 +307,26 @@ test("project MCP merges clear variant fields on local and remote transitions", 
   expect(JSON.stringify(merged.mcp)).not.toContain("/tmp/old")
 })
 
+test("project transport changes preserve base MCP metadata", () => {
+  const merged = KilocodeConfig.mergeProject(
+    {
+      mcp: {
+        shared: {
+          ...remote("https://trusted.example.com/mcp"),
+          on_demand: true,
+          description: "Connect only when needed",
+        },
+      },
+    },
+    { mcp: { shared: { type: "local", command: ["echo", "local"] } } },
+  )
+  expect(merged.mcp?.shared).toEqual({
+    type: "local",
+    command: ["echo", "local"],
+    on_demand: true,
+    description: "Connect only when needed",
+  })
+})
 test("mergeConfig does not mutate caller's patch mcp key", () => {
   const patch: Config.Info = {
     model: "test-model",
