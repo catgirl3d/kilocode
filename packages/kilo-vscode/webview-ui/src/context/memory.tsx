@@ -1,4 +1,4 @@
-import { createContext, createEffect, createMemo, createSignal, onCleanup, useContext } from "solid-js"
+import { createContext, createEffect, createMemo, createSignal, onCleanup, untrack, useContext } from "solid-js" // fork_change
 import type { Accessor, ParentComponent } from "solid-js"
 import { useServer } from "./server"
 import { useSession } from "./session"
@@ -6,7 +6,11 @@ import { useVSCode } from "./vscode"
 import { useLanguage } from "./language"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import type { MemoryStatusResponse } from "@kilocode/sdk/v2"
-import type { ExtensionMessage } from "../types/messages"
+// fork_change start
+import type { ExtensionMessage, Message, Part } from "../types/messages"
+import { addMemoryActivity, markerActivity, type MemoryActivity } from "../utils/memory-activity"
+import { visibleMessages, visibleParts } from "./session-queue"
+// fork_change end
 
 export interface MemoryContextValue {
   status: Accessor<MemoryStatusResponse | undefined>
@@ -15,16 +19,28 @@ export interface MemoryContextValue {
   error: Accessor<string | undefined>
   enabled: Accessor<boolean>
   totalTokens: Accessor<number>
+  // fork_change start
+  activity: Accessor<MemoryActivity[]>
   refresh: () => void
+  showMemory: () => void
   inspect: () => void
   enable: () => void
   disable: () => void
   auto: (mode: "on" | "off") => void
+  verbose: (mode: "on" | "off") => void
+  rebuild: () => void
+  remember: () => void
+  forget: () => void
+  // fork_change end
 }
 
 export const MemoryContext = createContext<MemoryContextValue>()
 const EVENT_DEDUPE_MS = 1000
 
+// fork_change start
+type Marker = { part: string; item: MemoryActivity }
+
+// fork_change end
 export const MemoryProvider: ParentComponent = (props) => {
   const vscode = useVSCode()
   const server = useServer()
@@ -34,6 +50,10 @@ export const MemoryProvider: ParentComponent = (props) => {
   const [loading, setLoading] = createSignal(false)
   const [pending, setPending] = createSignal<string | undefined>()
   const [error, setError] = createSignal<string | undefined>()
+  // fork_change start
+  const [saved, setSaved] = createSignal<MemoryActivity[]>([])
+  const [markers, setMarkers] = createSignal<Record<string, Marker>>({})
+  // fork_change end
 
   const id = () => session.currentSessionID()
   const key = (sid?: string) => sid ?? ""
@@ -43,6 +63,75 @@ export const MemoryProvider: ParentComponent = (props) => {
     // currentSessionID yet (PromptInput posts with the draft id), so match both.
     return sid === id() || sid === session.draftSessionID()
   }
+  // fork_change start
+  const marker = (parts: readonly Part[], at: number) => {
+    for (const part of parts) {
+      const item = markerActivity([part], at)
+      if (item) return { part: part.id, item } satisfies Marker
+    }
+  }
+  const stamp = (message: Message) => message.time?.created ?? Date.parse(message.createdAt)
+  const mark = (messageID: string, part: Part, at: number) => {
+    const item = marker([part], at)
+    setMarkers((items) => {
+      if (item) return { ...items, [messageID]: item }
+      if (items[messageID]?.part !== part.id) return items
+      const next = { ...items }
+      delete next[messageID]
+      return next
+    })
+  }
+  const load = (message: Extract<ExtensionMessage, { type: "messagesLoaded" }>) => {
+    if (!current(message.sessionID)) return
+    const next = message.mode === "replace" || !message.mode ? {} : { ...markers() }
+    for (const entry of message.messages) {
+      const item = marker(entry.parts ?? [], stamp(entry))
+      if (item) next[entry.id] = item
+      else delete next[entry.id]
+    }
+    setMarkers(next)
+  }
+  const created = (message: Extract<ExtensionMessage, { type: "messageCreated" }>) => {
+    if (!current(message.message.sessionID)) return
+    const item = marker(message.message.parts ?? [], stamp(message.message))
+    if (item) setMarkers((items) => ({ ...items, [message.message.id]: item }))
+  }
+  const dropped = (messageID: string) =>
+    setMarkers((items) => {
+      if (!items[messageID]) return items
+      const next = { ...items }
+      delete next[messageID]
+      return next
+    })
+  const track = (message: ExtensionMessage) => {
+    if (message.type === "messagesLoaded") return load(message)
+    if (message.type === "messageCreated") return created(message)
+    if (message.type === "partUpdated") {
+      if (current(message.sessionID)) mark(message.messageID, message.part, Date.now())
+      return
+    }
+    if (message.type === "partsUpdated") {
+      for (const update of message.updates) {
+        if (current(update.sessionID)) mark(update.messageID, update.part, Date.now())
+      }
+      return
+    }
+    if (message.type === "partRemoved") {
+      if (!current(message.sessionID)) return
+      if (markers()[message.messageID]?.part === message.partID) dropped(message.messageID)
+      return
+    }
+    if (message.type === "messageRemoved" && current(message.sessionID)) dropped(message.messageID)
+  }
+  const scan = () => {
+    const next: Record<string, Marker> = {}
+    for (const message of session.messages()) {
+      const item = marker(session.getParts(message.id), stamp(message))
+      if (item) next[message.id] = item
+    }
+    setMarkers(next)
+  }
+  // fork_change end
   let last: { key: string; time: number } | undefined
   let scope = ""
 
@@ -50,6 +139,10 @@ export const MemoryProvider: ParentComponent = (props) => {
     setStatus(undefined)
     setError(undefined)
     setPending(undefined)
+    // fork_change start
+    setSaved([])
+    setMarkers({})
+    // fork_change end
     last = undefined
   }
 
@@ -60,16 +153,19 @@ export const MemoryProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "requestMemory", sessionID: id() })
   }
 
-  const operation = (op: "enable" | "disable") => {
+  // fork_change start
+  const operation = (op: "enable" | "disable" | "rebuild" | "verbose", mode?: "on" | "off") => {
     if (!server.isConnected()) return
     setPending(key(id()))
     setError(undefined)
     vscode.postMessage({
       type: "memoryOperation",
       operation: op,
+      ...(mode ? { mode } : {}),
       sessionID: id(),
     })
   }
+  // fork_change end
 
   const auto = (mode: "on" | "off") => {
     if (!server.isConnected()) return
@@ -85,8 +181,27 @@ export const MemoryProvider: ParentComponent = (props) => {
     vscode.postMessage({ type: "memoryOperation", operation: "inspect", sessionID: id() })
   }
 
+  // fork_change start
+  const prompt = (op: "remember" | "forget") => {
+    if (!server.isConnected()) return
+    setPending(key(id()))
+    setError(undefined)
+    vscode.postMessage({ type: "memoryPrompt", operation: op, sessionID: id() })
+  }
+
+  const showMemory = () => {
+    if (!server.isConnected()) return
+    setLoading(true)
+    setError(undefined)
+    vscode.postMessage({ type: "memoryShow", sessionID: id() })
+  }
+
   const event = (message: Extract<ExtensionMessage, { type: "memoryEvent" }>) => {
     if (!current(message.sessionID)) return
+    if (message.detail.type === "saved") {
+      setSaved((items) => addMemoryActivity(items, message.detail, Date.now()))
+      return
+    }
     if (message.detail.type !== "error") return
     if (!message.detail.message) return
     const dedupeKey = `${message.sessionID ?? ""}:${message.detail.type ?? ""}:${message.detail.message}`
@@ -95,6 +210,7 @@ export const MemoryProvider: ParentComponent = (props) => {
     last = { key: dedupeKey, time: now }
     showToast({ variant: "error", title: message.detail.message })
   }
+  // fork_change end
 
   const loaded = (message: Extract<ExtensionMessage, { type: "memoryLoaded" }>) => {
     if (!current(message.sessionID)) return
@@ -129,6 +245,7 @@ export const MemoryProvider: ParentComponent = (props) => {
   }
 
   const receive = (message: ExtensionMessage) => {
+    track(message) // fork_change
     if (message.type === "memoryEvent") {
       event(message)
       return
@@ -156,6 +273,7 @@ export const MemoryProvider: ParentComponent = (props) => {
     if (scope !== next) {
       scope = next
       clear()
+      untrack(scan) // fork_change
     }
     if (!connected) {
       setLoading(false)
@@ -166,6 +284,25 @@ export const MemoryProvider: ParentComponent = (props) => {
 
   const total = createMemo(() => status()?.index.estimatedTokens ?? 0)
 
+  // fork_change start
+  const activity = createMemo(() => {
+    const revert = session.currentSession()?.revert ?? undefined
+    const visible = new Set(
+      visibleMessages(session.messages(), revert, (message) => session.getParts(message.id)).map(
+        (message) => message.id,
+      ),
+    )
+    const items = Object.entries(markers()).flatMap(([mid, entry]) => {
+      if (!revert) return [entry.item]
+      if (!visible.has(mid)) return []
+      if (mid !== revert.messageID || !revert.partID) return [entry.item]
+      const parts = visibleParts(mid, session.getParts(mid), revert)
+      return parts.some((part) => part.id === entry.part) ? [entry.item] : []
+    })
+    return [...items, ...saved()]
+  })
+
+  // fork_change end
   const value: MemoryContextValue = {
     status,
     loading,
@@ -173,11 +310,19 @@ export const MemoryProvider: ParentComponent = (props) => {
     error,
     enabled: createMemo(() => status()?.state.enabled ?? false),
     totalTokens: total,
+    // fork_change start
+    activity,
     refresh,
+    showMemory,
     inspect,
     enable: () => operation("enable"),
     disable: () => operation("disable"),
     auto,
+    verbose: (mode) => operation("verbose", mode),
+    rebuild: () => operation("rebuild"),
+    remember: () => prompt("remember"),
+    forget: () => prompt("forget"),
+    // fork_change end
   }
 
   return <MemoryContext.Provider value={value}>{props.children}</MemoryContext.Provider>
