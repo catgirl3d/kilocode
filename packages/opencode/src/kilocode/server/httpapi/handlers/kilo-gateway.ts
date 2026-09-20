@@ -20,28 +20,34 @@ import {
 import { DIRECT_FIM_ENV, requestMistralFim, resolveFimTarget } from "@kilocode/kilo-gateway/fim"
 import { DIRECT_EDIT_ENV, extractFencedBody, resolveEditTarget } from "@kilocode/kilo-gateway/edit"
 import { buildMercuryEditPrompt } from "@kilocode/kilo-gateway/edit-prompt"
+// kilocode_change start
+import {
+  GROQ_TRANSCRIPTIONS_URL,
+  GROQ_TRANSLATIONS_URL,
+  resolveGroqTranscriptionModel,
+  supportsGroqSpeechToTextMode,
+} from "@kilocode/kilo-gateway/speech-to-text"
+// kilocode_change end
 import { buildKiloHeaders } from "@kilocode/kilo-gateway"
 import { Effect, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import * as Log from "@opencode-ai/core/util/log"
-import { Flag } from "@opencode-ai/core/flag/flag"
 import { Database } from "@opencode-ai/core/database/database"
-import { KilocodeConfig } from "@/kilocode/config/config"
 import { ClaudeMigration } from "@/kilocode/config/claude-migration"
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import { organization as catalogOrganization } from "@/kilocode/provider/catalog"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Storage } from "@/storage/storage"
-import { Instance } from "@/kilocode/instance"
 import { InstanceStore } from "@/project/instance-store"
 import { ModelCache } from "@/provider/model-cache"
 import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 import { AudioTranscriptionsBody, CloudSessionImportError, EditBody, FimBody } from "../groups/kilo-gateway"
 
 const FIM_TIMEOUT_MS = 30_000
+const GROQ_AUDIO_LIMIT = 25 * 1024 * 1024 // kilocode_change
 const log = Log.create({ service: "kilo-gateway" })
 
 function jsonError(error: string, status: number) {
@@ -289,6 +295,56 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
     const audioTranscriptions = Effect.fn("KiloGatewayHttpApi.audioTranscriptions")(function* (ctx: {
       payload: typeof AudioTranscriptionsBody.Type
     }) {
+      // kilocode_change start
+      const model = resolveGroqTranscriptionModel(ctx.payload.model)
+      const mode = ctx.payload.mode ?? "transcribe"
+      if (model) {
+        if (!supportsGroqSpeechToTextMode(ctx.payload.model, mode)) {
+          return jsonError(`Groq model ${model} does not support voice translation`, 400)
+        }
+        const item = yield* auth.get("groq").pipe(Effect.mapError(() => new HttpApiError.Unauthorized({})))
+        const token = item?.type === "api" ? item.key : process.env.GROQ_API_KEY
+        if (!token) return jsonError("Groq API key is not configured", 401)
+        const file =
+          ctx.payload.input_audio.format === "m4a"
+            ? { name: "recording.m4a", type: "audio/mp4" }
+            : ctx.payload.input_audio.format === "wav"
+              ? { name: "recording.wav", type: "audio/wav" }
+              : undefined
+        if (!file) return jsonError("Only WAV or M4A audio input is supported for Groq transcription", 400)
+
+        const audio = Buffer.from(ctx.payload.input_audio.data, "base64")
+        if (!audio.byteLength) return jsonError("No audio was provided", 400)
+        if (audio.byteLength > GROQ_AUDIO_LIMIT) return jsonError("Audio exceeds Groq's 25 MB upload limit", 413)
+
+        const form = new FormData()
+        form.set("file", new Blob([audio], { type: file.type }), file.name)
+        form.set("model", model)
+        form.set("response_format", "json")
+        // The webview locale is not a reliable signal for the spoken language.
+        // Let Groq Whisper detect it from the recording instead.
+        if (ctx.payload.prompt) form.set("prompt", ctx.payload.prompt)
+
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const response = yield* Effect.tryPromise({
+          try: () =>
+            fetch(mode === "translate" ? GROQ_TRANSLATIONS_URL : GROQ_TRANSCRIPTIONS_URL, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+              signal: request.source instanceof Request ? request.source.signal : undefined,
+              body: form,
+            }),
+          catch: () => new HttpApiError.BadRequest({}),
+        })
+        const text = yield* Effect.promise(() => response.text())
+        return HttpServerResponse.raw(text, {
+          status: response.status,
+          contentType: response.headers.get("Content-Type") ?? "application/json",
+        })
+      }
+
+      if (mode === "translate") return jsonError("Voice translation is only supported by compatible Groq models", 400)
+      // kilocode_change end
       const info = yield* proxyAuth()
       if (!info.auth) return yield* Effect.fail(new HttpApiError.Unauthorized({}))
       if (!info.token) return yield* Effect.fail(new HttpApiError.Unauthorized({}))
@@ -305,7 +361,7 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
               [HEADER_FEATURE]: "vscode-extension",
             },
             signal: request.source instanceof Request ? request.source.signal : undefined,
-            body: JSON.stringify(ctx.payload),
+            body: JSON.stringify({ ...ctx.payload, mode: undefined }), // kilocode_change
           }),
         catch: () => new HttpApiError.BadRequest({}),
       })

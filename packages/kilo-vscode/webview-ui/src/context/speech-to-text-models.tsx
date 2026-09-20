@@ -1,5 +1,11 @@
 import { createContext, createSignal, onCleanup, useContext, type Accessor, type ParentComponent } from "solid-js"
-import { SPEECH_TO_TEXT_MODELS, type SpeechToTextModelDef } from "../../../src/speech-to-text/models"
+// fork_change start
+import {
+  mergeSpeechToTextModels,
+  SPEECH_TO_TEXT_MODELS,
+  type SpeechToTextModelDef,
+} from "../../../src/speech-to-text/models"
+// fork_change end
 import { useVSCode } from "./vscode"
 import { useConfig } from "./config"
 import type { ExtensionMessage } from "../types/messages"
@@ -26,7 +32,14 @@ export const SpeechToTextModelsProvider: ParentComponent = (props) => {
   const request = () => vscode.postMessage({ type: "requestSpeechToTextModels" })
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "speechToTextModelsLoaded") return
-    setCatalog((prev) => reduceSpeechToTextCatalog(prev, message))
+    // fork_change start
+    setCatalog((prev) =>
+      reduceSpeechToTextCatalog(prev, {
+        ...message,
+        models: mergeSpeechToTextModels(message.models),
+      }),
+    )
+    // fork_change end
   })
 
   request()

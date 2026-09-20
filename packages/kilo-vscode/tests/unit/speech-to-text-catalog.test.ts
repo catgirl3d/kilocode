@@ -20,13 +20,14 @@ describe("speech-to-text discovery", () => {
     ])
 
     expect(models).toEqual([
-      { id: "fish-audio/transcribe-1", label: "Transcribe 1", provider: "Fish Audio" },
+      { id: "fish-audio/transcribe-1", label: "Transcribe 1", provider: "Fish Audio", providerID: "kilo" },
       {
         id: "openai/gpt-4o-mini-transcribe",
         label: "GPT-4o Mini Transcribe",
         provider: "OpenAI",
+        providerID: "kilo",
       },
-      { id: "openai/whisper-1", label: "Whisper 1", provider: "openai" },
+      { id: "openai/whisper-1", label: "Whisper 1", provider: "openai", providerID: "kilo" },
     ])
   })
 

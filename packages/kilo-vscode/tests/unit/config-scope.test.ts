@@ -25,16 +25,18 @@ describe("splitConfigByScope", () => {
     expect(split.project).toEqual({})
   })
 
-  it("writes the speech-to-text model setting to global config", () => {
+  it("writes speech-to-text settings to global config", () => {
     const split = splitConfigByScope({
       experimental: {
         speech_to_text_model: "openai/gpt-4o-mini-transcribe",
+        speech_to_text_mode: "transcribe",
       },
     })
 
     expect(split.global).toEqual({
       experimental: {
         speech_to_text_model: "openai/gpt-4o-mini-transcribe",
+        speech_to_text_mode: "transcribe",
       },
     })
     expect(split.project).toEqual({})
