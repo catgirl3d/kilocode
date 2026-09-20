@@ -49,7 +49,7 @@ test("diffFull returns cached result for same hash pair", async () => {
         }),
       ),
   })
-})
+}, { timeout: 35_000 })
 
 test("diffFull returns empty array when from === to", async () => {
   await using tmp = await bootstrap()

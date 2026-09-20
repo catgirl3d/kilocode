@@ -33,6 +33,11 @@ import { PermissionProvenance } from "@/kilocode/permission/provenance"
 import { McpApps } from "@/kilocode/mcp/apps"
 import { BoardEnabled } from "@/kilocode/board/enabled"
 import { KiloCodeMode } from "@/kilocode/tool/code-mode" // kilocode_change
+import { KiloSnapshotMutation } from "@/kilocode/snapshot/mutation" // kilocode_change
+import { ShellPermission } from "@/tool/shell" // kilocode_change
+import { Shell } from "@opencode-ai/core/shell" // kilocode_change
+import { InstanceState } from "@/effect/instance-state" // kilocode_change
+import path from "path" // kilocode_change
 // kilocode_change end
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -55,7 +60,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "metadata" | "completeToolCall"> // kilocode_change
+  processor: Pick<SessionProcessor.Handle, "message" | "metadata" | "completeToolCall" | "ensureSnapshot"> // kilocode_change
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
@@ -191,13 +196,20 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const ctx = context(args, options)
+            // kilocode_change start - [fork] defer workspace snapshots
+            if (hooked || (item.id === "bash" && shellEnvHooked) || (yield* mutates(item.id, args)))
+              yield* input.processor.ensureSnapshot() // kilocode_change
+            // kilocode_change end
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
               { args },
             )
             // kilocode_change start
-            const result = yield* SandboxPolicy.executeTool(ctx.sessionID, item, item.execute(args, ctx))
+            const raw = yield* SandboxPolicy.executeTool(ctx.sessionID, item, item.execute(args, ctx))
+            const result = yield* pruning && SwePruner.prunable(item.id)
+              ? SwePruner.sweep({ tool: item.id, args, result: raw, sessionID: ctx.sessionID, abort: options.abortSignal })
+              : Effect.succeed(raw)
             // kilocode_change end
             const output = {
               ...result,
@@ -246,6 +258,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts)
+            // kilocode_change start
+            if (hooked || KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.list, args: toRecord(args) }))
+              yield* input.processor.ensureSnapshot() // kilocode_change
+            // kilocode_change end
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -326,6 +342,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
             const ctx = context(toRecord(args), opts)
+            // kilocode_change start
+            if (
+              hooked ||
+              KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.listTemplates, args: toRecord(args) })
+            )
+              yield* input.processor.ensureSnapshot() // kilocode_change
+            // kilocode_change end
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -410,6 +433,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           Effect.gen(function* () {
             const parsed = parseReadMcpResourceArgs(args)
             const ctx = context(toRecord(args), opts)
+            // kilocode_change start
+            if (hooked || KiloSnapshotMutation.mayMutate({ tool: MCP_RESOURCE_TOOLS.read, args: toRecord(args) }))
+              yield* input.processor.ensureSnapshot() // kilocode_change
+            // kilocode_change end
             const clients = yield* mcp.clients()
             const client = clients[parsed.server]
             if (!client) {
@@ -486,6 +513,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
             yield* input.processor.metadata(opts.toolCallId, { metadata: mcpAppMeta })
           }
           // kilocode_change end
+          yield* input.processor.ensureSnapshot() // kilocode_change
           yield* plugin.trigger(
             "tool.execute.before",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },

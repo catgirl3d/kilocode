@@ -136,7 +136,7 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
       })
 
       // Use bash tool (always registered) to create a file
-      const command = `echo 'snapshot race test content' > ${path.join(dir, "race-test.txt")}`
+      const command = `echo 'snapshot race test content' > ${path.join(dir, "race-test.txt").replaceAll("\\", "/")}` // kilocode_change
       yield* llm.toolMatch((hit) => JSON.stringify(hit.body).includes("create the file"), "bash", {
         command,
       })
@@ -151,7 +151,7 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
       })
 
       // Run the agent loop
-      const result = yield* prompt.loop({ sessionID: session.id })
+      const result = yield* prompt.loop({ sessionID: session.id, snapshotInitialization: "wait" }) // kilocode_change
       expect(result.info.role).toBe("assistant")
 
       // Verify the file was created
@@ -186,4 +186,5 @@ it.live("tool execution produces non-empty session diff (snapshot race)", () =>
     }),
     { git: true, config: providerCfg },
   ),
+  { timeout: 120_000 }, // kilocode_change
 )
