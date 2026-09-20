@@ -1314,6 +1314,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           cancelBackgroundJob: (jobID, sessionID, requestID) => this.cancelBackgroundJob(jobID, sessionID, requestID),
           promoteBackgroundJob: (jobID, sessionID) => this.promoteBackgroundJob(jobID, sessionID),
           caffeination: () => void vscode.commands.executeCommand("kilo-code.new.toggleCaffeination"),
+          shake: (sessionID) => this.handleShake(sessionID), // fork_change
         })
       ) {
         return
@@ -5174,6 +5175,35 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
   }
 
+  // fork_change start
+  private async handleShake(sessionID?: string): Promise<void> {
+    const target = sessionID || this.currentSession?.id
+    if (!this.client) {
+      if (target)
+        this.postMessage({ type: "sessionShakeFailed", sessionID: target, error: "Not connected to CLI backend" })
+      return
+    }
+
+    if (!target) return
+
+    try {
+      const workspaceDir = this.getWorkspaceDirectory(target)
+      const result = await this.client.session.shake(
+        { sessionID: target, directory: workspaceDir },
+        { throwOnError: true },
+      )
+      this.postMessage({ type: "sessionShakeCompleted", sessionID: target, ...result.data })
+    } catch (error) {
+      console.error("[Kilo New] KiloProvider: Failed to shake session:", error)
+      this.postMessage({
+        type: "sessionShakeFailed",
+        sessionID: target,
+        error: getErrorMessage(error) || "Failed to clear tool output",
+      })
+    }
+  }
+
+  // fork_change end
   // Permission + question handlers extracted to kilo-provider/handlers/permission.ts and question.ts
 
   private get permissionCtx(): PermissionContext {
