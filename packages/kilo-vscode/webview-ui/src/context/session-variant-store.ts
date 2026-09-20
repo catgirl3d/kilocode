@@ -40,11 +40,16 @@ export function getVariant(
   agent: string,
   session?: string,
   configured?: string,
+  presetFirst = false,
 ) {
   if (variants.length === 0) return undefined
   const scoped = session ? store[variantKey(sel, agent, session)] : undefined
+  const remembered = store[variantKey(sel, agent)]
+  const legacy = store[legacyVariantKey(sel)]
   const preset = configured && variants.includes(configured) ? configured : undefined
-  const stored = scoped ?? preset ?? store[variantKey(sel, agent)] ?? store[legacyVariantKey(sel)]
+  const stored = presetFirst
+    ? (scoped ?? preset ?? remembered ?? legacy)
+    : (scoped ?? remembered ?? preset ?? legacy)
   if (stored === undefined || stored === DEFAULT_VARIANT) return undefined
   return preserveVariant(stored, variants)
 }
