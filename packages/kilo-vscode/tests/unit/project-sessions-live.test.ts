@@ -17,7 +17,7 @@ const session = (worktreeId: string | null): ProjectSessionInfo => ({
 describe("project session live state", () => {
   it("keeps recent sessions scoped across project switches and empty projects", () => {
     createRoot((dispose) => {
-      const first = [1, 2, 3, 4].map((day) => ({
+      const first = [1, 2, 3, 4, 5, 6, 7, 8].map((day) => ({
         ...session(null),
         id: `first-${day}`,
         updatedAt: `2026-08-0${day}T10:00:00.000Z`,
@@ -36,12 +36,20 @@ describe("project session live state", () => {
       })
       const recent = () => recentSessions(live.current()).map((item) => item.id)
 
-      expect(recent()).toEqual(["first-4", "first-3", "first-2"])
+      expect(recent()).toEqual(["first-8", "first-7", "first-6", "first-5", "first-4", "first-3", "first-2"])
       state.pid = "second"
       expect(recent()).toEqual(["second"])
       state.pid = "empty"
       expect(recent()).toEqual([])
-      expect(recentSessions(store).map((item) => item.id)).toEqual(["unscoped", "second", "first-4"])
+      expect(recentSessions(store).map((item) => item.id)).toEqual([
+        "unscoped",
+        "second",
+        "first-8",
+        "first-7",
+        "first-6",
+        "first-5",
+        "first-4",
+      ])
       dispose()
     })
   })

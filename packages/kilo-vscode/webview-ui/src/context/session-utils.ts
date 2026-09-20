@@ -156,7 +156,7 @@ export function recentSessions<T extends RecentSession>(sessions: T[]): T[] {
   return [...sessions]
     .filter(isRootSession)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    .slice(0, 3)
+    .slice(0, 7) // fork_change
 }
 
 /** Minimal message shape for cost breakdown helpers. */
