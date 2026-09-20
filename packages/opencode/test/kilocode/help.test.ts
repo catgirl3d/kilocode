@@ -94,6 +94,7 @@ describe("kilo help --all (markdown)", () => {
     expect(output).toContain("kilo auth login")
     expect(output).toContain("kilo auth logout")
     expect(output).toContain("kilo debug config")
+    expect(output).toContain("kilo session cleanup")
   })
 })
 

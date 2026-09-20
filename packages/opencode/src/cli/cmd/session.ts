@@ -13,6 +13,7 @@ import { NotFoundError } from "@/storage/storage"
 import { EOL } from "os"
 import path from "path"
 import { which } from "@opencode-ai/core/util/which"
+import { KiloSessionCleanupCommand } from "@/kilocode/cli/cmd/session-cleanup" // kilocode_change
 
 function pagerCmd(): string[] {
   const lessOptions = ["-R", "-S"]
@@ -44,7 +45,7 @@ function pagerCmd(): string[] {
 export const SessionCommand = cmd({
   command: "session",
   describe: "manage sessions",
-  builder: (yargs: Argv) => yargs.command(SessionListCommand).command(SessionDeleteCommand).demandCommand(),
+  builder: (yargs: Argv) => yargs.command(SessionListCommand).command(SessionDeleteCommand).command(KiloSessionCleanupCommand).demandCommand(), // kilocode_change
   async handler() {},
 })
 
