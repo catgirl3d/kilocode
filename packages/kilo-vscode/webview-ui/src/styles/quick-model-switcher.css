@@ -1,0 +1,72 @@
+/* Quick Model Switcher */
+.model-quick-switcher {
+  display: flex;
+  align-items: center;
+  min-height: 22px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: var(--surface-base);
+}
+
+.favorite-model-switcher {
+  display: flex;
+  align-items: center;
+}
+
+.model-quick-switcher .favorite-model-switcher-slot--numbered[data-component="button"] {
+  width: 20px;
+  min-width: 20px;
+  height: 25px !important;
+  min-height: 25px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent !important;
+  color: var(--vscode-descriptionForeground);
+  font-size: var(--kilo-font-size-13);
+  box-shadow: none !important;
+}
+
+.model-quick-switcher .favorite-model-switcher-slot--numbered[data-component="button"]:hover {
+  background: var(--surface-base-hover) !important;
+  color: var(--vscode-foreground);
+}
+
+.model-quick-switcher .favorite-model-switcher-slot--selected[data-component="button"] {
+  background: var(--vscode-button-background, var(--border-focus)) !important;
+  color: var(--vscode-button-foreground, var(--vscode-foreground));
+}
+
+.model-quick-switcher .favorite-model-switcher-slot[data-component="button"]:focus-visible {
+  outline: 1px solid var(--border-focus, var(--vscode-focusBorder));
+  outline-offset: -1px;
+}
+
+.model-selector-quick-open[data-component="button"] {
+  width: 20px;
+  min-width: 20px;
+  height: 25px !important;
+  min-height: 25px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 0 !important;
+  background: var(--vscode-button-background, var(--border-focus)) !important;
+  color: var(--vscode-button-foreground, var(--vscode-foreground));
+}
+
+.model-quick-switcher:has(.favorite-model-switcher-slot[aria-pressed="true"])
+  .model-selector-quick-open[data-component="button"] {
+  background: transparent !important;
+  color: var(--vscode-descriptionForeground);
+}
+
+.model-selector-quick-open[data-component="button"]:hover {
+  background: var(--surface-base-hover) !important;
+  color: var(--vscode-foreground);
+}
+
+.model-quick-switcher-tooltip[data-component="tooltip"] {
+  border-radius: var(--radius-sm);
+}
