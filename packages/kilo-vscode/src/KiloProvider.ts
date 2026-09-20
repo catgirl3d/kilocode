@@ -1863,9 +1863,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (message.type === "syncSession") {
       if (message.scope === "inspector") this.inspectorSessionIds.add(message.sessionID)
       const parent = typeof message.parentSessionID === "string" ? message.parentSessionID : undefined
-      this.handleSyncSession(message.sessionID, parent).catch((e) =>
+      // fork_change start
+      const scope = message.scope === "inspector" ? "inspector" : "task"
+      this.handleSyncSession(message.sessionID, parent, scope).catch((e) =>
         console.error("[Kilo New] handleSyncSession failed:", e),
       )
+      // fork_change end
       return true
     }
     if (message.scope === "inspector") this.inspectorSessionIds.delete(message.sessionID)
@@ -1915,21 +1918,27 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
 
   private handleEditorOpenMessage(message: Parameters<typeof handleEditorAction>[0]): boolean {
     return handleEditorAction(message, {
-      // An explicit sessionID (e.g. from validateFiles) takes precedence over
-      // the live currentSession — see editor-actions.ts's validateFiles case.
-      dir: (sessionID) => this.getWorkspaceDirectory(sessionID ?? this.currentSession?.id),
+      // fork_change start
+      // Explicit session IDs retain worktree routing; Settings has no session ID and uses its selected project.
+      dir: (sessionID) =>
+        sessionID
+          ? this.getWorkspaceDirectory(sessionID)
+          : (this.getProjectDirectory(this.currentSession?.id) ?? this.getWorkspaceDirectory(this.currentSession?.id)),
       diff: this.diffVirtualProvider,
       openPRComment: (comment, sessionID) => this.openChanges(sessionID, undefined, comment),
       openLink: this.openLinkHandler ? (url) => this.openLinkHandler!(url, this.currentSession?.id) : undefined,
-      openMarkdown: (file, sessionID) => {
+      openMarkdown: (file, sessionID, line, column) => {
         if (!this.documentViewerProvider) return false
         this.documentViewerProvider.openFromCommand({
           sessionId: sessionID,
           directory: this.getWorkspaceDirectory(sessionID ?? this.currentSession?.id),
           file,
+          line,
+          column,
         })
         return true
       },
+      // fork_change end
       storage: this.extensionContext?.globalStorageUri,
       post: (msg) => this.postMessage(msg),
     })
@@ -2469,9 +2478,17 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    * Handle syncing a child session (e.g. spawned by the task tool).
    * Tracks the session for SSE events and fetches its messages.
    */
-  private async handleSyncSession(sessionID: string, parentSessionID?: string): Promise<void> {
+  // fork_change start
+  private async handleSyncSession(
+    sessionID: string,
+    parentSessionID?: string,
+    scope: "task" | "inspector" = "task",
+  ): Promise<void> {
     if (!this.client) return
-    if (this.syncedChildSessions.has(sessionID)) return
+    if (this.syncedChildSessions.has(sessionID)) {
+      if (scope === "inspector") await this.fetchChildSessionStatus(sessionID, this.getWorkspaceDirectory(sessionID))
+      return
+    }
 
     this.syncedChildSessions.add(sessionID)
     this.trackedSessionIds.add(sessionID)
