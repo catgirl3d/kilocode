@@ -1,0 +1,39 @@
+# kilocode_change - new file
+name: test-cli
+
+# Fork-only manual escape hatch: the upstream `test` workflow is restricted to
+# Kilo-Org/kilocode, so CLI/backend unit tests never run automatically in this
+# fork. Trigger this from the Actions tab (or `gh workflow run test-cli`) after
+# changing packages/opencode to validate the backend the extension spawns.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  unit:
+    name: cli (linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Setup Linux sandbox helper
+        uses: ./.github/actions/setup-linux-sandbox
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "kilo-maintainer[bot]@users.noreply.github.com"
+          git config --global user.name "kilo-maintainer[bot]"
+
+      - name: Run CLI unit tests
+        run: bun turbo test:ci --output-logs=errors-only --log-order=grouped --log-prefix=task --filter='@kilocode/cli'
+        env:
+          KILO_EXPERIMENTAL_DISABLE_FILEWATCHER: "true"
+          KILO_TEST_FILE_TIMEOUT: "600000"

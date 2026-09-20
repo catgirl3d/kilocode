@@ -14,7 +14,6 @@ on:
 jobs:
   check:
     name: Check Kilo generated artifacts
-    if: github.repository == 'Kilo-Org/kilocode'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6 # kilocode_change
