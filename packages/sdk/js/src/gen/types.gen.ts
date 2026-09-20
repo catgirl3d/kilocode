@@ -1322,6 +1322,10 @@ export type Config = {
    * Additional instruction files or patterns to include
    */
   instructions?: Array<string>
+  /**
+   * Instruction entries disabled in this config scope
+   */
+  instructions_disabled?: Array<string>
   layout?: LayoutConfig
   permission?: {
     edit?: "ask" | "allow" | "deny"
@@ -1361,6 +1365,22 @@ export type Config = {
     writable_paths?: Array<string>
   }
   experimental?: {
+    /**
+     * Enable task-aware pruning for large read, grep, and bash tool outputs
+     */
+    swe_pruner?: boolean
+    /**
+     * Exact provider/model ID for SWE-Pruner
+     */
+    swe_pruner_model?: string
+    /**
+     * Model ID to use for on-demand advisor consultations
+     */
+    advisor_model?: string
+    /**
+     * Model variant to use for on-demand advisor consultations
+     */
+    advisor_variant?: string
     hook?: {
       file_edited?: {
         [key: string]: Array<{

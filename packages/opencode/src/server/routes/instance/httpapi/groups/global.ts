@@ -40,12 +40,7 @@ const GlobalEventSchema = Schema.Struct({
   project: Schema.optional(Schema.String),
   workspace: Schema.optional(Schema.String),
   payload: Schema.Union([
-    ...BusEvent.effectPayloads(), // kilocode_change
-    ...EventManifest.Latest.values()
-      .map((definition) =>
-        Schema.Struct({ id: EventV2.ID, type: Schema.Literal(definition.type), properties: definition.data }),
-      )
-      .toArray(),
+    ...BusEvent.effectPayloads(), // kilocode_change - single canonical per-type payload (manifest included with identifiers); separate manifest map removed, it duplicated every event (Event*1 phantoms)
     InstanceDisposed,
     ...SyncEventSchemas,
   ]),
