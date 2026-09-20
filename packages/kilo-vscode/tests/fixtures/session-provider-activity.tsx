@@ -350,6 +350,12 @@ try {
   await settle()
   await emit({ type: "ready", serverInfo: { port: 1 } })
   await emit({
+    type: "notificationsLoaded",
+    notifications: [{ id: "fixture", title: "Fixture notification", message: "Loaded for the activity fixture" }],
+    dismissedIds: [],
+  })
+  await emit({ type: "mcpStatusLoaded", status: { fixture: { status: "connected" } } })
+  await emit({
     type: "sessionsLoaded",
     sessions: [info("root"), info("background"), info("durable-child", "root"), info("durable-grand", "durable-child")],
   })
@@ -2222,7 +2228,8 @@ try {
   assert.deepEqual(fresh.preferredSelection(), { ...personal, variant: "high" })
   assert.equal(fresh.preferencesReady(), true)
 
-  // Unset effort defers to the new model; only a real choice can override its preference.
+  // Per-model persistence: a non-Default pick never overrides the target's
+  // remembered variant; only an explicit Default does.
   const outgoing = { providerID: "kilo", modelID: "unset-effort" }
   await catalog("org-a", [outgoing.modelID, first.modelID], first.modelID)
   for (const target of ["remembered", "configured"]) {
@@ -2245,7 +2252,8 @@ try {
         if (effort !== undefined) instance.selectVariant(effort, scope)
         choice(instance.selected(scope), outgoing)
         instance.selectModel(first.providerID, first.modelID, scope)
-        const expected = effort ?? "high"
+        const rememberedWins = target === "remembered" && !!effort
+        const expected = rememberedWins ? "high" : (effort ?? "high")
         assert.deepEqual(
           instance.submission(scope),
           { model: first, variant: expected, agent: "code" },

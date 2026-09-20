@@ -25,6 +25,8 @@ import { useProvider } from "./provider"
 import { useConfig } from "./config"
 import { useLanguage } from "./language"
 import { createCostAlertHandler } from "./cost-alert"
+import { createSessionModelActions } from "./session-model-actions" // fork_change
+import { createSessionFavorites } from "./session-favorites" // fork_change
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { touch } from "@kilocode/kilo-ui/tool-motion"
 import type {
@@ -576,19 +578,17 @@ export const SessionProvider: ParentComponent = (props) => {
     carry: carryVariant,
     hide: hideErrors,
   })
-  function selectModel(providerID: string, modelID: string, sessionID?: string) {
-    const id = sessionID ?? currentSessionID()
-    batch(() => {
-      models.select(providerID, modelID, id)
-      if (!id || /^(?:sidebar-)?pending:/.test(id)) {
-        const model = { providerID, modelID }
-        const agent = agentForScope(id)
-        const value = store.variantSelections[variantKey(model, agent, id)] ?? variantForAgent(agent, model)
-        const list = Object.keys(provider.findModel(model)?.variants ?? {})
-        rememberSelection(agent, model, value === "" ? "" : preserveVariant(value, list))
-      }
-    })
-  }
+  // fork_change start
+  const { selectModel } = createSessionModelActions({
+    select: models.select,
+    agentForScope,
+    currentSessionID,
+    variantSelections: () => store.variantSelections,
+    variantForAgent,
+    findModel: provider.findModel,
+    rememberSelection,
+  })
+  // fork_change end
 
   function selectKiloModel(modelID?: string, agent?: string) {
     if (!modelID && !agent) return
@@ -810,13 +810,16 @@ export const SessionProvider: ParentComponent = (props) => {
   })
   vscode.postMessage({ type: "requestModelUsage" })
   onCleanup(unsubModelUsage)
-  // Load persisted favorite models from extension globalState
-  const unsubFavorites = vscode.onMessage((message: ExtensionMessage) => {
-    if (message.type !== "favoritesLoaded") return
-    setStore("favoriteModels", message.favorites)
+  // fork_change start
+  const favorites = createSessionFavorites({
+    favorites: () => store.favoriteModels,
+    setFavorites: (f) => setStore("favoriteModels", f),
+    post: vscode.postMessage,
+    listen: vscode.onMessage,
   })
-  vscode.postMessage({ type: "requestFavorites" })
-  onCleanup(unsubFavorites)
+  const { toggleFavorite, moveFavorite } = favorites
+  onCleanup(favorites.load())
+  // fork_change end
 
   function handleError(message: Extract<ExtensionMessage, { type: "error" }>) {
     if (!message.sessionID || message.sessionID === currentSessionID()) setLoading(false)
@@ -848,16 +851,6 @@ export const SessionProvider: ParentComponent = (props) => {
     }
     recoveries.delete(id)
     setCloseMap(id, { reason: "error", parentID: store.sessions[id]?.parentID ?? undefined })
-  }
-
-  function toggleFavorite(providerID: string, modelID: string) {
-    const key = `${providerID}/${modelID}`
-    const idx = store.favoriteModels.findIndex((f) => `${f.providerID}/${f.modelID}` === key)
-    const updated =
-      idx >= 0 ? store.favoriteModels.filter((_, i) => i !== idx) : [...store.favoriteModels, { providerID, modelID }]
-    const action = idx >= 0 ? "remove" : "add"
-    setStore("favoriteModels", updated)
-    vscode.postMessage({ type: "toggleFavorite", action, providerID, modelID })
   }
 
   function handleStreamMessage(message: ExtensionMessage): boolean {
@@ -3024,6 +3017,7 @@ export const SessionProvider: ParentComponent = (props) => {
     modelUsageHistory: () => store.modelUsageHistory,
     favoriteModels: () => store.favoriteModels,
     toggleFavorite,
+    moveFavorite, // fork_change
     variantList,
     currentVariant,
     variantForAgent,
