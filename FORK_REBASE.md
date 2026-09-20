@@ -236,6 +236,24 @@ pre-rebase fork history; with a consolidated history this takes a minute.
   prettier fixes per stop; fold them once at the end per Marker Discipline
   above.
 
+### Fold Verification (history surgery)
+
+Splitting or folding commits (e.g. dissolving a tail extract into its owner
+with `git-surgeon split` / `fold` / `amend`) rewrites replayed descendants.
+Every such operation ends with three checks before anything is pushed:
+
+- **Tree anchor.** Keep the pre-surgery HEAD SHA. Afterwards `git diff
+  <anchor> HEAD` must show exactly the intended delta (often empty). Any
+  other difference means the machinery dropped or duplicated a change.
+- **Resurrection scan.** Governance replays can union-merge deleted code back
+  to life (observed: extracted advisor memos resurrected by a marker-churn
+  replay). After each fold, run per-file logs on the touched files and confirm
+  the removed regions stay removed.
+- **Rebuild poisoned commits, do not replay them.** If a commit is found to
+  contain an accidental deletion or addition, rebuild it with `reset --soft`
+  plus selective re-commit rather than replaying it through another rebase.
+  Replaying a known-poisoned commit spreads the poison to every descendant.
+
 ## Validation
 
 - After every rebase, including a conflict-free rebase, validate the packages and
