@@ -354,6 +354,7 @@ manage sessions
 Commands:
   kilo session list                list sessions
   kilo session delete <sessionID>  delete a session
+  kilo session cleanup             preview or remove stale child sessions
 
 Options:
   -h, --help        show help                                                              [boolean]

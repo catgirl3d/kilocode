@@ -12,6 +12,7 @@ Object.assign(globalThis, {
   HTMLElement: window.HTMLElement,
   SVGElement: window.SVGElement,
   Event: window.Event,
+  KeyboardEvent: window.KeyboardEvent,
   requestAnimationFrame: (callback: FrameRequestCallback) => frames.push(callback),
 })
 
@@ -91,7 +92,7 @@ const option = root.querySelector<HTMLButtonElement>('[data-slot="question-optio
 const submit = root.querySelector<HTMLButtonElement>('[data-slot="question-footer-actions"] button')
 if (!option || !submit) throw new Error("Question controls did not render")
 if (document.activeElement !== option) throw new Error("Question did not focus when no text field was active")
-option.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+option.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
 if (document.activeElement !== root.querySelector('[data-custom="true"]')) {
   throw new Error("Question keyboard navigation did not move to the next option")
 }
@@ -142,9 +143,9 @@ const picked = root.querySelector<HTMLButtonElement>('button[data-picked="true"]
 if (!picked || picked.textContent?.includes("JSON") !== true) throw new Error("Default answer was not selected")
 if (document.activeElement !== picked) throw new Error("Default answer was not focused")
 if (calls.length !== 1) throw new Error("Default answer was submitted without confirmation")
-picked.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }))
+picked.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, isComposing: true }))
 if (calls.length !== 1) throw new Error("IME Enter submitted the default answer")
-picked.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+picked.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
 if (calls.at(-1)?.answers[0]?.[0] !== "JSON") throw new Error("Enter did not submit the default answer")
 if (root.querySelector('[data-component="question-dock"]')) throw new Error("Default answer was not submitted")
 
@@ -158,7 +159,7 @@ setActive(structuredClone(defaults))
 flush()
 const retained = root.querySelector<HTMLButtonElement>('button[data-picked="true"]')
 if (!retained?.textContent?.includes("Text")) throw new Error("Repeated question reset the user's selection")
-retained.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+retained.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
 if (calls.at(-1)?.answers[0]?.[0] !== "Text") throw new Error("Enter did not submit the replacement")
 
 for (const question of [
@@ -174,7 +175,7 @@ for (const question of [
   const option = root.querySelector<HTMLButtonElement>('[data-slot="question-option"]')
   if (!option) throw new Error("Question option missing")
   option.click()
-  option.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
   if (!root.querySelector('[data-component="question-dock"]')) throw new Error("Ignored default changed Enter behavior")
   setActive(undefined)
 }
