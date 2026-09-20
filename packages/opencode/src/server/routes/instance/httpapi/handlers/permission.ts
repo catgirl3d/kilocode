@@ -76,6 +76,7 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
         enable: ctx.payload.enable,
         requestID: ctx.payload.requestID ? PermissionV1.ID.make(ctx.payload.requestID) : undefined,
         sessionID: ctx.payload.sessionID ? SessionID.make(ctx.payload.sessionID) : undefined,
+        runtime: ctx.payload.runtime,
       })
     })
 

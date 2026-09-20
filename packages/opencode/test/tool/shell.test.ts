@@ -241,6 +241,27 @@ describe("tool.shell permissions", () => {
     }),
   )
 
+  // kilocode_change start - exact arity commands must be reusable as saved permission rules
+  each("keeps exact arity commands exact for always-allow", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+          const err = new Error("stop after permission")
+          expect(
+            yield* fail({ command: "npm run typecheck", description: "Typecheck project" }, capture(requests, err)),
+          ).toMatchObject({ message: err.message })
+          const req = requests.find((request) => request.permission === "bash")
+          expect(req?.always).toContain("npm run typecheck")
+          expect(req?.always).not.toContain("npm run typecheck *")
+        }),
+      )
+    }),
+  )
+  // kilocode_change end
+
   each("asks for bash permission with multiple commands", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped()
