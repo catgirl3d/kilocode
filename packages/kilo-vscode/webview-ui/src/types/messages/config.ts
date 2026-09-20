@@ -49,15 +49,22 @@ export interface WatcherConfig {
 }
 
 export interface ExperimentalConfig {
+  advisor_model?: string | null // fork_change
+  advisor_variant?: string | null // fork_change
   batch_tool?: boolean
   image_generation?: boolean
   image_generation_model?: string
   task_model_selection?: boolean
+  // fork_change start
+  swe_pruner?: boolean
+  swe_pruner_model?: string | null
+  // fork_change end
   code_mode?: boolean
   native_notebook_tools?: boolean
   speech_to_text_model?: string
   speech_to_text_base_url?: string
   speech_to_text_api_key?: string
+  speech_to_text_mode?: "transcribe" | "translate" // fork_change
   primary_tools?: string[]
   continue_loop_on_deny?: boolean
   mcp_timeout?: number

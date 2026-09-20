@@ -234,7 +234,19 @@ export const Info = Schema.Struct({
     description: "Custom provider configurations and model overrides",
   }),
   mcp: Schema.optional(
-    Schema.Record(Schema.String, Schema.Union([ConfigMCPV1.Info, Schema.Struct({ enabled: Schema.Boolean })])),
+    // kilocode_change start - allow partial MCP project overrides
+    Schema.Record(
+      Schema.String,
+      Schema.Union([
+        ConfigMCPV1.Info,
+        Schema.Struct({
+          enabled: Schema.optional(Schema.Boolean),
+          on_demand: Schema.optional(Schema.Boolean),
+          description: Schema.optional(Schema.String),
+        }),
+      ]),
+    ),
+    // kilocode_change end
   ).annotate({ description: "MCP (Model Context Protocol) server configurations" }),
   formatter: Schema.optional(ConfigFormatterV1.Info).annotate({
     description:
@@ -247,6 +259,11 @@ export const Info = Schema.Struct({
   instructions: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional instruction files or patterns to include",
   }),
+  // kilocode_change start - per-scope enable/disable state for explicit instruction entries
+  instructions_disabled: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Instruction entries disabled in this config scope",
+  }),
+  // kilocode_change end
   layout: Schema.optional(ConfigLayoutV1.Layout).annotate({ description: "@deprecated Always uses stretch layout." }),
   permission: Schema.optional(ConfigPermissionV1.Info),
   tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
@@ -314,6 +331,13 @@ export const Info = Schema.Struct({
       task_model_selection: Schema.optional(Schema.Boolean).annotate({
         description: "Allow task subagents to select a model, provider, and reasoning effort",
       }),
+      swe_pruner: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable task-aware pruning for large read, grep, and bash tool outputs (default: false)",
+      }),
+      swe_pruner_model: Schema.optional(Schema.String).annotate({
+        description:
+          "Exact provider/model ID for SWE-Pruner. Falls back to the configured small_model; without either model, output remains unchanged.",
+      }),
       code_mode: Schema.optional(Schema.Boolean).annotate({
         description:
           "Route MCP tool calls through a confined JavaScript runtime with on-demand tool discovery instead of exposing every MCP tool directly",
@@ -327,6 +351,15 @@ export const Info = Schema.Struct({
       }),
       speech_to_text_api_key: Schema.optional(Schema.String).annotate({
         description: "API key sent as a bearer token to the custom speech-to-text base URL",
+      }),
+      speech_to_text_mode: Schema.optional(Schema.Literals(["transcribe", "translate"])).annotate({
+        description: "Whether voice input transcribes the spoken language or translates it to English when supported",
+      }),
+      advisor_model: Schema.optional(Schema.String).annotate({
+        description: "Model ID to use for on-demand advisor consultations",
+      }),
+      advisor_variant: Schema.optional(Schema.String).annotate({
+        description: "Model variant to use for on-demand advisor consultations",
       }),
       openTelemetry: Schema.Boolean.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed(true))).annotate({
         description: "Enable telemetry. Set to false to opt-out.",

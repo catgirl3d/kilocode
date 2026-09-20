@@ -12,9 +12,11 @@ import { NotebookEditTool, NotebookExecuteTool, NotebookReadTool } from "./noteb
 import { MemoryRecallTool } from "./memory-recall"
 import { MemorySaveTool } from "./memory-save"
 import { NotifyUserTool } from "./notify-user"
+import { McpTool } from "./mcp" // fork_change
 import { OpenPlanTool } from "./open-plan"
 import { ScheduleWakeupTool } from "./schedule-wakeup"
 import { SendFileTool } from "./send-file"
+import { ConsultAdvisorTool } from "./consult-advisor" // fork_change
 import * as Tool from "../../tool/tool"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Effect } from "effect"
@@ -99,6 +101,7 @@ export namespace KiloToolRegistry {
         boardPost: BoardPostTool,
         goalReport: GoalReportTool,
       })
+      const advisor = yield* ConsultAdvisorTool // fork_change
       if (!notebook)
         return {
           recall,
@@ -111,11 +114,13 @@ export namespace KiloToolRegistry {
           chart,
           image,
           notify,
+          mcp: mcpTool, // fork_change
           openPlan,
           send,
           schedule,
           cancel,
           ...board,
+          advisor, // fork_change
         }
       const tools = yield* Effect.all({
         notebookRead: NotebookReadTool,
@@ -133,11 +138,13 @@ export namespace KiloToolRegistry {
         chart,
         image,
         notify,
+        mcp: mcpTool, // fork_change
         openPlan,
         send,
         schedule,
         cancel,
         ...board,
+        advisor, // fork_change
         ...tools,
       }
     })
@@ -164,6 +171,7 @@ export namespace KiloToolRegistry {
       boardRead?: Tool.Info
       goalReport?: Tool.Info
       boardPost?: Tool.Info
+      advisor?: Tool.Info // fork_change
       notebookRead?: Tool.Info
       notebookEdit?: Tool.Info
       notebookExecute?: Tool.Info
@@ -182,7 +190,9 @@ export namespace KiloToolRegistry {
         chart: Tool.init(tools.chart),
         image: Tool.init(tools.image),
         notify: Tool.init(tools.notify),
+        mcp: tools.mcp ? Tool.init(tools.mcp) : Effect.succeed(undefined), // fork_change
         send: Tool.init(tools.send),
+        ...(tools.advisor ? { advisor: Tool.init(tools.advisor) } : {}), // fork_change
       })
       const openPlan = tools.openPlan ? yield* Tool.init(tools.openPlan) : undefined
       const schedule = tools.schedule ? yield* Tool.init(tools.schedule) : undefined
@@ -282,6 +292,7 @@ export namespace KiloToolRegistry {
       boardRead?: Tool.Def
       goalReport?: Tool.Def
       boardPost?: Tool.Def
+      advisor?: Tool.Def // fork_change
       notebookRead?: Tool.Def
       notebookEdit?: Tool.Def
       notebookExecute?: Tool.Def
@@ -291,6 +302,8 @@ export namespace KiloToolRegistry {
         image_generation?: boolean
         native_notebook_tools?: boolean
         task_model_selection?: boolean
+        shared_agent_board?: boolean // fork_change
+        advisor_model?: string // fork_change
       }
       shared_agent_board?: boolean
     },

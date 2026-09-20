@@ -71,6 +71,13 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const tools: Record<string, AITool> = {}
   const run = yield* EffectBridge.make()
   const plugin = yield* Plugin.Service
+  // kilocode_change start - [fork] snapshot and hook lifecycle
+  const hooks = yield* plugin.list()
+  const hooked = hooks.some(
+    (hook) => typeof hook["tool.execute.before"] === "function" || typeof hook["tool.execute.after"] === "function",
+  )
+  const shellEnvHooked = hooks.some((hook) => typeof hook["shell.env"] === "function")
+  // kilocode_change end
   const permission = yield* Permission.Service
   // kilocode_change start
   const agents = yield* Agent.Service
@@ -83,15 +90,18 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const config = yield* Config.Service
   const flags = yield* RuntimeFlags.Service
   const cfg = yield* config.get()
+  const pruning = SwePruner.enabled(cfg) // kilocode_change
   const permissionOrigins = cfg.permission_origins
   const notify = BoardEnabled.on(cfg, flags) ? input.notify : undefined
   type Output = Parameters<SessionProcessor.Handle["completeToolCall"]>[1]
   const finish = <T extends Output>(name: string, output: T, opts: ToolExecutionOptions) =>
     Effect.gen(function* () {
       const clean = BoardNotice.clean(output)
-      if (notify && !opts.abortSignal?.aborted) {
+      // kilocode_change start - [fork] advisor streams its terminal title
+      if (notify && name !== "consult_advisor" && !opts.abortSignal?.aborted) {
         yield* input.processor.metadata(opts.toolCallId, { metadata: { output: clean.output } })
       }
+      // kilocode_change end
       const result = yield* (notify?.(name, clean, opts.abortSignal) ?? Effect.succeed(clean)).pipe(
         Effect.onInterrupt(() => input.processor.completeToolCall(opts.toolCallId, clean)),
       )
@@ -108,6 +118,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       promptOps: input.promptOps,
       sandboxed, // kilocode_change
       sandboxEscalation: false,
+      // kilocode_change start - expose the in-progress assistant to advisor tools
+      currentAssistant: input.processor.message,
+      // kilocode_change end
     }
     return {
       sessionID: input.session.id,
