@@ -1,6 +1,6 @@
 import type { ModelSelection } from "../types/messages"
 
-export function createModelSelector(deps: {
+type Deps = {
   current: () => string
   agent: (sessionID?: string) => string
   selected: (sessionID?: string) => ModelSelection | null
@@ -9,17 +9,22 @@ export function createModelSelector(deps: {
   set: (id: string, agent: string, selection: ModelSelection) => void
   carry: (selection: ModelSelection, value: string | undefined, agent: string, sessionID?: string) => void
   hide: (sessionID?: string) => void
-}) {
-  const select = (providerID: string, modelID: string, sessionID?: string) => {
+}
+
+export function createModelSelector(deps: Deps) {
+  const select = (providerID: string, modelID: string, sessionID?: string, remember = true) => {
     const session = sessionID ?? deps.current()
     const agent = deps.agent(session)
     const value = deps.variant(session)
     const selection = { providerID, modelID }
-    deps.apply(agent, selection, session)
-    deps.carry(selection, value, agent, session)
-    if (session) deps.hide(session)
+    if (remember) {
+      deps.apply(agent, selection, session)
+      deps.carry(selection, value, agent, session)
+      deps.hide(session)
+      return
+    }
+    deps.set(session, agent, selection)
   }
-
   const session = (sessionID: string, providerID: string, modelID: string) => {
     const agent = deps.agent(sessionID)
     const value = deps.variant(sessionID)
