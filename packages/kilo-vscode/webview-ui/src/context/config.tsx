@@ -20,6 +20,7 @@ import type {
 } from "../types/messages"
 import {
   configUnsetPaths,
+  acceptsConfig, // fork_change
   deepMerge,
   hideRemovedMcp,
   isRecord,
@@ -189,9 +190,14 @@ interface ConfigContextValue {
   /** Home directory of the machine that runs the rules; a config entry may start with ~ or $HOME. */
   homeDir: Accessor<string | undefined>
   globalDraft: Accessor<Partial<Config>>
+  // fork_change start
+  projectDraft?: Accessor<Partial<Config>>
+  globalEffectiveConfig: Accessor<Config>
+  // fork_change end
   projectConfig: Accessor<Config>
   /** Merged workspace scope from the overlay, every project file combined. */
   workspaceConfig: Accessor<Config>
+  projectBinding: Accessor<SettingsConfigBinding | undefined> // fork_change
   collections: Accessor<ConfigCollections>
   settings: Accessor<Record<string, unknown>>
   /** Shortcut labels and editor state for prompt shortcut hints. */
@@ -200,6 +206,9 @@ interface ConfigContextValue {
   loading: Accessor<boolean>
   isDirty: Accessor<boolean>
   saving: Accessor<boolean>
+  // fork_change start
+  blocked: Accessor<boolean>
+  // fork_change end
   saveError: Accessor<SaveError | null>
   /** Dismiss the reported save or settings-write error. */
   clearSaveError: () => void
@@ -252,6 +261,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   const [globalConfig, setGlobalConfig] = createSignal<Config>({})
   const [mergedGlobalConfig, setMergedGlobalConfig] = createSignal<Config>({})
   const [homeDir, setHomeDir] = createSignal<string | undefined>(undefined)
+  const [globalEffectiveConfig, setGlobalEffectiveConfig] = createSignal<Config>({}) // fork_change
   const [projectConfig, setProjectConfig] = createSignal<Config>({})
   const [workspaceConfig, setWorkspaceConfig] = createSignal<Config>({})
   const [collections, setCollections] = createSignal<ConfigCollections>({})
@@ -285,6 +295,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   // True while a saveConfig() write is in-flight — used to clear draft on success
   // and to guard against stale configLoaded messages overwriting optimistic state.
   const [saving, setSaving] = createSignal(false)
+  const [blocked, setBlocked] = createSignal(false) // fork_change
   // Error from the most recent saveConfig() attempt, or null if no error.
   // Cleared when the user edits the draft again or starts a new save.
   const [saveError, setSaveError] = createSignal<SaveError | null>(null)
@@ -508,17 +519,21 @@ export const ConfigProvider: ParentComponent = (props) => {
   const applyWorkspace = (message: { workspaceConfig?: Config }) => {
     if (message.workspaceConfig !== undefined) setWorkspaceConfig(message.workspaceConfig)
   }
+  // fork_change start
   /**
    * Apply a `configUpdated` push. The message that echoes the id of the save the Save button
    * is waiting on confirms that save and clears the paths it posted, and the same holds for a
    * save that already settled at the bound: its answer still adopts the stored config. Every
    * other push — another webview's save, a provider action, or the SSE-driven refresh —
-   * re-applies the draft on top and leaves the in-flight save alone.
+   * re-applies the draft on top and leaves the in-flight save alone, unless the project is
+   * blocked and the push is not the save's own confirmation.
    */
+  // fork_change end
   const applyConfigUpdated = (message: Extract<ExtensionMessage, { type: "configUpdated" }>) => {
     const pending = saveRequest != null && message.requestId === saveRequest
     const late = !pending && saveRequest == null && expiredSave != null && message.requestId === expiredSave.id
     const confirming = pending || late
+    if (blocked() && !confirming) return // fork_change
     let leftConfig = draft()
     let leftGlobal = globalDraft()
     let leftProject = projectDraft()
@@ -570,6 +585,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     applyMergedGlobal(message)
     applyHomeDir(message)
     applyWorkspace(message)
+    if (message.globalEffectiveConfig !== undefined) setGlobalEffectiveConfig(message.globalEffectiveConfig) // fork_change
     updateCollections(message.collections)
     setFeatures(message.features)
     setBindings(message.bindings ?? bindings())
@@ -581,7 +597,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     if (message.type === "configLoaded") {
       // Skip if a save is in-flight — a stale configLoaded must not overwrite
       // the optimistically-updated state while the write is being confirmed.
-      if (saving()) return
+      if (!acceptsConfig(saving(), blocked())) return // fork_change
       // Re-apply the draft on top so pending changes (e.g. a toggled switch the
       // user hasn't saved yet) stay visible instead of snapping back.
       const server = hideRemovedMcp(message.config, removedMcp())
@@ -606,24 +622,32 @@ export const ConfigProvider: ParentComponent = (props) => {
       applyMergedGlobal(message)
       applyHomeDir(message)
       applyWorkspace(message)
+      if (message.globalEffectiveConfig !== undefined) setGlobalEffectiveConfig(message.globalEffectiveConfig) // fork_change
       setRemovedMcp((current) => retainUnconfirmedMcpRemovals(current, message.config))
       updateCollections(message.collections)
       setLoading(false)
       return
     }
     if (message.type === "globalConfigLoaded") {
-      if (saving()) return
+      if (!acceptsConfig(saving(), blocked())) return // fork_change
       const server = hideRemovedMcp(message.config, removedMcp())
-      setGlobalConfig(mergeScopedConfig(server, hideRemovedMcp(globalDraft() as Config, removedMcp())))
+      const pending = hideRemovedMcp(globalDraft() as Config, removedMcp())
+      setGlobalConfig(mergeScopedConfig(server, pending))
       setSavedGlobal(server)
       return
     }
-    if (message.type === "configUpdated") applyConfigUpdated(message)
+    // fork_change start
+    if (message.type === "configUpdated") {
+      applyConfigUpdated(message)
+      return
+    }
+    // fork_change end
   })
   const unsubscribeExpired = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "configBindingExpired") return
     setBindings({})
     if (isDirty()) {
+      setBlocked(true) // fork_change
       setSaveError({ message: "The Settings project changed. Discard or reload before saving." })
       return
     }
@@ -631,9 +655,11 @@ export const ConfigProvider: ParentComponent = (props) => {
   })
   const unsubscribeFailure = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "configUpdateFailed") return
-    // A failure that names another writer's request cannot be the answer to our save: while a
-    // save is in flight it must not settle ours, nor report over it.
-    if (saving() && message.requestId !== undefined && message.requestId !== saveRequest) return
+    // fork_change start
+    // A failure that does not name our request cannot be the answer to our save: while a save
+    // is in flight it must not settle ours, nor report over it.
+    if (saving() && message.requestId !== saveRequest) return
+    // fork_change end
     // The host answered the save the bound had reported as unconfirmed, and answered it with
     // a failure: that answer is reported below, so the expiry report no longer stands for it.
     if (expiredSave != null && message.requestId === expiredSave.id) expiredSave = undefined
@@ -672,6 +698,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     applyMergedGlobal(message)
     applyHomeDir(message)
     if (message.bindings) setBindings(message.bindings)
+    if (message.globalEffectiveConfig !== undefined) setGlobalEffectiveConfig(message.globalEffectiveConfig) // fork_change
     setSaveError({ message: message.message, details: message.details })
   })
   const unsubscribeWrite = vscode.onMessage((message: ExtensionMessage) => {
@@ -800,6 +827,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   })
 
   function updateConfig(partial: Partial<Config>) {
+    if (blocked()) return // fork_change
     // Optimistically update local state with deep merge + null stripping
     setConfig((prev) => stripNulls(deepMerge(prev, partial)))
     // Accumulate in draft — will be sent on saveConfig()
@@ -810,18 +838,21 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function updateGlobalConfig(partial: Partial<Config>) {
+    if (blocked()) return // fork_change
     setGlobalConfig((prev) => mergeScopedConfig(prev, partial))
     setGlobalDraft((prev) => deepMerge(prev as Config, partial))
     setSaveError(null)
   }
 
   function updateProjectConfig(partial: Partial<Config>) {
+    if (blocked()) return // fork_change
     setProjectConfig((prev) => mergeScopedConfig(prev, partial))
     setProjectDraft((prev) => deepMerge(prev as Config, partial))
     setSaveError(null)
   }
 
   function updateSetting(key: string, value: unknown) {
+    if (blocked()) return // fork_change
     setSettings((prev) => ({ ...prev, [key]: value }))
     setSettingsDraft((prev) => ({ ...prev, [key]: value }))
     setSaveError(null)
@@ -851,6 +882,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function saveConfig() {
+    if (blocked()) return // fork_change
     const changes = draft()
     const globals = globalDraft()
     const projects = projectDraft()
@@ -925,6 +957,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   }
 
   function discardConfig() {
+    const reload = blocked() // fork_change
     setConfig(saved())
     setGlobalConfig(savedGlobal())
     setProjectConfig(savedProject())
@@ -937,7 +970,14 @@ export const ConfigProvider: ParentComponent = (props) => {
     saveRequest = undefined
     expiredSave = undefined
     disarmSave()
+    setBlocked(false) // fork_change
     setSaveError(null)
+    // fork_change start
+    if (reload) {
+      setLoading(true)
+      vscode.postMessage({ type: "requestConfig" })
+    }
+    // fork_change end
   }
 
   /**
@@ -955,8 +995,13 @@ export const ConfigProvider: ParentComponent = (props) => {
     mergedGlobalConfig,
     homeDir,
     globalDraft,
+    // fork_change start
+    projectDraft,
+    globalEffectiveConfig,
+    // fork_change end
     projectConfig,
     workspaceConfig,
+    projectBinding: () => bindings().project, // fork_change
     collections,
     settings,
     shortcuts,
@@ -964,6 +1009,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     loading,
     isDirty,
     saving,
+    blocked, // fork_change
     saveError,
     clearSaveError,
     updateConfig,
