@@ -13,6 +13,12 @@ import { BashArity } from "@/permission/arity"
  * wildcard `"git branch *"` already covers it.
  */
 export namespace BashHierarchy {
+  export function always(command: string[], text: string) {
+    const prefix = BashArity.prefix(command)
+    if (command.length === prefix.length) return text
+    return prefix.join(" ") + " *"
+  }
+
   export function addAll(target: Set<string>, command: string[], text: string) {
     const prefix = BashArity.prefix(command)
 
