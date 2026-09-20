@@ -34,38 +34,6 @@ try {
   const openapi = await $`bun dev generate`.cwd(opencode).text()
   await Bun.write("./openapi.json", openapi)
 
-  const document = (await Bun.file("./openapi.json").json()) as {
-    components?: { schemas?: Record<string, unknown> }
-    paths?: Record<string, unknown> // kilocode_change
-    [key: string]: unknown
-  }
-  const schemas = document.components?.schemas
-  if (schemas) {
-    const reachable = new Set<string>()
-    const visit = (value: unknown) => {
-      if (Array.isArray(value)) {
-        value.forEach(visit)
-        return
-      }
-      if (typeof value !== "object" || value === null) return
-      for (const [key, child] of Object.entries(value)) {
-        if (key === "$ref" && typeof child === "string" && child.startsWith("#/components/schemas/")) {
-          const name = child.slice("#/components/schemas/".length)
-          if (reachable.has(name)) continue
-          reachable.add(name)
-          visit(schemas[name])
-        } else {
-          visit(child)
-        }
-      }
-    }
-    visit({ ...document, components: { ...document.components, schemas: undefined } })
-    for (const name of Object.keys(schemas)) {
-      if (/^SessionNext\w+1$/.test(name) && !reachable.has(name)) delete schemas[name]
-    }
-    await Bun.write("./openapi.json", JSON.stringify(document))
-  }
-
   await createClient({
     input: "./openapi.json",
     output: {
