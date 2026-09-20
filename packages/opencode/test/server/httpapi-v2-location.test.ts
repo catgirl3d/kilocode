@@ -115,7 +115,7 @@ describe("v2 location HttpApi", () => {
     expect(body.location.directory).toBe(tmp.path)
     expect(body.location.project.id).toBeTruthy()
   }
-})
+  }) // kilocode_change
 
   test("streams native EventV2 payloads across locations", async () => {
     await using subscriber = await tmpdir({ git: true })
@@ -147,4 +147,27 @@ describe("v2 location HttpApi", () => {
     // kilocode_change end
     await reader.return(undefined)
   })
+
+  // kilocode_change start
+  test("returns the unshadowed shake builtin from the command catalog", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    const response = await request("/command", tmp.path)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as Array<Record<string, unknown>>
+    expect(body).toContainEqual(
+      expect.objectContaining({
+        name: "init",
+        template: expect.any(String),
+        hints: expect.any(Array),
+      }),
+    )
+    expect(body).toContainEqual({
+      name: "shake",
+      description: "clear eligible tool output without invoking an LLM",
+      source: "builtin",
+      kind: "action",
+    })
+  })
+  // kilocode_change end
 })

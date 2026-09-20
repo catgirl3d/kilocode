@@ -3,6 +3,31 @@ import { KiloRun } from "../../../../src/kilocode/cli/cmd/run"
 import { buildRunMessage } from "../../../../src/kilocode/cli/cmd/run-message"
 
 describe("KiloRun", () => {
+  test("serializes headless records without changing tool event fields", () => {
+    expect(KiloRun.jsonRecord("tool_use", "ses_test", { part: { type: "tool", tool: "bash" } }, 123)).toEqual({
+      type: "tool_use",
+      timestamp: 123,
+      sessionID: "ses_test",
+      part: { type: "tool", tool: "bash" },
+    })
+  })
+
+  test("emits only shake as a builtin completion record", () => {
+    const data = { parts: 3, tokens: 42, diagnostics: { candidates: 8 } }
+
+    expect(KiloRun.builtinCompletion("shake", { data })).toBe(data)
+    expect(KiloRun.jsonRecord("shake", "ses_test", KiloRun.builtinCompletion("shake", { data })!, 123)).toEqual({
+      type: "shake",
+      timestamp: 123,
+      sessionID: "ses_test",
+      parts: 3,
+      tokens: 42,
+      diagnostics: { candidates: 8 },
+    })
+    expect(KiloRun.builtinCompletion("compact", { data: true })).toBeUndefined()
+    expect(KiloRun.builtinCompletion("summarize", { data: true })).toBeUndefined()
+  })
+
   test("prefers a configured command over an endpoint-backed built-in", async () => {
     const sdk = {
       command: {
@@ -21,6 +46,26 @@ describe("KiloRun", () => {
     }
 
     expect(await KiloRun.resolveBuiltin(sdk as never, "compact", "/tmp/project")).toBe("compact")
+  })
+
+  test("resolves shake as an endpoint-backed built-in", async () => {
+    const sdk = {
+      command: {
+        list: async () => ({ data: [{ name: "other" }] }),
+      },
+    }
+
+    expect(await KiloRun.resolveBuiltin(sdk as never, "shake", "/tmp/project")).toBe("shake")
+  })
+
+  test("keeps a configured shake command ahead of the builtin", async () => {
+    const sdk = {
+      command: {
+        list: async () => ({ data: [{ name: "shake", source: "command" }] }),
+      },
+    }
+
+    expect(await KiloRun.resolveBuiltin(sdk as never, "shake", "/tmp/project")).toBeUndefined()
   })
 
   test("uses the resumed session model for compaction", async () => {
@@ -51,6 +96,22 @@ describe("KiloRun", () => {
         modelID: "session-model",
       },
     ])
+  })
+
+  test("runs shake through the session endpoint without requiring a model", async () => {
+    const calls: unknown[] = []
+    const sdk = {
+      session: {
+        shake: async (input: unknown) => {
+          calls.push(input)
+          return { data: { parts: 2, tokens: 10, diagnostics: {} } }
+        },
+      },
+    }
+
+    await KiloRun.runBuiltin(sdk as never, "ses_test", "shake", undefined, undefined, "/tmp/project")
+
+    expect(calls).toEqual([{ sessionID: "ses_test", directory: "/tmp/project" }])
   })
 })
 
