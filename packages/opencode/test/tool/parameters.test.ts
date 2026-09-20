@@ -263,8 +263,9 @@ describe("tool parameters", () => {
       const parsed = parse(Task, { description: "d", prompt: "p", subagent_type: "general", background: true })
       expect(parsed.background).toBe(true)
     })
-    test("rejects missing prompt", () => {
-      expect(accepts(Task, { description: "d", subagent_type: "general" })).toBe(false)
+    test("launch fields are schema-optional for cancel mode (runtime guard enforces them)", () => {
+      expect(accepts(Task, { description: "d", subagent_type: "general" })).toBe(true)
+      expect(accepts(Task, { task_id: "t1", cancel: true })).toBe(true)
     })
   })
 

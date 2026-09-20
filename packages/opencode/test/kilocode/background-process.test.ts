@@ -90,6 +90,9 @@ function update(sessionID: SessionID) {
 }
 
 describe("BackgroundProcess", () => {
+  const win32Instance = process.platform === "win32" ? it.instance.skip : it.instance
+  const win32Live = process.platform === "win32" ? it.live.skip : it.live
+
   it.instance("starts, reports readiness, and stops a process", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
@@ -365,7 +368,7 @@ setInterval(() => {}, 1_000)
     }),
   )
 
-  it.instance("re-adopts persistent processes after instance reload", () =>
+  win32Instance("re-adopts persistent processes after instance reload", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const sessionID = SessionID.descending()
@@ -412,7 +415,7 @@ setInterval(() => console.log("tick"), 100)
     }),
   )
 
-  it.live("isolates persistent processes between non-git directories", () =>
+  win32Live("isolates persistent processes between non-git directories", () =>
     Effect.promise(async () => {
       await using first = await tmpdir()
       await using second = await tmpdir()
@@ -566,7 +569,7 @@ setInterval(() => {}, 1_000)
     35_000,
   )
 
-  it.instance("rejects a persistent manifest for an unrelated live process", () =>
+  win32Instance("rejects a persistent manifest for an unrelated live process", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const sessionID = SessionID.descending()
