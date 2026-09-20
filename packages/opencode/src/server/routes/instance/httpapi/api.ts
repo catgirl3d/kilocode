@@ -1,6 +1,5 @@
 import { Schema } from "effect"
 import { HttpApi } from "effect/unstable/httpapi"
-import { EventV2 } from "@opencode-ai/core/event"
 import { EventManifest } from "@/event-manifest"
 import { Credential } from "@opencode-ai/core/credential"
 import { Integration } from "@opencode-ai/core/integration"
@@ -54,16 +53,11 @@ import { Authorization } from "./middleware/authorization"
 import { SchemaErrorMiddleware } from "./middleware/schema-error"
 
 const EventSchema = Schema.Union([
-  ...EventManifest.Latest.values()
-    .map((definition) =>
-      Schema.Struct({
-        id: EventV2.ID,
-        type: Schema.Literal(definition.type),
-        properties: definition.data,
-      }).annotate({ identifier: `Event.${definition.type}` }),
-    )
-    .toArray(),
-  ...BusEvent.effectPayloads(), // kilocode_change - include legacy Kilo events until they migrate to EventV2
+  // kilocode_change start - [fork] single canonical payload per event type: BusEvent.effectPayloads()
+  // already exposes the full manifest (with identifiers) plus legacy registry events. The separate
+  // manifest map duplicated every event and produced Event*1 phantom schemas in generated SDK output.
+  ...BusEvent.effectPayloads(),
+  // kilocode_change end
   InstanceDisposed,
 ]).annotate({ identifier: "Event" })
 
