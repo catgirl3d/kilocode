@@ -50,4 +50,10 @@ describe("splitConfigByScope", () => {
     })
     expect(split.project).toEqual({})
   })
+
+  it("writes shell to global config", () => {
+    const split = splitConfigByScope({ shell: "bash" })
+    expect(split.global).toEqual({ shell: "bash" })
+    expect(split.project).toEqual({})
+  })
 })
