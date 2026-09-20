@@ -81,7 +81,8 @@ function ok<T>(data: T) {
   })
 }
 
-function footer(): FooterApi {
+// kilocode_change start - capture the backend catalog in the footer contract test
+function footer(events?: unknown[]): FooterApi {
   let closed = false
   const closes = new Set<() => void>()
 
@@ -106,7 +107,9 @@ function footer(): FooterApi {
         closes.delete(fn)
       }
     },
-    event() {},
+    event(value) {
+      events?.push(value)
+    },
     append() {},
     idle() {
       return Promise.resolve()
@@ -129,6 +132,7 @@ function footer(): FooterApi {
     },
   }
 }
+// kilocode_change end
 
 afterEach(() => {
   mock.restore()
@@ -176,9 +180,21 @@ describe("run interactive runtime", () => {
       ]),
     )
     spyOn(sdk.session, "get").mockRejectedValue(new Error("not needed"))
+    // kilocode_change start
     spyOn(sdk.app, "agents").mockImplementation(() => ok([]))
     spyOn(sdk.experimental.resource, "list").mockImplementation(() => ok({}))
-    spyOn(sdk.command, "list").mockImplementation(() => ok([]))
+    spyOn(sdk.command, "list").mockImplementation(() =>
+      ok([
+        {
+          name: "shake",
+          description: "clear eligible tool output without invoking an LLM",
+          source: "builtin",
+          kind: "action",
+        },
+      ]),
+    )
+    const events: unknown[] = []
+    // kilocode_change end
 
     const task = runInteractiveMode(
       {
@@ -201,7 +217,7 @@ describe("run interactive runtime", () => {
       },
       {
         createRuntimeLifecycle: async () => ({
-          footer: footer(),
+          footer: footer(events), // kilocode_change
           onResize: () => () => {},
           refreshTheme: () => {},
           resetForReplay: () => Promise.resolve(),
@@ -234,5 +250,20 @@ describe("run interactive runtime", () => {
     await task
 
     expect(transportProviders).toEqual([[provider]])
+    // kilocode_change start
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "catalog",
+        commands: [
+          {
+            name: "shake",
+            description: "clear eligible tool output without invoking an LLM",
+            source: "builtin",
+            kind: "action",
+          },
+        ],
+      }),
+    )
+    // kilocode_change end
   })
 })
