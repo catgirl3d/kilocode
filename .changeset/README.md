@@ -22,4 +22,4 @@ Short description of the change for the changelog.
 
 Use `patch` for bug fixes, `minor` for new features, `major` for breaking changes.
 
-Changeset files are consumed at release time when the `publish.yml` workflow runs, generating changelog entries for the GitHub release notes.
+Changeset files support the upstream package release flow. The fork's `publish-vscode-release.yml` workflow deliberately leaves them untouched and requires a reviewed top section in `packages/kilo-vscode/CHANGELOG.md` as its single source of truth for user-facing VSIX release notes.
