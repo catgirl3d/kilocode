@@ -247,6 +247,12 @@ export interface CompactRequest {
   modelID?: string
 }
 
+// fork_change start
+export interface ShakeRequest {
+  type: "shake"
+  sessionID: string
+}
+// fork_change end
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
   tab?: string
@@ -1628,6 +1634,7 @@ export type WebviewMessage =
   | SelectSourceRequest
   | RequestProvidersMessage
   | CompactRequest
+  | ShakeRequest // fork_change
   | RequestAgentsMessage
   | RequestSkillsMessage
   | RequestCommandsMessage

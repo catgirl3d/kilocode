@@ -41,6 +41,7 @@ import {
 import { CommandFiles } from "@/kilocode/command-files"
 import { Token } from "@opencode-ai/schema/kilocode/session-drain"
 import { PendingInfo as WakeupPending } from "@opencode-ai/schema/kilocode/wakeup-event"
+import { KiloSessionApi } from "./session" // kilocode_change
 
 const root = "/kilocode"
 const Scope = Schema.Literals(["global", "project"])
@@ -489,6 +490,7 @@ export const KilocodeApi = HttpApi.make("kilocode")
       .middleware(Authorization),
   )
   .addHttpApi(AnacondaDesktopApi)
+  .addHttpApi(KiloSessionApi) // kilocode_change
   .annotateMerge(
     OpenApi.annotations({
       title: "kilo HttpApi",

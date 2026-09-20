@@ -244,6 +244,29 @@ export interface SessionUpdatedMessage {
   session: SessionUpdate
 }
 
+// fork_change start
+export interface SessionShakeCompletedMessage {
+  type: "sessionShakeCompleted"
+  sessionID: string
+  parts: number
+  tokens: number
+  diagnostics?: {
+    rawMessages: number
+    projectionMessages: number
+    tools: number
+    completed: number
+    protected: number
+    compacted: number
+    candidates: number
+  }
+}
+
+export interface SessionShakeFailedMessage {
+  type: "sessionShakeFailed"
+  sessionID: string
+  error: string
+}
+// fork_change end
 export interface SessionDeletedMessage {
   type: "sessionDeleted"
   sessionID: string
@@ -1635,6 +1658,8 @@ export type ExtensionMessage =
   | SessionCreatedMessage
   | SessionForkedMessage
   | SessionUpdatedMessage
+  | SessionShakeCompletedMessage // fork_change
+  | SessionShakeFailedMessage // fork_change
   | SessionDeletedMessage
   | MessageRemovedMessage
   | DeleteMessageResultMessage

@@ -27,6 +27,7 @@ import { useLanguage } from "./language"
 import { createCostAlertHandler } from "./cost-alert"
 import { createSessionModelActions } from "./session-model-actions" // fork_change
 import { createSessionFavorites } from "./session-favorites" // fork_change
+import { createSessionShake } from "./session-shake" // fork_change
 import { showToast } from "@kilocode/kilo-ui/toast"
 import type {
   SessionInfo,
@@ -159,6 +160,15 @@ export const SessionProvider: ParentComponent = (props) => {
   }
   const [draftSessionID, setDraftSessionID] = createSignal<string | undefined>()
   const [userClearedSession, setUserClearedSession] = createSignal(false)
+  // fork_change start
+  const shakeActions = createSessionShake({
+    isConnected: () => server.isConnected(),
+    currentSessionID,
+    post: vscode.postMessage,
+    language,
+  })
+  const shake = shakeActions.shake
+  // fork_change end
 
   // Per-session status map — keyed by sessionID
   const [statusMap, setStatusMap] = createStore<Record<string, SessionStatusInfo>>({})
@@ -850,6 +860,7 @@ export const SessionProvider: ParentComponent = (props) => {
 
   function handleStreamMessage(message: ExtensionMessage): boolean {
     if (handleWakeupMessage(message)) return true
+    if (shakeActions.handleMessage(message)) return true // fork_change
     if (!streamMessage(message)) return false
     if (message.type === "partUpdated") {
       handlePartUpdated(message.sessionID, message.messageID, message.part, message.delta)
@@ -3040,6 +3051,8 @@ export const SessionProvider: ParentComponent = (props) => {
     sendCommand,
     abort,
     compact,
+    shake, // fork_change
+    shaking: () => shakeActions.shaking() === currentSessionID(), // fork_change
     respondToPermission,
     replyToQuestion,
     rejectQuestion,

@@ -317,6 +317,17 @@ export function resolvePrompt(text: string, hasComments: boolean, hasImages: boo
   if (text || hasComments || hasImages) return text
   return "continue"
 }
+
+export function commandAction(
+  command: { name: string; source?: "builtin" | "command" | "mcp" | "skill"; action?: () => void } | undefined,
+  shake: () => void,
+) {
+  if (command?.action) return command.action
+  if (command?.name !== "shake" || command.source !== "builtin") return
+  return shake
+}
+
+// fork_change end
 /**
  * Whether the session is busy from the prompt's perspective.
  * Returns false (idle-like) when the session is busy only because
