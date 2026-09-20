@@ -391,10 +391,12 @@ const ConfigWrapper: ParentComponent<{
       mergedGlobalConfig: createMemo(() => (scoped ? global() : cfg())),
       homeDir: () => undefined,
       globalDraft: () => ({}),
+      globalEffectiveConfig: createMemo(() => (scoped ? global() : cfg())), // fork_change
       projectConfig: createMemo(() => (scoped ? project() : cfg())),
       // The workspace layer is its own scope: never fall back to the effective
       // config, or a saved rule would look workspace-supplied.
       workspaceConfig: createMemo(() => workspace()),
+      projectBinding: () => undefined, // fork_change
       collections: () => ({}),
       settings,
       shortcuts: () => ({ bindings: {}, selection: false }),
@@ -402,6 +404,7 @@ const ConfigWrapper: ParentComponent<{
       loading: () => false,
       isDirty: dirty,
       saving: () => false,
+      blocked: () => false, // fork_change
       saveError: () => null,
       clearSaveError: noop,
       updateConfig: (partial: Partial<Config>) => {

@@ -113,6 +113,12 @@ let saveCount = 0
  */
 const nextSaveId = () => `s${(saveCount += 1).toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
+// fork_change start
+export function acceptsConfig(saving: boolean, blocked: boolean) {
+  return !saving && !blocked
+}
+
+// fork_change end
 /**
  * Plain-object config state machine — mirrors the SolidJS ConfigProvider
  * logic without signals so the message-handling behavior is unit-testable.
@@ -129,6 +135,7 @@ export class ConfigState {
   draft: Partial<Config> = {}
   dirty = false
   saving = false
+  blocked = false // fork_change
   loading = true
   /** The id of the write `saving` waits on; only the answer that echoes it confirms. */
   request: string | undefined = undefined
@@ -142,7 +149,7 @@ export class ConfigState {
 
   /** Handle an incoming configLoaded push from the extension. */
   handleConfigLoaded(server: Config) {
-    if (this.saving) return
+    if (!acceptsConfig(this.saving, this.blocked)) return // fork_change
     this.config = resolveConfig(server, this.draft, this.dirty)
     this.saved = server
     this.loading = false
@@ -155,13 +162,20 @@ export class ConfigState {
     this.dirty = Object.keys(this.draft).length > 0
   }
 
+  // fork_change start
   /**
    * Handle an incoming configUpdated push from the extension. Only the message that echoes
    * the in-flight write's request id confirms it; any other push — another webview's save, a
-   * provider action, an SSE-driven refresh — re-applies the draft and leaves `saving` alone.
+   * provider action, an SSE-driven refresh — re-applies the draft and leaves `saving` alone,
+   * unless a blocked state accepts only the matching confirmation.
    */
+  // fork_change end
   handleConfigUpdated(server: Config, requestId?: string) {
-    if (this.saving && requestId != null && requestId === this.request) {
+    // fork_change start
+    const confirming = this.saving && requestId != null && requestId === this.request
+    if (this.blocked && !confirming) return
+    if (confirming) {
+      // fork_change end
       this.request = undefined
       this.saving = false
       this.draft = {}
@@ -183,14 +197,16 @@ export class ConfigState {
     this.saved = this.config
   }
 
+  // fork_change start
   /**
-   * Handle an explicit save failure from the extension. A failure that names another
-   * writer's request cannot be the answer to this save, so while a save is in flight it
-   * leaves `saving`, the draft, and `dirty` alone — the same guard the provider applies.
+   * Handle an explicit save failure from the extension. A failure that does not name this
+   * request cannot be the answer to this save, so while a save is in flight it leaves
+   * `saving`, the draft, and `dirty` alone — the same guard the provider applies.
    */
+  // fork_change end
   handleConfigSaveFailed(server: Config, requestId?: string) {
     if (!this.saving) return
-    if (requestId != null && requestId !== this.request) return
+    if (requestId !== this.request) return // fork_change
     this.saving = false
     this.request = undefined
     this.saved = server
@@ -199,10 +215,16 @@ export class ConfigState {
 
   /** Send the draft to the backend. */
   saveConfig() {
-    if (this.saving || Object.keys(this.draft).length === 0) return
+    if (this.saving || this.blocked || Object.keys(this.draft).length === 0) return // fork_change
     this.saving = true
     this.request = nextSaveId()
   }
+
+  // fork_change start
+  expireConfig() {
+    if (this.dirty) this.blocked = true
+  }
+  // fork_change end
 
   /** Discard pending changes. */
   discardConfig() {
@@ -210,5 +232,6 @@ export class ConfigState {
     this.draft = {}
     this.dirty = false
     this.request = undefined
+    this.blocked = false // fork_change
   }
 }

@@ -697,6 +697,15 @@ export interface FilePickerResultMessage {
   requestId: string
 }
 
+// fork_change start
+export interface ValidateInstructionPathResultMessage {
+  type: "validateInstructionPathResult"
+  requestId: string
+  path: string
+  valid: boolean
+  bindingId?: string
+}
+// fork_change end
 export interface TerminalContextResultMessage {
   type: "terminalContextResult"
   requestId: string
@@ -802,6 +811,7 @@ export interface ConfigLoadedMessage {
   config: Config
   /** Raw primary global config file — the file a settings write targets. */
   globalConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   /** Merged global scope: every global config file combined. */
   mergedGlobalConfig?: Config
   /** Home directory of the machine that runs the rules; a config entry may start with ~ or $HOME. */
@@ -820,6 +830,7 @@ export interface ConfigUpdatedMessage {
   config: Config
   /** Raw primary global config file — the file a settings write targets. */
   globalConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   /** Merged global scope: every global config file combined. */
   mergedGlobalConfig?: Config
   /** Home directory of the machine that runs the rules; a config entry may start with ~ or $HOME. */
@@ -843,6 +854,7 @@ export interface ConfigUpdateFailedMessage {
   config?: Config
   /** Raw primary global config file — the file a settings write targets. */
   globalConfig?: Config
+  globalEffectiveConfig?: Config // fork_change
   /** Merged global scope: every global config file combined. */
   mergedGlobalConfig?: Config
   /** Home directory of the machine that runs the rules; a config entry may start with ~ or $HOME. */
@@ -1953,6 +1965,7 @@ export type ExtensionMessage =
   | FileSearchResultMessage
   | SessionSearchResultMessage
   | FilePickerResultMessage
+  | ValidateInstructionPathResultMessage // fork_change
   | TerminalContextResultMessage
   | TerminalContextErrorMessage
   | GitChangesContextResultMessage
