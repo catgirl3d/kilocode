@@ -29,10 +29,14 @@ import { useSession } from "../../context/session"
 import { useDisplay } from "../../context/display"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
+// fork_change start
+import { useMemory } from "../../context/memory"
 import { useServer } from "../../context/server"
 import { planDisplayPath } from "../../utils/plan-path"
 import { isRenderable, UPSTREAM_SUPPRESSED_TOOLS } from "../../utils/transcript-parts"
+import { MemoryMarkerMeta } from "@kilocode/kilo-memory/marker-meta"
 import { messageThroughput, formatTG } from "../../context/session-utils"
+// fork_change end
 import { formatClock, formatDuration } from "../../utils/message-time"
 import type { TurnTiming } from "../../context/transcript-rows"
 import { color as timelineColor } from "../../utils/timeline/colors"
@@ -117,6 +121,15 @@ interface AssistantMessageProps {
    * action row once the turn settles. */
   timing?: TurnTiming
   feedback?: MessageFeedbackControls
+  // fork_change start
+  /** id of the part containing the current chat-search match, if any — forces
+   * that part's collapsed tool/reasoning content open so the user can see
+   * the highlighted match without manually expanding it first. */
+  forceOpenPartID?: string
+  /** For a multi-file apply_patch match, the specific file within that part —
+   * lets that one nested item open instead of every file in the patch. */
+  forceOpenFile?: string
+  // fork_change end
   /** Part behind the currently hovered/focused task-timeline bar, if any. */
   highlight?: () => TimelineHighlight | undefined
   readonly?: boolean
@@ -130,7 +143,12 @@ type ToolStateProps = {
   status?: string
 }
 
-function TodoToolCard(props: { part: ToolPart }) {
+// fork_change start
+type MemoryItem = MemoryMarkerMeta.Decoded
+
+// fork_change end
+// fork_change start
+function TodoToolCard(props: { part: ToolPart; forceOpen?: boolean }) {
   const render = ToolRegistry.render(props.part.tool)
   const state = () => props.part.state as ToolStateProps
   const language = useLanguage()
@@ -148,6 +166,7 @@ function TodoToolCard(props: { part: ToolPart }) {
             output={state()?.output}
             status={state()?.status}
             defaultOpen
+            forceOpen={props.forceOpen}
             reveal={false}
           />
         </ToolApprovalProvider>
@@ -155,8 +174,10 @@ function TodoToolCard(props: { part: ToolPart }) {
     </Show>
   )
 }
+// fork_change end
 
-function BashToolCard(props: { part: ToolPart; defaultOpen: boolean }) {
+// fork_change start
+function BashToolCard(props: { part: ToolPart; defaultOpen: boolean; forceOpen?: boolean }) {
   const render = ToolRegistry.render(props.part.tool)
   const state = () => props.part.state as ToolStateProps
   const language = useLanguage()
@@ -175,6 +196,7 @@ function BashToolCard(props: { part: ToolPart; defaultOpen: boolean }) {
             output={state()?.output}
             status={state()?.status}
             defaultOpen={props.defaultOpen}
+            forceOpen={props.forceOpen}
             animate
             reveal={state()?.status === "pending" || state()?.status === "running"}
           />
@@ -183,6 +205,7 @@ function BashToolCard(props: { part: ToolPart; defaultOpen: boolean }) {
     </Show>
   )
 }
+// fork_change end
 
 /** Plain-text generation-speed value shown beside the copy/feedback buttons
  * on an assistant message.
@@ -218,6 +241,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
   const data = useData()
   const session = useSession()
   const display = useDisplay()
+  const mem = useMemory() // fork_change
   const language = useLanguage()
   const { config } = useConfig()
   const open = createMemo(() => config().terminal_command_display !== "collapsed")
@@ -234,6 +258,34 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
     if (!stored) return []
     return (stored as SDKPart[]).filter((part) => isRenderable(part, props.message))
   })
+  // fork_change start
+  const meta = createMemo(() =>
+    MemoryMarkerMeta.fromParts((props.parts ?? data.store.part?.[props.message.id] ?? []) as MemoryMarkerMeta.Part[]),
+  )
+  const recall = createMemo(() => {
+    const item = meta()
+    if (item?.type === "recall") return item
+  })
+  const fmt = (value: number) => value.toLocaleString(language.locale())
+  const count = (item: MemoryItem) => fmt(item.count)
+  const items = (item: MemoryItem) => item.items ?? []
+  const verbose = createMemo(() => Boolean(mem.status()?.state.verbose))
+  const tip = (item: MemoryItem) => {
+    const values = MemoryMarkerMeta.snippets(item, verbose())
+    return (
+      <div style={{ "text-align": "left", "white-space": "normal", "max-width": "280px" }}>
+        <Show
+          when={values.length > 0}
+          fallback={
+            <div>{`${language.t("chat.memory.badge.recalled")} · ${language.t("chat.memory.badge.items", { count: count(item) })}`}</div>
+          }
+        >
+          <For each={values}>{(value) => <div>{value}</div>}</For>
+        </Show>
+      </div>
+    )
+  }
+  // fork_change end
   // Pull the weighted generation rate across the turn's step-finish parts
   // (output + reasoning tokens over active generation duration) so the badge
   // represents the turn as a whole rather than whichever step happened to
@@ -292,6 +344,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             if (!planExitInfo(part)) return
             return part as unknown as ToolPart
           })
+          const forceOpen = createMemo(() => !!props.forceOpenPartID && part.id === props.forceOpenPartID) // fork_change
           // Reasoning blocks are excluded: they animate their own height and
           // their header and body bleed 6px past this wrapper, so the grow-in
           // clip would trim their sides for the whole stream and then release
@@ -379,6 +432,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                         <Show
                           when={planExit()}
                           fallback={
+                            // fork_change start
                             <Show
                               when={bash()}
                               fallback={
@@ -390,6 +444,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                       message={props.message as SDKMessage}
                                       showAssistantCopyPartID={props.showAssistantCopyPartID}
                                       defaultOpen={toolDefaultOpen(part, open(), edit(), mcp())}
+                                      forceOpen={forceOpen()}
                                       reasoningDisplay={display.reasoningDisplay()}
                                       settled={settled()}
                                       feedback={props.feedback}
@@ -404,12 +459,19 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                     />
                                   }
                                 >
-                                  <TodoToolCard part={part as unknown as ToolPart} />
+                                  <TodoToolCard part={part as unknown as ToolPart} forceOpen={forceOpen()} />
                                 </Show>
                               }
                             >
-                              {(tool) => <BashToolCard part={tool() as unknown as ToolPart} defaultOpen={open()} />}
+                              {(tool) => (
+                                <BashToolCard
+                                  part={tool() as unknown as ToolPart}
+                                  defaultOpen={open()}
+                                  forceOpen={forceOpen()}
+                                />
+                              )}
                             </Show>
+                            // fork_change end
                           }
                         >
                           {(tp) => <PlanExitCard part={tp()} sessionID={props.message.sessionID} />}
@@ -427,6 +489,19 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
           )
         }}
       </For>
+      {/* fork_change start */}
+      <Show when={mem.enabled() && recall()}>
+        {(item) => (
+          <Tooltip value={tip(item())} placement="top">
+            <div data-component="assistant-memory-badge">
+              {language.t("chat.memory.badge.recalled")} ·{" "}
+              {language.t("chat.memory.badge.items", { count: count(item()) })}
+              <Show when={verbose() && items(item()).length > 0}> · {items(item())[0]}</Show>
+            </div>
+          </Tooltip>
+        )}
+      </Show>
+      {/* fork_change end */}
     </>
   )
 }

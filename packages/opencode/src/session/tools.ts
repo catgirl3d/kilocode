@@ -112,6 +112,23 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   // kilocode_change end
   const restricted = yield* SandboxPolicy.networkRestricted(input.session.id) // kilocode_change
   const sandboxed = (yield* SandboxPolicy.status(input.session.id)).enabled // kilocode_change
+
+  // kilocode_change start - [fork] snapshot mutation detection
+  const shell = Shell.acceptable(cfg.shell) // kilocode_change
+
+  const mutates = Effect.fn("SessionTools.mutates")(function* (toolID: string, args: Record<string, unknown>) {
+    const access = yield* Effect.gen(function* () {
+      if (toolID !== "bash" || typeof args.command !== "string") return undefined
+      const instance = yield* InstanceState.context
+      const cwd = path.resolve(instance.directory, typeof args.workdir === "string" ? args.workdir : ".")
+      return yield* ShellPermission.pipe(
+        Effect.flatMap((permission) => permission.snapshotAccess({ command: args.command as string, cwd, shell })),
+      )
+    }).pipe(Effect.catchCause(() => Effect.succeed("unknown" as const)))
+    return KiloSnapshotMutation.mayMutate({ tool: toolID, args, shell: access })
+  })
+  // kilocode_change end
+
   const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => {
     const extra = {
       model: input.model,

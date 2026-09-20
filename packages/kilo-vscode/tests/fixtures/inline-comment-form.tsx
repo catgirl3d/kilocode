@@ -5,31 +5,84 @@ import type { PRReviewRequest } from "../../src/shared/pr-comment-actions"
 const { window, root, messages, node, button, input, type, last, respond, wait, mount } =
   await harness<PRReviewRequest>()
 const { PRCommentForm } = await import("../../webview-ui/agent-manager/pr/PRCommentForm")
+const saved: string[] = []
+const sent: string[] = []
 let cancelled = 0
 let completed = 0
+let reads = 0
+const initial = () => {
+  reads++
+  return ""
+}
 const release = mount(() => (
-  <div id="remote">
-    <PRCommentForm
-      inline
-      action="line"
-      worktreeId="inline-test"
-      prNumber={1}
-      prUrl="https://github.com/example/fixture/pull/1"
-      snapshotId="snapshot"
-      path="example.ts"
-      side="RIGHT"
-      startLine={2}
-      endLine={2}
-      onSuccess={() => completed++}
-      onCancel={() => cancelled++}
-    />
-  </div>
+  <>
+    <div id="local">
+      <PRCommentForm
+        inline
+        action="diff"
+        worktreeId="inline-test"
+        file="example.ts"
+        side="RIGHT"
+        startLine={2}
+        endLine={2}
+        selectedText="return 1"
+        destination="local"
+        onSave={(body) => saved.push(body)}
+        onSendKilo={(body) => sent.push(body)}
+        onGithubSuccess={() => {}}
+        onCancel={() => cancelled++}
+        onDestinationChange={() => {}}
+      />
+    </div>
+    <div id="remote">
+      <PRCommentForm
+        inline
+        action="line"
+        worktreeId="inline-test"
+        prNumber={1}
+        prUrl="https://github.com/example/fixture/pull/1"
+        snapshotId="snapshot"
+        path="example.ts"
+        side="RIGHT"
+        startLine={2}
+        endLine={2}
+        initialBody={initial()}
+        onSuccess={() => completed++}
+        onCancel={() => cancelled++}
+      />
+    </div>
+  </>
 ))
 await wait()
+const local = node("#local")
 const remote = node("#remote")
 assert.equal(root.querySelector('[data-slot="comment-toolbar"]'), null, "no second toolbar in inline forms")
+assert.equal(button("save", local).textContent, "Save")
+assert.equal(button("send-kilo", local).textContent, "Send to Kilo")
 assert.equal(button("submit", remote).textContent, "Post to GitHub")
 assert.equal(button("discard", remote).textContent, "Cancel")
+const before = reads
+type(local, "Preview **this**")
+assert.equal(reads, before, "typing in one form does not invalidate unrelated drafts")
+button("preview", local).click()
+await wait()
+assert.match(node('[data-slot="comment-preview"]', local).textContent ?? "", /Preview this/)
+button("write", local).click()
+assert.equal(document.activeElement, input(local))
+input(local).dispatchEvent(
+  new window.KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }) as unknown as Event,
+)
+assert.equal(saved.length, 0, "Shift+Enter does not submit")
+input(local).dispatchEvent(
+  new window.KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }) as unknown as Event,
+)
+assert.equal(saved.length, 0, "IME confirmation does not submit")
+input(local).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event)
+assert.deepEqual(sent, ["Preview **this**"])
+assert.equal(messages.length, 0, "local save never requests a GitHub write")
+type(local, "Send this")
+button("send-kilo", local).click()
+assert.deepEqual(sent, ["Preview **this**", "Send this"])
 type(remote, "Review this line")
 button("submit", remote).click()
 const request = last()

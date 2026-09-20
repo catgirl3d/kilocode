@@ -89,6 +89,15 @@ describe("Kilo PublicApi OpenAPI contract", () => {
     expect(spec.paths["/pty/{ptyID}/connect"]?.get).toBeDefined()
   })
 
+  test("keeps the endpoint-backed shake operation in the session SDK group", () => {
+    const spec = OpenApi.fromApi(PublicApi)
+    const path = "/session/{sessionID}/shake"
+    expect(spec.paths[path]?.post).toBeDefined()
+    expect(spec.paths[path]?.post?.operationId).toBe("session.shake")
+    expect(spec.paths[path]?.post?.responses?.["200"]).toBeDefined()
+    expect(spec.paths[path]?.post?.tags).toEqual(["session"])
+  })
+
   test("constrains embedding model metadata", () => {
     const accepts = (dimension: number, scoreThreshold: number) =>
       Result.isSuccess(

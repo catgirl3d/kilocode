@@ -17,6 +17,8 @@ type Internals = {
     project?: Partial<Config>,
     globalUnset?: string[][],
     projectUnset?: string[][],
+    globalBindingId?: string,
+    projectBindingId?: string,
   ) => Promise<void>
   fetchAndSendConfig: () => Promise<void>
   fetchAndSendConfigUpdated: () => Promise<void>
@@ -32,6 +34,7 @@ type Internals = {
   connectionGeneration: number
   configBindings: {
     create: (input: unknown) => { id: string }
+    get: (id: string, connection: number, valid: (project: unknown) => boolean) => unknown
   }
 }
 
@@ -186,6 +189,7 @@ describe("KiloProvider indexing refresh", () => {
     const payload = {
       config: snapshot.config,
       globalConfig: snapshot.targets!.global.raw,
+      globalEffectiveConfig: snapshot.globalConfig,
       projectConfig: snapshot.targets!.project.raw,
       settings: snapshot.settings,
       features: snapshot.features,
@@ -240,21 +244,70 @@ describe("KiloProvider indexing refresh", () => {
     expect(calls.indexOf("indexing")).toBeGreaterThan(calls.indexOf("configured"))
   })
 
-  it("handleUpdateConfig no longer eagerly fetches indexing status", async () => {
+  it("writes a valid config update without eagerly fetching indexing status", async () => {
     const conn = createConnection()
     const provider = new KiloProvider({} as never, conn.service as never)
     const internal = provider as unknown as Internals
 
+    const global = binding(internal, "global")
     let indexing = 0
     internal.connectionState = "connected"
     internal.fetchAndSendIndexingStatus = async () => {
       indexing += 1
     }
 
-    await internal.handleUpdateConfig({})
+    await internal.handleUpdateConfig({ model: "test/global" }, {}, [], [], global.id)
 
-    expect(conn.drains()).toBe(0)
+    expect(conn.drains()).toBe(1)
+    expect(conn.patches()).toEqual([
+      expect.objectContaining({
+        scope: "global",
+        expected: { path: "/config/kilo.jsonc", revision: "global-revision" },
+        set: { model: "test/global" },
+      }),
+    ])
     expect(indexing).toBe(0)
+  })
+
+  it("refreshes config when the binding is already stale", async () => {
+    const conn = createConnection()
+    const provider = new KiloProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    let calls = 0
+    internal.connectionState = "connected"
+    internal.fetchAndSendConfig = async () => {
+      calls += 1
+    }
+
+    await internal.handleUpdateConfig({ model: "test/global" }, {}, [], [], "missing")
+
+    expect(calls).toBe(1)
+  })
+
+  it("consumes failed bindings and refreshes after the first write conflicts", async () => {
+    const conn = createConnection()
+    const provider = new KiloProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    const messages: Array<Record<string, unknown>> = []
+    let resolve!: () => void
+    const loaded = new Promise<void>((done) => {
+      resolve = done
+    })
+    provider.postMessage = (message) => {
+      messages.push(message as Record<string, unknown>)
+      if (message.type === "configLoaded") resolve()
+    }
+    internal.connectionState = "connected"
+    conn.client.config.overlayUpdate = async () => {
+      throw new Error("revision conflict")
+    }
+    const global = binding(internal, "global")
+
+    await internal.handleUpdateConfig({ model: "test/global" }, {}, [], [], global.id)
+    await loaded
+
+    expect(messages.some((message) => message.type === "configLoaded")).toBe(true)
+    expect(internal.configBindings.get(global.id, internal.connectionGeneration, () => true)).toBeUndefined()
   })
 
   it("refreshes providers when prompt-training model visibility changes", async () => {
@@ -306,6 +359,37 @@ describe("KiloProvider indexing refresh", () => {
     ])
   })
 
+  it("persists disabled instructions independently in global and project scopes", async () => {
+    const conn = createConnection()
+    const provider = new KiloProvider({} as never, conn.service as never)
+    const internal = provider as unknown as Internals
+    internal.connectionState = "connected"
+    const global = binding(internal, "global")
+    const project = binding(internal, "project")
+
+    await internal.handleUpdateConfig(
+      { instructions_disabled: ["global.md"] },
+      { instructions_disabled: ["project.md"] },
+      [],
+      [],
+      global.id,
+      project.id,
+    )
+
+    expect(conn.patches()).toEqual([
+      expect.objectContaining({
+        scope: "global",
+        expected: { path: "/config/kilo.jsonc", revision: "global-revision" },
+        set: { instructions_disabled: ["global.md"] },
+      }),
+      expect.objectContaining({
+        scope: "project",
+        expected: { path: "/repo/.kilo/kilo.jsonc", revision: "project-revision" },
+        set: { instructions_disabled: ["project.md"] },
+      }),
+    ])
+  })
+
   it("reports a completed global scope when the project write conflicts", async () => {
     const target = (scope: "global" | "project", revision: string) => ({
       scope,
@@ -319,8 +403,19 @@ describe("KiloProvider indexing refresh", () => {
       effective: { model: "test/global" },
       targets: { global: target("global", "global-next"), project: target("project", "project-revision") },
     }
+    const fresh = {
+      global: target("global", "global-next"),
+      project: target("project", "project-fresh"),
+    }
     const client = {
+      global: {
+        config: {
+          get: async () => ({ data: {} }),
+        },
+      },
       config: {
+        get: async () => ({ data: {} }),
+        overlay: async () => ({ data: { targets: fresh } }),
         overlayUpdate: async (input: { scope: string }) => {
           if (input.scope === "project") throw new Error("revision conflict")
           return { data: snapshot }
@@ -333,7 +428,14 @@ describe("KiloProvider indexing refresh", () => {
     )
     const internal = provider as unknown as Internals
     const messages: Array<Record<string, unknown>> = []
-    provider.postMessage = (message) => messages.push(message as Record<string, unknown>)
+    let resolve!: () => void
+    const loaded = new Promise<void>((done) => {
+      resolve = done
+    })
+    provider.postMessage = (message) => {
+      messages.push(message as Record<string, unknown>)
+      if (message.type === "configLoaded") resolve()
+    }
     internal.connectionState = "connected"
     const global = binding(internal, "global")
     const project = binding(internal, "project")
@@ -346,11 +448,15 @@ describe("KiloProvider indexing refresh", () => {
       global.id,
       project.id,
     )
+    await loaded
 
     expect(messages.find((message) => message.type === "configUpdateFailed")).toMatchObject({
       completedScopes: ["global"],
       config: snapshot.effective,
       bindings: { global: { target: snapshot.targets.global }, project: { target: snapshot.targets.project } },
+    })
+    expect(messages.find((message) => message.type === "configLoaded")).toMatchObject({
+      bindings: { project: { target: fresh.project } },
     })
   })
 

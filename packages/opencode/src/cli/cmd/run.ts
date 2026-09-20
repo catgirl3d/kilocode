@@ -791,12 +791,7 @@ export const RunCommand = effectCmd({
         function emit(type: string, data: Record<string, unknown>) {
           if (args.format === "json") {
             process.stdout.write(
-              JSON.stringify({
-                type,
-                timestamp: Date.now(),
-                sessionID,
-                ...data,
-              }) + EOL,
+              JSON.stringify(KiloRun.jsonRecord(type, sessionID, data)) + EOL, // kilocode_change
             )
             return true
           }
@@ -1101,6 +1096,11 @@ export const RunCommand = effectCmd({
               promptFailed = true
               if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))
               process.exitCode = 1
+              return
+            }
+            if (builtin) {
+              const data = KiloRun.builtinCompletion(builtin, result)
+              if (data) emit("shake", data)
             }
             await drain.wait(client, cwd)
             // kilocode_change start - an empty model response must not exit 0: a caller

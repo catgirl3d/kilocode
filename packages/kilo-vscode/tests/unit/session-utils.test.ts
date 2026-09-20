@@ -25,6 +25,9 @@ import {
   recentSessions,
   optimistic,
   revertPromptState,
+  messageParts,
+  SNAPSHOT_RUNNING_KEY,
+  snapshotStatus,
 } from "../../webview-ui/src/context/session-utils"
 import type { Message, Part, ToolPart } from "../../webview-ui/src/types/messages"
 import { formatBrowserFeedback } from "../../src/shared/browser-feedback"
@@ -101,6 +104,31 @@ describe("computeStatus", () => {
   })
 })
 
+describe("session part and snapshot helpers", () => {
+  it("keeps only hydrated message parts during reconciliation", () => {
+    const parts: Part[] = [{ id: "part_1", type: "text", text: "ready" }]
+    const messages = [{ id: "msg_parts", parts } as Message, { id: "msg_empty", parts: [] } as Message]
+
+    expect(messageParts(messages)).toEqual({ msg_parts: parts })
+  })
+
+  it("reports running, baseline, and final snapshot states", () => {
+    expect(
+      snapshotStatus([
+        { type: "text", synthetic: true, metadata: { [SNAPSHOT_RUNNING_KEY]: true } },
+        { type: "step-start", snapshot: "baseline-hash" },
+        { type: "step-finish", snapshot: "final-hash" },
+      ]),
+    ).toEqual({
+      running: true,
+      events: [
+        { phase: "baseline", hash: "baseline-hash" },
+        { phase: "final", hash: "final-hash" },
+      ],
+    })
+  })
+})
+
 describe("recentSessions", () => {
   const at = (day: number) => `2026-01-${String(day).padStart(2, "0")}T00:00:00.000Z`
   const info = (id: string, day: number, parentID?: string | null) => ({
@@ -116,10 +144,26 @@ describe("recentSessions", () => {
       info("new-root", 5),
       info("blank-parent", 4, ""),
       info("mid-root", 3, null),
-      info("fourth-root", 2),
+      info("fourth-root", 4),
+      info("fifth-root", 3),
+      info("sixth-root", 3),
+      info("seventh-root", 3),
+      info("eighth-root", 2),
+      info("ninth-root", 10),
+      info("tenth-root", 9),
+      info("eleventh-root", 8),
+      info("twelfth-root", 7),
     ])
 
-    expect(result.map((session) => session.id)).toEqual(["new-root", "mid-root", "fourth-root"])
+    expect(result.map((session) => session.id)).toEqual([
+      "ninth-root",
+      "tenth-root",
+      "eleventh-root",
+      "twelfth-root",
+      "new-root",
+      "fourth-root",
+      "mid-root",
+    ])
   })
 
   it("does not mutate the session list while sorting recents", () => {

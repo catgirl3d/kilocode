@@ -89,9 +89,12 @@ describe("sendCommand dismisses pending tool requests", () => {
     expect(body).toContain("if (overrides?.agent)")
     expect(body).toContain("selectAgent(overrides.agent, scope)")
     expect(body).toContain("if (overrides?.model)")
-    expect(body).toContain("selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope)")
+    expect(body).toContain("selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope, false)")
     expect(body).toContain("if (overrides?.variant !== undefined)")
-    expect(body).toContain("selectVariant(overrides.variant, scope)")
+    expect(body).toContain("selectVariant(overrides.variant, scope, false)")
+    expect(body).toContain("const preset = overrides?.agent !== undefined || overrides?.model !== undefined")
+    expect(body.match(/variants\.request\(scope, preset\)/g)?.length).toBe(1)
+    expect(body.match(/\.\.\.settings/g)?.length).toBe(2)
   })
 })
 
@@ -319,24 +322,31 @@ describe("sendMessage / sendCommand draft id contract", () => {
     )
   })
 
-  it("sendCommand seeds the pending agent before resolving draft-scoped settings", () => {
+  it("sendCommand seeds the pending agent before resolving the effective command selection", () => {
     const body = extractFunctionBody(source, "sendCommand")
     expect(body).toMatch(
-      /if \(!sid && !draftID && effectiveDraftID\) \{\s*agentDrafts\.seed\(effectiveDraftID\)[\s\S]*submission\(scope, effectiveSelection\)/,
+      /if \(!sid && !draftID && effectiveDraftID\) \{\s*agentDrafts\.seed\(effectiveDraftID\)[\s\S]*const settings = \(\(\) =>/,
     )
   })
 
-  it("sendMessage and sendCommand post the settings returned by submission", () => {
+  it("sendMessage posts scoped settings and sendCommand posts the effective command selection", () => {
     expect(extractFunctionBody(source, "sendMessage")).toContain("const settings = submission(scope, selection)")
-    expect(extractFunctionBody(source, "sendCommand")).toContain(
-      "const { model, ...settings } = submission(scope, effectiveSelection)",
-    )
+    const command = extractFunctionBody(source, "sendCommand")
+    expect(command).toContain("const settings = (() => {")
+    expect(command).toContain("providerID: effectiveSelection.providerID")
+    expect(command).toContain("modelID: effectiveSelection.modelID")
+    expect(command).toContain("agent:")
+    expect(command).toContain("variant: variants.request(scope, preset)")
+    expect(command).not.toContain("commandAgent")
+    expect(command).toContain('const messageID = overrides?.messageID ?? Identifier.ascending("message")')
+    expect(command).toMatch(/type: "importAndSend"[\s\S]*messageID,[\s\S]*\.\.\.settings/)
+    expect(command).toMatch(/type: "sendCommand"[\s\S]*messageID,[\s\S]*\.\.\.settings/)
     expect(extractFunctionBody(source, "submission")).toContain("agent: resolvePromptAgent({")
   })
 
   it("does not resolve submission defaults for model-free Goal controls", () => {
     const body = extractFunctionBody(source, "sendCommand")
-    expect(body).toMatch(/if \(!effectiveSelection\) return\s+const \{ model, \.\.\.settings \} = submission/)
+    expect(body).toMatch(/const settings = \(\(\) => \{\s+if \(!effectiveSelection\) return/)
     expect(body).not.toContain("effectiveSelection ?? undefined")
   })
 

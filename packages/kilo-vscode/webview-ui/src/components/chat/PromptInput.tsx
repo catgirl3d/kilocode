@@ -33,10 +33,11 @@ import { useVSCode } from "../../context/vscode"
 import { useConfig } from "../../context/config"
 import { useProvider } from "../../context/provider"
 import { ModelSelector, ModelSelectorBase } from "../shared/ModelSelector"
+import { FavoriteModelSwitcher } from "../shared/FavoriteModelSwitcher" // fork_change
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
 import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
-import { canUseSpeechToText, selectedSpeechToTextModel } from "../speech-to-text/availability"
+import { canUseSpeechToText, selectedSpeechToTextModel, selectedSpeechToTextMode } from "../speech-to-text/availability" // fork_change
 import { ThinkingSelector } from "../shared/ThinkingSelector"
 import { useFileMention } from "../../hooks/useFileMention"
 import { usePasteCollapse } from "../../hooks/usePasteCollapse"
@@ -46,7 +47,7 @@ import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
-import { useSlashCommand, skill as isSkill } from "../../hooks/useSlashCommand"
+import { useSlashCommand, skill as isSkill, type SlashCommandEntry } from "../../hooks/useSlashCommand" // fork_change
 import { useGoalComposer } from "./goal/useGoalComposer"
 import { GoalHeader } from "./goal/GoalHeader"
 import { useGhostText } from "../../hooks/useGhostText"
@@ -781,6 +782,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const isDisabled = () => !server.isConnected() || locked() || goal.pending()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates(), features().speechToText)
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
+  const speechMode = () => selectedSpeechToTextMode(config()) // fork_change
   const hasInput = () =>
     text().trim().length > 0 ||
     imageAttach.images().length > 0 ||
@@ -1499,7 +1501,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const startSpeech = () => {
-    speech.start({ model: speechModel(), insert: insertSpeechText })
+    speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText }) // fork_change
   }
 
   const transcribeAndSend = () => {
@@ -1595,7 +1597,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "memoryOperation",
         operation: memory.operation,
         sessionID: sid(),
-        ...(memory.operation === "auto" ? { mode: memory.mode } : {}),
+        ...(memory.operation === "auto" || memory.operation === "verbose" ? { mode: memory.mode } : {}), // fork_change
         ...(memory.operation === "purge" ? { confirm: memory.confirm } : {}),
         ...(memory.operation === "remember" || memory.operation === "correct" ? { text: memory.text } : {}),
         ...(memory.operation === "forget" ? { query: memory.query } : {}),
@@ -2184,7 +2186,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       <div class="prompt-input-hint">
         <div class="prompt-input-hint-selectors">
           <ModeSwitcher sessionID={sid} blocked={props.blocked?.() ?? false} />
-          <ModelSelector sessionID={sid} blocked={props.blocked?.() ?? false} />
+          {/* fork_change start */}
+          <div class="model-quick-switcher">
+            <FavoriteModelSwitcher sessionID={sid} numbered />
+            <ModelSelector sessionID={sid} compact blocked={props.blocked?.() ?? false} />
+          </div>
+          {/* fork_change end */}
           <ThinkingSelector sessionID={sid} blocked={props.blocked?.() ?? false} />
         </div>
         <div class="prompt-input-hint-actions">

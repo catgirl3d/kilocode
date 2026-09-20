@@ -11,5 +11,89 @@
     "packages/kilo-vscode/out": true,
     "packages/kilo-vscode/dist": true
   },
-  "typescript.tsc.autoDetect": "off"
+  "typescript.tsc.autoDetect": "off",
+  "actionButtons": {
+    "commands": [
+      {
+        "name": "DEV",
+        "color": "#e0f7fa",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Start Dev CLI"]
+      },
+      {
+        "name": "EXT",
+        "color": "#e1bee7",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Launch Extension"]
+      },
+      {
+        "name": "WATCH",
+        "color": "#b3e5fc",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["VSCode - Watch"]
+      },
+      {
+        "name": "VSIX",
+        "color": "#b2ebd9",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["VSCode - Package VSIX (Windows x64)"]
+      },
+      {
+        "name": "TYPECHECK",
+        "color": "#fff59d",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Run Typecheck"]
+      },
+      {
+        "name": "LINT",
+        "color": "#ffcdd2",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Run Lint"]
+      },
+      {
+        "name": "TEST EXT",
+        "color": "#d1c4e9",
+        "singleInstance": true,
+        "cwd": "${workspaceFolder}/packages/kilo-vscode",
+        "command": "bun run test:unit"
+      },
+      {
+        "name": "TEST CLI",
+        "color": "#c8e6c9",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Run CLI Tests"]
+      },
+      {
+        "name": "DIFF",
+        "color": "white",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Kilo: Generate Staged Diff"]
+      },
+      {
+        "name": "FORCE PUSH",
+        "color": "#ffab91",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Git: Force Push with Lease"]
+      },
+      {
+        "name": "SOFT RESET",
+        "color": "#cfd8dc",
+        "useVsCodeApi": true,
+        "command": "workbench.action.tasks.runTask",
+        "args": ["Git: Custom Soft Reset"]
+      }
+    ],
+    "defaultColor": "white",
+    "reloadButton": "↻",
+    "loadNpmCommands": false
+  }
 }

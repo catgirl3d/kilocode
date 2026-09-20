@@ -163,6 +163,7 @@ export interface Config {
   mcp?: Record<string, McpConfig>
   command?: Record<string, CommandConfig>
   instructions?: string[]
+  instructions_disabled?: string[] // fork_change
   skills?: SkillsConfig
   snapshot?: boolean
   remote_control?: boolean
@@ -185,6 +186,7 @@ export interface Config {
   experimental?: ExperimentalConfig
   sandbox?: SandboxConfig
   indexing?: IndexingConfig
+  shell?: string // fork_change
 }
 
 export interface FeatureFlags {

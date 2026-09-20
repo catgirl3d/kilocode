@@ -71,31 +71,67 @@ import SettingsRow from "./SettingsRow"
 
 const builtin = (skill: SkillInfo) => skill.location === "builtin" || skill.location === "<built-in>"
 
+// fork_change start
+const SHELL_PRESETS = ["bash", "pwsh", "powershell", "cmd"] as const
+
+type ShellMode = (typeof SHELL_PRESETS)[number] | "auto" | "custom"
+
+const PRESET_SHELLS: ReadonlySet<string> = new Set(SHELL_PRESETS)
+
+interface ShellOption {
+  value: ShellMode
+  labelKey: string
+}
+
+const SHELL_OPTIONS: ShellOption[] = [
+  { value: "auto", labelKey: "settings.shell.auto" },
+  ...SHELL_PRESETS.map((preset) => ({ value: preset, labelKey: `settings.shell.${preset}` })),
+  { value: "custom", labelKey: "settings.shell.custom" },
+]
 // View states for the agents subtab
 type AgentView = "list" | "create" | "edit"
+type InstructionScope = "global" | "project"
+type InstructionRequest = { id: string; scope: InstructionScope; binding?: string }
 
 const AgentBehaviourTab: Component = () => {
   const language = useLanguage()
-  const { config, collections, settings, updateConfig, updateGlobalConfig, updateProjectConfig, updateSetting } =
-    useConfig()
+  const {
+    config,
+    collections,
+    settings,
+    globalConfig,
+    globalDraft,
+    globalEffectiveConfig,
+    projectConfig,
+    projectDraft,
+    projectBinding,
+    updateConfig,
+    updateGlobalConfig,
+    updateProjectConfig,
+    updateSetting,
+  } = useConfig()
   const session = useSession()
+  const server = useServer()
   const dialog = useDialog()
   const vscode = useVSCode()
   const [activeSubtab, setActiveSubtab] = createSignal<SubtabId>("agents")
+  const [search, setSearch] = createSignal("")
   const [newSkillPath, setNewSkillPath] = createSignal("")
   const [newSkillUrl, setNewSkillUrl] = createSignal("")
-  const [newInstruction, setNewInstruction] = createSignal("")
+  const [newGlobalInstruction, setNewGlobalInstruction] = createSignal("")
+  const [newProjectInstruction, setNewProjectInstruction] = createSignal("")
+  const [globalInstructionError, setGlobalInstructionError] = createSignal("")
+  const [projectInstructionError, setProjectInstructionError] = createSignal("")
+  const [globalInstructionBusy, setGlobalInstructionBusy] = createSignal(false)
+  const [projectInstructionBusy, setProjectInstructionBusy] = createSignal(false)
   const [claudeCompat, setClaudeCompat] = createSignal(false)
   const browse = () => vscode.postMessage({ type: "openMarketplacePanel" })
+  const requests = { value: 0 }
+  const picks = new Map<string, InstructionRequest>()
+  const checks: Partial<Record<InstructionScope, InstructionRequest>> = {}
 
   // Load the VS Code setting for Claude Code compatibility
   vscode.postMessage({ type: "requestClaudeCompatSetting" })
-  const unsubClaudeCompat = vscode.onMessage((msg) => {
-    if (msg.type === "claudeCompatSettingLoaded") {
-      setClaudeCompat(msg.enabled)
-    }
-  })
-  onCleanup(unsubClaudeCompat)
 
   // Agent view state
   const [agentView, setAgentView] = createSignal<AgentView>("list")
@@ -138,29 +174,192 @@ const AgentBehaviourTab: Component = () => {
     ]
   })
 
-  const instructions = () => config().instructions ?? []
+  const [customMode, setCustomMode] = createSignal(false)
+  const [customShell, setCustomShell] = createSignal("")
 
-  const addInstruction = () => {
-    const value = newInstruction().trim()
-    if (!value) {
+  createEffect(() => {
+    const value = globalConfig().shell
+    if (value === undefined || PRESET_SHELLS.has(value)) setCustomMode(false)
+  })
+
+  const shellMode = (): ShellMode => {
+    if (customMode()) return "custom"
+    const value = globalConfig().shell
+    if (value === undefined || value === "") return "auto"
+    if (PRESET_SHELLS.has(value)) return value as ShellMode
+    return "custom"
+  }
+
+  const shellText = () => {
+    if (customMode()) return customShell()
+    const value = globalConfig().shell
+    return value !== undefined && !PRESET_SHELLS.has(value) ? value : ""
+  }
+
+  const selectShell = (next: ShellMode) => {
+    if (next === "auto") {
+      const value = globalConfig().shell
+      setCustomMode(false)
+      setCustomShell("")
+      if (value === undefined) return
+      updateGlobalConfig({ shell: undefined })
       return
     }
-    const current = [...instructions()]
-    if (!current.includes(value)) {
-      current.push(value)
-      updateConfig({ instructions: current })
+    if (next === shellMode()) return
+    setCustomShell("")
+    if (next === "custom") {
+      setCustomMode(true)
+      return
     }
-    setNewInstruction("")
+    setCustomMode(false)
+    if (next === globalConfig().shell) return
+    updateGlobalConfig({ shell: next })
   }
 
-  const removeInstruction = (index: number) => {
-    const current = [...instructions()]
-    current.splice(index, 1)
-    updateConfig({ instructions: current })
+  const commitCustomShell = (value: string) => {
+    setCustomShell(value)
+    const next = value.trim()
+    if (!next) {
+      setCustomMode(false)
+      if (globalConfig().shell !== undefined) updateGlobalConfig({ shell: undefined })
+      return
+    }
+    setCustomMode(true)
+    if (next === globalConfig().shell) return
+    updateGlobalConfig({ shell: next })
   }
+  const globalInstructions = createMemo(() => listInstructions(globalEffectiveConfig(), globalConfig()))
+  const projectInstructions = createMemo(() => listInstructions(projectConfig()))
+
+  const setInstructionInput = (scope: InstructionScope, value: string) => {
+    if (scope === "global") {
+      setNewGlobalInstruction(value)
+      setGlobalInstructionError("")
+      setGlobalInstructionBusy(false)
+      checks[scope] = undefined
+      return
+    }
+    setNewProjectInstruction(value)
+    setProjectInstructionError("")
+    setProjectInstructionBusy(false)
+    checks[scope] = undefined
+  }
+
+  const setInstructionBusy = (scope: InstructionScope, value: boolean) => {
+    if (scope === "global") {
+      setGlobalInstructionBusy(value)
+      return
+    }
+    setProjectInstructionBusy(value)
+  }
+
+  const setInstructionError = (scope: InstructionScope, value: string) => {
+    if (scope === "global") {
+      setGlobalInstructionError(value)
+      return
+    }
+    setProjectInstructionError(value)
+  }
+
+  const commitInstruction = (scope: InstructionScope, value: string) => {
+    if (scope === "global") updateGlobalConfig(addInstruction(globalConfig(), value))
+    if (scope === "project") updateProjectConfig(addInstruction(projectConfig(), value))
+    setInstructionInput(scope, "")
+  }
+
+  const submitInstruction = (scope: InstructionScope, selected?: string) => {
+    const value = (selected ?? (scope === "global" ? newGlobalInstruction() : newProjectInstruction())).trim()
+    const binding = scope === "project" ? projectBinding()?.id : undefined
+    if (scope === "project" && !binding) return
+    if (!value) {
+      const id = `instruction-picker-${scope}-${++requests.value}`
+      picks.set(id, { id, scope, binding })
+      vscode.postMessage({ type: "requestFilePicker", requestId: id })
+      return
+    }
+
+    const id = `instruction-validation-${scope}-${++requests.value}`
+    checks[scope] = { id, scope, binding }
+    setInstructionError(scope, "")
+    setInstructionBusy(scope, true)
+    vscode.postMessage({ type: "validateInstructionPath", requestId: id, path: value, scope, bindingId: binding })
+  }
+
+  const delGlobal = (path: string) => updateGlobalConfig(removeInstruction(globalConfig(), path))
+  const delProject = (path: string) => updateProjectConfig(removeInstruction(projectConfig(), path))
+
+  const setGlobal = (path: string, enabled: boolean) => {
+    const value = globalConfig()
+    const next = value.instructions?.includes(path) ? value : { ...value, ...addInstruction(value, path) }
+    updateGlobalConfig(toggleInstruction(next, path, enabled))
+  }
+
+  const setProject = (path: string, enabled: boolean) =>
+    updateProjectConfig(toggleInstruction(projectConfig(), path, enabled))
+
+  const open = (path: string) => {
+    if (instructionKind(path) === "glob") return
+    vscode.postMessage({ type: "openFile", filePath: path })
+  }
+
+  const expire = () => {
+    checks.project = undefined
+    setProjectInstructionBusy(false)
+    for (const [id, request] of picks) {
+      if (request.scope === "project") picks.delete(id)
+    }
+  }
+
+  const pick = (msg: FilePickerResultMessage) => {
+    const request = picks.get(msg.requestId)
+    if (!request) return
+    picks.delete(msg.requestId)
+    if (!msg.path) return
+    if (request.binding && request.binding !== projectBinding()?.id) return
+    setInstructionInput(request.scope, msg.path)
+    submitInstruction(request.scope, msg.path)
+  }
+
+  const validate = (msg: ValidateInstructionPathResultMessage) => {
+    const scope =
+      checks.global?.id === msg.requestId ? "global" : checks.project?.id === msg.requestId ? "project" : undefined
+    if (!scope) return
+    const request = checks[scope]
+    if (!request) return
+    checks[scope] = undefined
+    setInstructionBusy(scope, false)
+    if (request.binding && (request.binding !== projectBinding()?.id || request.binding !== msg.bindingId)) return
+    if (msg.valid) {
+      commitInstruction(scope, msg.path)
+      return
+    }
+    setInstructionError(scope, language.t("settings.agentBehaviour.instructionFiles.notFound", { path: msg.path }))
+  }
+
+  const unsub = vscode.onMessage((msg) => {
+    if (msg.type === "configBindingExpired") {
+      expire()
+      return
+    }
+    if (msg.type === "claudeCompatSettingLoaded") {
+      setClaudeCompat(msg.enabled)
+      return
+    }
+    if (msg.type === "filePickerResult") {
+      pick(msg)
+      return
+    }
+    if (msg.type === "validateInstructionPathResult") validate(msg)
+  })
+  onCleanup(unsub)
 
   const skillPaths = () => config().skills?.paths ?? []
   const skillUrls = () => config().skills?.urls ?? []
+  const filtered = createMemo(() => {
+    const query = search().trim().toLowerCase()
+    if (!query) return session.skills()
+    return session.skills().filter((skill) => skill.name.toLowerCase().includes(query))
+  })
 
   const addSkillPath = () => {
     const value = newSkillPath().trim()
@@ -312,6 +511,43 @@ const AgentBehaviourTab: Component = () => {
 
     return (
       <div>
+        <Card style={{ "margin-bottom": "12px" }}>
+          <SettingsRow
+            title={language.t("settings.shell.title")}
+            description={language.t("settings.shell.description")}
+            tag={() => language.t("settings.config.scope.global")}
+            last={shellMode() !== "custom"}
+          >
+            <Select
+              options={SHELL_OPTIONS}
+              current={SHELL_OPTIONS.find((o) => o.value === shellMode())}
+              value={(o) => o.value}
+              label={(o) => language.t(o.labelKey)}
+              onSelect={(o) => {
+                if (!o) return
+                selectShell(o.value)
+              }}
+              variant="secondary"
+              size="small"
+              triggerVariant="settings"
+            />
+          </SettingsRow>
+          <Show when={shellMode() === "custom"}>
+            <SettingsRow
+              title={language.t("settings.shell.customPath.title")}
+              description={language.t("settings.shell.customPath.description")}
+              last
+            >
+              <TextField
+                value={shellText()}
+                placeholder={language.t("settings.shell.customPath.placeholder")}
+                onChange={commitCustomShell}
+                hideLabel
+                label={language.t("settings.shell.customPath.title")}
+              />
+            </SettingsRow>
+          </Show>
+        </Card>
         {/* Default agent */}
         <Card style={{ "margin-bottom": "12px" }}>
           <SettingsRow
@@ -911,40 +1147,58 @@ const AgentBehaviourTab: Component = () => {
           </Card>
         }
       >
-        <Card style={{ "margin-bottom": "16px" }}>
-          <For each={session.skills()}>
-            {(skill, index) => (
-              <div
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  "justify-content": "space-between",
-                  padding: "8px 0",
-                  "border-bottom": index() < session.skills().length - 1 ? "1px solid var(--border-weak-base)" : "none",
-                }}
-              >
-                <div style={{ flex: 1, "min-width": 0 }}>
-                  <div data-slot="settings-row-label-title" style={{ "margin-bottom": "0" }}>
-                    {skill.name}
+        <div style={{ "margin-bottom": "8px" }}>
+          <TextField
+            label={language.t("settings.agentBehaviour.skillSearch")}
+            hideLabel
+            placeholder={language.t("settings.agentBehaviour.skillSearch")}
+            value={search()}
+            onChange={setSearch}
+          />
+        </div>
+        <Show
+          when={filtered().length > 0}
+          fallback={
+            <Card style={{ "margin-bottom": "16px" }}>
+              <div data-slot="settings-row-label-subtitle">{language.t("settings.agentBehaviour.noSkillsMatch")}</div>
+            </Card>
+          }
+        >
+          <Card style={{ "margin-bottom": "16px" }}>
+            <For each={filtered()}>
+              {(skill, index) => (
+                <div
+                  style={{
+                    display: "flex",
+                    "align-items": "center",
+                    "justify-content": "space-between",
+                    padding: "8px 0",
+                    "border-bottom": index() < filtered().length - 1 ? "1px solid var(--border-weak-base)" : "none",
+                  }}
+                >
+                  <div style={{ flex: 1, "min-width": 0 }}>
+                    <div data-slot="settings-row-label-title" style={{ "margin-bottom": "0" }}>
+                      {skill.name}
+                    </div>
+                    <div
+                      data-slot="settings-row-label-subtitle"
+                      style={{
+                        "margin-top": "4px",
+                        "font-family": "var(--vscode-editor-font-family, monospace)",
+                      }}
+                    >
+                      <div>{skill.description}</div>
+                      {!builtin(skill) && <div>{skill.location}</div>}
+                    </div>
                   </div>
-                  <div
-                    data-slot="settings-row-label-subtitle"
-                    style={{
-                      "margin-top": "4px",
-                      "font-family": "var(--vscode-editor-font-family, monospace)",
-                    }}
-                  >
-                    <div>{skill.description}</div>
-                    {!builtin(skill) && <div>{skill.location}</div>}
-                  </div>
+                  {!builtin(skill) && (
+                    <IconButton size="small" variant="ghost" icon="close" onClick={() => confirmRemoveSkill(skill)} />
+                  )}
                 </div>
-                {!builtin(skill) && (
-                  <IconButton size="small" variant="ghost" icon="close" onClick={() => confirmRemoveSkill(skill)} />
-                )}
-              </div>
-            )}
-          </For>
-        </Card>
+              )}
+            </For>
+          </Card>
+        </Show>
       </Show>
 
       {/* Skill paths */}
@@ -1096,63 +1350,129 @@ const AgentBehaviourTab: Component = () => {
           </div>
         </div>
 
-        {/* Add new instruction path */}
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            "align-items": "center",
-            padding: "8px 0",
-            "border-bottom": instructions().length > 0 ? "1px solid var(--border-weak-base)" : "none",
-          }}
-        >
-          <div style={{ flex: 1 }}>
-            <TextField
-              value={newInstruction()}
-              placeholder="e.g. ./INSTRUCTIONS.md"
-              onChange={(val) => setNewInstruction(val)}
-              onKeyDown={(e: KeyboardEvent) => {
-                if (e.key === "Enter") addInstruction()
-              }}
-            />
-          </div>
-          <Button variant="secondary" onClick={addInstruction}>
-            {language.t("common.add")}
-          </Button>
-        </div>
-
-        {/* Instructions list */}
-        <For each={instructions()}>
-          {(path, index) => (
-            <div
-              style={{
-                display: "flex",
-                "align-items": "center",
-                "justify-content": "space-between",
-                padding: "6px 0",
-                "border-bottom": index() < instructions().length - 1 ? "1px solid var(--border-weak-base)" : "none",
-              }}
-            >
-              <span
-                style={{
-                  "font-family": "var(--vscode-editor-font-family, monospace)",
-                  "font-size": "var(--kilo-font-size-12)",
-                }}
-              >
-                {path}
-              </span>
-              <div style={{ display: "flex", "align-items": "center", gap: "4px" }}>
-                <IconButton
-                  size="small"
-                  variant="ghost"
-                  icon="pencil-line"
-                  onClick={() => vscode.postMessage({ type: "openFile", filePath: path })}
+        <div style={{ display: "grid", gap: "12px", padding: "8px 0" }}>
+          <section style={{ display: "grid", gap: "8px" }}>
+            <div style={{ "font-weight": "500" }}>{language.t("settings.config.scope.global")}</div>
+            <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+              <div style={{ flex: 1 }}>
+                <TextField
+                  value={newGlobalInstruction()}
+                  placeholder="e.g. ./INSTRUCTIONS.md"
+                  onChange={(value) => setInstructionInput("global", value)}
+                  onKeyDown={(e: KeyboardEvent) => {
+                    if (e.key === "Enter") submitInstruction("global")
+                  }}
+                  validationState={globalInstructionError() ? "invalid" : undefined}
+                  error={globalInstructionError()}
                 />
-                <IconButton size="small" variant="ghost" icon="close" onClick={() => removeInstruction(index())} />
               </div>
+              <Button
+                variant="secondary"
+                disabled={globalInstructionBusy()}
+                onClick={() => submitInstruction("global")}
+              >
+                {language.t("common.add")}
+              </Button>
             </div>
-          )}
-        </For>
+            <For each={globalInstructions()}>
+              {(item, index) => (
+                <div
+                  style={{
+                    display: "flex",
+                    "align-items": "center",
+                    "justify-content": "space-between",
+                    padding: "6px 0",
+                    "border-bottom":
+                      index() < globalInstructions().length - 1 ? "1px solid var(--border-weak-base)" : "none",
+                    opacity: item.enabled ? "1" : "0.55",
+                  }}
+                >
+                  <span
+                    style={{
+                      "font-family": "var(--vscode-editor-font-family, monospace)",
+                      "font-size": "var(--kilo-font-size-12)",
+                    }}
+                    title={item.path}
+                  >
+                    {item.path}
+                  </span>
+                  <div style={{ display: "flex", "align-items": "center", gap: "4px" }}>
+                    <Switch checked={item.enabled} onChange={(checked) => setGlobal(item.path, checked)} hideLabel>
+                      {item.path}
+                    </Switch>
+                    <Show when={item.kind !== "glob"}>
+                      <IconButton size="small" variant="ghost" icon="pencil-line" onClick={() => open(item.path)} />
+                    </Show>
+                    <Show when={item.owned !== false}>
+                      <IconButton size="small" variant="ghost" icon="close" onClick={() => delGlobal(item.path)} />
+                    </Show>
+                  </div>
+                </div>
+              )}
+            </For>
+          </section>
+
+          <Show when={server.workspaceDirectory()}>
+            <section style={{ display: "grid", gap: "8px" }}>
+              <div style={{ "font-weight": "500" }}>{language.t("settings.config.scope.local")}</div>
+              <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+                <div style={{ flex: 1 }}>
+                  <TextField
+                    value={newProjectInstruction()}
+                    placeholder="e.g. ./INSTRUCTIONS.md"
+                    onChange={(value) => setInstructionInput("project", value)}
+                    onKeyDown={(e: KeyboardEvent) => {
+                      if (e.key === "Enter") submitInstruction("project")
+                    }}
+                    validationState={projectInstructionError() ? "invalid" : undefined}
+                    error={projectInstructionError()}
+                  />
+                </div>
+                <Button
+                  variant="secondary"
+                  disabled={projectInstructionBusy() || !projectBinding()}
+                  onClick={() => submitInstruction("project")}
+                >
+                  {language.t("common.add")}
+                </Button>
+              </div>
+              <For each={projectInstructions()}>
+                {(item, index) => (
+                  <div
+                    style={{
+                      display: "flex",
+                      "align-items": "center",
+                      "justify-content": "space-between",
+                      padding: "6px 0",
+                      "border-bottom":
+                        index() < projectInstructions().length - 1 ? "1px solid var(--border-weak-base)" : "none",
+                      opacity: item.enabled ? "1" : "0.55",
+                    }}
+                  >
+                    <span
+                      style={{
+                        "font-family": "var(--vscode-editor-font-family, monospace)",
+                        "font-size": "var(--kilo-font-size-12)",
+                      }}
+                      title={item.path}
+                    >
+                      {item.path}
+                    </span>
+                    <div style={{ display: "flex", "align-items": "center", gap: "4px" }}>
+                      <Switch checked={item.enabled} onChange={(checked) => setProject(item.path, checked)} hideLabel>
+                        {item.path}
+                      </Switch>
+                      <Show when={item.kind !== "glob"}>
+                        <IconButton size="small" variant="ghost" icon="pencil-line" onClick={() => open(item.path)} />
+                      </Show>
+                      <IconButton size="small" variant="ghost" icon="close" onClick={() => delProject(item.path)} />
+                    </div>
+                  </div>
+                )}
+              </For>
+            </section>
+          </Show>
+        </div>
       </Card>
 
       {/* Claude Code compatibility */}
@@ -1255,5 +1575,6 @@ const AgentBehaviourTab: Component = () => {
     </div>
   )
 }
+// fork_change end
 
 export default AgentBehaviourTab

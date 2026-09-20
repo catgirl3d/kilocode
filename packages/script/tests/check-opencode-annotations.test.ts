@@ -23,6 +23,7 @@ const EXEMPT_SCOPES = [
   "packages/script/tests/check-opencode-annotations.test.ts",
   ".github/workflows/check-opencode-annotations.yml",
 ]
+const EXEMPT_DIRS = new Set(["test", "tests", "fixture", "fixtures", "__snapshots__"])
 
 function isChecked(file: string) {
   const norm = file.replaceAll("\\", "/")
@@ -32,6 +33,7 @@ function isChecked(file: string) {
 function isExempt(file: string) {
   const norm = file.replaceAll("\\", "/").toLowerCase()
   if (norm.split("/").some((part) => part.includes("kilocode") || part.startsWith("kilo-"))) return true
+  if (norm.split("/").some((part) => EXEMPT_DIRS.has(part))) return true
   return EXEMPT_SCOPES.some((scope) => norm === scope || norm.startsWith(`${scope}/`))
 }
 
@@ -300,6 +302,9 @@ describe("isExempt", () => {
     // exempt — case-insensitive
     ["packages/opencode/src/KiloCode/foo.ts", true],
     ["packages/opencode/src/KILOCODE/bar.ts", true],
+    // exempt — test and fixture directories
+    ["script/fixtures/fork-audit/example.ts", true],
+    ["packages/opencode/src/fixtures/example.ts", true],
     // NOT exempt
     ["packages/opencode/src/index.ts", false],
     ["packages/opencode/src/cli/cmd/tui/routes/home.tsx", false],

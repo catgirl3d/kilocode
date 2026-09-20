@@ -34,7 +34,7 @@ const settle = async () => {
 const mount = (view: () => JSX.Element) => {
   const root = win.document.createElement("div")
   win.document.body.append(root)
-  const dispose = render(view, root)
+  const dispose = render(view, root as unknown as Parameters<typeof render>[1])
   return { root, dispose }
 }
 
@@ -53,7 +53,10 @@ try {
     ))
     await settle()
     assert.equal(built, 0)
-    const trigger = root.querySelector<HTMLButtonElement>('[data-slot="collapsible-trigger"]')
+    const trigger = root.querySelector('[data-slot="collapsible-trigger"]') as unknown as {
+      getAttribute(name: string): string | null
+      click(): void
+    } | null
     assert.ok(trigger)
     assert.equal(trigger.getAttribute("aria-expanded"), "false")
     trigger.click()

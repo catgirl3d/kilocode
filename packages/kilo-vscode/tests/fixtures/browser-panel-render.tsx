@@ -115,7 +115,7 @@ assert.equal(root.querySelectorAll("button[aria-label=Close]").length, 1)
 const overlay = root.querySelector(".am-browser-inspect") as HTMLButtonElement
 assert.ok(overlay)
 overlay.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 200 }) as DOMRect
-overlay.dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: 200, clientY: 100 }))
+overlay.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 200, clientY: 100 }))
 const request = sent.at(-1)
 assert.equal(request?.type, "inspect")
 if (request?.type !== "inspect") throw new Error("Selection command was not emitted")
@@ -124,7 +124,7 @@ assert.equal(references.length, 0)
 const retry = root.querySelector(".am-browser-inspect") as HTMLButtonElement
 assert.ok(retry)
 retry.getBoundingClientRect = overlay.getBoundingClientRect
-retry.dispatchEvent(new window.MouseEvent("click", { bubbles: true, clientX: 200, clientY: 100 }))
+retry.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 200, clientY: 100 }))
 const selected = sent.at(-1)
 if (selected?.type !== "inspect") throw new Error("Retry selection command was not emitted")
 receive?.({
