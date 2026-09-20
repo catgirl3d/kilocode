@@ -207,6 +207,44 @@ const drainIngest = Effect.gen(function* () {
   yield* Effect.sleep(1200)
   yield* Effect.promise(() => KiloSessions.drainIngestForShutdown())
 })
+/** Wait until an ingest POST carries kilo_meta with the expected orgId.
+ *  Polls for the flush result instead of sleeping a fixed debounce window:
+ *  the Updated handler runs fire-and-forget off GlobalBus, so a fixed sleep
+ *  races slow machines (get + sync + 1s debounce must all fit inside). */
+function waitMetaOrg(requests: Req[], orgId: string, message: string) {
+  return pollWithTimeout(
+    Effect.sync(() => (metaItems(requests).some((m) => m.orgId === orgId) ? (true as const) : undefined)),
+    message,
+    "10 seconds",
+  )
+}
+const drainAfterMeta = Effect.promise(() => KiloSessions.drainIngestForShutdown())
+
+/** Ingest POSTs carrying a session snapshot for `sessionID` with `title`.
+ *  Every Updated handler runs ingest.sync (even adopted/same-title paths that
+ *  never POST /title), so these prove the handler ran — unlike holdTitlePosts,
+ *  which cannot tell "suppressed" from "not run yet". Matched by (id, title):
+ *  bootstrap-era strays still carry the pre-rename title. */
+function sessionIngestPosts(requests: Req[], sessionID: string, title: string) {
+  return requests.filter((r) => {
+    if (r.method !== "POST" || !r.path.endsWith("/ingest")) return false
+    const data = r.body?.data
+    if (!Array.isArray(data)) return false
+    return data.some((item) => item?.type === "session" && item?.data?.id === sessionID && item?.data?.title === title)
+  })
+}
+
+/** Wait until at least `n` ingest POSTs for (`sessionID`, `title`) arrived. */
+function waitSessionIngest(requests: Req[], sessionID: string, title: string, n: number, message: string) {
+  return pollWithTimeout(
+    Effect.sync(() => {
+      const found = sessionIngestPosts(requests, sessionID, title)
+      return found.length >= n ? found : undefined
+    }),
+    message,
+    "10 seconds",
+  )
+}
 
 it.instance("meta org precedence: session metadata > KILO_ORG_ID > auth accountId", () => {
   const requests: Req[] = []
@@ -240,8 +278,9 @@ it.instance("meta org precedence: session metadata > KILO_ORG_ID > auth accountI
       yield* Effect.promise(() => KiloSessions.bootstrap(withMeta.id))
       requests.length = 0
       emitUpdated(instance.directory, withMeta.id, withMeta.title)
-      yield* drainIngest
+      yield* waitMetaOrg(requests, ORG_META, "meta with session orgId never posted")
       expect(metaItems(requests).some((m) => m.orgId === ORG_META)).toBe(true)
+      yield* drainAfterMeta
 
       // 2) env wins when metadata absent
       requests.length = 0
@@ -249,8 +288,9 @@ it.instance("meta org precedence: session metadata > KILO_ORG_ID > auth accountI
       yield* Effect.promise(() => KiloSessions.bootstrap(plain.id))
       requests.length = 0
       emitUpdated(instance.directory, plain.id, plain.title)
-      yield* drainIngest
+      yield* waitMetaOrg(requests, ORG_ENV, "meta with env orgId never posted")
       expect(metaItems(requests).some((m) => m.orgId === ORG_ENV)).toBe(true)
+      yield* drainAfterMeta
 
       // 3) auth accountId when env cleared
       delete process.env.KILO_ORG_ID
@@ -260,8 +300,9 @@ it.instance("meta org precedence: session metadata > KILO_ORG_ID > auth accountI
       yield* Effect.promise(() => KiloSessions.bootstrap(authOnly.id))
       requests.length = 0
       emitUpdated(instance.directory, authOnly.id, authOnly.title)
-      yield* drainIngest
+      yield* waitMetaOrg(requests, ORG_AUTH, "meta with auth orgId never posted")
       expect(metaItems(requests).some((m) => m.orgId === ORG_AUTH)).toBe(true)
+      yield* drainAfterMeta
     }).pipe(Effect.ensuring(auth.remove("kilo").pipe(Effect.orDie)))
   }).pipe(Effect.provide(layer()))
 })
@@ -286,8 +327,9 @@ it.instance("meta falls through invalid metadata orgId to env", () => {
     yield* Effect.promise(() => KiloSessions.bootstrap(bad.id))
     requests.length = 0
     emitUpdated(instance.directory, bad.id, bad.title)
-    yield* drainIngest
+    yield* waitMetaOrg(requests, ORG_ENV, "meta with env orgId never posted")
     expect(metaItems(requests).some((m) => m.orgId === ORG_ENV)).toBe(true)
+    yield* drainAfterMeta
   }).pipe(Effect.provide(layer()))
 })
 
@@ -314,9 +356,10 @@ it.instance("meta falls back to env when session row has no resolvable org", () 
     yield* drainIngest
     requests.length = 0
     emitUpdated(instance.directory, plain.id, plain.title)
-    yield* drainIngest
+    yield* waitMetaOrg(requests, ORG_ENV, "meta with env orgId never posted")
     expect(metaItems(requests).some((m) => m.orgId === ORG_ENV)).toBe(true)
     expect(metaItems(requests).every((m) => m.orgId !== ORG_META && m.orgId !== ORG_AUTH)).toBe(true)
+    yield* drainAfterMeta
   }).pipe(Effect.provide(layer()))
 })
 
@@ -391,6 +434,9 @@ it.instance("title broadcast: auto-title posts generated true; custom posts gene
     requests.length = 0
     markRenameAdopted(id, "From cloud")
     yield* sessions.setTitle({ sessionID: id, title: "From cloud" })
+    // Wait for the Updated handler's ingest before asserting suppression +
+    // consumption: hold-for-absence alone can't tell "suppressed" from "not run yet".
+    yield* waitSessionIngest(requests, id, "From cloud", 1, "adopted rename ingest never posted")
     yield* holdTitlePosts(requests, 0)
     expect(consumeRenameAdoption(id, "From cloud")).toBe(false)
   }).pipe(Effect.provide(layer()))
@@ -421,11 +467,16 @@ it.instance(
 
       markRenameAdopted(id, "From cloud")
       yield* sessions.setTitle({ sessionID: id, title: "From cloud" })
+      // Wait for the Updated handler (its ingest.sync carries the new title)
+      // before asserting no title POST + mark consumed: hold-for-absence alone
+      // cannot tell "suppressed" from "handler not run yet" on slow machines.
+      yield* waitSessionIngest(requests, id, "From cloud", 1, "handler A ingest never posted")
       yield* holdTitlePosts(requests, 0)
       expect(consumeRenameAdoption(id, "From cloud")).toBe(false)
 
       markRenameAdopted(id, "From cloud")
       yield* sessions.setTitle({ sessionID: id, title: "From cloud" })
+      yield* waitSessionIngest(requests, id, "From cloud", 2, "handler B ingest never posted")
       yield* holdTitlePosts(requests, 0)
       expect(consumeRenameAdoption(id, "From cloud")).toBe(false)
 
@@ -437,7 +488,7 @@ it.instance(
       expect(posts.some((p) => p.body?.title === "From cloud" && p.body?.generated === false)).toBe(true)
     }).pipe(Effect.provide(layer()))
   },
-  15_000,
+  30_000,
 )
 
 it.instance("title broadcast: first rename after create (rename-before-prompt) POSTs", () => {
