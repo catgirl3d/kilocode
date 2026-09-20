@@ -211,6 +211,31 @@ git range-diff <old-upstream>..<old-main> upstream/main..main
 Commit retention alone does not prove behavior preservation; review the range-diff
 and actual behavior.
 
+### Post-Rebase Fix Ownership
+
+Every fix found during or right after a rebase has exactly one owner commit.
+Find it with `git log --oneline -- <file>` or `git log -S <line>` against the
+pre-rebase fork history; with a consolidated history this takes a minute.
+
+- **Feature fix folds into its owner.** Commit the fix as a small standalone
+  commit at the stop where it was found, finish the rebase, then fold it
+  non-interactively with `git-surgeon fold <owner> --from <fix>`. Never use
+  `rebase -i --autosquash`. The invariant is one feature per commit; tail
+  commits must not grow the stop count of the next rebase.
+- **Upstream drift gets its own commit.** When upstream changed a contract,
+  fixture format, or default that the replayed code must adapt to, that is not
+  a feature fix: one commit per drift area named
+  `fix(rebase): adapt <area> to upstream <change>`. Never mix drift adaptation
+  into feature code; the next rebase must see what is ours and what is
+  adaptation.
+- **No mega finalize commits.** Commits like `finalize post-rebase
+  integration` touching dozens of files across features are forbidden. If a
+  fix spans files of several features, split it by hunk to each owner and put
+  only the unattributable remainder into the drift or governance commit.
+- **Marker and formatting churn accumulates.** Do not commit annotation or
+  prettier fixes per stop; fold them once at the end per Marker Discipline
+  above.
+
 ## Validation
 
 - After every rebase, including a conflict-free rebase, validate the packages and
