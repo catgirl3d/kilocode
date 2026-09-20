@@ -132,6 +132,7 @@ export const FimBody = Schema.Struct({
 
 export const AudioTranscriptionsBody = Schema.Struct({
   model: Schema.String,
+  mode: Schema.optional(Schema.Literals(["transcribe", "translate"])), // kilocode_change
   input_audio: Schema.Struct({
     data: Schema.String,
     format: Schema.String,

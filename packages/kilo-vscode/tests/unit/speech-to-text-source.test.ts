@@ -73,8 +73,8 @@ describe("speech-to-text custom source", () => {
     expect(result).toEqual({
       ok: true,
       models: [
-        { id: "whisper-1", label: "whisper-1", provider: `localhost:${server.port}` },
-        { id: "parakeet", label: "Parakeet", provider: `localhost:${server.port}` },
+        { id: "whisper-1", label: "whisper-1", provider: `localhost:${server.port}`, providerID: "custom" },
+        { id: "parakeet", label: "Parakeet", provider: `localhost:${server.port}`, providerID: "custom" },
       ],
     })
   })
@@ -116,7 +116,7 @@ describe("speech-to-text custom source", () => {
 
   it("parses list and data shaped catalogs and rejects empty ones", () => {
     expect(parseCustomCatalog([{ id: "a" }], "https://host.test/v1")).toEqual([
-      { id: "a", label: "a", provider: "host.test" },
+      { id: "a", label: "a", provider: "host.test", providerID: "custom" },
     ])
     expect(parseCustomCatalog({ data: [] }, "https://host.test/v1")).toBeUndefined()
     expect(parseCustomCatalog({}, "https://host.test/v1")).toBeUndefined()
