@@ -50,7 +50,7 @@ import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { ThinkingSelector } from "../shared/ThinkingSelector"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
 import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
-import { canUseSpeechToText, selectedSpeechToTextModel } from "../speech-to-text/availability"
+import { canUseSpeechToText, selectedSpeechToTextModel, selectedSpeechToTextMode } from "../speech-to-text/availability" // fork_change
 import { PromptSelectors } from "./PromptSelectors"
 import { PromptOverflow, type OverflowItem } from "./PromptOverflow"
 import { fold, reserve } from "./prompt-fold"
@@ -837,6 +837,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const isDisabled = () => !server.isConnected() || locked() || goal.pending()
   const canUseSpeech = () => canUseSpeechToText(config(), provider.authStates(), features().speechToText)
   const speechModel = () => selectedSpeechToTextModel(config(), speechModels.models())
+  const speechMode = () => selectedSpeechToTextMode(config()) // fork_change
   const hasInput = () =>
     text().trim().length > 0 ||
     imageAttach.images().length > 0 ||
@@ -1604,7 +1605,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const startSpeech = () => {
-    speech.start({ model: speechModel(), insert: insertSpeechText })
+    speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText }) // fork_change
   }
 
   const transcribeAndSend = () => {

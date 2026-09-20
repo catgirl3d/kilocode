@@ -502,6 +502,7 @@ export interface SpeechToTextStartMessage {
   type: "speechToTextStart"
   requestId: string
   model: string
+  mode?: "transcribe" | "translate" // fork_change
   language?: string
 }
 

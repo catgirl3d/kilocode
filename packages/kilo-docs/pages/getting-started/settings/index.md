@@ -57,7 +57,7 @@ If you check config files into version control, make sure they do not contain AP
 
 ### Voice Transcription Model
 
-When the Kilo provider is enabled and you are signed in, choose the transcription model under **Models** > **Speech to Text Model**. This stores `experimental.speech_to_text_model` in your global Kilo CLI config:
+Choose the transcription model under **Models** > **Speech to Text Model**. Kilo Gateway models require a Kilo sign-in; Groq models require a configured Groq API key. This stores `experimental.speech_to_text_model` in your global Kilo CLI config:
 
 ```json
 {
@@ -82,6 +82,8 @@ By default both the model list and the audio go to Kilo Gateway. Set **Models** 
 ```
 
 Models are read from `{base_url}/models` and audio is posted to `{base_url}/audio/transcriptions`. Leave the base URL empty to use Kilo Gateway. See [Voice Transcription](/docs/code-with-ai/features/speech-to-text) for details.
+
+When **Groq / Whisper Large V3** is selected, choose **Voice Input Result** to either transcribe the original spoken language or translate it into English. Groq Whisper Large V3 Turbo supports transcription only.
 
 ### Prompt-Training Model Visibility
 
