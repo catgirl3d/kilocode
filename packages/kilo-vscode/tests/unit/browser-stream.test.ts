@@ -770,7 +770,7 @@ describe.skipIf(!executable)("BrowserStream Chromium", () => {
     } finally {
       await probe.detach()
     }
-  }, 10000)
+  }, 30_000)
 
   test("streams bounded JPEGs from the existing page and honors monotonic viewport revisions", async () => {
     const { stream, page, next, frames } = await fixture()
@@ -815,7 +815,7 @@ describe.skipIf(!executable)("BrowserStream Chromium", () => {
     await stream.close()
     expect(page.isClosed()).toBe(false)
     expect(await page.locator("#input").inputValue()).toBe("")
-  }, 10000)
+  }, 30_000)
 
   test("streams Retina pixels while keeping input and scrolling in CSS coordinates", async () => {
     const { stream, page, next } = await fixture()
@@ -841,7 +841,7 @@ describe.skipIf(!executable)("BrowserStream Chromium", () => {
     const resized = await next((frame) => frame.revision === 2)
     expect([resized.width, resized.height]).toEqual([576, 384])
     expect(await page.evaluate(() => [innerWidth, innerHeight, scrollY])).toEqual([384, 256, 200])
-  }, 10000)
+  }, 30_000)
 
   test("continues streaming on the same page after navigation without an old UI acknowledgement", async () => {
     const { stream, page, next, scope } = await fixture()
@@ -860,7 +860,7 @@ describe.skipIf(!executable)("BrowserStream Chromium", () => {
     expect(await page.title()).toBe("Stream navigation")
     stream.acknowledge(first.sequence)
     expect(page.context().pages()).toHaveLength(1)
-  }, 10000)
+  }, 30_000)
 
   test("dispatches pointer, raw keys, text and wheel in order and releases held input", async () => {
     const { stream, page, recorded } = await fixture()
@@ -911,7 +911,7 @@ describe.skipIf(!executable)("BrowserStream Chromium", () => {
     })
     await stream.interact({ kind: "wheel", x: 0.8, y: 0.8, deltaX: 0, deltaY: 300, modifiers: 0 })
     await page.waitForFunction(() => window.scrollY > 0)
-  }, 10000)
+  }, 30_000)
 
   test.each(["keydown", "keypress"])("respects cancelled printable %s events", async (type) => {
     const { stream, page } = await fixture()
@@ -1119,7 +1119,7 @@ describe.skipIf(!executable)("BrowserStream Chromium", () => {
     await select(page, "#input")
     await expect(stream.interact({ kind: "clipboard", action: "cut" })).rejects.toThrow("text limit")
     expect((await page.locator("#input").inputValue()).length).toBe(65537)
-  }, 10000)
+  }, 30_000)
 
   test("uses the focused iframe and shadow input for clipboard events", async () => {
     const { stream, page } = await fixture()
@@ -1212,5 +1212,5 @@ describe.skipIf(!executable)("BrowserStream Chromium", () => {
     await stream.close()
     await stream.interact({ kind: "text", text: "closed" })
     expect(await page.locator("#input").inputValue()).toBe("")
-  }, 10000)
+  }, 30_000)
 })

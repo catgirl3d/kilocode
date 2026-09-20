@@ -1,17 +1,18 @@
 import { test, expect, describe } from "bun:test"
 import { KilocodePaths } from "../../src/kilocode/paths"
+import { McpMigrator } from "../../src/kilocode/mcp-migrator"
 import { tmpdir } from "../fixture/fixture"
 import path from "path"
 import fs from "fs/promises"
 
 async function withHome<T>(home: string, fn: () => Promise<T>): Promise<T> {
-  const prev = process.env.HOME
-  process.env.HOME = home
+  const prev = process.env.KILO_TEST_HOME
+  process.env.KILO_TEST_HOME = home
   try {
     return await fn()
   } finally {
-    if (prev) process.env.HOME = prev
-    else delete process.env.HOME
+    if (prev) process.env.KILO_TEST_HOME = prev
+    else delete process.env.KILO_TEST_HOME
   }
 }
 
@@ -219,6 +220,32 @@ description: A legacy skill
       )
 
       expect(result.some((d) => d.endsWith(".kilo"))).toBe(true)
+    })
+
+    test("globalDirs resolve under KILO_TEST_HOME instead of the real user profile", async () => {
+      await using tmp = await tmpdir()
+
+      await withHome(tmp.path, async () => {
+        const dirs = KilocodePaths.globalDirs()
+        expect(dirs.length).toBeGreaterThan(0)
+        for (const dir of dirs) expect(path.resolve(dir).startsWith(tmp.path)).toBe(true)
+      })
+    })
+
+    test("vscodeGlobalStorage resolves under KILO_TEST_HOME instead of real APPDATA", async () => {
+      await using tmp = await tmpdir()
+
+      await withHome(tmp.path, async () => {
+        const storage = KilocodePaths.vscodeGlobalStorage()
+        expect(storage.startsWith(tmp.path)).toBe(true)
+        expect(storage.endsWith(path.join(".vscode", "kilocode.kilo-code"))).toBe(true)
+
+        const settings = path.join(storage, "settings", "mcp_settings.json")
+        await fs.mkdir(path.dirname(settings), { recursive: true })
+        await Bun.write(settings, JSON.stringify({ mcpServers: { probe: { command: "noop" } } }))
+        const read = await McpMigrator.migrate({ skipGlobalPaths: false })
+        expect(read.mcp.probe).toBeDefined()
+      })
     })
 
     test("discovers multiple skills in same directory", async () => {
