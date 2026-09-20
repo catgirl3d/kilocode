@@ -238,7 +238,10 @@ const dispose = render(
             <LanguageContext.Provider value={language as never}>
               <NotificationsProvider>
                 <SessionProvider>
-                  <Probe />
+                  {/* TaskHeader (renderTab) consumes useMemory, mirroring ProviderShell.Chat */}
+                  <MemoryProvider>
+                    <Probe />
+                  </MemoryProvider>
                 </SessionProvider>
               </NotificationsProvider>
             </LanguageContext.Provider>
@@ -1658,7 +1661,8 @@ try {
     sent
       .slice(start)
       .filter(
-        (message) => message.type === "streamSessionVisible" && String(message.sessionID).startsWith("inspector-"),
+        (message): message is Extract<WebviewMessage, { type: "streamSessionVisible" }> =>
+          message.type === "streamSessionVisible" && String(message.sessionID).startsWith("inspector-"),
       )
       .map((message) => [message.sessionID, message.visible])
   assert.deepEqual(marks(), [

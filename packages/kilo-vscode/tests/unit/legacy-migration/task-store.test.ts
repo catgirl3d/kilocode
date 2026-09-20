@@ -27,7 +27,9 @@ describe("task store history scan", () => {
       throw new Error("history scan must not read files")
     }
     fs.stat = async (uri) => {
-      if (uri.fsPath === api("keep")) return { type: vscode.FileType.File, ctime: 0, mtime: 0, size: 1 }
+      // Uri fsPath uses platform separators, the fixture path is POSIX.
+      if (uri.fsPath.replaceAll("\\", "/") === api("keep"))
+        return { type: vscode.FileType.File, ctime: 0, mtime: 0, size: 1 }
       throw new Error(`missing ${uri.fsPath}`)
     }
 
