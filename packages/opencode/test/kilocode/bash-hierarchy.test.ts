@@ -8,6 +8,21 @@ function collect(command: string[], text: string): string[] {
 }
 
 describe("BashHierarchy.addAll", () => {
+  test("exact arity command keeps an exact permission pattern", () => {
+    expect(BashHierarchy.always(["npm", "run", "typecheck"], "npm run typecheck")).toBe("npm run typecheck")
+  })
+
+  test("commands with additional arguments keep the arity-prefix wildcard", () => {
+    expect(BashHierarchy.always(["npm", "run", "typecheck", "--", "--watch"], "npm run typecheck -- --watch")).toBe(
+      "npm run typecheck *",
+    )
+  })
+
+  test("each command in a chain remains bounded to its own arity prefix", () => {
+    expect(BashHierarchy.always(["npm", "run", "typecheck"], "npm run typecheck")).toBe("npm run typecheck")
+    expect(BashHierarchy.always(["git", "status"], "git status")).toBe("git status")
+  })
+
   test("arity-1 command with args produces base wildcard + exact", () => {
     // "ls" has arity 1, prefix = ["ls"], text "ls -la" !== "ls" → exact is added
     const result = collect(["ls", "-la"], "ls -la")

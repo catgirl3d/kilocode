@@ -1,29 +1,14 @@
 import * as vscode from "vscode"
-import type { Event, KiloClient } from "@kilocode/sdk/v2/client"
-import { replyOnce } from "../kilo-provider/handlers/permission-handler"
-import { retry } from "../services/cli-backend/retry"
+import type { KiloClient } from "@kilocode/sdk/v2/client" // fork_change
 import type { KiloConnectionService } from "../services/cli-backend/connection-service"
-
-/**
- * Callback that resolves the working directory of a session the extension tracks.
- * Only tracked sessions resolve: the session map holds worktree and sub-agent overrides,
- * so a session that runs in the workspace root is absent from it. Such a session is
- * answered through its recorded permission route or the event's own directory instead.
- * The callback returns `undefined` when no directory is known, so the caller refuses
- * instead of guessing.
- */
-export type DirectoryResolver = (sessionId?: string) => string | undefined
 
 /**
  * Returns every unique directory the extension tracks
  * (workspace root + all registered worktree paths).
  */
 export type AllDirectories = () => string[]
-type Asked = Extract<Event, { type: "permission.asked" }>
-
 export interface AutoApproveController {
   active(): boolean
-  approve(event: Asked, directory?: string): Promise<boolean>
   toggle(): Promise<boolean>
   onChange(listener: (active: boolean) => void): { dispose(): void }
 }
@@ -31,34 +16,32 @@ export interface AutoApproveController {
 const CONFIG = "kilo-code.new.autoApprove"
 const KEY = "enabled"
 
+// fork_change start
 /**
- * Runtime auto-accept toggle for permissions.
- *
- * Instead of writing to the CLI config, the attention coordinator delegates
- * `permission.asked` events here and auto-replies "once". This avoids config-layer
- * issues (merged vs global, sparse defaults) and works even when the sidebar is closed.
+ * Runtime auto-accept toggle for permissions. The persisted extension setting is
+ * applied to each directory-scoped backend without writing global allow rules.
  *
  * The setting is user scoped: the controller follows the user value, and the toggle is
  * written to the user setting. Enabling saves that setting first, so a save that fails
  * leaves auto-approve off and says so. Disabling takes effect in memory at once and
  * still reports a rejected write.
  */
+// fork_change end
 export function registerToggleAutoApprove(
   context: vscode.ExtensionContext,
   connectionService: KiloConnectionService,
-  resolve: DirectoryResolver,
   directories: AllDirectories,
 ): AutoApproveController {
   let active = readActive()
-  // Bumped on disable to invalidate in-flight enable drains
+  // Bumped on state changes to invalidate in-flight runtime syncs. // fork_change
   let generation = 0
+  let queue: Promise<boolean> = Promise.resolve(true) // fork_change
   const listeners = new Set<(active: boolean) => void>()
 
   const notify = () => {
     for (const listener of listeners) listener(active)
   }
 
-  // The config-change listener can apply the same value after our own write lands.
   const apply = (next: boolean) => {
     if (next === active) return
     active = next
@@ -66,8 +49,7 @@ export function registerToggleAutoApprove(
     notify()
   }
 
-  // One state transition at a time: a click during the settings write must see the
-  // state that write leaves, not the value it replaced.
+  // Serialize preference writes, but do not keep the transition open on a server RPC. // fork_change
   let transitions: Promise<unknown> = Promise.resolve()
   const transition = <T>(run: () => Promise<T>): Promise<T> => {
     const next = transitions.then(run, run)
@@ -93,10 +75,37 @@ export function registerToggleAutoApprove(
     }
   }
 
+  // fork_change start
+  const sync = (snapshot: number): Promise<boolean> => {
+    queue = queue.then(async () => {
+      if (generation !== snapshot) return false
+      const client = tryGetClient(connectionService)
+      if (!client) return false
+      const enable = active
+      let synced = true
+      for (const dir of directories()) {
+        if (generation !== snapshot) return false
+        try {
+          const response = await client.permission.allowEverything(
+            { enable, runtime: true, directory: dir },
+            { throwOnError: true },
+          )
+          if (response?.data !== true) throw new Error("runtime shield update was not acknowledged")
+        } catch (err) {
+          synced = false
+          console.error("[Kilo New] toggleAutoApprove: failed to update runtime shield:", err)
+        }
+      }
+      return generation === snapshot && synced
+    })
+    return queue
+  }
+  // fork_change end
   const setActive = async (next: boolean): Promise<boolean> => {
     if (next) {
       if (await save(true)) {
         apply(true)
+        void sync(generation) // fork_change
         return true
       }
       // The setting still says off. Tell every listener the state it now holds.
@@ -106,71 +115,61 @@ export function registerToggleAutoApprove(
       return false
     }
     apply(false)
+    void sync(generation) // fork_change
     return save(false)
-  }
-
-  const drain = async (snapshot: number) => {
-    // Drain any already-pending permission requests across all tracked directories
-    const client = tryGetClient(connectionService)
-    if (!client) return
-    for (const dir of directories()) {
-      if (generation !== snapshot) break
-      try {
-        const { data: pending } = await retry(() => client.permission.list({ directory: dir }, { throwOnError: true }))
-        for (const req of pending) {
-          if (generation !== snapshot) break
-          if (req.metadata?.["sandboxEscalation"] === true) continue
-          await replyOnce(client, req.id, dir, () => generation === snapshot)
-        }
-      } catch (err) {
-        console.error("[Kilo New] toggleAutoApprove: failed to list pending permissions:", err)
-      }
-    }
   }
 
   const toggle = async () => {
     const turned = await transition(async () => {
       const next = !active
       const saved = await setActive(next)
-      return { next, saved, snapshot: generation }
+      return { next, saved, snapshot: generation, queue } // fork_change
     })
-    if (!turned.saved) return active
-    if (turned.next) {
-      vscode.window.showInformationMessage("Auto-approve enabled. Sandbox escalation prompts are excluded.")
-      await drain(turned.snapshot)
-    } else {
-      vscode.window.showInformationMessage("Auto-approve disabled")
+    // fork_change start
+    const synced = await turned.queue
+    if (!turned.saved || generation !== turned.snapshot) return active
+    if (!synced) {
+      vscode.window.showWarningMessage(
+        turned.next
+          ? "Auto-approve is saved, but the Kilo CLI has not applied it yet. It applies when the extension next connects to the CLI."
+          : "Auto-approve is off in settings, but the Kilo CLI has not confirmed it. Permissions may still be approved automatically until the extension next connects to the CLI.",
+      )
+      return active
     }
+    if (!turned.next) {
+      vscode.window.showInformationMessage("Auto-approve disabled")
+      return active
+    }
+    vscode.window.showInformationMessage("Auto-approve enabled")
     return active
-  }
-
-  const approve = async (event: Asked, directory?: string) => {
-    if (!active) return false
-    const snapshot = generation
-    const client = tryGetClient(connectionService)
-    if (!client) return false
-    if (event.properties.metadata?.["sandboxEscalation"] === true) return false
-    // Answer only where the request is known to live: the event's own directory, the
-    // recorded route, or a session this extension holds a directory for. Without one,
-    // the request stays with the attention path.
-    const dir =
-      directory ?? connectionService.getPermissionDirectory(event.properties.id) ?? resolve(event.properties.sessionID)
-    if (!dir) return false
-    return replyOnce(client, event.properties.id, dir, () => generation === snapshot)
+    // fork_change end
   }
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration(`${CONFIG}.${KEY}`)) return
-      apply(readActive())
+      // fork_change start
+      const next = readActive()
+      if (next === active) return
+      apply(next)
+      void sync(generation)
+      // fork_change end
     }),
   )
 
+  // fork_change start
+  context.subscriptions.push({
+    dispose: connectionService.onStateChange((state) => {
+      if (state === "connected") void sync(generation)
+    }),
+  })
+  // fork_change end
+
   context.subscriptions.push(vscode.commands.registerCommand("kilo-code.new.toggleAutoApprove", toggle))
+  void sync(generation) // fork_change
 
   return {
     active: () => active,
-    approve,
     toggle,
     onChange(listener) {
       listeners.add(listener)
