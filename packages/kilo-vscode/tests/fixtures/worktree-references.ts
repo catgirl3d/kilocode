@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { createRoot, createSignal } from "solid-js"
-import { createProjectStore } from "../../webview-ui/agent-manager/project/store"
+import { createProjectStore, type WorktreeBusyState } from "../../webview-ui/agent-manager/project/store"
 import { createWorktreeReferences } from "../../webview-ui/agent-manager/worktree-references"
 
 await createRoot(async (dispose) => {
@@ -43,10 +43,10 @@ await createRoot(async (dispose) => {
     await Promise.resolve()
     assert.deepEqual(storage.value.worktreeMentionHistory, ["/first/one"])
     assert.equal(refs().find((item) => item.id === "two")?.disabled, true)
-    first.setStaleWorktreeIds(new Set())
+    first.setStaleWorktreeIds(new Set<string>())
     await Promise.resolve()
     assert.deepEqual(storage.value.worktreeMentionHistory, ["/first/two", "/first/one"])
-    first.setBusy(new Map([["one", { reason: "creating" }]]))
+    first.setBusy(new Map<string, WorktreeBusyState>([["one", { reason: "setting-up" }]]))
     select("one")
     await Promise.resolve()
     assert.deepEqual(storage.value.worktreeMentionHistory, ["/first/two", "/first/one"])

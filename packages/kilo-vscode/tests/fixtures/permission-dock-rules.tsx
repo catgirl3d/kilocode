@@ -24,7 +24,7 @@ const { render } = await import("solid-js/web")
 const { createSignal } = await import("solid-js")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
 const { LanguageContext } = await import("../../webview-ui/src/context/language")
-const { ConfigContext } = await import("../../webview-ui/src/context/config")
+const { ConfigContext, useConfig } = await import("../../webview-ui/src/context/config")
 const { PermissionDock } = await import("../../webview-ui/src/components/chat/PermissionDock")
 
 const request: PermissionRequest = {
@@ -43,14 +43,19 @@ Object.defineProperty(document, "hasFocus", { value: () => true })
 const home = { homeDir: () => "/home/me" }
 
 // The same rule saved in the global config: the dock can delete it.
-const savedAllow = {
+type Ctx = Pick<
+  ReturnType<typeof useConfig>,
+  "config" | "globalConfig" | "mergedGlobalConfig" | "workspaceConfig" | "homeDir"
+>
+
+const savedAllow: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "*": "allow" } } }),
   globalConfig: () => ({ permission: { edit: { "*": "allow" } } }),
   mergedGlobalConfig: () => ({ permission: { edit: { "*": "allow" } } }),
   workspaceConfig: () => ({ permission: {} }),
 }
-const savedDeny = {
+const savedDeny: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "*": "deny" } } }),
   globalConfig: () => ({ permission: { edit: { "*": "deny" } } }),
@@ -58,7 +63,7 @@ const savedDeny = {
   workspaceConfig: () => ({ permission: {} }),
 }
 // A rule that another config scope supplies.
-const workspaceAllow = {
+const workspaceAllow: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "*": "allow" } } }),
   globalConfig: () => ({ permission: {} }),
@@ -67,7 +72,7 @@ const workspaceAllow = {
 }
 // A workspace-supplied deny row, so the indicator's state wording is covered in
 // both directions.
-const workspaceDeny = {
+const workspaceDeny: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "*": "deny" } } }),
   globalConfig: () => ({ permission: {} }),
@@ -75,7 +80,7 @@ const workspaceDeny = {
   workspaceConfig: () => ({ permission: { edit: { "*": "deny" } } }),
 }
 // Both scopes save the same allow for the row.
-const bothAllow = {
+const bothAllow: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "*": "allow" } } }),
   globalConfig: () => ({ permission: { edit: { "*": "allow" } } }),
@@ -84,7 +89,7 @@ const bothAllow = {
 }
 // The primary global file holds the row, and a broader entry of the same merged scope
 // supplies the same action, so the broader entry decides the pattern.
-const broaderAllow = {
+const broaderAllow: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "edit *": "allow" } } }),
   globalConfig: () => ({ permission: { edit: { "edit *": "allow" } } }),
@@ -94,7 +99,7 @@ const broaderAllow = {
 const broaderRequest: PermissionRequest = { ...request, always: ["edit *"] }
 // The merged global scope supplies the wildcard row from a lower global file, so the row
 // carries a state indicator.
-const otherFileAllow = {
+const otherFileAllow: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "*": "allow" } } }),
   globalConfig: () => ({ permission: {} }),
@@ -103,7 +108,7 @@ const otherFileAllow = {
 }
 // The merged global scope supplies a named row from a lower global file; a named
 // pattern is removable from every file that holds it, so the row keeps its controls.
-const namedOtherFileAllow = {
+const namedOtherFileAllow: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "edit *": "allow" } } }),
   globalConfig: () => ({ permission: {} }),
@@ -118,7 +123,7 @@ const homeWorkspaceRequest: PermissionRequest = {
   always: ["/home/me/notes.md"],
   args: {},
 }
-const homeWorkspace = {
+const homeWorkspace: Ctx = {
   ...home,
   config: () => ({ permission: { edit: { "/home/me/notes.md": "allow" } } }),
   globalConfig: () => ({ permission: { edit: { "/home/me/notes.md": "allow" } } }),
@@ -127,7 +132,7 @@ const homeWorkspace = {
 }
 // The same entry with no home directory to resolve it: it may decide the row once the
 // rules run, so the row keeps its indicator.
-const homeUnknown = {
+const homeUnknown: Ctx = {
   ...home,
   homeDir: () => undefined,
   config: homeWorkspace.config,
@@ -156,8 +161,6 @@ type Call = { response: string; approved: string[]; denied: string[]; removed: s
 
 // The dock reads `homeDir` beside the four config scopes, and the unresolved-prefix case
 // passes an unknown directory instead of the shared one.
-type Ctx = Omit<typeof savedAllow, "homeDir"> & { homeDir: () => string | undefined }
-
 const cases: Array<{ mode: Mode; ctx: Ctx; request?: PermissionRequest }> = [
   { mode: "reject", ctx: savedAllow },
   { mode: "once", ctx: savedAllow },
@@ -205,7 +208,9 @@ for (const item of cases) {
   // Happy DOM has no layout; make the mounted dock visible to its shortcut listener.
   Object.defineProperty(dock, "getClientRects", { value: () => [{ width: 800, height: 400 }] })
   const enter = () =>
-    document.body.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    document.body.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }) as unknown as Event,
+    )
   const click = (selector: string) => {
     const button = root.querySelector<HTMLButtonElement>(selector)
     assert(button, `Missing button: ${selector}`)
@@ -290,7 +295,7 @@ for (const item of cases) {
       const input = root.querySelector<HTMLTextAreaElement>('[data-slot="permission-feedback-input"]')
       assert(input)
       input.value = "Use spaces, not tabs"
-      input.dispatchEvent(new window.Event("input", { bubbles: true }))
+      input.dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
       if (mode === "keyboard") {
         input.blur()
         enter()
@@ -371,7 +376,9 @@ for (const item of cases) {
       "settings.autoApprove.level.allow \u2014 ui.permission.rule.fromConfig",
     )
     // Answering a row the config now supplies sends no removal request.
-    document.body.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    document.body.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }) as unknown as Event,
+    )
     assert.deepEqual(calls, [{ response: "once", approved: [], denied: [], removed: [], feedback: undefined }])
   } finally {
     dispose()

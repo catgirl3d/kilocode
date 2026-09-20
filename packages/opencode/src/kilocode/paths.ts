@@ -3,7 +3,11 @@ import os from "os"
 import { Filesystem } from "../util/filesystem"
 
 export namespace KilocodePaths {
-  const home = () => process.env.HOME || process.env.USERPROFILE || os.homedir()
+  // fork_change start
+  // KILO_TEST_HOME redirects every user-relative path below (global dirs, VS Code
+  // storage) into the test sandbox so unit tests never read the developer's real setup.
+  const home = () => process.env.KILO_TEST_HOME || process.env.HOME || process.env.USERPROFILE || os.homedir()
+  // fork_change end
 
   /**
    * Get the platform-specific VSCode global storage path for Kilocode extension.
@@ -12,6 +16,7 @@ export namespace KilocodePaths {
    * - Linux: ~/.config/Code/User/globalStorage/kilocode.kilo-code
    */
   export function vscodeGlobalStorage(): string {
+    if (process.env.KILO_TEST_HOME) return path.join(process.env.KILO_TEST_HOME, ".vscode", "kilocode.kilo-code") // fork_change
     const home = os.homedir()
     switch (process.platform) {
       case "darwin":
