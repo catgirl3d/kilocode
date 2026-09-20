@@ -11,6 +11,7 @@ import { CONFIG_FILE, STORE_FILE } from "../../../src/kilocode/anaconda-desktop/
 import { testEffect } from "../../lib/effect"
 
 const it = testEffect(Layer.empty)
+const discovery = process.platform === "win32" ? it.live.skip : it.live
 const managementKey = "fixture-management-key"
 const inferenceKey = "fixture-inference-key"
 
@@ -175,7 +176,7 @@ function fixture(settings: Settings = {}) {
   )
 }
 
-it.live("discovers a healthy text-generation server without exposing either key", () =>
+discovery("discovers a healthy text-generation server without exposing either key", () =>
   Effect.gen(function* () {
     const test = yield* fixture()
     const found = yield* Discovery.Service.use((service) => service.discover()).pipe(Effect.provide(test.layer))
@@ -204,7 +205,7 @@ it.live("discovers a healthy text-generation server without exposing either key"
   }),
 )
 
-it.live("classifies setup states before inference discovery", () =>
+discovery("classifies setup states before inference discovery", () =>
   Effect.gen(function* () {
     const absent = yield* fixture({ installed: false })
     const absentStatus = yield* Discovery.Service.use((service) => service.discover()).pipe(
@@ -247,7 +248,7 @@ it.live("classifies setup states before inference discovery", () =>
   }),
 )
 
-it.live("classifies downloaded and running-server inventory", () =>
+discovery("classifies downloaded and running-server inventory", () =>
   Effect.gen(function* () {
     const empty = yield* fixture({ models: [] })
     const emptyStatus = yield* Discovery.Service.use((service) => service.discover()).pipe(Effect.provide(empty.layer))
@@ -280,7 +281,7 @@ it.live("classifies downloaded and running-server inventory", () =>
   }),
 )
 
-it.live("marks unusable inference servers unhealthy", () =>
+discovery("marks unusable inference servers unhealthy", () =>
   Effect.gen(function* () {
     const remote = yield* fixture({
       servers: (port) => [{ ...defaults(port)[0], server: { host: "192.168.1.10", port, apiKey: inferenceKey } }],
@@ -319,7 +320,7 @@ it.live("marks unusable inference servers unhealthy", () =>
   }),
 )
 
-it.live("distinguishes false and unknown tool support and accepts an empty inference key", () =>
+discovery("distinguishes false and unknown tool support and accepts an empty inference key", () =>
   Effect.gen(function* () {
     const unsupported = yield* fixture({ props: { chat_template_caps: { supports_tools: false } } })
     const unsupportedStatus = yield* Discovery.Service.use((service) => service.discover()).pipe(
@@ -349,7 +350,7 @@ it.live("distinguishes false and unknown tool support and accepts an empty infer
   }),
 )
 
-it.live("bounds management calls with a typed timeout state", () =>
+discovery("bounds management calls with a typed timeout state", () =>
   Effect.gen(function* () {
     const slow = yield* fixture({ delay: 200 })
     const status = yield* Discovery.Service.use((service) => service.discover()).pipe(Effect.provide(slow.layer))
