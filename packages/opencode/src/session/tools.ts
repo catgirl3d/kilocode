@@ -4,6 +4,7 @@ import { GoalPolicy } from "@/kilocode/session/goal/policy" // kilocode_change
 import type { Goal } from "@/kilocode/session/goal/runner" // kilocode_change
 import { MemoryMarker } from "@/kilocode/memory/marker" // kilocode_change
 import { BoardNotice } from "@/kilocode/board/notice" // kilocode_change
+import { SwePruner } from "@/kilocode/swe-pruner" // kilocode_change
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
@@ -92,6 +93,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const config = yield* Config.Service
   const flags = yield* RuntimeFlags.Service
   const cfg = yield* config.get()
+  const pruning = SwePruner.enabled(cfg) // [fork]
   const permissionOrigins = cfg.permission_origins
   const notify = BoardEnabled.on(cfg, flags) ? input.notify : undefined
   type Output = Parameters<SessionProcessor.Handle["completeToolCall"]>[1]
@@ -216,7 +218,12 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     networkRestricted: restricted, // kilocode_change - let the registry suppress code-mode in restricted sessions
   })) {
     const base = ToolJsonSchema.fromTool(item)
-    const schema = ProviderTransform.schema(input.model, base)
+    // kilocode_change start
+    const schema = ProviderTransform.schema(
+      input.model,
+      pruning && SwePruner.prunable(item.id) ? SwePruner.extend(base) : base,
+    )
+    // kilocode_change end
     tools[item.id] = tool({
       description: item.description,
       inputSchema: jsonSchema(schema),
@@ -238,7 +245,10 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               { args },
             )
             // kilocode_change start
-            const result = yield* SandboxPolicy.executeTool(ctx.sessionID, item, item.execute(args, ctx))
+            const raw = yield* SandboxPolicy.executeTool(ctx.sessionID, item, item.execute(args, ctx))
+            const result = yield* pruning && SwePruner.prunable(item.id)
+              ? SwePruner.sweep({ tool: item.id, args, result: raw, sessionID: ctx.sessionID, abort: options.abortSignal })
+              : Effect.succeed(raw)
             // kilocode_change end
             const output = {
               ...result,
