@@ -76,6 +76,8 @@ import {
   isPromptBusy,
   isPathMention,
   memoryRest,
+  commandAction, // fork_change
+  resolvePrompt, // fork_change
   type SandboxDefaultState,
   type SandboxState,
   undoKey,
@@ -805,10 +807,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sendReady = () => !isDisabled() && goalReady() && !terminal.pending() && !git.pending() && !props.blocked?.()
   const canContinue = () => !goal.active() && speech.state() === "idle" && !hasInput() && session.canResume()
   const goalReady = () => !goal.pending() && (!goal.active() || (!enhancing() && !imageAttach.pending()))
+  // fork_change start
   const canSend = () =>
-    sendReady() &&
-    (speech.state() === "recording" ||
-      (!speech.active() && (goal.active() ? goal.ready(text()) : hasInput() || canContinue())))
+    sendReady() && (speech.state() === "recording" || (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
+  // fork_change end
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
@@ -1716,11 +1718,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const browserData = browserFeedbackData(browsers())
     const browserText = browserData ? formatBrowserFeedback(browserData.references) : ""
     const contextText = formatCodeContexts(contexts())
-    const message = [review, browserText, push, contextText, draft].filter(Boolean).join("\n\n")
     if (canSendContinue()) {
       session.resume()
       return
     }
+    // fork_change start
+    if (!browserData) draft = resolvePrompt(draft, pending.length > 0, imgs.length > 0)
+    const message = [review, browserText, push, contextText, draft].filter(Boolean).join("\n\n")
+    // fork_change end
     const data = review ? { version: 1 as const, comments: pending } : undefined
     if ((!message && imgs.length === 0) || !sendReady() || speech.active()) return
 
