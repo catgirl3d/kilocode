@@ -47,28 +47,38 @@ export function createSessionVariants(options: Options) {
     return getAgentVariant(options.selections(), selection, options.find(selection), name, configured(name, selection))
   }
 
-  const current = (sessionID?: string) => {
+  // fork_change start - Allow commands to preserve configured target-agent defaults.
+  const current = (sessionID?: string, presetFirst = false) => {
     const sid = sessionID ?? options.session()
     const selection = options.selected(sid)
     if (!selection) return undefined
     const variants = list(sid)
     if (variants.length === 0) return undefined
     const name = options.agent(sid)
-    return getVariant(options.selections(), selection, variants, name, sid, configured(name, selection))
+    return getVariant(
+      options.selections(),
+      selection,
+      variants,
+      name,
+      sid,
+      configured(name, selection),
+      presetFirst,
+    )
   }
 
-  const request = (sessionID?: string) =>
-    current(sessionID) ?? (list(sessionID).length > 0 ? DEFAULT_VARIANT : undefined)
+  const request = (sessionID?: string, presetFirst = false) =>
+    current(sessionID, presetFirst) ?? (list(sessionID).length > 0 ? DEFAULT_VARIANT : undefined)
+  // fork_change end
 
-  // The raw choice behind current(), in the same order: scoped, then the
-  // configured variant, then remembered, then legacy. An explicit Default stays
-  // "" so carry and the worktree dialog can honor it.
+  // The raw choice behind current(), with the same normal priority.
   const saved = (selection: ModelSelection, name: string, sessionID?: string) => {
     const scoped = sessionID ? options.selections()[variantKey(selection, name, sessionID)] : undefined
     if (scoped !== undefined) return scoped
+    const remembered = options.selections()[variantKey(selection, name)]
+    if (remembered !== undefined) return remembered
     const preset = configured(name, selection)
     if (preset && Object.keys(options.find(selection)?.variants ?? {}).includes(preset)) return preset
-    return options.selections()[variantKey(selection, name)] ?? options.selections()[legacyVariantKey(selection)]
+    return options.selections()[legacyVariantKey(selection)]
   }
 
   const choice = (sessionID?: string) => {
@@ -77,18 +87,27 @@ export function createSessionVariants(options: Options) {
     return model ? saved(model, options.agent(id), id) : undefined
   }
 
-  const select = (value: string | undefined, sessionID?: string) => {
+  // fork_change start - Persist explicit picker choices for future tasks.
+  const select = (value: string | undefined, sessionID?: string, remember = true) => {
     const sid = sessionID ?? options.session()
     const selection = options.selected(sid)
     if (!selection) return
+    const name = options.agent(sid)
     const next = value ?? DEFAULT_VARIANT
-    options.set(variantKey(selection, options.agent(sid), sid), next)
-    if (options.draft(sid)) options.remember(options.agent(sid), selection, next)
+    const key = variantKey(selection, name, sid)
+    options.set(key, next)
+    if (remember) options.remember(name, selection, next)
   }
+  // fork_change end
 
   const carry = (selection: ModelSelection, value: string | undefined, name: string, sessionID?: string) => {
     const list = Object.keys(options.find(selection)?.variants ?? {})
     if (list.length === 0) return
+    // fork_change start - Keep an existing target-model choice over inherited values.
+    const cached = options.selections()
+    if (value !== DEFAULT_VARIANT && cached[variantKey(selection, name)] !== undefined) return
+    if (value !== DEFAULT_VARIANT && sessionID && cached[variantKey(selection, name, sessionID)] !== undefined) return
+    // fork_change end
     // Undefined leaves the target's effort intact; an explicit Default must be carried.
     const next = value === DEFAULT_VARIANT ? DEFAULT_VARIANT : preserveVariant(value, list)
     if (next === undefined) return
