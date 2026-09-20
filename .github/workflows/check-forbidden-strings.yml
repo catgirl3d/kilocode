@@ -11,8 +11,7 @@ permissions:
 jobs:
   check:
     name: Check forbidden strings
-    if: github.repository == 'Kilo-Org/kilocode'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6 # kilocode_change
         with:
