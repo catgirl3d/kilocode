@@ -652,6 +652,8 @@ export namespace KilocodeConfig {
         ? {
             ...("enabled" in base ? { enabled: base.enabled } : {}),
             ...("timeout" in base ? { timeout: base.timeout } : {}),
+            ...("on_demand" in base ? { on_demand: base.on_demand } : {}), // fork_change
+            ...("description" in base ? { description: base.description } : {}), // fork_change
           }
         : base
       const entry = mergeDeep(seed, src) as (typeof out)[string]

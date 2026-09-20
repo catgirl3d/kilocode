@@ -20,9 +20,19 @@ const LocalCanonical = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Enable or disable the MCP server on startup",
   }),
+  // kilocode_change start
+  on_demand: Schema.optional(Schema.Boolean).annotate({
+    description: "Do not start on init; connect on demand via the mcp tool",
+  }),
+  // kilocode_change end
   timeout: Schema.optional(PositiveInt).annotate({
     description: "Timeout in ms for MCP server requests. Defaults to 5000 (5 seconds) if not specified.",
   }),
+  // kilocode_change start
+  description: Schema.optional(Schema.String).annotate({
+    description: "Short one-line description shown in the agent catalog",
+  }),
+  // kilocode_change end
 })
 
 // kilocode_change start - accept `env` as an alias for `environment`
@@ -34,6 +44,8 @@ const LocalInput = Schema.Struct({
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   env: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   enabled: Schema.optional(Schema.Boolean),
+  on_demand: Schema.optional(Schema.Boolean),
+  description: Schema.optional(Schema.String),
   timeout: Schema.optional(PositiveInt),
 })
 
@@ -43,6 +55,8 @@ const normalizeLocal = (input: Schema.Schema.Type<typeof LocalInput>): Schema.Sc
     type: input.type,
     command: input.command,
     ...(env === undefined ? {} : { environment: env }),
+    ...("on_demand" in input ? { on_demand: input.on_demand } : {}),
+    ...("description" in input ? { description: input.description } : {}),
     ...("enabled" in input ? { enabled: input.enabled } : {}),
     ...("timeout" in input ? { timeout: input.timeout } : {}),
   }
@@ -83,6 +97,14 @@ export const Remote = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Enable or disable the MCP server on startup",
   }),
+  // kilocode_change start
+  on_demand: Schema.optional(Schema.Boolean).annotate({
+    description: "Do not start on init; connect on demand via the mcp tool",
+  }),
+  description: Schema.optional(Schema.String).annotate({
+    description: "Short one-line description shown in the agent catalog",
+  }),
+  // kilocode_change end
   headers: Schema.optional(Schema.Record(Schema.String, Schema.String)).annotate({
     description: "Headers to send with the request",
   }),
