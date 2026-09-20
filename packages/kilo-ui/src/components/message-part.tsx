@@ -36,7 +36,7 @@ import { checkFile } from "../file-link-validator"
 import { useFileComponent } from "../context/file"
 import { useDialog } from "../context/dialog"
 import { useClipboard } from "../context/clipboard"
-import { type UiI18n, useI18n } from "../context/i18n"
+import { type UiI18n, type UiI18nKey, useI18n } from "../context/i18n" // fork_change
 import { BasicTool, useToolApprovalLine } from "./basic-tool"
 import { BoardMessage, BoardParticipantStack, BoardRoute } from "./board-message"
 import { preview } from "./board-route"
@@ -2546,7 +2546,7 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const i18n = useI18n()
-    const childSessionId = () => props.metadata.sessionId as string | undefined
+    const childSessionId = () => (props.metadata.sessionId ?? props.partMetadata?.sessionId) as string | undefined // fork_change
     const type = createMemo(() => {
       const raw = props.input.subagent_type
       if (typeof raw !== "string" || !raw) return undefined
@@ -2619,6 +2619,11 @@ ToolRegistry.register({
           {/* Keep the auto-approve line attached to the subagent card instead of forcing a collapsible body. */}
           {approvalLine()}
         </div>
+        {/* fork_change start */}
+        <Show when={childSessionId()}>
+          <CopyButton value={() => childSessionId() ?? ""} label={i18n.t("session.action.copyId" as UiI18nKey)} />
+        </Show>
+        {/* fork_change end */}
       </div>
     )
 
@@ -2636,24 +2641,27 @@ ToolRegistry.register({
   },
 })
 
-function BashCopyButton(props: { value: () => string; label: string }) {
+export function CopyButton(props: { value: () => string; label: string }) { // fork_change
   const i18n = useI18n()
+  const clipboard = useClipboard() // fork_change
   const [copied, setCopied] = createSignal(false)
-  const handler = async () => {
+  const handler = async (e: MouseEvent) => { // fork_change
+    e.stopPropagation() // fork_change
     const text = props.value()
     if (!text) return
-    await navigator.clipboard.writeText(text)
+    await clipboard.write(text) // fork_change
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
   return (
-    <Tooltip value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")} placement="bottom" gutter={4}>
+    <Tooltip value={copied() ? i18n.t("ui.message.copied") : props.label} placement="bottom" gutter={4}> {/* fork_change */}
       <IconButton
         icon={copied() ? "check" : "copy"}
         size="small"
         variant="ghost"
+        onMouseDown={(e: MouseEvent) => e.preventDefault()} // fork_change
         onClick={handler}
-        aria-label={props.label}
+        aria-label={copied() ? i18n.t("ui.message.copied") : props.label} // fork_change
       />
     </Tooltip>
   )
@@ -2714,7 +2722,9 @@ function BashHighlightedOutput(props: { cmd: string; output: string; outputPath?
             </span>
             <div data-slot="bash-section-code" data-scrollable ref={cmdRef} />
             <div data-slot="bash-section-actions">
-              <BashCopyButton value={() => props.cmd} label={i18n.t("ui.message.copy")} />
+              {/* fork_change start */}
+              <CopyButton value={() => props.cmd} label={i18n.t("ui.message.copy")} />
+              {/* fork_change end */}
             </div>
           </div>
         </div>
@@ -2735,7 +2745,9 @@ function BashHighlightedOutput(props: { cmd: string; output: string; outputPath?
                   />
                 </Tooltip>
               </Show>
-              <BashCopyButton value={() => props.output} label={i18n.t("ui.message.copy")} />
+              {/* fork_change start */}
+              <CopyButton value={() => props.output} label={i18n.t("ui.message.copy")} />
+              {/* fork_change end */}
             </div>
           </div>
         </div>
