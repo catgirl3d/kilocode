@@ -8,8 +8,10 @@ import {
 import {
   taskAutoOpen,
   taskBackground,
+  taskMarkerStatus,
   taskResult,
   taskRunning,
+  taskSessionStatus,
   taskStoredOpen,
   taskVisible,
 } from "../../webview-ui/src/components/chat/task-tool-state"
@@ -21,6 +23,14 @@ describe("completed task hydration", () => {
     expect(taskRunning("pending")).toBe(true)
     expect(taskRunning("running")).toBe(true)
     expect(taskRunning("completed")).toBe(false)
+    expect(taskMarkerStatus("pending")).toBe("running")
+    expect(taskMarkerStatus("running")).toBe("running")
+    expect(taskMarkerStatus("completed")).toBe("completed")
+    expect(taskMarkerStatus("error")).toBe("error")
+    expect(taskMarkerStatus("unknown")).toBeUndefined()
+    expect(taskSessionStatus({ type: "busy" }, "completed")).toBe("running")
+    expect(taskSessionStatus({ type: "retry", attempt: 1, message: "retry", next: 1 }, "completed")).toBe("running")
+    expect(taskSessionStatus({ type: "idle" }, "completed")).toBe("completed")
     expect(readToolOpen(toolOpenKey({ tool: "task", partID: "part-new" }), taskRunning("completed"))).toBe(false)
   })
 
