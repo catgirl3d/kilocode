@@ -348,6 +348,13 @@ export const Info = Schema.Struct({
       native_notebook_tools: Schema.optional(Schema.Boolean).annotate({
         description: "Enable native tools for reading, editing, and executing VS Code notebooks",
       }),
+      swe_pruner: Schema.optional(Schema.Boolean).annotate({
+        description: "Enable task-aware pruning for large read, grep, and bash tool outputs (default: false)",
+      }),
+      swe_pruner_model: Schema.optional(Schema.String).annotate({
+        description:
+          "Exact provider/model ID for SWE-Pruner. Falls back to the configured small_model; without either model, output remains unchanged.",
+      }),
       code_mode: Schema.optional(Schema.Boolean).annotate({
         description:
           "Route MCP tool calls through a confined JavaScript runtime with on-demand tool discovery instead of exposing every MCP tool directly",
