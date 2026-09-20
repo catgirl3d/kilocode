@@ -61,6 +61,8 @@ Every token you allocate to model output reduces how much conversation history c
 
 If you are not using MCP (Model Context Protocol) features, consider [disabling MCP Servers in Settings → Agent Behaviour](/docs/automate/mcp/overview). This significantly reduces the size of the system prompt sent with every request.
 
+For servers you use occasionally, set `on_demand: true` instead of disabling them completely so their tools load only when the agent connects the server.
+
 ### Prompt caching
 
 Kilo automatically applies prompt caching on supported providers. Repeated context, such as your system prompt and stable file contents, is reused from cache at a discounted rate. No action is required to benefit from this.

@@ -3,11 +3,13 @@ import { TextField } from "@kilocode/kilo-ui/text-field"
 import { Card } from "@kilocode/kilo-ui/card"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
+import { Switch } from "@kilocode/kilo-ui/switch" // fork_change
 
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 import type { McpConfig } from "../../types/messages"
 import SettingsRow from "./SettingsRow"
+import { mcpConfigPatch, mcpConfigScope, mcpDisplayEntry } from "./agent-behaviour-patches" // fork_change
 
 interface Props {
   name: string
@@ -17,19 +19,53 @@ interface Props {
 
 const McpEditView: Component<Props> = (props) => {
   const language = useLanguage()
-  const { config, updateConfig } = useConfig()
+  // fork_change start
+  const {
+    config,
+    collections,
+    globalConfig,
+    globalDraft,
+    projectConfig,
+    projectDraft,
+    updateConfig,
+    updateGlobalConfig,
+    updateProjectConfig,
+  } = useConfig()
 
-  const cfg = createMemo<McpConfig>(() => config().mcp?.[props.name] ?? {})
+  const cfg = createMemo<McpConfig>(() => {
+    const scope = mcpConfigScope(props.name, collections())
+    const scoped =
+      scope === "project"
+        ? projectConfig().mcp?.[props.name]
+        : scope === "global"
+          ? globalConfig().mcp?.[props.name]
+          : undefined
+    const draft =
+      scope === "project"
+        ? projectDraft?.().mcp?.[props.name]
+        : scope === "global"
+          ? globalDraft().mcp?.[props.name]
+          : undefined
+    return mcpDisplayEntry(config().mcp?.[props.name], scoped, draft) ?? {}
+  })
+  // fork_change end
 
   const [envKey, setEnvKey] = createSignal("")
   const [envVal, setEnvVal] = createSignal("")
 
   const update = (partial: Partial<McpConfig>) => {
-    const existing = config().mcp ?? {}
-    const current = existing[props.name] ?? {}
-    updateConfig({
-      mcp: { ...existing, [props.name]: { ...current, ...partial } },
-    })
+    // fork_change start
+    const result = mcpConfigPatch(props.name, collections(), partial)
+    if (result.scope === "project") {
+      updateProjectConfig(result.patch)
+      return
+    }
+    if (result.scope === "global") {
+      updateGlobalConfig(result.patch)
+      return
+    }
+    updateConfig(result.patch)
+    // fork_change end
   }
 
   const transport = () => cfg().type ?? (cfg().url ? "remote" : "local")
@@ -98,6 +134,28 @@ const McpEditView: Component<Props> = (props) => {
         </div>
       </Card>
 
+      {/* fork_change start */}
+      <Card style={{ "margin-bottom": "12px" }}>
+        <Switch checked={cfg().on_demand === true} onChange={(value: boolean) => update({ on_demand: value })}>
+          {language.t("settings.agentBehaviour.editMcp.onDemand")}
+        </Switch>
+        <div data-slot="settings-row-label-subtitle" style={{ "margin-top": "4px", "margin-bottom": "12px" }}>
+          {language.t("settings.agentBehaviour.editMcp.onDemand.help")}
+        </div>
+        <div data-slot="settings-row-label-title" style={{ "margin-bottom": "4px" }}>
+          {language.t("settings.agentBehaviour.editMcp.description")}
+        </div>
+        <div data-slot="settings-row-label-subtitle" style={{ "margin-bottom": "8px" }}>
+          {language.t("settings.agentBehaviour.editMcp.description.help")}
+        </div>
+        <TextField
+          value={cfg().description ?? ""}
+          placeholder={language.t("settings.agentBehaviour.editMcp.description.placeholder")}
+          onChange={(val) => update({ description: val.trim() === "" ? undefined : val })}
+        />
+      </Card>
+
+      {/* fork_change end */}
       {/* Command / URL */}
       <Show when={transport() === "local"}>
         <Card style={{ "margin-bottom": "12px" }}>
