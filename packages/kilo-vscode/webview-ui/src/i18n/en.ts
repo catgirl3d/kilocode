@@ -531,6 +531,7 @@ export const dict = {
   "session.tabs.switcher.busy": "Working",
   "session.tabs.switcher.scheduled": "Scheduled",
   "session.tabs.pinHint": "Shift+click to pin or unpin",
+  "session.action.copyId": "Copy session ID", // fork_change
   "session.tab.local": "Local",
   "session.tab.cloud": "Cloud",
   "session.tab.worktree": "Worktree",
