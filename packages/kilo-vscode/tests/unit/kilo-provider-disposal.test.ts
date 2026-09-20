@@ -21,6 +21,9 @@ type Internals = {
     has: (sessionID: string) => boolean
   }
   handleEvent: (event: unknown, directory?: string) => void
+  contextSessionID: string | undefined
+  fetchChildSessionStatus: (sessionID: string, directory: string) => Promise<void>
+  recoverCurrentSessionAfterReconnect: () => Promise<void>
   initializeConnection: () => Promise<void>
   reloadAfterAuthChange: () => Promise<void>
   withRetry: (
@@ -62,6 +65,7 @@ function createFixture(options?: {
     session: {
       status: async (params: { directory: string }) =>
         options?.statuses ? options.statuses(params.directory) : { data: {} },
+      messages: async () => ({ data: [], response: { headers: new Headers() } }),
     },
     kilocode: {
       wakeups: async (params: { directory: string }) =>
@@ -416,5 +420,119 @@ describe("KiloProvider disposal reconciliation", () => {
     expect(calls).toBeGreaterThanOrEqual(2)
     expect(fixture.messages).toContainEqual({ type: "clearPendingPrompts" })
     expect(fixture.messages.filter((m) => m.type === "permissionRequest")).toEqual([])
+  })
+})
+
+type Writer = {
+  name: string
+  start: (fixture: ReturnType<typeof createFixture>, sid: string, dir: string) => Promise<void>
+}
+
+const writers: Writer[] = [
+  {
+    name: "fetchChildSessionStatus",
+    start: (fixture, sid, dir) => fixture.internal.fetchChildSessionStatus(sid, dir),
+  },
+  {
+    name: "recoverCurrentSessionAfterReconnect",
+    start: (fixture, sid) => {
+      fixture.internal.contextSessionID = sid
+      fixture.internal.trackedSessionIds.add(sid)
+      return fixture.internal.recoverCurrentSessionAfterReconnect()
+    },
+  },
+]
+
+const disposals: Array<{
+  name: string
+  run: (fixture: ReturnType<typeof createFixture>, dir: string) => void
+}> = [
+  {
+    name: "server.instance.disposed for the session directory",
+    run: (fixture, dir) =>
+      fixture.internal.handleEvent({ type: "server.instance.disposed", properties: { directory: dir } }, dir),
+  },
+  {
+    name: "global.disposed",
+    run: (fixture) => fixture.internal.handleEvent({ type: "global.disposed", properties: {} }, "global"),
+  },
+]
+
+describe("KiloProvider disposal status invalidation", () => {
+  const sid = "s-inflight"
+  const dir = "/repo/wt-1"
+
+  for (const writer of writers) {
+    for (const disposal of disposals) {
+      it(`disposal status invalidation: ${writer.name} result resolving after ${disposal.name} is dropped`, async () => {
+        const gate = Promise.withResolvers<{ data: Record<string, SessionStatus> | null }>()
+        const started = Promise.withResolvers<void>()
+        let calls = 0
+        const fixture = createFixture({
+          worktrees: [dir],
+          statuses: () => {
+            calls += 1
+            if (calls === 1) {
+              started.resolve()
+              return gate.promise
+            }
+            return Promise.resolve({ data: {} })
+          },
+        })
+        fixture.provider.setSessionDirectory(sid, dir)
+        fixture.internal.handleEvent(
+          { type: "session.status", properties: { sessionID: sid, status: { type: "busy" } } },
+          dir,
+        )
+
+        const task = writer.start(fixture, sid, dir)
+        await started.promise
+        fixture.messages.length = 0
+
+        disposal.run(fixture, dir)
+        gate.resolve({ data: { [sid]: { type: "busy" } } })
+        await task
+        await Bun.sleep(0)
+
+        const posted = fixture.messages.filter((m) => m.type === "sessionStatus" && m.sessionID === sid)
+        expect(posted.at(-1)).toEqual({ type: "sessionStatus", sessionID: sid, status: "idle" })
+        expect(posted).not.toContainEqual({ type: "sessionStatus", sessionID: sid, status: "busy" })
+        expect(fixture.internal.sessionStatusMap.get(sid)).toBe("idle")
+      })
+    }
+  }
+
+  it("disposal status invalidation: keeps an in-flight status for a session in another directory", async () => {
+    const kept = "/repo/wt-1"
+    const disposed = "/repo/wt-2"
+    const gate = Promise.withResolvers<{ data: Record<string, SessionStatus> | null }>()
+    const started = Promise.withResolvers<void>()
+    const fixture = createFixture({
+      worktrees: [kept, disposed],
+      statuses: (directory) => {
+        if (directory === kept) {
+          started.resolve()
+          return gate.promise
+        }
+        return Promise.resolve({ data: {} })
+      },
+    })
+    fixture.provider.setSessionDirectory(sid, kept)
+    fixture.internal.handleEvent(
+      { type: "session.status", properties: { sessionID: sid, status: { type: "busy" } } },
+      kept,
+    )
+    const task = fixture.internal.fetchChildSessionStatus(sid, kept)
+    await started.promise
+    fixture.messages.length = 0
+
+    fixture.internal.handleEvent({ type: "server.instance.disposed", properties: { directory: disposed } }, disposed)
+    gate.resolve({ data: { [sid]: { type: "busy" } } })
+    await task
+
+    expect(fixture.internal.sessionStatusMap.get(sid)).toBe("busy")
+    expect(fixture.messages.filter((m) => m.type === "sessionStatus" && m.sessionID === sid)).toEqual([
+      { type: "sessionStatus", sessionID: sid, status: "busy" },
+    ])
   })
 })
