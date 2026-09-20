@@ -52,6 +52,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const hasMessages = createMemo(() => session.messages().length > 0)
   const busy = createMemo(() => session.status() === "busy")
   const canCompact = createMemo(() => !busy() && session.visibleMessages().length > 0 && !!session.selected())
+  const canShake = createMemo(() => !busy() && session.visibleMessages().length > 0 && !session.shaking()) // fork_change
 
   const money = createMemo(() => new Intl.NumberFormat(language.locale(), { style: "currency", currency: "USD" }))
   const fmt = (n: number) => money().format(n)
@@ -434,6 +435,18 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                 aria-label={language.t("command.session.compact")}
               />
             </Tooltip>
+            {/* fork_change start */}
+            <Tooltip value={language.t("command.session.shake")} placement="bottom">
+              <IconButton
+                icon="collapse"
+                size="small"
+                variant="ghost"
+                disabled={!canShake()}
+                onClick={() => session.shake()}
+                aria-label={language.t("command.session.shake")}
+              />
+            </Tooltip>
+            {/* fork_change end */}
           </Show>
           <Show when={hasMessages()}>
             <Tooltip value={language.t("chat.search.toggle")} placement="bottom">

@@ -30,6 +30,9 @@ type Ctx = {
   cancelBackgroundJob: (jobID: string, sessionID: string, requestID: string) => Promise<void>
   promoteBackgroundJob: (jobID: string, sessionID: string) => Promise<void>
   caffeination: () => void
+  // fork_change start
+  shake: (sessionID: string) => Promise<void>
+  // fork_change end
 }
 
 async function routeBackgroundMessage(
@@ -75,18 +78,27 @@ function isResume(input: { sessionID?: unknown; messageID?: unknown; requestID?:
     typeof input.sessionID === "string" && typeof input.messageID === "string" && typeof input.requestID === "string"
   )
 }
-
+// fork_change start
+async function routeSessionMessage(
+  message: { type: string; sessionID?: unknown; messageID?: unknown; requestID?: unknown },
+  ctx: Ctx,
+): Promise<boolean | undefined> {
+  if (message.type === "resumeSession") {
+    if (isResume(message)) await ctx.resume(message.sessionID, message.messageID, message.requestID)
+    return true
+  }
+  if (message.type === "shake") {
+    if (typeof message.sessionID === "string") await ctx.shake(message.sessionID)
+    return true
+  }
+  return undefined
+}
 export async function routeEarlyMessage(
   message: { type: string; id?: unknown; text?: unknown; state?: unknown },
   ctx: Ctx,
 ): Promise<boolean> {
-  if (message.type === "resumeSession") {
-    const input = message as { sessionID?: unknown; messageID?: unknown; requestID?: unknown }
-    if (isResume(input)) {
-      await ctx.resume(input.sessionID, input.messageID, input.requestID)
-    }
-    return true
-  }
+  const session = await routeSessionMessage(message, ctx)
+  if (session !== undefined) return session
   if (message.type === "copyToClipboard") {
     if (typeof message.id !== "string") return true
     if (typeof message.text !== "string") {
@@ -159,3 +171,4 @@ export async function routeEarlyMessage(
     }))
   )
 }
+// fork_change end
