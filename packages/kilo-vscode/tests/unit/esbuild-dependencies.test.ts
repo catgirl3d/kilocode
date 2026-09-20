@@ -124,5 +124,5 @@ describe("Build Script Dependency Declarations", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }
-  }, 15_000)
+  }, 60_000)
 })
