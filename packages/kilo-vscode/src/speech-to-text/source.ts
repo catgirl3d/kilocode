@@ -8,6 +8,7 @@ export type SpeechToTextConfig = {
     speech_to_text_base_url?: string
     speech_to_text_api_key?: string
     speech_to_text_model?: string
+    speech_to_text_mode?: "transcribe" | "translate" // fork_change
   }
 }
 
@@ -28,6 +29,7 @@ export function withGlobalSpeechToText<T extends SpeechToTextConfig>(cfg: T, glo
   experimental.speech_to_text_base_url = host?.speech_to_text_base_url
   experimental.speech_to_text_api_key = host?.speech_to_text_api_key
   experimental.speech_to_text_model = host?.speech_to_text_model
+  experimental.speech_to_text_mode = host?.speech_to_text_mode // fork_change
   return { ...cfg, experimental } as T
 }
 

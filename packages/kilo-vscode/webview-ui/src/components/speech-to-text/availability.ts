@@ -2,7 +2,9 @@ import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
 import {
   DEFAULT_SPEECH_TO_TEXT_MODEL,
   SPEECH_TO_TEXT_MODELS,
+  getSpeechToTextModel, // fork_change
   type SpeechToTextModelDef,
+  type SpeechToTextMode, // fork_change
 } from "../../../../src/speech-to-text/models"
 
 type Cfg = {
@@ -11,10 +13,24 @@ type Cfg = {
   experimental?: {
     speech_to_text_model?: string
     speech_to_text_base_url?: string
+    speech_to_text_mode?: SpeechToTextMode // fork_change
   }
 }
 
 type AuthState = "api" | "oauth" | "wellknown"
+type ProviderID = "kilo" | "groq" // fork_change
+
+// fork_change start
+function available(cfg: Cfg, auth: Readonly<Record<string, AuthState>>, id: ProviderID): boolean {
+  const enabled = !cfg.enabled_providers || cfg.enabled_providers.includes(id)
+  const type = auth[id]
+  return (
+    enabled &&
+    !cfg.disabled_providers?.includes(id) &&
+    (type === "api" || (id === KILO_PROVIDER_ID && type === "oauth"))
+  )
+}
+// fork_change end
 
 export function hasCustomSpeechToTextSource(cfg: Cfg): boolean {
   return !!cfg.experimental?.speech_to_text_base_url?.trim()
@@ -24,12 +40,25 @@ export function hasExplicitSpeechToTextModel(cfg: Cfg): boolean {
   return !!cfg.experimental?.speech_to_text_model?.trim()
 }
 
+// fork_change start
 export function hasSpeechToTextAccess(cfg: Cfg, auth: Readonly<Record<string, AuthState>>): boolean {
   if (hasCustomSpeechToTextSource(cfg)) return true
-  const enabled = !cfg.enabled_providers || cfg.enabled_providers.includes(KILO_PROVIDER_ID)
-  const type = auth[KILO_PROVIDER_ID]
-  return enabled && !cfg.disabled_providers?.includes(KILO_PROVIDER_ID) && (type === "api" || type === "oauth")
+  const provider = getSpeechToTextModel(cfg.experimental?.speech_to_text_model).providerID
+  return provider !== "custom" && available(cfg, auth, provider)
 }
+// fork_change end
+
+// fork_change start
+export function canConfigureSpeechToText(cfg: Cfg, auth: Readonly<Record<string, AuthState>>): boolean {
+  return hasCustomSpeechToTextSource(cfg) || available(cfg, auth, KILO_PROVIDER_ID) || available(cfg, auth, "groq")
+}
+// fork_change end
+
+// fork_change start
+export function canTranslateSpeechToText(cfg: Cfg): boolean {
+  return getSpeechToTextModel(cfg.experimental?.speech_to_text_model).modes?.includes("translate") ?? false
+}
+// fork_change end
 
 export function canUseSpeechToText(cfg: Cfg, auth: Readonly<Record<string, AuthState>>, capture = true): boolean {
   if (!capture) return false
@@ -51,3 +80,11 @@ export function selectedSpeechToTextModel(
   if (id && models.some((model) => model.id === id)) return id
   return models[0]?.id ?? DEFAULT_SPEECH_TO_TEXT_MODEL.id
 }
+
+// fork_change start
+export function selectedSpeechToTextMode(cfg: Cfg): SpeechToTextMode {
+  return canTranslateSpeechToText(cfg) && cfg.experimental?.speech_to_text_mode === "translate"
+    ? "translate"
+    : "transcribe"
+}
+// fork_change end
