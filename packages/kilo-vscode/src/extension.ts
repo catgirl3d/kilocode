@@ -292,26 +292,15 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Register toggle auto-approve shortcut (Ctrl+Alt+A / Cmd+Alt+A)
   const defaultDir = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()
-  const autoApprove = registerToggleAutoApprove(
-    context,
-    connectionService,
-    (sessionId) => {
-      if (sessionId) {
-        const dir =
-          provider.getSessionDirectories().get(sessionId) ?? agentManagerProvider.getSessionDirectories().get(sessionId)
-        if (dir) return dir
-      }
-      return defaultDir()
-    },
-    () => {
-      const dirs = new Set([defaultDir()])
-      for (const dir of provider.getSessionDirectories().values()) dirs.add(dir)
-      for (const dir of agentManagerProvider.getSessionDirectories().values()) dirs.add(dir)
-      return [...dirs]
-    },
-  )
+  // fork_change start
+  const autoApprove = registerToggleAutoApprove(context, connectionService, () => {
+    const dirs = new Set([defaultDir()])
+    for (const dir of provider.getSessionDirectories().values()) dirs.add(dir)
+    for (const dir of agentManagerProvider.getSessionDirectories().values()) dirs.add(dir)
+    return [...dirs]
+  })
+  // fork_change end
   const attention = new AttentionService(connectionService, {
-    approve: (event, directory) => autoApprove.approve(event, directory),
     details: async (sessionID, directory) => {
       provider.rememberSession(sessionID, directory)
       const session = await provider.getSessionInfo(sessionID)
