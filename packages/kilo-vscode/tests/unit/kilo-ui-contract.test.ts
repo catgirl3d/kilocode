@@ -449,9 +449,10 @@ describe("AssistantMessage visible row contract (source)", () => {
     expect(live).not.toContain('part.type === "reasoning"')
   })
 
-  it("uses the native recall tool without a separate memory badge", () => {
+  it("shows recalled memory with a separate badge", () => {
     const tools = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
-    expect(src).not.toContain("assistant-memory-badge")
+    expect(src).toContain("assistant-memory-badge")
+    expect(src).toContain("MemoryMarkerMeta.fromParts")
     expect(tools).toContain("ToolRegistry.render(part.tool) ?? McpTool")
   })
 })

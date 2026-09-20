@@ -30,10 +30,14 @@ import { useSession } from "../../context/session"
 import { useDisplay } from "../../context/display"
 import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
+// fork_change start
+import { useMemory } from "../../context/memory"
 import { useServer } from "../../context/server"
 import { planDisplayPath } from "../../utils/plan-path"
 import { isRenderable, UPSTREAM_SUPPRESSED_TOOLS } from "../../utils/transcript-parts"
+import { MemoryMarkerMeta } from "@kilocode/kilo-memory/marker-meta"
 import { messageThroughput, formatTG } from "../../context/session-utils"
+// fork_change end
 import { formatClock, formatDuration } from "../../utils/message-time"
 import type { TurnTiming } from "../../context/transcript-rows"
 import { color as timelineColor } from "../../utils/timeline/colors"
@@ -171,6 +175,10 @@ type ToolStateProps = {
 }
 
 function TodoToolCard(props: { part: ToolPart }) {
+// fork_change start
+type MemoryItem = MemoryMarkerMeta.Decoded
+
+// fork_change end
   const render = ToolRegistry.render(props.part.tool)
   const state = () => props.part.state as ToolStateProps
   const language = useLanguage()
@@ -256,6 +264,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
   const data = useData()
   const session = useSession()
   const display = useDisplay()
+  const mem = useMemory() // fork_change
   const language = useLanguage()
   const { config } = useConfig()
   const open = createMemo(() => config().terminal_command_display !== "collapsed")
@@ -272,6 +281,34 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
     if (!stored) return []
     return (stored as SDKPart[]).filter((part) => isRenderable(part, props.message))
   })
+  // fork_change start
+  const meta = createMemo(() =>
+    MemoryMarkerMeta.fromParts((props.parts ?? data.store.part?.[props.message.id] ?? []) as MemoryMarkerMeta.Part[]),
+  )
+  const recall = createMemo(() => {
+    const item = meta()
+    if (item?.type === "recall") return item
+  })
+  const fmt = (value: number) => value.toLocaleString(language.locale())
+  const count = (item: MemoryItem) => fmt(item.count)
+  const items = (item: MemoryItem) => item.items ?? []
+  const verbose = createMemo(() => Boolean(mem.status()?.state.verbose))
+  const tip = (item: MemoryItem) => {
+    const values = MemoryMarkerMeta.snippets(item, verbose())
+    return (
+      <div style={{ "text-align": "left", "white-space": "normal", "max-width": "280px" }}>
+        <Show
+          when={values.length > 0}
+          fallback={
+            <div>{`${language.t("chat.memory.badge.recalled")} · ${language.t("chat.memory.badge.items", { count: count(item) })}`}</div>
+          }
+        >
+          <For each={values}>{(value) => <div>{value}</div>}</For>
+        </Show>
+      </div>
+    )
+  }
+  // fork_change end
   // Pull the weighted generation rate across the turn's step-finish parts
   // (output + reasoning tokens over active generation duration) so the badge
   // represents the turn as a whole rather than whichever step happened to
@@ -475,6 +512,19 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
           )
         }}
       </For>
+      {/* fork_change start */}
+      <Show when={mem.enabled() && recall()}>
+        {(item) => (
+          <Tooltip value={tip(item())} placement="top">
+            <div data-component="assistant-memory-badge">
+              {language.t("chat.memory.badge.recalled")} ·{" "}
+              {language.t("chat.memory.badge.items", { count: count(item()) })}
+              <Show when={verbose() && items(item()).length > 0}> · {items(item())[0]}</Show>
+            </div>
+          </Tooltip>
+        )}
+      </Show>
+      {/* fork_change end */}
     </>
   )
 }

@@ -44,49 +44,39 @@ function show(root: string) {
 }
 
 describe("KiloProviderMemory", () => {
-  it("shows stored memory and explains empty projects", async () => {
-    const picker = spyOn(vscode.window, "showQuickPick")
-    const notice = spyOn(vscode.window, "showInformationMessage")
+  it("opens the complete project memory document", async () => {
+    const open = spyOn(vscode.workspace, "openTextDocument")
+    const present = spyOn(vscode.window, "showTextDocument")
     const full = status("/repo")
     const view = show("/repo")
     view.items = "record id=project.md:Facts:test :: Stored memory fact :: with context"
-    const stored = subject({
+    const item = subject({
       memory: {
         show: async () => ({ data: view }),
         status: async () => ({ data: full }),
       },
     } as unknown as KiloClient)
-    const empty = subject({
-      memory: {
-        show: async () => ({ data: show("/empty") }),
-        status: async () => ({ data: status("/empty") }),
-      },
-    } as unknown as KiloClient)
 
     try {
-      await stored.memory.show("ses_stored")
-      await empty.memory.show("ses_empty")
+      await item.memory.show("ses_stored")
 
-      expect(picker).toHaveBeenCalledTimes(1)
-      expect(picker.mock.calls[0]?.[0]).toContainEqual(
-        expect.objectContaining({ label: "Storage", detail: "/repo/.kilo/memory" }),
+      expect(open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          language: "markdown",
+          content: expect.stringContaining("Stored memory fact :: with context"),
+        }),
       )
-      expect(picker.mock.calls[0]?.[0]).toContainEqual(
-        expect.objectContaining({ label: "Stored memory fact :: with context" }),
-      )
-      expect(notice).toHaveBeenCalledWith(
-        "This project doesn't have any memory yet. It will start showing after you use Kilo.",
-      )
+      expect(present).toHaveBeenCalledWith(expect.anything(), { preview: true })
     } finally {
-      picker.mockRestore()
-      notice.mockRestore()
+      open.mockRestore()
+      present.mockRestore()
     }
   })
 
-  it("shows the stored memory total when the list is truncated", async () => {
+  it("keeps slash memory status and show in the Quick Pick", async () => {
     const picker = spyOn(vscode.window, "showQuickPick")
     const view = show("/repo")
-    view.items = Array.from({ length: 17 }, (_, i) => `- id=item-${i} :: Fact ${i}`).join("\n")
+    view.items = "record id=project.md:Facts:test :: Stored memory fact"
     const item = subject({
       memory: {
         show: async () => ({ data: view }),
@@ -95,12 +85,12 @@ describe("KiloProviderMemory", () => {
     } as unknown as KiloClient)
 
     try {
-      await item.memory.show("ses_stored")
+      await item.memory.handle({ type: "memoryShow", mode: "status", sessionID: "ses_memory" })
+      await item.memory.handle({ type: "memoryShow", mode: "show", sessionID: "ses_memory" })
 
-      expect(picker.mock.calls[0]?.[0]).toContainEqual(
-        expect.objectContaining({ label: "Stored memory", description: "16 of 17 shown" }),
-      )
-      expect(picker.mock.calls[0]?.[0]).toHaveLength(21)
+      expect(picker).toHaveBeenCalledTimes(2)
+      expect(picker.mock.calls[0]?.[1]).toMatchObject({ title: "Memory status" })
+      expect(picker.mock.calls[1]?.[0]).toContainEqual(expect.objectContaining({ label: "Stored memory fact" }))
     } finally {
       picker.mockRestore()
     }
@@ -289,5 +279,39 @@ describe("KiloProviderMemory", () => {
       ["purge", { directory: "/repo", confirm: true }],
     ])
     expect(item.posts.filter((post) => (post as { type?: string }).type === "memoryOperationResult")).toHaveLength(2)
+  })
+
+  it("restores verbose and prompted memory actions", async () => {
+    const calls: unknown[] = []
+    const input = spyOn(vscode.window, "showInputBox").mockResolvedValue("Remember this project convention")
+    const state = status("/repo")
+    const item = subject({
+      memory: {
+        configure: async (value: unknown) => {
+          calls.push(["configure", value])
+          return { data: { root: state.root, state: state.state } }
+        },
+        remember: async (value: unknown) => {
+          calls.push(["remember", value])
+          return { data: { operationCount: 1, added: 1, removed: 0, skipped: [], index: { tokens: 0 } } }
+        },
+        status: async () => ({ data: state }),
+      },
+    } as unknown as KiloClient)
+
+    try {
+      await item.memory.handle({ type: "memoryPrompt", operation: "remember", sessionID: "ses_memory" })
+      await item.memory.run({ operation: "verbose", mode: "on", sessionID: "ses_memory" })
+
+      expect(calls).toEqual([
+        ["remember", { directory: "/repo", text: "Remember this project convention", sessionID: "ses_memory" }],
+        ["configure", { directory: "/repo", verbose: true }],
+      ])
+      expect(item.posts).toContainEqual(
+        expect.objectContaining({ type: "memoryOperationResult", operation: "verbose", ok: true }),
+      )
+    } finally {
+      input.mockRestore()
+    }
   })
 })

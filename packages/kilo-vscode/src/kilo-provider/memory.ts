@@ -1,12 +1,16 @@
 import * as vscode from "vscode"
-import { isMemoryOperation, type MemoryOperation } from "@kilocode/kilo-memory/commands"
+// fork_change start
+import { isMemoryOperation, type MemoryOperation as SharedMemoryOperation } from "@kilocode/kilo-memory/commands"
 import { MemorySchema } from "@kilocode/kilo-memory/schema"
-import type { KiloClient, Session } from "@kilocode/sdk/v2/client"
+import type { KiloClient, MemoryShowResponse, MemoryStatusResponse, Session } from "@kilocode/sdk/v2/client"
 import { retry } from "../services/cli-backend/retry"
 import { getErrorMessage } from "../kilo-provider-utils"
 
 type MemorySourceFile = MemorySchema.Source
 type MemoryApi = KiloClient["memory"]
+type MemoryOperation = SharedMemoryOperation
+type MemoryPromptOperation = "remember" | "forget"
+// fork_change end
 const CACHE_LIMIT = 8
 const STORED_LIMIT = 16
 const NO_PROJECT = "No active project for memory. Open a file in the target folder to manage its memory."
@@ -39,6 +43,12 @@ function operation(value: unknown): MemoryOperation | undefined {
   return isMemoryOperation(value) ? value : undefined
 }
 
+// fork_change start
+function prompt(value: unknown): MemoryPromptOperation | undefined {
+  if (value === "remember" || value === "forget") return value
+}
+
+// fork_change end
 function mode(value: unknown) {
   if (value === "status" || value === "on" || value === "off") return value
   return undefined
@@ -117,10 +127,10 @@ export class KiloProviderMemory {
       return true
     }
     if (message.type === "memoryShow") {
-      await this.show(
-        typeof message.sessionID === "string" ? message.sessionID : undefined,
-        message.mode === "status" ? "status" : "show",
-      )
+      // fork_change start
+      const mode = message.mode === "status" || message.mode === "show" ? message.mode : undefined
+      await this.show(typeof message.sessionID === "string" ? message.sessionID : undefined, mode)
+      // fork_change end
       return true
     }
     if (message.type === "memoryOperation") {
@@ -138,6 +148,14 @@ export class KiloProviderMemory {
       await this.run(parsed.value)
       return true
     }
+    // fork_change start
+    if (message.type === "memoryPrompt") {
+      const op = prompt(message.operation)
+      if (!op) return true
+      await this.prompt(op, typeof message.sessionID === "string" ? message.sessionID : undefined)
+      return true
+    }
+    // fork_change end
     return false
   }
 
@@ -190,11 +208,27 @@ export class KiloProviderMemory {
     }
   }
 
-  show(sessionID?: string, mode: "status" | "show" = "show"): Promise<void> {
+  // fork_change start
+  show(sessionID?: string, mode?: "status" | "show"): Promise<void> {
     return this.serial(() => this.doShow(sessionID, mode))
   }
 
-  private async doShow(sessionID: string | undefined, mode: "status" | "show"): Promise<void> {
+  async prompt(value: MemoryPromptOperation, sessionID?: string): Promise<void> {
+    const title = value === "remember" ? "Remember in project memory" : "Forget project memory"
+    const placeHolder = value === "remember" ? "Project fact, command, or correction" : "Text to remove"
+    const text = await vscode.window.showInputBox({ title, placeHolder, ignoreFocusOut: true })
+    if (!text?.trim()) {
+      this.input.post({ type: "memoryOperationResult", operation: value, sessionID, ok: true })
+      return
+    }
+    await this.run({
+      operation: value,
+      sessionID,
+      ...(value === "remember" ? { text: text.trim() } : { query: text.trim() }),
+    })
+  }
+
+  private async doShow(sessionID?: string, mode?: "status" | "show"): Promise<void> {
     const client = this.input.client()
     if (!client) {
       this.input.post({
@@ -222,10 +256,8 @@ export class KiloProviderMemory {
         this.input.post({ type: "memoryLoaded", sessionID, error: NO_PROJECT })
         return
       }
-      const [{ data: show }, { data: status }] = await Promise.all([
-        retry(() => api.show({ directory }, { throwOnError: true })),
-        retry(() => api.status({ directory }, { throwOnError: true })),
-      ])
+      const { data: show } = await retry(() => api.show({ directory }, { throwOnError: true }))
+      const { data: status } = await retry(() => api.status({ directory }, { throwOnError: true }))
       const msg = {
         type: "memoryLoaded",
         sessionID,
@@ -233,45 +265,49 @@ export class KiloProviderMemory {
       }
       this.cache(directory, msg)
       this.input.post(msg)
-      const items = stored(show.items)
-      if (mode === "show" && items.length === 0) {
-        void vscode.window.showInformationMessage(
-          "This project doesn't have any memory yet. It will start showing after you use Kilo.",
-        )
+      if (mode) {
+        this.picker(show, status, mode)
         return
       }
-      const entries: vscode.QuickPickItem[] = [
-        {
-          label: `${status.state.enabled ? "Enabled" : "Disabled"} · ${status.state.scope}`,
-          description: status.state.autoConsolidate ? "Auto-save on" : "Auto-save off",
-        },
-        { label: "Storage", detail: status.root },
-        {
-          label: "Sources",
-          description: `project.md ${count(show.sources.project)} · environment.md ${count(show.sources.environment)} · corrections.md ${count(show.sources.corrections)}`,
-        },
-        {
-          label: "Index",
-          description: `${status.index.estimatedTokens.toLocaleString()} estimated tokens`,
-        },
-      ]
-      if (mode === "show") {
-        const shown = items.slice(0, STORED_LIMIT)
-        entries.push(
-          {
-            label: "Stored memory",
-            description:
-              shown.length < items.length ? `${shown.length} of ${items.length} shown` : `${shown.length} shown`,
-          },
-          ...shown.map((label) => ({ label })),
-        )
-      }
-      void vscode.window.showQuickPick(entries, {
-        title: mode === "show" ? "Memory" : "Memory status",
-        placeHolder: mode === "show" ? "Stored project memory" : "Project memory status",
-        matchOnDescription: true,
-        matchOnDetail: true,
-      })
+      const current = sessionID ?? this.input.session()?.id
+      const startup =
+        current && status.state.stats.lastInjectedSessionID === current ? status.state.stats.lastInjectedTokens : 0
+      const content = [
+        "# Kilo Memory",
+        "",
+        `Root: ${show.root}`,
+        `Enabled: ${show.state.enabled ? "yes" : "no"}`,
+        `Auto-save: ${show.state.autoConsolidate ? "on" : "off"}`,
+        `Startup context: ${show.state.autoInject ? "on" : "off"}`,
+        `Stored index tokens: ${status.index.estimatedTokens}`,
+        `Startup context tokens for this session: ${startup}`,
+        `Last auto-save model usage: ${status.state.stats.lastConsolidationTokens} tokens`,
+        "",
+        "## project.md",
+        show.sources.project.trim(),
+        "",
+        "## environment.md",
+        show.sources.environment.trim(),
+        "",
+        "## corrections.md",
+        show.sources.corrections.trim(),
+        "",
+        "## index.kmem",
+        show.index.trim(),
+        "",
+        "## items",
+        show.items.trim(),
+        "",
+        "## changes",
+        show.changes.trim(),
+        "",
+        "## decisions.jsonl",
+        show.decisions.trim(),
+        "",
+      ].join("\n")
+      await vscode.workspace
+        .openTextDocument({ content, language: "markdown" })
+        .then((doc) => vscode.window.showTextDocument(doc, { preview: true }))
     } catch (err) {
       console.error("[Kilo New] KiloProvider: Failed to show memory:", err)
       this.input.post({
@@ -282,6 +318,49 @@ export class KiloProviderMemory {
     }
   }
 
+  private picker(show: MemoryShowResponse, status: MemoryStatusResponse, mode: "status" | "show") {
+    const items = stored(show.items)
+    if (mode === "show" && items.length === 0) {
+      void vscode.window.showInformationMessage(
+        "This project doesn't have any memory yet. It will start showing after you use Kilo.",
+      )
+      return
+    }
+    const entries: vscode.QuickPickItem[] = [
+      {
+        label: `${status.state.enabled ? "Enabled" : "Disabled"} · ${status.state.scope}`,
+        description: status.state.autoConsolidate ? "Auto-save on" : "Auto-save off",
+      },
+      { label: "Storage", detail: status.root },
+      {
+        label: "Sources",
+        description: `project.md ${count(show.sources.project)} · environment.md ${count(show.sources.environment)} · corrections.md ${count(show.sources.corrections)}`,
+      },
+      {
+        label: "Index",
+        description: `${status.index.estimatedTokens.toLocaleString()} estimated tokens`,
+      },
+    ]
+    if (mode === "show") {
+      const shown = items.slice(0, STORED_LIMIT)
+      entries.push(
+        {
+          label: "Stored memory",
+          description:
+            shown.length < items.length ? `${shown.length} of ${items.length} shown` : `${shown.length} shown`,
+        },
+        ...shown.map((label) => ({ label })),
+      )
+    }
+    void vscode.window.showQuickPick(entries, {
+      title: mode === "show" ? "Memory" : "Memory status",
+      placeHolder: mode === "show" ? "Stored project memory" : "Project memory status",
+      matchOnDescription: true,
+      matchOnDetail: true,
+    })
+  }
+
+  // fork_change end
   run(message: KiloProviderMemoryMessage): Promise<boolean> {
     return this.serial(() => this.execute(message))
   }
@@ -397,6 +476,7 @@ export class KiloProviderMemory {
     if (op === "rebuild") return (await api.rebuild({ directory }, { throwOnError: true })).data
     if (op === "purge") return this.purge(api, directory, message)
     if (op === "auto") return this.auto(api, directory, message)
+    if (op === "verbose") return this.verbose(api, directory, message) // fork_change
     if (op === "remember") return this.remember(api, directory, message)
     if (op === "correct") return this.correct(api, directory, message)
     return this.forget(api, directory, message)
@@ -461,4 +541,13 @@ export class KiloProviderMemory {
     }
     throw new Error("Auto-save mode is required")
   }
+  // fork_change start
+
+  private async verbose(api: MemoryApi, directory: string, message: KiloProviderMemoryMessage) {
+    if (message.mode === "on" || message.mode === "off") {
+      return (await api.configure({ directory, verbose: message.mode === "on" }, { throwOnError: true })).data
+    }
+    throw new Error("Verbose mode is required")
+  }
+  // fork_change end
 }
