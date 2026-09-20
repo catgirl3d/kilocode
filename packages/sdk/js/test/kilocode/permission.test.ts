@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import { createKiloClient } from "../../src/v2/client"
-import { permissionSettled, respondToPermission } from "../../src/kilocode/permission"
+import { createKiloClient } from "../../src/v2/client.js"
+import { permissionSettled, respondToPermission } from "../../src/kilocode/permission.js"
 
 const route = { requestID: "p1", directory: "/worktree" }
 
