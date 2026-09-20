@@ -43,8 +43,17 @@ export async function harness<T extends { type: string }>() {
       constructor(private callback: IntersectionObserverCallback) {
         super(() => undefined)
       }
-      observe(target: Element) {
-        this.callback([{ target, isIntersecting: true, intersectionRatio: 1 } as IntersectionObserverEntry], this)
+      observe(target: InstanceType<typeof window.Element>) {
+        this.callback(
+          [
+            {
+              target: target as unknown as Element,
+              isIntersecting: true,
+              intersectionRatio: 1,
+            } as IntersectionObserverEntry,
+          ],
+          this as unknown as IntersectionObserver,
+        )
       }
     },
     getComputedStyle: window.getComputedStyle.bind(window),
@@ -83,7 +92,7 @@ export async function harness<T extends { type: string }>() {
       node<HTMLButtonElement>(`button[data-action="${action}"]`, scope),
     type: (scope: ParentNode, body: string) => {
       input(scope).value = body
-      input(scope).dispatchEvent(new window.Event("input", { bubbles: true }))
+      input(scope).dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
     },
     last: () => {
       const result = messages.at(-1)

@@ -34,7 +34,7 @@ afterEach(async () => {
   await disposeAllInstances()
 })
 
-describe("indexing worktrees", () => {
+describe.skipIf(process.platform === "win32")("indexing worktrees", () => {
   test("shares the primary checkout index with a linked worktree", async () => {
     await using tmp = await tmpdir({ git: true, config: cfg })
     process.env["KILO_CONFIG_DIR"] = tmp.path

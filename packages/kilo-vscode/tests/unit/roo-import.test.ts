@@ -8,6 +8,8 @@ const enc = new TextEncoder()
 const first = "/storage/roovscode.roo-cline/tasks"
 const second = "/storage/rooveterinaryinc.roo-cline/tasks"
 const customRoot = "/custom/roo/tasks"
+// Uri fsPath is platform-native; fixture constants and assertions are POSIX.
+const posix = (value: string) => value.replaceAll("\\", "/")
 const id = "1781613537275"
 const other = "1781613537276"
 const missing = "1781613537277"
@@ -98,18 +100,19 @@ describe("roo import", () => {
       [customRoot, [customId]],
     ])
 
+    // Uri fsPath uses platform separators, the fixture keys are POSIX.
     fs.readDirectory = async (uri) => {
-      const entries = dirs.get(uri.fsPath)
+      const entries = dirs.get(posix(uri.fsPath))
       if (entries) return entries.map((entry) => [entry, vscode.FileType.Directory])
       throw new Error(`missing dir ${uri.fsPath}`)
     }
     fs.stat = async (uri) => {
-      const file = files.get(uri.fsPath)
+      const file = files.get(posix(uri.fsPath))
       if (file) return { type: vscode.FileType.File, ctime: 0, mtime: file.mtime, size: file.value.length }
       throw new Error(`missing file ${uri.fsPath}`)
     }
     fs.readFile = async (uri) => {
-      const file = files.get(uri.fsPath)
+      const file = files.get(posix(uri.fsPath))
       if (file) return enc.encode(file.value)
       throw new Error(`missing file ${uri.fsPath}`)
     }
@@ -128,8 +131,10 @@ describe("roo import", () => {
       { id, title: "New root", directory: "/new", time: Number(id) + 1 },
       { id: special, title: "Special", directory: "/indexed", time: 1 },
     ])
-    expect(source?.catalog.get(id)?.source).toMatchObject({ id, dir: second, namespace: "roo", mtime: 20 })
-    expect(source?.catalog.get(special)?.source).toMatchObject({ id: special, dir: first, namespace: "roo" })
+    expect(source?.catalog.get(id)?.source).toMatchObject({ id, namespace: "roo", mtime: 20 })
+    expect(posix(source?.catalog.get(id)?.source.dir ?? "")).toBe(second)
+    expect(source?.catalog.get(special)?.source).toMatchObject({ id: special, namespace: "roo" })
+    expect(posix(source?.catalog.get(special)?.source.dir ?? "")).toBe(first)
     expect(source?.diagnostics.map((item) => [item.id, item.reason])).toEqual([
       [other, "ui-only"],
       [missing, "missing-workspace"],
@@ -149,7 +154,7 @@ describe("roo import", () => {
       directory: "/custom-repo",
       time: Number(customId),
     })
-    expect(source?.catalog.get(customId)?.source.dir).toBe(customRoot)
+    expect(posix(source?.catalog.get(customId)?.source.dir ?? "")).toBe(customRoot)
   })
 
   it("namespaces generated Roo IDs without changing the visible session slug", async () => {

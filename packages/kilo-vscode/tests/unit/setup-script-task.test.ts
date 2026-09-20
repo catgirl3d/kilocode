@@ -123,9 +123,12 @@ describe("createSetupScriptTask", () => {
   it("times out, rejects, and stops the process tree", async () => {
     const ctx = harness({ timeoutMs: 5 })
     const result = ctx.task(config)
+    // Attach before yielding: on Windows the 5ms timer can fire before the 0ms
+    // wait resumes, and an already-rejected promise breaks the Bun test runner.
+    const timedOut = expect(result).rejects.toThrow("Setup script timed out after 5 minutes")
     await wait()
 
-    await expect(result).rejects.toThrow("Setup script timed out after 5 minutes")
+    await timedOut
     expect(ctx.stops).toEqual(["wt-1"])
 
     // A late exit after the timeout must not settle the promise again.
@@ -308,7 +311,9 @@ describe("runWorktreeSetupScript", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kilo-setup-flow-"))
     if (!script) return dir
     fs.mkdirSync(path.join(dir, ".kilo"), { recursive: true })
-    fs.writeFileSync(path.join(dir, ".kilo", "setup-script"), "#!/bin/sh\nexit 0\n")
+    // Match the platform candidate SetupScriptService.resolveScript looks up.
+    const name = process.platform === "win32" ? "setup-script.ps1" : "setup-script"
+    fs.writeFileSync(path.join(dir, ".kilo", name), "#!/bin/sh\nexit 0\n")
     return dir
   }
 

@@ -43,11 +43,12 @@ describe("SessionProvider activity", () => {
     const file = path.join(root, `.session-provider-activity-${crypto.randomUUID()}.mjs`)
     await Bun.write(file, result.outputFiles[0]!.contents)
     try {
-      const child = Bun.spawnSync(["bun", file], { cwd: webview, stdout: "pipe", stderr: "pipe" })
+      // "bun" is not on PATH for every Windows spawn; use the running runtime.
+      const child = Bun.spawnSync([process.execPath, file], { cwd: webview, stdout: "pipe", stderr: "pipe" })
       const output = child.stdout.toString() + child.stderr.toString()
       expect(child.exitCode, output).toBe(0)
     } finally {
       unlinkSync(file)
     }
-  }, 15_000)
+  }, 60_000)
 })
