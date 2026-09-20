@@ -15,8 +15,11 @@ import type { DiffHandle } from "@kilocode/kilo-ui/pierre"
 import type { VirtualizerHandle } from "virtua/solid"
 import type { PRComment } from "../agent-manager/pr/pr-types"
 import { useLanguage } from "../src/context/language"
+import { useConfig } from "../src/context/config" // fork_change
 import { useVSCode } from "../src/context/vscode"
+import { selectedSpeechToTextMode } from "../src/components/speech-to-text/availability" // fork_change
 import type { WorktreeFileDiff } from "../src/types/messages"
+import type { SpeechToTextMode } from "../../src/speech-to-text/models" // fork_change
 import { lineCount, sanitizeReviewComments, type ReviewComment } from "./review-comments"
 import {
   buildFileAnnotations,
@@ -59,6 +62,7 @@ type Props = {
   activeTerminalId: Accessor<string | undefined>
   active?: Accessor<boolean>
   canComment?: Accessor<boolean>
+  mode: Accessor<SpeechToTextMode> // fork_change
   onSendClick?: () => void
   onSendAll?: () => void
   commentForm?: Accessor<CommentFormMount | undefined>
@@ -79,6 +83,7 @@ export function createReviewController(props: Props) {
     speech: voice.speech,
     enabled: voice.enabled,
     model: voice.model,
+    mode: props.mode, // fork_change
     label: props.label,
     keys: speechKeys,
   })
@@ -387,6 +392,9 @@ export interface ReviewViewProps {
   canComment?: boolean
   commentForm?: CommentFormMount
   commentsGithub?: CommentsGithub
+  // fork_change start
+  mode?: Accessor<SpeechToTextMode>
+  // fork_change end
 }
 
 interface ReviewViewOverrides {
@@ -400,6 +408,7 @@ export function createReviewView(
   overrides?: ReviewViewOverrides,
 ) {
   const { t } = useLanguage()
+  const { config } = useConfig() // fork_change
   const vscode = useVSCode()
   const local = createReviewComposer()
   const state = createReviewOpenState(
@@ -465,6 +474,7 @@ export function createReviewView(
     activeTerminalId: () => props.activeTerminalId,
     active: () => props.active !== false,
     canComment: () => props.canComment !== false,
+    mode: props.mode ?? (() => selectedSpeechToTextMode(config())), // fork_change
     onSendClick: props.onSendClick,
     onSendAll: props.onSendAll,
     commentForm: () => overrides?.commentForm ?? props.commentForm,

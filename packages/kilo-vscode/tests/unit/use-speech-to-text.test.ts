@@ -67,6 +67,20 @@ describe("useSpeechToText", () => {
     ctx.dispose()
   })
 
+  it("sends the selected voice output mode when recording starts", () => {
+    const ctx = setup()
+
+    ctx.speech.start({ model: "groq/whisper-large-v3", mode: "translate", insert: () => {} })
+    const start = ctx.sent[0]
+
+    expect(start).toMatchObject({
+      type: "speechToTextStart",
+      model: "groq/whisper-large-v3",
+      mode: "translate",
+    })
+    ctx.dispose()
+  })
+
   it("does not stop or start another recording while the microphone is starting", () => {
     const ctx = setup()
 
@@ -120,6 +134,25 @@ describe("useSpeechToText", () => {
 
     expect(ctx.logins()).toBe(1)
     expect(ctx.speech.error()).toBe("speechToText.error.loginRequired")
+    ctx.dispose()
+  })
+
+  it("does not offer Kilo sign-in when a direct provider credential fails", () => {
+    const ctx = setup()
+
+    ctx.speech.start({ model: "groq/whisper-large-v3-turbo", insert: () => {} })
+    const start = ctx.sent[0]
+    if (start?.type !== "speechToTextStart") throw new Error("speech start message missing")
+
+    ctx.fire({
+      type: "speechToTextError",
+      requestId: start.requestId,
+      error: "Groq API key is not configured",
+      code: "provider_not_authenticated",
+    })
+
+    expect(ctx.logins()).toBe(0)
+    expect(ctx.speech.error()).toBe("Groq API key is not configured")
     ctx.dispose()
   })
 
