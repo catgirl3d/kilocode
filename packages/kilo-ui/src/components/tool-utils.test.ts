@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test"
+import type { ToolPart } from "@kilocode/sdk/v2"
 import { createEffect, createRoot, createSignal } from "solid-js"
-import { bashLineUpdate, createThrottledValue, STREAMING_TEXT_RENDER_THROTTLE_MS, TEXT_RENDER_THROTTLE_MS } from "./tool-utils"
+import {
+  bashLineUpdate,
+  createThrottledValue,
+  STREAMING_TEXT_RENDER_THROTTLE_MS,
+  swePruned,
+  TEXT_RENDER_THROTTLE_MS,
+} from "./tool-utils"
 
 const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -124,5 +131,45 @@ describe("bashLineUpdate", () => {
 
   test("shifts an empty render into a full render", () => {
     expect(bashLineUpdate([], ["a", "b"])).toEqual({ start: 0, skip: false, shift: 0 })
+  })
+})
+function tool(status: string, metadata?: Record<string, unknown>) {
+  return {
+    id: "part_swe-pruner",
+    sessionID: "ses_swe-pruner",
+    messageID: "msg_swe-pruner",
+    type: "tool",
+    callID: "call_swe-pruner",
+    tool: "bash",
+    state: { status, metadata },
+  } as unknown as ToolPart
+}
+
+describe("swePruned", () => {
+  test("returns finite integer counts for a completed tool", () => {
+    expect(swePruned(tool("completed", { swePruner: { kept: 15, total: 60 } }))).toEqual({ kept: 15, total: 60 })
+  })
+
+  test("ignores metadata until the tool is completed", () => {
+    expect(swePruned(tool("running", { swePruner: { kept: 15, total: 60 } }))).toBeUndefined()
+    expect(swePruned(tool("pending", { swePruner: { kept: 15, total: 60 } }))).toBeUndefined()
+  })
+
+  test("rejects missing and malformed metadata", () => {
+    const invalid = [
+      undefined,
+      null,
+      "15/60",
+      {},
+      { kept: 15 },
+      { kept: 15.5, total: 60 },
+      { kept: Number.POSITIVE_INFINITY, total: 60 },
+      { kept: -1, total: 60 },
+      { kept: 61, total: 60 },
+      { kept: 0, total: 0 },
+    ]
+    for (const value of invalid) {
+      expect(swePruned(tool("completed", { swePruner: value }))).toBeUndefined()
+    }
   })
 })
