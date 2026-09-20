@@ -862,11 +862,20 @@ describe("Config", () => {
                 compaction: { auto: true, tail_turns: 3, preserve_recent_tokens: 2000, reserved: 10000 },
                 experimental: { mcp_timeout: 5000 },
                 mcp: {
-                  local: { type: "local", command: ["node", "server.js"], enabled: false, timeout: 10000 },
+                  local: {
+                    type: "local",
+                    command: ["node", "server.js"],
+                    enabled: false,
+                    on_demand: true,
+                    description: "Local test server",
+                    timeout: 10000,
+                  },
                   remote: {
                     type: "remote",
                     url: "https://mcp.example.com",
                     oauth: { clientId: "client", callbackPort: 19876 },
+                    on_demand: true,
+                    description: "Remote test server",
                     timeout: 20000,
                   },
                 },
@@ -952,12 +961,16 @@ describe("Config", () => {
                   command: ["node", "server.js"],
                   disabled: true,
                   timeout: { request: 10000 },
+                  on_demand: true,
+                  description: "Local test server",
                 },
                 remote: {
                   type: "remote",
                   url: "https://mcp.example.com",
                   oauth: { client_id: "client", callback_port: 19876 },
                   timeout: { request: 20000 },
+                  on_demand: true,
+                  description: "Remote test server",
                 },
               },
             })

@@ -24,6 +24,8 @@ export interface McpConfig {
   timeout?: number
   /** `false` disables OAuth auto-detection; an object configures a pre-registered client; absent/`null` is automatic discovery. */
   oauth?: McpOAuthConfig | false | null
+  on_demand?: boolean // fork_change
+  description?: string // fork_change
 }
 
 export type ConfigOrigin = "project" | "global" | "system" | "default"
