@@ -211,6 +211,38 @@ git range-diff <old-upstream>..<old-main> upstream/main..main
 Commit retention alone does not prove behavior preservation; review the range-diff
 and actual behavior.
 
+### Post-Rebase Fix Ownership
+
+Every fix found during or right after a rebase has exactly one owner commit.
+Find it with `git log --oneline -- <file>` or `git log -S <line>` against the
+pre-rebase fork history; with a consolidated history this takes a minute.
+
+- **Feature fix folds into its owner.** Commit the fix as a small standalone
+  commit at the stop where it was found, finish the rebase, then fold it
+  non-interactively with `git-surgeon fold <owner> --from <fix>`. Never use
+  `rebase -i --autosquash`. The invariant is one feature per commit; tail
+  commits must not grow the stop count of the next rebase.
+- **Upstream drift: owner first, one remainder commit per wave.** When upstream
+  changed a contract, fixture format, or default that the replayed code must
+  adapt to, that is not a feature fix. An adaptation that repairs the code or
+  tests of one fork feature folds into that feature's commit with
+  `git-surgeon fold <owner> --from <fix>`; the feature must stay
+  self-contained. The remainder without a feature owner (generated SDK, docs,
+  cross-cutting fixtures, annotations) goes into a single commit named
+  `fix(rebase): adapt fork tail to upstream <version> drift`, where
+  `<version>` is the upstream release in the rebase base; fold later remainder
+  additions into it instead of opening a new commit. Never open a separate
+  `adapt <area>` commit per area, and never record drift in `CHANGELOG-FORK.md`
+  or changesets: the tail must not grow one stop per adapted area, and the next
+  rebase must still see where the adaptation remainder lives.
+- **No mega finalize commits.** Commits like `finalize post-rebase
+  integration` touching dozens of files across features are forbidden. If a
+  fix spans files of several features, split it by hunk to each owner and put
+  only the unattributable remainder into the drift or governance commit.
+- **Marker and formatting churn accumulates.** Do not commit annotation or
+  prettier fixes per stop; fold them once at the end per Marker Discipline
+  above.
+
 ## Validation
 
 - After every rebase, including a conflict-free rebase, validate the packages and
