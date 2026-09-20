@@ -161,6 +161,8 @@ function migrateMcp(info: ConfigMCPV1.Info) {
       command: info.command,
       cwd: info.cwd,
       environment: info.environment,
+      on_demand: info.on_demand, // kilocode_change
+      description: info.description, // kilocode_change
       disabled,
       timeout: info.timeout === undefined ? undefined : { request: info.timeout },
     }
@@ -175,6 +177,8 @@ function migrateMcp(info: ConfigMCPV1.Info) {
       callback_port: info.oauth.callbackPort,
       redirect_uri: info.oauth.redirectUri,
     },
+    on_demand: info.on_demand, // kilocode_change
+    description: info.description, // kilocode_change
     disabled,
     timeout: info.timeout === undefined ? undefined : { request: info.timeout },
   }
