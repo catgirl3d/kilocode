@@ -292,6 +292,10 @@ export function mockSessionValue(overrides?: {
     sendCommand: () => true,
     abort: noop,
     compact: noop,
+    // fork_change start
+    shake: noop,
+    shaking: () => false,
+    // fork_change end
     respondToPermission: noop,
     replyToQuestion: noop,
     rejectQuestion: noop,
