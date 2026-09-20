@@ -12,7 +12,17 @@ import { TextShimmer } from "./text-shimmer"
 import { Tooltip } from "./tooltip"
 import { GROW_SPRING } from "./motion"
 import { useSpring } from "./motion-spring"
-import { busy, createThrottledValue, updateScrollMask, useCollapsible, useRowWipe, useToolFade } from "./tool-utils"
+// fork_change start
+import {
+  busy,
+  createThrottledValue,
+  swePruned,
+  updateScrollMask,
+  useCollapsible,
+  useRowWipe,
+  useToolFade,
+} from "./tool-utils"
+// fork_change end
 import { readToolOpen, toolOpenKey, writeToolOpen } from "./tool-open-state"
 
 function ShellRollingSubtitle(props: { text: string; animate?: boolean }) {
@@ -201,6 +211,7 @@ export function ShellRollingResults(props: { part: ToolPart; animate?: boolean; 
   onMount(() => setMounted(true))
   const state = createMemo(() => props.part.state as Record<string, any>)
   const pending = createMemo(() => busy(props.part.state.status))
+  const pruned = createMemo(() => swePruned(props.part)) // fork_change
   const expanded = createMemo(() => open() && !pending())
   const previewOpen = createMemo(() => open() && pending())
   const command = createMemo(() => {
@@ -274,6 +285,15 @@ export function ShellRollingResults(props: { part: ToolPart; animate?: boolean; 
           </span>
         </div>
       </div>
+      {/* fork_change start */}
+      <Show when={!pending() && pruned()}>
+        {(value) => (
+          <span data-slot="swe-pruner-status">
+            {i18n.t("ui.tool.swePruned", { kept: value().kept, total: value().total })}
+          </span>
+        )}
+      </Show>
+      {/* fork_change end */}
       <div
         data-slot="shell-rolling-preview"
         style={{

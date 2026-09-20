@@ -8,6 +8,11 @@ import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { useImageModels } from "../../context/image-models"
 import type { ExtensionMessage } from "../../types/messages"
+// fork_change start
+import { useProvider } from "../../context/provider"
+import { parseModelString } from "../../../../src/shared/provider-model"
+import { ModelSelectorBase } from "../shared/ModelSelector"
+// fork_change end
 import SettingsRow from "./SettingsRow"
 
 interface ShareOption {
@@ -25,6 +30,7 @@ const ExperimentalTab: Component = () => {
   const { config, settings, updateConfig, applySetting } = useConfig()
   const language = useLanguage()
   const imageModels = useImageModels()
+  const provider = useProvider() // fork_change
   const vscode = useVSCode()
   const [active, setActive] = createSignal(false)
 
@@ -41,6 +47,13 @@ const ExperimentalTab: Component = () => {
   })
 
   const experimental = createMemo(() => config().experimental ?? {})
+  // fork_change start
+  const pruningModels = createMemo(() => {
+    const connected = new Set(provider.connected())
+    return provider.models().filter((model) => connected.has(model.providerID))
+  })
+  const pruningModel = createMemo(() => parseModelString(experimental().swe_pruner_model ?? undefined))
+  // fork_change end
 
   const updateExperimental = (key: string, value: unknown) => {
     updateConfig({
@@ -143,6 +156,46 @@ const ExperimentalTab: Component = () => {
           </Switch>
         </SettingsRow>
 
+        {/* fork_change start */}
+        <SettingsRow
+          title={language.t("settings.experimental.swePruner.title")}
+          description={language.t("settings.experimental.swePruner.description")}
+        >
+          <Switch
+            checked={experimental().swe_pruner ?? false}
+            onChange={(checked) => updateExperimental("swe_pruner", checked)}
+            hideLabel
+          >
+            {language.t("settings.experimental.swePruner.title")}
+          </Switch>
+        </SettingsRow>
+
+        <Show when={experimental().swe_pruner}>
+          <SettingsRow
+            title={language.t("settings.experimental.swePrunerModel.title")}
+            description={language.t("settings.experimental.swePrunerModel.description")}
+          >
+            <ModelSelectorBase
+              value={pruningModel()}
+              onSelect={(providerID, modelID) => {
+                if (!providerID || !modelID) {
+                  updateExperimental("swe_pruner_model", null)
+                  return
+                }
+                updateExperimental("swe_pruner_model", `${providerID}/${modelID}`)
+              }}
+              placement="bottom-start"
+              models={pruningModels()}
+              favorites={false}
+              allowClear
+              clearLabel={language.t("settings.providers.notSet")}
+              label={language.t("settings.experimental.swePrunerModel.title")}
+              description={language.t("settings.experimental.swePrunerModel.description")}
+            />
+          </SettingsRow>
+        </Show>
+
+        {/* fork_change end */}
         <SettingsRow
           title={language.t("settings.experimental.imageGeneration.title")}
           description={language.t("settings.experimental.imageGeneration.description")}
