@@ -317,18 +317,12 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
     })
 
     const notifications = Effect.fn("KiloGatewayHttpApi.notifications")(function* () {
-      // Locally-detected notice about leftover opencode config; appended so it reuses each client's dismissal path.
-      const notice = KilocodeConfig.opencodeConfigNotification({
-        directory: Instance.directory,
-        worktree: Instance.worktree,
-        scanProject: !Flag.KILO_DISABLE_PROJECT_CONFIG,
-      })
       const claude = yield* Effect.promise(() => ClaudeMigration.notification())
-      const append = <T>(list: T[]) => [...list, ...(notice ? [notice] : []), ...(claude ? [claude] : [])]
+      const append = <T>(list: T[]) => [...list, ...(claude ? [claude] : [])] // fork_change
 
       const info = yield* auth.get("kilo").pipe(Effect.catch(() => Effect.succeed(undefined)))
       const token = getToken(info)
-      if (!token) return append([])
+      if (!token) return [] // fork_change
 
       const cloud = yield* Effect.promise(() =>
         fetchKilocodeNotifications({
@@ -336,7 +330,7 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
           kilocodeOrganizationId: getOrganizationId(info),
         }),
       )
-      return append(cloud)
+      return cloud // fork_change
     })
 
     const organization = Effect.fn("KiloGatewayHttpApi.organization")(function* (ctx) {
