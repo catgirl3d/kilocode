@@ -44,7 +44,6 @@ const release = mount(() => (
           prNumber: 1,
           prUrl: "https://github.com/example/fixture/pull/1",
           snapshotId: "snapshot",
-          label: "GitHub #1",
           closed: false,
         }}
         onSave={() => {}}
@@ -69,7 +68,6 @@ const release = mount(() => (
           prNumber: 2,
           prUrl: "https://github.com/example/fixture/pull/2",
           snapshotId: "snapshot-2",
-          label: "GitHub #2",
           closed: false,
         }}
         onSave={() => {}}
@@ -104,13 +102,15 @@ assert.equal(input(local).value, "", "sending to Kilo clears the composer")
 
 // Plain Enter sends to Kilo and never posts to GitHub.
 type(local, "Keyboard send")
-input(local).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+input(local).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event)
 assert.deepEqual(sent, ["Send this", "Keyboard send"])
 assert.equal(messages.length, 0, "local actions never request a GitHub write")
 
 // Cmd/Ctrl+Enter saves the comment locally instead of sending it.
 type(local, "Keyboard save")
-input(local).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }))
+input(local).dispatchEvent(
+  new window.KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }) as unknown as Event,
+)
 assert.deepEqual(saved, ["Keep this", "Keyboard save"], "Cmd+Enter saves the comment")
 assert.deepEqual(sent, ["Send this", "Keyboard send"], "Cmd+Enter does not send to Kilo")
 assert.equal(messages.length, 0, "Cmd+Enter never requests a GitHub write")
@@ -121,7 +121,7 @@ node('[aria-label="Choose destination"]', remote)
 
 // Enter is not bound to the GitHub destination, so it cannot publish by accident.
 type(remote, "Do not post")
-input(remote).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+input(remote).dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }) as unknown as Event)
 assert.equal(messages.length, 0, "Enter never posts to GitHub")
 assert.equal(input(remote2).value, "", "a draft is scoped to its own PR identity")
 
