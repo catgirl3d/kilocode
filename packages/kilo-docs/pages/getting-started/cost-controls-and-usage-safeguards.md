@@ -149,6 +149,8 @@ Encode recurring guidance — coding standards, project conventions, preferred l
 
 MCP tool definitions are included in the system prompt sent with every request. If you are not using MCP features, disable MCP servers in **Settings → Agent Behaviour → MCP Servers**. This can meaningfully reduce per-request system prompt size.
 
+If you need a server only for occasional tasks, configure it with `on_demand: true` instead of disabling it completely. Its tools load only after the agent connects the server on demand.
+
 See [MCP Overview](/docs/automate/mcp/overview) for details.
 
 ### Prompt caching

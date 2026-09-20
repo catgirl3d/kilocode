@@ -143,7 +143,7 @@ Scalar form applies to all patterns. Object form maps glob patterns to actions. 
 
 Actions: `"allow"`, `"ask"`, `"deny"`. Set `null` to delete an inherited key.
 
-Tool permissions: `read`, `edit`, `glob`, `grep`, `list`, `bash`, `task`, `webfetch`, `websearch`, `semantic_search`, `kilo_memory_save`, `kilo_memory_recall`, `lsp`, `skill`, `external_directory`, `todowrite`, `todoread`, `question`, `doom_loop`.
+Tool permissions: `read`, `edit`, `glob`, `grep`, `list`, `bash`, `task`, `webfetch`, `websearch`, `semantic_search`, `kilo_memory_save`, `kilo_memory_recall`, `lsp`, `skill`, `external_directory`, `todowrite`, `todoread`, `question`, `doom_loop`, `mcp`.
 
 ## MCP Servers
 
@@ -164,15 +164,26 @@ Tool permissions: `read`, `edit`, `glob`, `grep`, `list`, `bash`, `task`, `webfe
       "oauth": { "clientId": "...", "scope": "read" },
       "enabled": true,
     },
+    "on-demand-server": {
+      "type": "remote",
+      "url": "https://mcp.example.com/on-demand",
+      "enabled": true,
+      "on_demand": true,
+      "description": "Short one-line description shown to the agent",
+    },
   },
 }
 ```
+
+`on_demand: true` keeps the server stopped at session start; the agent manages it with the built-in `mcp` tool (`list` / `connect` / `disconnect` actions): `connect` starts the server and makes its native tools available on the next step, while `disconnect` releases it and removes those tools. Both actions use the `mcp` permission key. `description` feeds the on-demand catalog. `enabled: false` takes precedence (excluded and not connectable). In network-restricted sessions both the on-demand catalog and the `mcp` tool are hidden.
 
 Disable an inherited server: `{ "server-name": { "enabled": false } }`.
 
 ### MCP Tool Permissions
 
 MCP tools use the same permission system as built-in tools. Each MCP tool's permission key is `{server}_{tool}` (e.g. `github_create_pull_request`). Glob patterns are supported.
+
+The connect tool uses the `mcp` permission (`permission: { "mcp": "ask" | "deny" }`), while calls to the server's own tools use `<server>_<tool>` keys — the two approval domains are separate.
 
 ```jsonc
 {
