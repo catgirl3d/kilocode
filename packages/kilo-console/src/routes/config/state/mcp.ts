@@ -11,7 +11,16 @@ const pattern = /^[\w\-@.]+$/
 
 type Resolved = Snapshot["overlay"]["collections"][string][number]
 type Dict = Record<string, unknown>
-type Config = McpLocalConfig | McpRemoteConfig | { enabled: boolean }
+// fork_change start
+type Config =
+  | McpLocalConfig
+  | McpRemoteConfig
+  | {
+      enabled?: boolean
+      on_demand?: boolean
+      description?: string
+    }
+// fork_change end
 type Mode = "closed" | "market" | "install" | "config"
 type Filter = "all" | "installed" | "notInstalled"
 
@@ -60,6 +69,16 @@ export type McpRow = {
   market?: McpMarket
 }
 
+// fork_change start
+export function preserveMcpPresets(next: Dict, source: Dict): Dict {
+  return {
+    ...next,
+    ...("on_demand" in source ? { on_demand: source.on_demand } : {}),
+    ...(source.description !== undefined ? { description: source.description } : {}),
+  }
+}
+
+// fork_change end
 function record(input: unknown): Dict {
   if (input && typeof input === "object" && !Array.isArray(input)) return input as Dict
   return {}
@@ -554,7 +573,12 @@ export function useMcpSettings() {
       return next as McpLocalConfig
     })()
     if (!cfg) return
-    ctx.save({ mcp: { [key]: cfg } as McpMap })
+    // fork_change start
+    const current = editing()
+    const source = current ? record(rows().find((row) => row.id === current)?.config) : {}
+    const next = preserveMcpPresets(record(cfg), source)
+    ctx.save({ mcp: { [key]: next } as McpMap })
+    // fork_change end
     close()
   }
 

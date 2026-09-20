@@ -12,24 +12,47 @@ import { Spinner } from "@kilocode/kilo-ui/spinner"
 
 import { useConfig } from "../../context/config"
 import { useSession } from "../../context/session"
+import { useServer } from "../../context/server" // fork_change
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
-import type { AgentInfo, ExtensionMessage, SkillInfo } from "../../types/messages"
+// fork_change start
+import type {
+  AgentInfo,
+  ExtensionMessage,
+  FilePickerResultMessage,
+  McpConfig,
+  SkillInfo,
+  ValidateInstructionPathResultMessage,
+} from "../../types/messages"
+// fork_change end
 import ModeEditView from "./ModeEditView"
 import ModeCreateView from "./ModeCreateView"
 import McpEditView from "./McpEditView"
 import WorkflowsTab from "./agent-behaviour/WorkflowsTab"
 import {
   mcpConfigScope,
-  mcpEnabledPatch,
+  mcpDisplayEntry, // fork_change
   mcpStatusDetailVisible,
   mcpStatusError,
+  mcpStatusKey, // fork_change
+  mcpStatusTone, // fork_change
+  mcpSwitchChecked, // fork_change
+  mcpToggle, // fork_change
   pruneMcpExpanded,
   removable,
   selectedDefaultAgentValue,
 } from "./agent-behaviour-patches"
 import { parseImport, MAX_IMPORT_SIZE } from "./mode-io"
 import type { ImportError } from "./mode-io"
+// fork_change start
+import {
+  add as addInstruction,
+  kind as instructionKind,
+  list as listInstructions,
+  remove as removeInstruction,
+  toggle as toggleInstruction,
+} from "../../utils/instruction-items"
+// fork_change end
 
 type SubtabId = "agents" | "mcpServers" | "rules" | "workflows" | "skills"
 
@@ -94,8 +117,10 @@ const AgentBehaviourTab: Component<Props> = (props) => {
     collections,
     settings,
     globalConfig,
+    globalDraft,
     globalEffectiveConfig,
     projectConfig,
+    projectDraft,
     projectBinding,
     updateConfig,
     updateGlobalConfig,
@@ -926,26 +951,15 @@ const AgentBehaviourTab: Component<Props> = (props) => {
       setExpanded((prev) => ({ ...prev, [name]: !prev[name] }))
     }
 
-    const statusColor = (name: string) => {
-      const s = session.mcpStatus()[name]?.status
-      if (s === "connected") return "var(--vscode-testing-iconPassed, #4caf50)"
-      if (s === "failed") return "var(--vscode-testing-iconFailed, #f44336)"
-      if (s === "needs_auth" || s === "needs_client_registration")
-        return "var(--vscode-editorWarning-foreground, #ff9800)"
-      if (s === "disabled") return "var(--vscode-disabledForeground, #888)"
-      return "var(--vscode-disabledForeground, #888)"
-    }
-
-    const statusLabel = (name: string) => {
+    // fork_change start
+    const statusLabel = (name: string, entry: McpConfig | undefined) => {
+      // fork_change end
       const s = session.mcpStatus()[name]?.status
       if (!s) return ""
-      const key = {
-        connected: "mcp.status.connected",
-        failed: "mcp.status.failed",
-        needs_auth: "mcp.status.needs_auth",
-        disabled: "mcp.status.disabled",
-        needs_client_registration: "mcp.status.needs_registration",
-      }[s]
+      // fork_change start
+      const tone = mcpStatusTone(s, entry?.enabled !== false, entry?.on_demand === true)
+      const key = mcpStatusKey(s, tone)
+      // fork_change end
       return key ? language.t(key) : s
     }
 
@@ -953,7 +967,6 @@ const AgentBehaviourTab: Component<Props> = (props) => {
     const needsAuth = (name: string) => session.mcpStatus()[name]?.status === "needs_auth"
     const isSigningIn = (name: string) => session.mcpAuth().busy.includes(name)
     const isRemoving = (name: string) => session.mcpRemoving().includes(name)
-
     if (editingMcp()) {
       return (
         <McpEditView
@@ -1000,8 +1013,38 @@ const AgentBehaviourTab: Component<Props> = (props) => {
             <For each={mcpEntries()}>
               {([name, mcp], index) => {
                 const open = () => expanded()[name] ?? false
+                const scope = mcpConfigScope(name, collections())
+                // fork_change start
+                const effective = () => {
+                  const scoped =
+                    scope === "project"
+                      ? projectConfig().mcp?.[name]
+                      : scope === "global"
+                        ? globalConfig().mcp?.[name]
+                        : undefined
+                  const draft =
+                    scope === "project"
+                      ? projectDraft?.().mcp?.[name]
+                      : scope === "global"
+                        ? globalDraft().mcp?.[name]
+                        : undefined
+                  return mcpDisplayEntry(mcp, scoped, draft)
+                }
+                const lazy = () => effective()?.on_demand === true
+                const allowed = () => effective()?.enabled !== false
+                const statusColor = () => {
+                  const status = session.mcpStatus()[name]?.status
+                  const tone = mcpStatusTone(status, allowed(), lazy())
+                  if (tone === "connected") return "var(--vscode-testing-iconPassed, #4caf50)"
+                  if (tone === "failed") return "var(--vscode-testing-iconFailed, #f44336)"
+                  if (tone === "attention") return "var(--vscode-editorWarning-foreground, #ff9800)"
+                  if (tone === "available") return "var(--vscode-testing-iconQueued, #cca700)"
+                  return "var(--vscode-disabledForeground, #888)"
+                }
+                // fork_change end
                 const env = () => Object.entries(mcp.environment ?? mcp.env ?? {})
                 const status = () => session.mcpStatus()[name]
+                const state = () => status()?.status // fork_change
                 const error = () => mcpStatusError(status())
                 return (
                   <div
@@ -1037,12 +1080,24 @@ const AgentBehaviourTab: Component<Props> = (props) => {
                             width: "6px",
                             height: "6px",
                             "border-radius": "50%",
-                            "background-color": statusColor(name),
+                            "background-color": statusColor(), // fork_change
                             "flex-shrink": "0",
                           }}
                         />
                         <div style={{ "font-weight": "500" }}>{name}</div>
-                        <Show when={mcpStatusDetailVisible(status()?.status)}>
+                        {/* fork_change start */}
+                        <Show when={lazy()}>
+                          <span
+                            style={{
+                              "font-size": "var(--kilo-font-size-10)",
+                              color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
+                            }}
+                          >
+                            {language.t("settings.agentBehaviour.editMcp.onDemand.badge")}
+                          </span>
+                        </Show>
+                        {/* fork_change end */}
+                        <Show when={mcpStatusDetailVisible(state())} /* fork_change */>
                           <Show
                             when={error()}
                             fallback={
@@ -1052,14 +1107,18 @@ const AgentBehaviourTab: Component<Props> = (props) => {
                                   color: "var(--text-weak-base, var(--vscode-descriptionForeground))",
                                 }}
                               >
-                                {statusLabel(name) || (mcp.url ? "remote" : "stdio")}
+                                {/* fork_change start */}
+                                {statusLabel(name, effective()) || (mcp.url ? "remote" : "stdio")}
+                                {/* fork_change end */}
                               </span>
                             }
                           >
                             <Tooltip
                               value={
                                 <>
-                                  {statusLabel(name)}
+                                  {/* fork_change start */}
+                                  {statusLabel(name, effective())}
+                                  {/* fork_change end */}
                                   <br />
                                   {error()}
                                 </>
@@ -1073,7 +1132,9 @@ const AgentBehaviourTab: Component<Props> = (props) => {
                                   "text-decoration": "underline dotted",
                                 }}
                               >
-                                {statusLabel(name)}
+                                {/* fork_change start */}
+                                {statusLabel(name, effective())}
+                                {/* fork_change end */}
                               </span>
                             </Tooltip>
                           </Show>
@@ -1110,22 +1171,34 @@ const AgentBehaviourTab: Component<Props> = (props) => {
                             </Show>
                           </div>
                         </Show>
-                        <Show when={!needsAuth(name) && !isRemoving(name)}>
+                        <Show when={!isRemoving(name) && (lazy() || !needsAuth(name))} /* fork_change */>
                           <div onClick={(e: MouseEvent) => e.stopPropagation()}>
                             <Switch
-                              checked={isConnected(name)}
-                              disabled={session.mcpLoading() === name}
+                              /* fork_change start */
+                              checked={mcpSwitchChecked(state(), allowed(), lazy())}
+                              disabled={session.mcpLoading() === name || isSigningIn(name)}
+                              /* fork_change end */
                               onChange={(enabled: boolean) => {
-                                const scope = mcpConfigScope(name, collections())
-                                if (scope) {
-                                  const update = scope === "project" ? updateProjectConfig : updateGlobalConfig
-                                  update(mcpEnabledPatch(name, enabled))
-                                }
-                                if (!enabled) {
-                                  session.disconnectMcp(name)
-                                  return
-                                }
-                                session.connectMcp(name)
+                                // fork_change start
+                                const onDemand = lazy()
+                                mcpToggle(
+                                  name,
+                                  collections(),
+                                  enabled,
+                                  onDemand,
+                                  (scope, patch) => {
+                                    if (scope === "project") updateProjectConfig(patch)
+                                    if (scope === "global") updateGlobalConfig(patch)
+                                  },
+                                  (action, target) => {
+                                    if (action === "disconnect") {
+                                      session.disconnectMcp(target)
+                                      return
+                                    }
+                                    session.connectMcp(target)
+                                  },
+                                )
+                                // fork_change end
                               }}
                               hideLabel
                             >

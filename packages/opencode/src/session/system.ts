@@ -31,6 +31,7 @@ import { KilocodeSystemPrompt } from "../kilocode/system-prompt"
 import { isLing } from "../kilocode/model-match"
 import { Config } from "@/config/config"
 import * as KiloReference from "@/kilocode/reference"
+import * as McpOnDemand from "../kilocode/mcp/on-demand"
 // kilocode_change end
 
 // kilocode_change start
@@ -97,7 +98,13 @@ export function provider(model: Provider.Model) {
 export interface Interface {
   readonly environment: (model: Provider.Model, editorContext?: EditorContext) => Effect.Effect<string[]> // kilocode_change
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined>
-  readonly mcp: (agent: Agent.Info, permission?: PermissionV1.Ruleset) => Effect.Effect<string | undefined>
+  // kilocode_change start
+  readonly mcp: (
+    agent: Agent.Info,
+    permission: PermissionV1.Ruleset | undefined,
+    networkRestricted: boolean, // kilocode_change
+  ) => Effect.Effect<string | undefined>
+  // kilocode_change end
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SystemPrompt") {}
@@ -164,23 +171,38 @@ const layer = Layer.effect(
         ].join("\n")
       }),
 
-      mcp: Effect.fn("SystemPrompt.mcp")(function* (agent: Agent.Info, permission?: PermissionV1.Ruleset) {
+      // kilocode_change start
+      mcp: Effect.fn("SystemPrompt.mcp")(function* (
+        agent: Agent.Info,
+        permission: PermissionV1.Ruleset | undefined,
+        networkRestricted: boolean,
+      ) {
         const ruleset = Permission.merge(agent.permission, permission ?? [])
         const instructions = (yield* mcp.instructions()).filter(
           (item) => item.tools.length === 0 || Permission.disabled(item.tools, ruleset).size < item.tools.length,
         )
-        if (instructions.length === 0) return
 
-        return [
-          "<mcp_instructions>",
-          ...instructions.flatMap((item) => [
-            `  <server name="${item.name}">`,
-            ...item.instructions.split("\n").map((line) => `    ${line}`),
-            "  </server>",
-          ]),
-          "</mcp_instructions>",
-        ].join("\n")
+        const instructionsBlock =
+          instructions.length === 0
+            ? undefined
+            : [
+                "<mcp_instructions>",
+                ...instructions.flatMap((item) => [
+                  `  <server name="${item.name}">`,
+                  ...item.instructions.split("\n").map((line) => `    ${line}`),
+                  "  </server>",
+                ]),
+                "</mcp_instructions>",
+              ].join("\n")
+        const catalog =
+          networkRestricted || Permission.disabled(["mcp"], ruleset).has("mcp")
+            ? undefined
+            : McpOnDemand.prompt(McpOnDemand.entries(yield* config.get(), yield* mcp.status()))
+        const blocks = [instructionsBlock, catalog].filter((part): part is string => part !== undefined)
+        if (blocks.length === 0) return
+        return blocks.join("\n")
       }),
+      // kilocode_change end
     })
   }),
 )
