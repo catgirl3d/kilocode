@@ -1,5 +1,5 @@
-import { describe, it, expect } from "bun:test"
-import { formatRelativeDate } from "../../webview-ui/src/utils/date"
+import { describe, expect, it } from "bun:test"
+import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../webview-ui/src/utils/date"
 
 function ago(ms: number): string {
   return new Date(Date.now() - ms).toISOString()
@@ -79,5 +79,46 @@ describe("formatRelativeDate", () => {
 
   it("returns 'just now' for empty string (fallback to now)", () => {
     expect(formatRelativeDate("")).toBe("just now")
+  })
+})
+
+/** ISO string `days` days before the start of today (local time), plus `hours` offset. */
+function daysAgo(days: number, hours = 0): string {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return new Date(today.getTime() - days * DAY + hours * 3_600_000).toISOString()
+}
+
+describe("dateGroupKey", () => {
+  it("returns today for now and earlier today", () => {
+    expect(dateGroupKey(new Date().toISOString())).toBe("time.today")
+    // One hour ago is only "earlier today" when it does not cross midnight.
+    const hourAgo = new Date(Date.now() - 3_600_000)
+    const today = new Date()
+    if (hourAgo.getDate() === today.getDate()) expect(dateGroupKey(hourAgo.toISOString())).toBe("time.today")
+  })
+
+  it("returns yesterday for yesterday but not two days ago", () => {
+    expect(dateGroupKey(daysAgo(1, 12))).toBe("time.yesterday")
+    expect(dateGroupKey(daysAgo(2, 12))).toBe("time.thisWeek")
+  })
+
+  it("returns this week up to seven days", () => {
+    expect(dateGroupKey(daysAgo(6, 12))).toBe("time.thisWeek")
+    expect(dateGroupKey(daysAgo(7, 12))).toBe("time.thisWeek")
+    expect(dateGroupKey(daysAgo(8, 12))).toBe("time.thisMonth")
+  })
+
+  it("returns this month up to thirty days", () => {
+    expect(dateGroupKey(daysAgo(29, 12))).toBe("time.thisMonth")
+    expect(dateGroupKey(daysAgo(31, 12))).toBe("time.older")
+  })
+
+  it("exposes exactly the five translation-backed group keys in order", () => {
+    expect(DATE_GROUP_KEYS).toEqual(["time.today", "time.yesterday", "time.thisWeek", "time.thisMonth", "time.older"])
+  })
+
+  it("treats an invalid date as older", () => {
+    expect(dateGroupKey("not-a-date")).toBe("time.older")
   })
 })
