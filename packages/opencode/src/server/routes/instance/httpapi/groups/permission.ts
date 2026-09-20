@@ -25,6 +25,7 @@ export const AllowEverythingBody = Schema.Struct({
   enable: Schema.Boolean,
   requestID: Schema.optional(Schema.String),
   sessionID: Schema.optional(Schema.String),
+  runtime: Schema.optional(Schema.Boolean),
 })
 // kilocode_change end
 
