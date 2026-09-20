@@ -513,6 +513,7 @@ export const dict = {
   "session.tabs.switcher.pending": "New",
   "session.tabs.switcher.busy": "Working",
   "session.tabs.switcher.scheduled": "Scheduled",
+  "session.action.copyId": "Copy session ID", // fork_change
   "session.tab.local": "Local",
   "session.tab.cloud": "Cloud",
   "session.tab.worktree": "Worktree",
