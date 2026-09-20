@@ -13,6 +13,7 @@ const WEBVIEW = path.resolve(import.meta.dir, "../../webview-ui")
 // the suite stays deterministic.
 const PASS = "PREWARM_PASS"
 const FAIL = "PREWARM_FAIL:"
+const opts = { timeout: 30_000 }
 
 const SCRIPT = `
   import { Window } from "happy-dom"
@@ -42,7 +43,7 @@ const SCRIPT = `
     process.exit(2)
   }
 
-  const [config, setConfig] = createSignal({ disabled_providers: ["kilo"] })
+  const [config, setConfig] = createSignal({ experimental: { speech_to_text_model: "groq/whisper-large-v3-turbo" } })
   const [auth, setAuth] = createSignal({})
   const [capture, setCapture] = createSignal(false)
   const features = () => ({
@@ -68,51 +69,55 @@ const SCRIPT = `
     root,
   )
 
-  if (sent.length !== 0) fail("prewarmed without Kilo access")
+  if (sent.length !== 0) fail("prewarmed without provider access")
   setAuth({ kilo: "api" })
-  if (sent.length !== 0) fail("prewarmed while Kilo was disabled")
-  setConfig({})
+  if (sent.length !== 0) fail("prewarmed with access to a different provider")
+  setAuth({ groq: "api" })
   if (sent.length !== 0) fail("prewarmed without capture support")
   setCapture(true)
   if (sent.length !== 1 || sent[0]?.type !== "speechToTextPrewarm") {
-    fail("did not prewarm after capture became available")
+    fail("did not prewarm after Groq access and capture became available")
   }
-  setAuth({ kilo: "oauth" })
+  setConfig({ disabled_providers: ["groq"], experimental: { speech_to_text_model: "groq/whisper-large-v3-turbo" } })
   if (sent.length !== 1) fail("prewarmed more than once")
   dispose()
   console.log("${PASS}")
 `
 
 describe("speech-to-text prewarm", () => {
-  it("starts only after Kilo speech access becomes available", () => {
-    const attempts = 3
-    const failures: string[] = []
+  it(
+    "starts only after the selected transcription provider becomes available",
+    () => {
+      const attempts = 3
+      const failures: string[] = []
 
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", SCRIPT], {
-        cwd: WEBVIEW,
-        stdout: "pipe",
-        stderr: "pipe",
-      })
-      const output = result.stdout.toString() + result.stderr.toString()
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", SCRIPT], {
+          cwd: WEBVIEW,
+          stdout: "pipe",
+          stderr: "pipe",
+        })
+        const output = result.stdout.toString() + result.stderr.toString()
 
-      if (output.includes(PASS)) return
+        if (output.includes(PASS)) return
 
-      const logic = output.indexOf(FAIL)
-      // A FAIL sentinel is a real assertion failure in the prewarm logic — surface it now.
-      if (logic !== -1) {
-        expect.unreachable(
-          output
-            .slice(logic + FAIL.length)
-            .split("\n")[0]
-            ?.trim(),
-        )
+        const logic = output.indexOf(FAIL)
+        // A FAIL sentinel is a real assertion failure in the prewarm logic — surface it now.
+        if (logic !== -1) {
+          expect.unreachable(
+            output
+              .slice(logic + FAIL.length)
+              .split("\n")[0]
+              ?.trim(),
+          )
+        }
+
+        // Otherwise the child died before it could run (starved/transient spawn) — retry.
+        failures.push(`attempt ${attempt} exit ${result.exitCode}: ${output.trim() || "<no output>"}`)
       }
 
-      // Otherwise the child died before it could run (starved/transient spawn) — retry.
-      failures.push(`attempt ${attempt} exit ${result.exitCode}: ${output.trim() || "<no output>"}`)
-    }
-
-    expect.unreachable(`prewarm child never reported success:\n${failures.join("\n")}`)
-  })
+      expect.unreachable(`prewarm child never reported success:\n${failures.join("\n")}`)
+    },
+    opts,
+  )
 })

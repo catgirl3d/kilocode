@@ -17,7 +17,12 @@ import {
   type SpeechToTextModelDef,
 } from "../../src/speech-to-text/models"
 
-const custom = (id: string): SpeechToTextModelDef => ({ id, label: id, provider: "127.0.0.1:8178" })
+const custom = (id: string): SpeechToTextModelDef => ({
+  id,
+  label: id,
+  provider: "127.0.0.1:8178",
+  providerID: "custom",
+})
 
 const push = (
   state: SpeechToTextCatalogState,
@@ -115,7 +120,9 @@ describe("speech-to-text source switching", () => {
   })
 
   it("uses a live Gateway model as the default when the static default is absent", () => {
-    const live = [{ id: "fish-audio/transcribe-1", label: "Transcribe 1", provider: "Fish Audio" }]
+    const live = [
+      { id: "fish-audio/transcribe-1", label: "Transcribe 1", provider: "Fish Audio", providerID: "custom" },
+    ]
     const state = from({ models: live, source: "gateway", seq: 1 })
     const models = visibleSpeechToTextModels(state, "gateway")
 
