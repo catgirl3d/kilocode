@@ -70,11 +70,26 @@ export function createThrottledValue(getValue: () => string, getInterval: () => 
 
   return value
 }
+// fork_change end
 
 export function busy(status: string | undefined) {
   return status === "pending" || status === "running"
 }
 
+// fork_change start
+export function swePruned(part: ToolPart) {
+  if (part.state.status !== "completed") return undefined
+  const value = part.state.metadata?.swePruner
+  if (typeof value !== "object" || value === null) return undefined
+  const kept: unknown = Reflect.get(value, "kept")
+  const total: unknown = Reflect.get(value, "total")
+  if (typeof kept !== "number" || typeof total !== "number") return undefined
+  if (!Number.isInteger(kept) || !Number.isInteger(total)) return undefined
+  if (kept < 0 || total < 1 || kept > total) return undefined
+  return { kept, total }
+}
+
+// fork_change end
 export function hold(state: () => boolean, wait = 2000) {
   const [live, setLive] = createSignal(state())
   let timer: ReturnType<typeof setTimeout> | undefined
