@@ -899,6 +899,14 @@ export const dict = {
   "settings.experimental.lsp.description": "Enable language server protocol integration",
   "settings.experimental.batch.title": "Batch Tool",
   "settings.experimental.batch.description": "Enable batching of multiple tool calls",
+  // fork_change start
+  "settings.experimental.swePruner.title": "SWE-Pruner",
+  "settings.experimental.swePruner.description":
+    "Prune large read, grep, and bash outputs to task-relevant lines using an explicitly configured model.",
+  "settings.experimental.swePrunerModel.title": "SWE-Pruner Model",
+  "settings.experimental.swePrunerModel.description":
+    "Use this exact connected model. When unset or unavailable, use the configured Small Model; otherwise keep the full tool output.",
+  // fork_change end
   "settings.experimental.imageGeneration.title": "Image Generation",
   "settings.experimental.imageGeneration.description": "Enable AI image generation",
   "settings.agentBehaviour.sharedAgentBoard.title": "Kilo Swarm",

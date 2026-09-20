@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, onMount } from "solid-js"
+import { createMemo, createSignal, For, onMount, Show } from "solid-js" // fork_change
 import type { ToolPart } from "@kilocode/sdk/v2"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { useReducedMotion } from "../hooks/use-reduced-motion"
@@ -9,7 +9,7 @@ import { AnimatedCountList } from "./tool-count-summary"
 import { RollingResults } from "./rolling-results"
 import { GROW_SPRING } from "./motion"
 import { useSpring } from "./motion-spring"
-import { busy, updateScrollMask, useCollapsible, useRowWipe } from "./tool-utils"
+import { swePruned, updateScrollMask, useCollapsible, useRowWipe } from "./tool-utils" // fork_change
 
 function contextToolLabel(part: ToolPart): { action: string; detail: string } {
   const state = part.state
@@ -109,6 +109,7 @@ export function ContextToolGroupHeader(props: {
 }
 
 export function ContextToolExpandedList(props: { parts: ToolPart[]; expanded: boolean }) {
+  const i18n = useI18n() // fork_change
   let contentRef: HTMLDivElement | undefined
   let bodyRef: HTMLDivElement | undefined
   let scrollRef: HTMLDivElement | undefined
@@ -130,12 +131,26 @@ export function ContextToolExpandedList(props: { parts: ToolPart[]; expanded: bo
           <For each={props.parts}>
             {(part) => {
               const label = createMemo(() => contextToolLabel(part))
+              // fork_change start
+              const pruned = createMemo(() =>
+                part.tool === "read" || part.tool === "grep" ? swePruned(part) : undefined,
+              )
               return (
                 <div data-component="context-tool-expanded-row">
                   <span data-slot="context-tool-expanded-action">{label().action}</span>
-                  <span data-slot="context-tool-expanded-detail">{label().detail}</span>
+                  <span data-slot="context-tool-expanded-detail">
+                    {label().detail}
+                    <Show when={pruned()}>
+                      {(value) => (
+                        <span data-slot="swe-pruner-status">
+                          {i18n.t("ui.tool.swePruned", { kept: value().kept, total: value().total })}
+                        </span>
+                      )}
+                    </Show>
+                  </span>
                 </div>
               )
+              // fork_change end
             }}
           </For>
         </div>
