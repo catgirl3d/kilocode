@@ -897,13 +897,15 @@ export const dict = {
   "settings.experimental.imageGenerationModel.description": "Image Generation Model",
   "settings.experimental.imageGenerationModel.placeholder": "Default (Auto Router)",
 
+  // fork_change start
   "settings.models.speechToText.disabledDescription":
-    "Kilo Gateway is selected. Enable and sign in to the Kilo provider to choose a supported model, or enter a custom transcription base URL above.",
+    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.",
+  // fork_change end
   "settings.models.speechToText.remoteDescription":
     "Voice input is unavailable in remote windows. Open Kilo in a local window to use the microphone.",
   "settings.models.speechToTextModel.title": "Speech to Text Model",
   "settings.models.speechToTextModel.description":
-    "Kilo Gateway is the active speech-to-text source. Choose its transcription model for voice input.",
+    "Choose the transcription model for voice input. Kilo Gateway models use your Kilo account; Groq models use your API key.", // fork_change
   "settings.models.speechToTextModel.customDescription":
     "Model ID sent to your custom transcription endpoint, for example whisper-1. Voice input is unavailable until you set one.",
   "settings.models.speechToTextModel.customPlaceholder": "whisper-1",
@@ -915,6 +917,13 @@ export const dict = {
   "settings.models.speechToTextApiKey.description":
     "Bearer token sent to the custom transcription base URL. Stored in your Kilo config file.",
   "settings.models.speechToTextApiKey.placeholder": "sk-...",
+  // fork_change start
+  "settings.models.speechToTextResult.title": "Voice Input Result",
+  "settings.models.speechToTextResult.description":
+    "Choose whether Groq Whisper returns the original spoken language or an English translation.",
+  "settings.models.speechToTextResult.transcribe": "Original spoken language",
+  "settings.models.speechToTextResult.translate": "Translate to English",
+  // fork_change end
   "settings.experimental.nativeNotebookTools.title": "Native Notebook Tools",
   "settings.experimental.nativeNotebookTools.description":
     "Enable experimental tools for reading, editing, and executing VS Code notebooks",
