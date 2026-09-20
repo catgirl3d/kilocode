@@ -17,7 +17,7 @@ export function define<Type extends string, Properties extends Schema.Top>(
   return result
 }
 
-export function effectPayloads() {
+function build() { // kilocode_change - [fork] build the shared event payload schema array once
   return [
     ...registry
       .entries()
@@ -42,5 +42,13 @@ export function effectPayloads() {
     // kilocode_change end
   ]
 }
+
+// kilocode_change start - [fork] share one materialized event payload array across Event/GlobalEvent unions
+let payloads: ReturnType<typeof build> | undefined
+
+export function effectPayloads() {
+  return (payloads ??= build())
+}
+// kilocode_change end
 
 export * as BusEvent from "./bus-event"
