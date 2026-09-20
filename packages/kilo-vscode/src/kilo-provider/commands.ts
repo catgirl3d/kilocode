@@ -14,16 +14,25 @@ export async function loadCommands(client: KiloClient, dir: string): Promise<unk
   const promise = retry(() => client.command.list({ directory: dir }, { throwOnError: true })).then(({ data }) => ({
     type: "commandsLoaded",
     commands: data.map((cmd) => {
-      const item = cmd as typeof cmd & { variant?: string }
-      return {
-        name: item.name,
-        description: item.description,
-        agent: item.agent,
-        model: item.model,
-        variant: item.variant,
-        source: item.source,
-        hints: item.hints,
+      // fork_change start
+      if ("kind" in cmd) {
+        return {
+          name: cmd.name,
+          description: cmd.description,
+          source: cmd.source,
+          hints: [],
+        }
       }
+      return {
+        name: cmd.name,
+        description: cmd.description,
+        agent: cmd.agent,
+        model: cmd.model,
+        variant: cmd.variant,
+        source: cmd.source,
+        hints: cmd.hints,
+      }
+      // fork_change end
     }),
   }))
 
