@@ -47,4 +47,29 @@ describe("model selector", () => {
     expect(models).toEqual([{ id: "session", agent: "code", selection: model }])
     expect(variants).toEqual([{ value: "high", session: "session" }])
   })
+
+  it("passes temporary model overrides without remembering them", () => {
+    const selected = { providerID: "kilo", modelID: "old" }
+    const applied: typeof selected[] = []
+    const set: Array<{ id: string; agent: string; selection: typeof selected }> = []
+    const variants: Array<{ selection: typeof selected; value: string | undefined }> = []
+    const hidden: string[] = []
+    const selector = createModelSelector({
+      current: () => "session",
+      agent: () => "code",
+      selected: () => selected,
+      variant: () => "high",
+      apply: (_agent, selection) => applied.push(selection),
+      set: (id, agent, selection) => set.push({ id, agent, selection }),
+      carry: (selection, value) => variants.push({ selection, value }),
+      hide: (id) => hidden.push(id),
+    })
+
+    selector.select("kilo", "new", undefined, false)
+
+    expect(applied).toEqual([])
+    expect(set).toEqual([{ id: "session", agent: "code", selection: { providerID: "kilo", modelID: "new" } }])
+    expect(variants).toEqual([])
+    expect(hidden).toEqual([])
+  })
 })

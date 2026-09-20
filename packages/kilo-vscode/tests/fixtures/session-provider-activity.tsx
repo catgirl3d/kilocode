@@ -367,6 +367,12 @@ try {
   await settle()
   await emit({ type: "ready", serverInfo: { port: 1 } })
   await emit({
+    type: "notificationsLoaded",
+    notifications: [{ id: "fixture", title: "Fixture notification", message: "Loaded for the activity fixture" }],
+    dismissedIds: [],
+  })
+  await emit({ type: "mcpStatusLoaded", status: { fixture: { status: "connected" } } })
+  await emit({
     type: "sessionsLoaded",
     sessions: [info("root"), info("background"), info("durable-child", "root"), info("durable-grand", "durable-child")],
   })
@@ -793,7 +799,7 @@ try {
   })
   value.setSessionAgent("inherited-mode", "code")
   await emit({ type: "messagesLoaded", sessionID: "inherited-mode", messages: [] })
-  assert.deepEqual(value.submission("inherited-mode"), { model: personal, variant: "high", agent: "code" })
+  assert.deepEqual(value.submission("inherited-mode"), { model: personal, variant: "", agent: "code" })
   value.selectAgent("ask", "inherited-mode")
   assert.deepEqual(value.submission("inherited-mode"), { model: first, variant: "low", agent: "ask" })
   setSettings({})
@@ -935,7 +941,7 @@ try {
   assert(configured?.type === "sendCommand")
   assert.equal(configured.modelID, recommended.modelID)
   assert.equal(configured.variant, "low")
-  assert.deepEqual(value.submission("ses_command-cached"), { model: recommended, variant: "low", agent: "ask" })
+  assert.deepEqual(value.submission("ses_command-cached"), { model: recommended, variant: "high", agent: "ask" })
 
   assert.equal(
     value.sendCommand(
@@ -1017,10 +1023,14 @@ try {
   assert.equal(value.selectedAgent(accepted.draftID), "ask")
   assert.equal(value.currentVariant(accepted.draftID), "high")
   choice(value.modelForAgent("ask"), recommended)
-  // Explicit picks push recents but never persist a shared per-agent model.
+  // Command overrides stay out of remembered model recents.
   assert.equal(
     sent.slice(persisted).some((message) => message.type === "persistRecents"),
-    true,
+    false,
+  )
+  assert.equal(
+    sent.slice(persisted).some((message) => message.type === "persistVariant" && message.key.startsWith("agent/")),
+    false,
   )
   await emit({ type: "sessionCreated", session: info("ses_command-promoted"), draftID: accepted.draftID })
   assert.equal(Object.hasOwn(value.allMessages(), accepted.draftID), false)
@@ -2195,7 +2205,7 @@ try {
   value.setSessionAgent("preference-active", "ask")
   await emit({ type: "messagesLoaded", sessionID: "preference-active", messages: [] })
   const combo = value.submission("preference-active")
-  assert.deepEqual(combo, { model: recommended, variant: "low", agent: "ask" })
+  assert.deepEqual(combo, { model: recommended, variant: "high", agent: "ask" })
   for (const scope of ["pending:preferred", "sidebar-pending:preferred"]) {
     value.setSessionAgent(scope, "code")
     value.selectModel(personal.providerID, personal.modelID, scope)
@@ -2211,7 +2221,7 @@ try {
     choice(value.modelForAgent("code"), first)
     choice(value.modelForAgent("ask"), recommended)
     value.selectAgent("ask", scope)
-    assert.deepEqual(value.submission(scope), { model: recommended, variant: "low", agent: "ask" })
+    assert.deepEqual(value.submission(scope), { model: recommended, variant: "high", agent: "ask" })
     value.selectAgent("code", scope)
     assert.deepEqual(value.submission(scope), { model: personal, variant: "high", agent: "code" })
     value.selectVariant(undefined, scope)
@@ -2230,16 +2240,14 @@ try {
   value.setSessionVariant("comparison-only", personal.providerID, personal.modelID, "low")
   assert.deepEqual(value.submission("comparison-only"), { model: personal, variant: "low", agent: "code" })
 
-  // The no-session composer keeps its own per-agent pick. A model switch
-  // carries the effort it displayed (Code's configured "low"), not the
-  // remembered "high" that configuration shadows.
+  // Remembered effort beats config, while an explicit target Default survives carry.
   value.setCurrentSessionID(undefined)
   value.selectAgent("code")
   choice(value.selected(), first)
-  assert.equal(value.currentVariant(), "low")
+  assert.equal(value.currentVariant(), "high")
   value.selectModel(personal.providerID, personal.modelID)
   choice(value.selected(), personal)
-  assert.equal(value.currentVariant(), "low")
+  assert.equal(value.currentVariant(), undefined)
   assert.deepEqual(value.submission("preference-active"), combo)
 
   // Retention must not assign picks to unopened or still-loading historical sessions.
@@ -2275,7 +2283,7 @@ try {
     value.selectVariant("high", id)
     assert.equal(value.currentVariant(id), "high")
     value.selectAgent("ask", id)
-    assert.equal(value.currentVariant(id), "low")
+    assert.equal(value.currentVariant(id), "high")
     value.selectAgent("code", id)
     assert.equal(value.currentVariant(id), "high")
   }
@@ -2284,7 +2292,7 @@ try {
   const outgoing = { providerID: "kilo", modelID: "unset-effort" }
   await catalog("org-a", [outgoing.modelID, first.modelID], first.modelID)
   for (const target of ["remembered", "configured"]) {
-    for (const effort of [undefined, "", "low"]) {
+    for (const effort of [undefined, "", "high", "low"]) {
       for (const scope of [undefined, "pending:carry", "session-carry"]) {
         setSharing(false)
         await settle()
@@ -2304,10 +2312,22 @@ try {
         } else {
           instance.selectModel(outgoing.providerID, outgoing.modelID)
         }
+        const start = sent.length
         if (effort !== undefined) instance.selectVariant(effort, scope)
+        if (scope === "session-carry" && effort !== undefined) {
+          const values = sent
+            .slice(start)
+            .flatMap((message) =>
+              message.type === "persistVariant" && message.key === "agent/code/kilo/unset-effort"
+                ? [message.value]
+                : [],
+            )
+          assert.deepEqual(values, [effort])
+        }
         choice(instance.selected(scope), outgoing)
         instance.selectModel(first.providerID, first.modelID, scope)
-        const expected = effort ?? "high"
+        const rememberedWins = target === "remembered" && !!effort
+        const expected = rememberedWins ? "high" : (effort ?? "high")
         assert.deepEqual(
           instance.submission(scope),
           { model: first, variant: expected, agent: "code" },
@@ -2396,7 +2416,7 @@ try {
   const reopened = sidebar.add()
   value.selectModel(personal.providerID, personal.modelID, reopened)
   choice(value.selected(reopened), personal)
-  assert.equal(value.currentVariant(reopened), "high")
+  assert.equal(value.currentVariant(reopened), "low")
 
   // Closing a sending draft retains its combo through promotion.
   {
@@ -2497,7 +2517,7 @@ try {
     await emit({ type: "sessionUpdated", session: { ...info("ses_info"), agent: "ask" } })
     assert.equal(value.selectedAgent("ses_info"), "code")
 
-    assert.equal(value.variantForAgent("code", first), "high")
+    assert.equal(value.variantForAgent("code", first), "low")
     assert.equal(value.variantPreference("code", first), value.variantForAgent("code", first))
     setSettings({})
   }

@@ -45,6 +45,7 @@ import { recommend, type ManagerContext } from "../../utils/shortcut-hint"
 import { PromptHint } from "./PromptHint"
 import { useProvider } from "../../context/provider"
 import { ModelSelector, ModelSelectorBase } from "../shared/ModelSelector"
+import { FavoriteModelSwitcher } from "../shared/FavoriteModelSwitcher" // fork_change
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { ThinkingSelector } from "../shared/ThinkingSelector"
 import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButton"
@@ -2378,11 +2379,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         </div>
       </div>
       <div class="prompt-input-hint" ref={hintRef}>
+        {/* fork_change start - model slot hosts the favorites quick switcher */}
         <PromptSelectors
           agent={<ModeSwitcher sessionID={sid} blocked={props.blocked?.() ?? false} hint={modeHint()} />}
-          model={<ModelSelector sessionID={sid} blocked={props.blocked?.() ?? false} />}
+          model={
+            <div class="model-quick-switcher">
+              <FavoriteModelSwitcher sessionID={sid} numbered />
+              <ModelSelector sessionID={sid} compact blocked={props.blocked?.() ?? false} />
+            </div>
+          }
           variant={<ThinkingSelector sessionID={sid} blocked={props.blocked?.() ?? false} />}
         />
+        {/* fork_change end */}
         <div class="prompt-input-hint-actions">
           <div class="prompt-action" data-folded={hidden().length === 0 ? "" : undefined}>
             <PromptOverflow items={hidden()} />

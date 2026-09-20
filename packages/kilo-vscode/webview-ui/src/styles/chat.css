@@ -18,6 +18,7 @@
 @import "./shortcut-keys.css";
 @import "./goal.css";
 @import "./todo-dock.css";
+@import "./quick-model-switcher.css";
 @import "./prompt-dropdowns.css";
 @import "./model-selector.css";
 @import "./permission-dock.css";

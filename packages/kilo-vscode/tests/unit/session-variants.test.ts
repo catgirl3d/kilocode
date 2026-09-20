@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { createSessionVariants } from "../../webview-ui/src/context/session-variants"
+import { variantKey } from "../../webview-ui/src/context/session-variant-store"
 import type { ExtensionMessage, ModelSelection } from "../../webview-ui/src/types/messages"
 
 const model: ModelSelection = { providerID: "anthropic", modelID: "claude-sonnet-4" }
@@ -11,18 +12,30 @@ function setup(session = "composer", configured?: string) {
   const remembered: Array<{ agent: string; model: ModelSelection; variant: string }> = []
   const order: string[] = []
   let handler: ((message: ExtensionMessage) => void) | undefined
+  const current: { model: ModelSelection } = { model }
+  const findModel = (sel: ModelSelection) =>
+    sel.modelID === "claude-sonnet-4"
+      ? { variants: { low: {}, high: {}, max: {} } }
+      : sel.modelID === "claude-custom"
+        ? { variants: { turbo: {} } }
+        : { variants: { high: {} } }
   const variants = createSessionVariants({
     selections: () => selections,
     set: (key, value) => {
       selections[key] = value
     },
-    selected: () => model,
+    selected: () => current.model,
     session: () => session,
     agent: () => "code",
     config: () => config,
-    find: () => ({ variants: { low: {}, high: {}, max: {} } }),
+    find: findModel,
     draft: (id) => id === "composer" || /^(?:sidebar-)?pending:/.test(id),
-    remember: (agent, model, variant) => remembered.push({ agent, model, variant }),
+    remember: (agent, model, variant) => {
+      remembered.push({ agent, model, variant })
+      const key = variantKey(model, agent)
+      selections[key] = variant
+      messages.push({ type: "persistVariant", key, value: variant })
+    },
     post: (message) => {
       order.push("post")
       messages.push(message)
@@ -40,6 +53,7 @@ function setup(session = "composer", configured?: string) {
     messages,
     remembered,
     order,
+    current,
     dispatch: (message: ExtensionMessage) => handler?.(message),
   }
 }
@@ -51,6 +65,7 @@ describe("session variants", () => {
     expect(state.variants.choice()).toBeUndefined()
     expect(state.variants.request()).toBe("")
     state.variants.select("")
+    expect(state.variants.current()).toBeUndefined()
     expect(state.variants.saved(model, "code", "composer")).toBe("")
     expect(state.variants.choice()).toBe("")
     expect(state.variants.request()).toBe("")
@@ -83,29 +98,52 @@ describe("session variants", () => {
     expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "high" })
   })
 
+  it("restores an agent/model choice for a fresh task after loading", () => {
+    const state = setup("pending-new", "high")
+    state.variants.load()
+    state.dispatch({
+      type: "variantsLoaded",
+      variants: { "agent/code/anthropic/claude-sonnet-4": "max" },
+    })
+
+    expect(state.variants.current()).toBe("max")
+    expect(state.variants.request()).toBe("max")
+  })
+
   it("uses the configured agent variant when no picker selection exists", () => {
-    const state = setup(undefined, "max")
+    const state = setup("composer", "max")
     expect(state.variants.agent("code", model)).toBe("max")
     expect(state.variants.current()).toBe("max")
     expect(state.variants.request()).toBe("max")
   })
 
-  it("uses updated configuration ahead of remembered defaults for new tabs", () => {
+  it("uses remembered effort ahead of updated configuration for new tabs", () => {
     const state = setup("pending-new", "high")
     state.selections["agent/code/anthropic/claude-sonnet-4"] = "low"
-    expect(state.variants.current()).toBe("high")
+    expect(state.variants.current()).toBe("low")
     state.config.variant = "max"
-    expect(state.variants.current()).toBe("max")
-    expect(state.variants.request()).toBe("max")
-    expect(state.variants.agent("code", model)).toBe("max")
+    expect(state.variants.current()).toBe("low")
+    expect(state.variants.request()).toBe("low")
+    expect(state.variants.agent("code", model)).toBe("low")
+  })
+
+  it("uses configured effort first only for command presets", () => {
+    const state = setup("session-a", "max")
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
+
+    expect(state.variants.current("session-a")).toBe("high")
+    expect(state.variants.request("session-a")).toBe("high")
+    expect(state.variants.request("session-a", true)).toBe("max")
+    expect(state.variants.saved(model, "code", "session-a")).toBe("high")
+    expect(state.variants.choice("session-a")).toBe("high")
   })
 
   it("resolves the raw saved choice in the same order as the displayed effort", () => {
     const state = setup("pending-new", "high")
     state.selections["agent/code/anthropic/claude-sonnet-4"] = "low"
-    expect(state.variants.current()).toBe("high")
-    expect(state.variants.saved(model, "code")).toBe("high")
-    expect(state.variants.choice()).toBe("high")
+    expect(state.variants.current()).toBe("low")
+    expect(state.variants.saved(model, "code")).toBe("low")
+    expect(state.variants.choice()).toBe("low")
     state.variants.select("low")
     expect(state.variants.saved(model, "code", "pending-new")).toBe("low")
     expect(state.variants.current()).toBe("low")
@@ -125,35 +163,75 @@ describe("session variants", () => {
     expect(state.variants.agent("code", model)).toBeUndefined()
   })
 
-  it("sends an explicit model default instead of inheriting the configured agent variant", () => {
+  it("persists an explicit model default for future tasks", () => {
     const state = setup("session-a", "max")
     state.variants.select(undefined)
     expect(state.variants.current()).toBeUndefined()
+    expect(state.variants.saved(model, "code")).toBe("")
+    expect(state.variants.choice()).toBe("")
     expect(state.variants.request()).toBe("")
-    expect(state.variants.current("session-b")).toBe("max")
-    expect(state.variants.request("session-b")).toBe("max")
+    expect(state.variants.current("session-b")).toBeUndefined()
+    expect(state.variants.request("session-b")).toBe("")
+    expect(state.messages).toEqual([{ type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "" }])
+  })
+
+  it("persists an active Default choice when a remembered choice exists", () => {
+    const state = setup("session-a", "max")
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
+    state.variants.select(undefined)
+
+    expect(state.variants.current()).toBeUndefined()
+    expect(state.variants.current("pending-new")).toBeUndefined()
+    expect(state.selections).toEqual({
+      "session/session-a/anthropic/claude-sonnet-4": "",
+      "agent/code/anthropic/claude-sonnet-4": "",
+    })
+    expect(state.messages).toEqual([{ type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "" }])
   })
 
   it.each(["sidebar-pending:new", "pending:new"])("remembers a pre-submit Default choice from %s", (id) => {
-    const state = setup(undefined, "max")
+    const state = setup("composer", "max")
     state.variants.select(undefined, id)
     expect(state.variants.current(id)).toBeUndefined()
     expect(state.variants.request(id)).toBe("")
     expect(state.remembered).toEqual([{ agent: "code", model, variant: "" }])
-    expect(state.messages).toEqual([])
+    expect(state.messages).toEqual([
+      { type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "" },
+    ])
+    expect(state.variants.current("another-draft")).toBeUndefined()
   })
 
-  it("keeps session selections local while drafts remember their effort", () => {
-    const draft = setup()
-    draft.variants.select("high")
-    expect(draft.selections["session/composer/anthropic/claude-sonnet-4"]).toBe("high")
-    expect(draft.remembered).toEqual([{ agent: "code", model, variant: "high" }])
+  it("remembers manual effort picks from composer and live sessions", () => {
+    for (const scope of ["composer", "session-a"]) {
+      const state = setup(scope)
+      state.variants.select("high")
 
-    const scoped = setup("session-a")
-    scoped.variants.select("low")
-    expect(scoped.selections).toEqual({ "session/session-a/anthropic/claude-sonnet-4": "low" })
-    expect(scoped.messages).toEqual([])
-    expect(scoped.remembered).toEqual([])
+      expect(state.selections).toEqual({
+        [`session/${scope}/anthropic/claude-sonnet-4`]: "high",
+        "agent/code/anthropic/claude-sonnet-4": "high",
+      })
+      expect(state.remembered).toEqual([{ agent: "code", model, variant: "high" }])
+      expect(state.messages).toEqual([
+        { type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "high" },
+      ])
+    }
+  })
+
+  it("restores an active picker choice in a new task", () => {
+    const state = setup("session-a", "high")
+    state.variants.select("max")
+
+    expect(state.variants.current("pending-new")).toBe("max")
+    expect(state.variants.request("pending-new")).toBe("max")
+  })
+
+  it("keeps non-persistent overrides scoped to the current task", () => {
+    const state = setup("session-a", "high")
+    state.variants.select("max", "session-a", false)
+
+    expect(state.selections).toEqual({ "session/session-a/anthropic/claude-sonnet-4": "max" })
+    expect(state.messages).toEqual([])
+    expect(state.variants.current("pending-new")).toBe("high")
   })
 
   it("persists an explicit default selection", () => {
@@ -177,5 +255,98 @@ describe("session variants", () => {
     session.variants.carry(model, undefined, "code", "session-a")
     expect(session.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "high" })
     expect(session.variants.current()).toBe("high")
+  })
+
+  it.each(["high", ""])("does not overwrite a remembered target variant when carrying %s", (value) => {
+    const state = setup("session-a")
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = value
+    state.variants.carry(model, "max", "code", "session-a")
+
+    expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": value })
+    expect(state.messages).toEqual([])
+  })
+
+  it("keeps a remembered max when carrying a mapped high back from another model", () => {
+    const other: ModelSelection = { providerID: "anthropic", modelID: "claude-opus" }
+    const state = setup("session-a")
+    state.current.model = model
+    state.variants.select("max", "session-a")
+    expect(state.variants.current("session-a")).toBe("max")
+
+    state.current.model = other
+    state.variants.carry(other, "max", "code", "session-a")
+    expect(state.variants.current("session-a")).toBe("high")
+
+    state.current.model = model
+    state.variants.carry(model, "high", "code", "session-a")
+    expect(state.selections["agent/code/anthropic/claude-sonnet-4"]).toBe("max")
+    expect(state.variants.current("session-a")).toBe("max")
+  })
+
+  it("keeps a remembered max in a fresh task scope after a round trip", () => {
+    const other: ModelSelection = { providerID: "anthropic", modelID: "claude-opus" }
+    const state = setup("session-a")
+    state.current.model = model
+    state.variants.select("max", "session-a")
+
+    state.current.model = other
+    state.variants.carry(other, "max", "code", "session-a")
+    state.current.model = model
+    state.variants.carry(model, "high", "code", "session-a")
+
+    expect(state.variants.current("pending-new")).toBe("max")
+    expect(state.variants.request("pending-new")).toBe("max")
+  })
+
+  it("does not persist a mapped carry into the remembered preference", () => {
+    const other: ModelSelection = { providerID: "anthropic", modelID: "claude-opus" }
+    const state = setup("session-a")
+    state.current.model = model
+    state.variants.select("max", "session-a")
+    const count = state.remembered.length
+
+    state.current.model = other
+    state.variants.carry(other, "max", "code", "session-a")
+    state.current.model = model
+    state.variants.carry(model, "high", "code", "session-a")
+
+    expect(state.remembered.length).toBe(count)
+    expect(state.messages).toEqual([
+      { type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "max" },
+    ])
+  })
+
+  it("keeps a session-only remembered max when carrying a mapped high back", () => {
+    const other: ModelSelection = { providerID: "anthropic", modelID: "claude-opus" }
+    const state = setup("session-a")
+    state.current.model = model
+    state.variants.select("max", "session-a", false)
+    expect(state.selections["session/session-a/anthropic/claude-sonnet-4"]).toBe("max")
+    expect(state.selections["agent/code/anthropic/claude-sonnet-4"]).toBeUndefined()
+
+    state.current.model = other
+    state.variants.carry(other, "max", "code", "session-a")
+    state.current.model = model
+    state.variants.carry(model, "high", "code", "session-a")
+
+    expect(state.selections["session/session-a/anthropic/claude-sonnet-4"]).toBe("max")
+    expect(state.variants.current("session-a")).toBe("max")
+  })
+
+  it("skips carry and keeps the remembered max when the other model cannot represent the effort", () => {
+    const other: ModelSelection = { providerID: "anthropic", modelID: "claude-custom" }
+    const state = setup("session-a")
+    state.current.model = model
+    state.variants.select("max", "session-a")
+
+    state.current.model = other
+    state.variants.carry(other, "max", "code", "session-a")
+    expect(state.variants.current("session-a")).toBeUndefined()
+    expect(Object.keys(state.selections).filter((key) => key.includes("claude-custom"))).toEqual([])
+
+    state.current.model = model
+    state.variants.carry(model, "high", "code", "session-a")
+    expect(state.selections["agent/code/anthropic/claude-sonnet-4"]).toBe("max")
+    expect(state.variants.current("session-a")).toBe("max")
   })
 })
