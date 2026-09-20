@@ -15,8 +15,9 @@ env:
 
 jobs:
   changes:
+    if: github.repository == 'Kilo-Org/kilocode'
     name: detect JetBrains changes
-    runs-on: ${{ github.repository == 'Kilo-Org/kilocode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }} # kilocode_change
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       jetbrains: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.jetbrains }}
     steps:
@@ -42,8 +43,8 @@ jobs:
   unit:
     name: jetbrains
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.jetbrains == 'true'
-    runs-on: ${{ github.repository == 'Kilo-Org/kilocode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }} # kilocode_change
+    if: github.repository == 'Kilo-Org/kilocode' && (github.event_name == 'workflow_dispatch' || needs.changes.outputs.jetbrains == 'true')
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     defaults:
       run:
         shell: bash
@@ -103,8 +104,8 @@ jobs:
     needs:
       - changes
       - unit
-    if: always()
-    runs-on: ${{ github.repository == 'Kilo-Org/kilocode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }} # kilocode_change
+    if: always() && github.repository == 'Kilo-Org/kilocode'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Verify JetBrains jobs passed
         run: |
