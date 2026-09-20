@@ -189,6 +189,7 @@ function fakeRuntime(outputTokenMax?: number, error?: MessageV2.Assistant["error
             },
             updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
             metadata: Effect.fn("TestSessionProcessor.metadata")(() => Effect.void),
+            ensureSnapshot: () => Effect.succeed(undefined),
             completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
             process: Effect.fn("TestSessionProcessor.process")((stream: LLM.StreamInput) =>
               Effect.gen(function* () {
@@ -746,6 +747,7 @@ describe("KiloCompactionChunks", () => {
                   },
                   updateToolCall: Effect.fn("TestSessionProcessorLeak.updateToolCall")(() => Effect.succeed(undefined)),
                   metadata: Effect.fn("TestSessionProcessorLeak.metadata")(() => Effect.void),
+                  ensureSnapshot: () => Effect.succeed(undefined),
                   completeToolCall: Effect.fn("TestSessionProcessorLeak.completeToolCall")(() => Effect.void),
                   process: Effect.fn("TestSessionProcessorLeak.process")((stream: LLM.StreamInput) =>
                     Effect.gen(function* () {

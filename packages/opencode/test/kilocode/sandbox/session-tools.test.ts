@@ -23,19 +23,24 @@ import { Permission } from "@/permission"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import type { InstanceContext } from "@/project/instance-context"
 import { Plugin } from "@/plugin"
+import { Question } from "@/question"
 import { MessageV2 } from "@/session/message-v2"
 import { Session } from "@/session/session"
 import { SessionTools } from "@/session/tools"
 import { MessageID, SessionID } from "@/session/schema"
+import { Todo } from "@/session/todo"
 import { ShellTool } from "@/tool/shell"
 import * as Tool from "@/tool/tool"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
+import { QuestionTool } from "@/tool/question"
+import { TodoWriteTool } from "@/tool/todo"
 import { WriteTool } from "@/tool/write"
 import { TestConfig } from "../../fixture/config"
 import { tmpdirScoped } from "../../fixture/fixture"
 import { ProviderTest } from "../../fake/provider"
 import { testEffect } from "../../lib/effect"
+import type { Hooks } from "@kilocode/plugin"
 
 const projectID = ProjectV2.ID.make("sandbox-session-tools")
 const sessionID = SessionID.make("ses_sandbox-session-tools")
@@ -47,6 +52,8 @@ const agent: Agent.Info = {
   options: {},
 }
 const approvals: Permission.AskInput[] = []
+const hooks: Hooks[] = []
+const pluginEvents: string[] = []
 
 function session(directory: string): Session.Info {
   return {
@@ -109,7 +116,32 @@ const permission = Layer.mock(Permission.Service)({
     }),
 })
 const plugin = Layer.mock(Plugin.Service)({
-  trigger: (_name, _input, output) => Effect.succeed(output),
+  list: () => Effect.succeed(hooks),
+  trigger: (name, input, output) =>
+    Effect.promise(async () => {
+      if (name === "tool.execute.before") {
+        for (const hook of hooks)
+          await hook["tool.execute.before"]?.(
+            input as { tool: string; sessionID: string; callID: string },
+            output as { args: Record<string, unknown> },
+          )
+      }
+      if (name === "tool.execute.after") {
+        for (const hook of hooks)
+          await hook["tool.execute.after"]?.(
+            input as { tool: string; sessionID: string; callID: string; args: Record<string, unknown> },
+            output as { title: string; output: string; metadata: unknown },
+          )
+      }
+      if (name === "shell.env") {
+        for (const hook of hooks)
+          await hook["shell.env"]?.(
+            input as { cwd: string; sessionID?: string; callID?: string },
+            output as { env: Record<string, string> },
+          )
+      }
+      return output
+    }),
 })
 const mcp = Layer.mock(MCP.Service)({
   tools: () => Effect.succeed({}),
@@ -126,6 +158,13 @@ const truncate = Layer.mock(Truncate.Service)({
   output: (text: string) => Effect.succeed({ content: text, truncated: false as const }),
   limits: () => Effect.succeed({ maxLines: Truncate.MAX_LINES, maxBytes: Truncate.MAX_BYTES }),
 })
+const question = Layer.mock(Question.Service)({
+  ask: () => Effect.succeed([]),
+})
+const todo = Layer.mock(Todo.Service)({
+  get: () => Effect.succeed([]),
+  update: () => Effect.void,
+})
 const base = Layer.mergeAll(
   config,
   agents,
@@ -136,6 +175,8 @@ const base = Layer.mergeAll(
   lsp,
   format,
   truncate,
+  question,
+  todo,
   Bus.layer,
   AppNodeBuilder.build(EventV2Bridge.node),
   AppNodeBuilder.build(Database.node),
@@ -148,7 +189,14 @@ const registry = Layer.effect(
   Effect.gen(function* () {
     const write = yield* WriteTool.pipe(Effect.flatMap(Tool.init))
     const shell = yield* ShellTool.pipe(Effect.flatMap(Tool.init))
-    const list = [ToolNetwork.builtin(write), ToolNetwork.builtin(shell)]
+    const ask = yield* QuestionTool.pipe(Effect.flatMap(Tool.init))
+    const todos = yield* TodoWriteTool.pipe(Effect.flatMap(Tool.init))
+    const list = [
+      ToolNetwork.builtin(write),
+      ToolNetwork.builtin(shell),
+      ToolNetwork.builtin(ask),
+      ToolNetwork.builtin(todos),
+    ]
     return ToolRegistry.Service.of({
       ids: () => Effect.succeed(list.map((item) => item.id)),
       all: () => Effect.succeed(list),
@@ -160,13 +208,18 @@ const registry = Layer.effect(
 const it = testEffect(registry)
 const mac = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec") ? it.live : it.live.skip
 
-function resolve(ctx: InstanceContext, metadataCalls: { toolCallID: string; value: Record<string, any> }[] = []) {
+function resolve(
+  ctx: InstanceContext,
+  metadataCalls: { toolCallID: string; value: Record<string, any> }[] = [],
+  events: string[] = pluginEvents,
+) {
   return SessionTools.resolve({
     agent,
     model,
     session: session(ctx.directory),
     processor: {
       message: message(ctx),
+      ensureSnapshot: () => Effect.sync(() => void events.push("snapshot")),
       // capture metadata writes so tests can assert on recorded approval provenance
       metadata: (toolCallID, value) => Effect.sync(() => void metadataCalls.push({ toolCallID, value })),
       completeToolCall: () => Effect.void,
@@ -421,5 +474,145 @@ it.live("drops per-tool MCP definitions when experimental.code_mode is enabled",
 
     expect(Object.keys(withoutCodeMode)).toContain("weather_current")
     expect(Object.keys(withCodeMode)).not.toContain("weather_current")
+  }),
+)
+
+it.live("skips native MCP resource snapshots without hooks and protects hooks", () =>
+  Effect.gen(function* () {
+    const dirs = yield* fixture()
+    const events: string[] = []
+    hooks.length = 0
+    yield* Effect.addFinalizer(() => Effect.sync(() => void (hooks.length = 0)))
+    const client = { getServerCapabilities: () => ({ resources: {} }) }
+    const overrides = Layer.mergeAll(
+      TestConfig.layer({ get: () => Effect.succeed({ sandbox: { enabled: false } }) }),
+      Layer.mock(MCP.Service)({
+        tools: () => Effect.succeed({}),
+        clients: () => Effect.sync(() => (events.push("clients"), { server: client as any })),
+        resources: () =>
+          Effect.sync(() => {
+            events.push("resources")
+            return { one: { name: "one", uri: "test://one", client: "server" } }
+          }),
+        resourceTemplates: () =>
+          Effect.sync(() => {
+            events.push("resourceTemplates")
+            return { one: { name: "one", uriTemplate: "test://one/{id}", client: "server" } }
+          }),
+        readResource: () =>
+          Effect.sync(() => {
+            events.push("readResource")
+            return { contents: [{ uri: "test://one", text: "one" }] }
+          }),
+      }),
+    )
+    const calls = [
+      { key: "list_mcp_resources", args: {}, delegate: "resources" },
+      { key: "list_mcp_resource_templates", args: {}, delegate: "resourceTemplates" },
+      { key: "read_mcp_resource", args: { server: "server", uri: "test://one" }, delegate: "readResource" },
+    ] as const
+
+    const plain = yield* resolve(dirs.ctx, [], events).pipe(Effect.provide(overrides))
+    for (const item of calls) {
+      const tool = plain[item.key]
+      if (!tool) yield* Effect.die(new Error("MCP resource tool is missing"))
+      events.length = 0
+      yield* call(tool, item.args, "mcp-resource")
+      expect(events).toEqual(["clients", item.delegate])
+    }
+
+    hooks.push({
+      "tool.execute.before": async () => {
+        events.push("hook")
+      },
+    })
+    const guarded = yield* resolve(dirs.ctx, [], events).pipe(Effect.provide(overrides))
+    for (const item of calls) {
+      const tool = guarded[item.key]
+      if (!tool) yield* Effect.die(new Error("MCP resource tool is missing"))
+      events.length = 0
+      yield* call(tool, item.args, "mcp-resource")
+      expect(events).toEqual(["snapshot", "clients", "hook", item.delegate])
+    }
+
+    hooks.length = 0
+    hooks.push({
+      "tool.execute.after": async () => {
+        events.push("hook")
+      },
+    })
+    const after = yield* resolve(dirs.ctx, [], events).pipe(Effect.provide(overrides))
+    for (const item of calls) {
+      const tool = after[item.key]
+      if (!tool) yield* Effect.die(new Error("MCP resource tool is missing"))
+      events.length = 0
+      yield* call(tool, item.args, "mcp-resource")
+      expect(events).toEqual(["snapshot", "clients", item.delegate, "hook"])
+    }
+  }),
+)
+
+it.live("snapshots bash before a shell.env-only plugin hook", () =>
+  Effect.gen(function* () {
+    const dirs = yield* fixture()
+    hooks.length = 0
+    pluginEvents.length = 0
+    hooks.push({
+      "shell.env": async () => {
+        pluginEvents.push("shell.env")
+      },
+    })
+    const tools = yield* resolve(dirs.ctx).pipe(
+      Effect.provide(TestConfig.layer({ get: () => Effect.succeed({ sandbox: { enabled: false } }) })),
+    )
+    const shell = tools.bash
+    if (!shell) yield* Effect.die(new Error("bash tool is missing"))
+
+    yield* call(shell, { command: "rg --no-config snapshot", workdir: dirs.a }, "shell-env-hook")
+
+    expect(pluginEvents).toEqual(["snapshot", "shell.env"])
+    hooks.length = 0
+  }),
+)
+
+it.live("does not snapshot question and todowrite without hooks but protects their hooks", () =>
+  Effect.gen(function* () {
+    const dirs = yield* fixture()
+    const args = {
+      question: {
+        questions: [{ header: "Continue", question: "Continue?", options: [], multiple: false }],
+      },
+      todowrite: {
+        todos: [{ content: "Test todo", status: "pending", priority: "high" }],
+      },
+    }
+    const events: string[] = []
+    hooks.length = 0
+    pluginEvents.length = 0
+    yield* Effect.addFinalizer(() => Effect.sync(() => void (hooks.length = 0)))
+    const plainLayer = TestConfig.layer({ get: () => Effect.succeed({ sandbox: { enabled: false } }) })
+
+    const plain = yield* resolve(dirs.ctx, [], events).pipe(Effect.provide(plainLayer))
+    for (const [id, input] of Object.entries(args)) {
+      const tool = plain[id]
+      if (!tool) yield* Effect.die(new Error(`${id} tool is missing`))
+      events.length = 0
+      yield* call(tool, input, `${id}-plain`)
+      expect(events).toEqual([])
+    }
+
+    hooks.push({
+      "tool.execute.before": async (input) => {
+        events.push(`${input.tool}:hook`)
+      },
+    })
+    const guarded = yield* resolve(dirs.ctx, [], events).pipe(Effect.provide(plainLayer))
+    for (const [id, input] of Object.entries(args)) {
+      const tool = guarded[id]
+      if (!tool) yield* Effect.die(new Error(`${id} tool is missing`))
+      events.length = 0
+      yield* call(tool, input, `${id}-hooked`)
+      expect(events).toEqual(["snapshot", `${id}:hook`])
+    }
   }),
 )
