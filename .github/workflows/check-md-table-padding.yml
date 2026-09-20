@@ -11,7 +11,6 @@ on:
 jobs:
   check:
     name: Check markdown table padding
-    if: github.repository == 'Kilo-Org/kilocode'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6 # kilocode_change
