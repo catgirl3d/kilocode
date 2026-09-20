@@ -13,6 +13,8 @@ export interface McpConfig {
   url?: string
   headers?: Record<string, string>
   enabled?: boolean
+  on_demand?: boolean // fork_change
+  description?: string // fork_change
 }
 
 export type ConfigOrigin = "project" | "global" | "system" | "default"

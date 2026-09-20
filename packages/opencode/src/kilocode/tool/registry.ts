@@ -26,8 +26,10 @@ import * as Network from "@/kilocode/sandbox/network"
 import { Notebook } from "@/kilocode/notebook/service"
 import { AgentManager, HostError } from "@/kilocode/agent-manager/service"
 import { KiloSessions } from "@/kilo-sessions/kilo-sessions"
+import { MCP } from "@/mcp" // fork_change
+import * as McpOnDemand from "@/kilocode/mcp/on-demand" // fork_change
 import * as Log from "@opencode-ai/core/util/log"
-import type { Config } from "@/config/config"
+import { Config } from "@/config/config" // fork_change
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { BoardEnabled } from "@/kilocode/board/enabled"
 import { Agent } from "@/agent/agent"
@@ -93,6 +95,14 @@ export namespace KiloToolRegistry {
       // context here and injects it into the tool's init Effect.
       const sessions = yield* KiloSessions.Service
       const notify = yield* NotifyUserTool.pipe(Effect.provideService(KiloSessions.Service, sessions))
+      // fork_change start
+      const mcp = yield* MCP.Service
+      const config = yield* Config.Service
+      const mcpTool = yield* McpTool.pipe(
+        Effect.provideService(MCP.Service, mcp),
+        Effect.provideService(Config.Service, config),
+      )
+      // fork_change end
       const openPlan = yield* OpenPlanTool
       const send = yield* SendFileTool
       const linkPr = yield* LinkPrTool
@@ -179,6 +189,7 @@ export namespace KiloToolRegistry {
       chart: Tool.Info
       image: Tool.Info
       notify: Tool.Info
+      mcp?: Tool.Info // fork_change
       openPlan?: Tool.Info
       send: Tool.Info
       linkPr: Tool.Info
@@ -252,6 +263,7 @@ export namespace KiloToolRegistry {
         cronList,
         cronDelete,
         notify: base.notify,
+        mcp: base.mcp, // fork_change
         send: base.send,
       }
     })
@@ -314,6 +326,7 @@ export namespace KiloToolRegistry {
       chart: Tool.Def
       image: Tool.Def
       notify: Tool.Def
+      mcp?: Tool.Def // fork_change
       openPlan?: Tool.Def
       send: Tool.Def
       linkPr: Tool.Def
@@ -370,9 +383,11 @@ export namespace KiloToolRegistry {
         ? [tools.notebookRead, tools.notebookEdit, tools.notebookExecute]
         : []),
       tools.notify,
+      ...(tools.mcp ? [tools.mcp] : []), // fork_change
       ...(Flag.KILO_CLIENT === "vscode" && tools.openPlan ? [tools.openPlan] : []),
       tools.send,
       tools.linkPr,
+      ...(cfg.experimental?.advisor_model && tools.advisor ? [tools.advisor] : []), // fork_change
     ]
   }
 

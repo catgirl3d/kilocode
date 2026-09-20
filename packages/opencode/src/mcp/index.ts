@@ -580,10 +580,12 @@ const layer = Layer.effect(
                 return
               }
 
-              if (mcp.enabled === false) {
+              // kilocode_change start - keep on-demand servers disabled until the agent connects them
+              if (mcp.enabled === false || mcp.on_demand) {
                 s.status[key] = { status: "disabled" }
                 return
               }
+              // kilocode_change end
 
               const result = yield* create(key, mcp)
               s.status[key] = result.status
@@ -628,14 +630,35 @@ const layer = Layer.effect(
       }),
     )
 
+    // kilocode_change start - preserve MCP close failures for lifecycle controls
     function closeClient(s: State, name: string) {
       const client = s.clients[name]
-      delete s.clients[name]
-      delete s.defs[name]
-      delete s.instructions[name]
-      if (!client) return Effect.void
-      return Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+      if (!client) {
+        delete s.defs[name]
+        delete s.instructions[name]
+        return Effect.succeed({ ok: true as const })
+      }
+      return Effect.tryPromise(() => client.close()).pipe(
+        Effect.map(() => {
+          return { ok: true as const }
+        }),
+        Effect.catch((error) => {
+          const reason = Cause.isUnknownError(error) ? error.cause : error
+          return Effect.succeed({
+            ok: false as const,
+            error: reason instanceof Error ? reason.message : String(reason),
+          })
+        }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            delete s.clients[name]
+            delete s.defs[name]
+            delete s.instructions[name]
+          }),
+        ),
+      )
     }
+    // kilocode_change end
 
     const storeClient = Effect.fnUntraced(function* (
       s: State,
@@ -699,9 +722,11 @@ const layer = Layer.effect(
 
       s.status[name] = result.status
       if (!result.mcpClient) {
-        yield* closeClient(s, name)
-        delete s.clients[name]
-        return result.status
+        // kilocode_change start - preserve close failures in the reported MCP status
+        const closed = yield* closeClient(s, name)
+        if (!closed.ok) s.status[name] = { status: "failed", error: closed.error }
+        return s.status[name]
+        // kilocode_change end
       }
 
       return yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, mcp.timeout)
@@ -722,8 +747,13 @@ const layer = Layer.effect(
     const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
       yield* requireMcpConfig(name)
       const s = yield* InstanceState.get(state)
-      yield* closeClient(s, name)
-      delete s.clients[name]
+      // kilocode_change start - expose close failures instead of reporting success
+      const closed = yield* closeClient(s, name)
+      if (!closed.ok) {
+        s.status[name] = { status: "failed", error: closed.error }
+        return
+      }
+      // kilocode_change end
       s.status[name] = { status: "disabled" }
     })
 
