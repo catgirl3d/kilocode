@@ -61,6 +61,7 @@ export function parseCustomCatalog(body: unknown, origin: string): SpeechToTextM
     id: model.id,
     label: typeof model.name === "string" && model.name ? model.name : model.id,
     provider,
+    providerID: "custom" as const, // fork_change
   }))
   return models.length > 0 ? models : undefined
 }
@@ -102,5 +103,6 @@ function toModel(model: CatalogModel): SpeechToTextModelDef {
     id: model.id,
     label: index === -1 ? model.name : model.name.slice(index + 1).trim(),
     provider,
+    providerID: "kilo", // fork_change
   }
 }
