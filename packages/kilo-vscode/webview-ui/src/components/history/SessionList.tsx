@@ -15,26 +15,9 @@ import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { formatRelativeDate } from "../../utils/date"
+import { DATE_GROUP_KEYS, dateGroupKey } from "../../utils/date" // fork_change
 import type { SessionInfo } from "../../types/messages"
 import { SessionRenameEditor } from "../shared/SessionRenameEditor"
-
-const DATE_GROUP_KEYS = ["time.today", "time.yesterday", "time.thisWeek", "time.thisMonth", "time.older"] as const
-
-function dateGroupKey(iso: string): (typeof DATE_GROUP_KEYS)[number] {
-  const now = new Date()
-  const then = new Date(iso)
-
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const yesterday = new Date(today.getTime() - 86400000)
-  const weekAgo = new Date(today.getTime() - 7 * 86400000)
-  const monthAgo = new Date(today.getTime() - 30 * 86400000)
-
-  if (then >= today) return DATE_GROUP_KEYS[0]
-  if (then >= yesterday) return DATE_GROUP_KEYS[1]
-  if (then >= weekAgo) return DATE_GROUP_KEYS[2]
-  if (then >= monthAgo) return DATE_GROUP_KEYS[3]
-  return DATE_GROUP_KEYS[4]
-}
 
 interface SessionListProps {
   onSelectSession: (id: string) => void

@@ -1948,7 +1948,6 @@ const AgentManagerContent: Component = () => {
     const sel = selection()
     // Setup is still provisioning this worktree; the Setup tab shows progress.
     if (settingUpSelection()) return
-    expandSidebar()
     if (sel === LOCAL) return addPendingTab()
     if (sel) {
       // Deactivate any focused terminal so the new session is visible.
