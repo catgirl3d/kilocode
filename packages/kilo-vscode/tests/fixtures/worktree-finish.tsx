@@ -18,6 +18,8 @@ Object.assign(globalThis, {
   CustomEvent: window.CustomEvent,
   Event: window.Event,
   MouseEvent: window.MouseEvent,
+  KeyboardEvent: window.KeyboardEvent,
+  PointerEvent: window.PointerEvent,
   MessageEvent: window.MessageEvent,
   getComputedStyle: window.getComputedStyle.bind(window),
   requestAnimationFrame: window.requestAnimationFrame.bind(window),
@@ -128,11 +130,11 @@ root.querySelector<HTMLElement>(".am-worktree-branch")!.click()
 assert.equal(navigations, 1)
 assert.equal(deletes, 0)
 await arm()
-document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event)
 assert.equal(pending(), false)
 assert.equal(document.activeElement, button("Delete worktree"))
 await arm()
-document.body.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }))
+document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }) as unknown as Event)
 assert.equal(pending(), false)
 
 await arm()
@@ -170,9 +172,9 @@ for (const id of ["legacy", "project-two"]) {
   assert.ok(completed.querySelector(".am-worktree-item")!.hasAttribute("inert"))
   assert.equal(completed.querySelector("[role=status]")!.textContent, "Test task: Deleted")
   assert.equal(root.querySelector('[data-sidebar-id="wt-sibling"]')!.closest(".am-worktree-completed"), null)
-  completed.querySelector(".am-worktree-item")!.dispatchEvent(new window.Event("animationend", { bubbles: true }))
+  completed.querySelector(".am-worktree-item")!.dispatchEvent(new Event("animationend", { bubbles: true }))
   assert.ok(root.querySelector(".am-worktree-completed"), "ignore child animation events")
-  root.querySelector(".am-worktree-exit")!.dispatchEvent(new window.Event("animationend", { bubbles: true }))
+  root.querySelector(".am-worktree-exit")!.dispatchEvent(new Event("animationend", { bubbles: true }))
   assert.equal(root.querySelector(".am-worktree-completed"), null, "release after collapse")
 }
 setWorktrees([worktree])

@@ -382,7 +382,7 @@ describe("tool.task model resolution", () => {
             const fields = def.jsonSchema?.properties ?? {}
             for (const field of ["model", "provider", "variant"]) {
               expect(field in fields).toBe(true)
-              expect(def.jsonSchema?.required).not.toContain(field)
+              expect(def.jsonSchema?.required ?? []).not.toContain(field)
               expect(fields[field]).toMatchObject({ anyOf: [{ type: "string" }, { type: "null" }] })
             }
             expect("background" in fields).toBe(background)
