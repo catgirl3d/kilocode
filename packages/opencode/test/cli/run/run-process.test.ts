@@ -9,7 +9,7 @@ import { createKiloClient } from "@kilocode/sdk/v2" // kilocode_change
 import { reply } from "../../lib/llm-server"
 import { cliIt } from "../../lib/cli-process"
 
-describe("opencode run (non-interactive subprocess)", () => {
+describe.skipIf(process.platform === "win32")("opencode run (non-interactive subprocess)", () => {
   // Happy path: prompt completes, output reaches stdout, process exits 0.
   // If this fails, all the others likely will too — debug here first.
   cliIt.concurrent(

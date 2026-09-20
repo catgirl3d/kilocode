@@ -31,7 +31,7 @@ if (argv.includes("--help") || argv.includes("-h")) {
       "  --ci                 Enable JUnit XML output to .artifacts/unit/junit.xml",
       "  --concurrency <N>    Max parallel processes (default: min(4, CPU count), env: KILO_TEST_CONCURRENCY)",
       "  --timeout <ms>       Per-test timeout passed to bun test (default: 60000)",
-      "  --file-timeout <ms>  Per-file process timeout (default: 300000, env: KILO_TEST_FILE_TIMEOUT)",
+      "  --file-timeout <ms>  Per-file process timeout (default: 600000, env: KILO_TEST_FILE_TIMEOUT)",
       "  --retries <N>        Extra attempts for failing files (default: 1)",
       "  --profile <name>     Run a curated test profile (env: KILO_TEST_PROFILE)",
       "  --shard <N/M>        Run one balanced file shard (env: KILO_TEST_SHARD)",
@@ -93,9 +93,9 @@ const concurrencyEnv = (() => {
 const concurrency = opt("concurrency", concurrencyEnv ?? Math.min(4, os.cpus().length))
 // kilocode_change end
 const timeout = opt("timeout", 60000)
-// kilocode_change start - allow CI to raise the per-file kill deadline via env. On Windows,
-// heavy real-server files (e.g. config-overlay) legitimately run ~270s serially, only ~30s
-// under the 300s default; raising it there prevents a slow-but-healthy run from being killed.
+// kilocode_change start - allow CI to raise the per-file kill deadline via env. Heavy
+// real-subprocess files (run-process ~300s+ serially, snapshot ~140s+ alone) legitimately
+// exceed the old 300s default, so the default is 600s; the env still overrides it.
 const fileTimeoutEnv = (() => {
   const raw = process.env.KILO_TEST_FILE_TIMEOUT?.trim()
   if (!raw) return undefined
@@ -106,7 +106,7 @@ const fileTimeoutEnv = (() => {
   }
   return value
 })()
-const deadline = opt("file-timeout", fileTimeoutEnv ?? 300000)
+const deadline = opt("file-timeout", fileTimeoutEnv ?? 600000)
 // kilocode_change end
 const retries = opt("retries", 1)
 const flag = text("profile")

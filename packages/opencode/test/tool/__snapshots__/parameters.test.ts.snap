@@ -372,6 +372,10 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "description": "Run the agent in the background. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress",
       "type": "boolean",
     },
+    "cancel": {
+      "description": "Set true with task_id to stop a running background task you launched in this session. Only task_id is required; description/prompt/subagent_type are only required when launching a task.",
+      "type": "boolean",
+    },
     "command": {
       "description": "The command that triggered this task",
       "type": "string",
@@ -411,7 +415,7 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "type": "string",
     },
     "task_id": {
-      "description": "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)",
+      "description": "Task session ID to resume a task, or to cancel a background task you launched in this session when cancel=true.",
       "type": "string",
     },
     "variant": {
@@ -426,11 +430,6 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
       "description": "Optional reasoning effort override from agent_manager_models. Only set when the user explicitly requests a different reasoning effort. Omit or send null to keep the normal reasoning effort. Can be used without model.",
     },
   },
-  "required": [
-    "description",
-    "prompt",
-    "subagent_type",
-  ],
   "type": "object",
 }
 `;

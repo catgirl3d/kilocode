@@ -39,8 +39,15 @@ describe("KilocodeWatcher.eager", () => {
   })
 
   test("keeps eager location watchers for the standalone CLI", () => {
-    expect(KilocodeWatcher.eager("cli")).toBe(true)
-    expect(KilocodeWatcher.eager(undefined)).toBe(true)
+    const prev = process.env.KILO_CLIENT
+    delete process.env.KILO_CLIENT
+    try {
+      expect(KilocodeWatcher.eager("cli")).toBe(true)
+      expect(KilocodeWatcher.eager(undefined)).toBe(true)
+    } finally {
+      if (prev === undefined) delete process.env.KILO_CLIENT
+      else process.env.KILO_CLIENT = prev
+    }
   })
 })
 
