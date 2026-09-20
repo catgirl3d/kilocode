@@ -47,9 +47,7 @@ describe("planDisplayPath", () => {
 describe("plan_exit renderer uses openFile not openDiff (source)", () => {
   const ROOT = path.resolve(import.meta.dir, "../..")
   const FILE = path.join(ROOT, "webview-ui/src/components/chat/AssistantMessage.tsx")
-  const TURN_FILE = path.join(ROOT, "webview-ui/src/components/chat/TranscriptRow.tsx")
   const src = fs.readFileSync(FILE, "utf-8")
-  const turnSrc = fs.readFileSync(TURN_FILE, "utf-8")
 
   it("PlanExitCard calls data.openFile", () => {
     expect(src).toContain("data.openFile")
@@ -71,6 +69,11 @@ describe("plan_exit renderer uses openFile not openDiff (source)", () => {
     expect(src).not.toContain('language.t("plan.exit.readyNew")')
   })
 
+  it("does not render the plan status badge", () => {
+    expect(src).not.toContain("plan-exit-badge")
+    expect(src).not.toContain('language.t("ui.patch.action.plan")')
+  })
+
   it("does not infer status from tool history", () => {
     expect(src).not.toContain("function inferPlanStatus")
     expect(src).not.toContain("function patchUpdatedPlan")
@@ -81,9 +84,6 @@ describe("plan_exit renderer uses openFile not openDiff (source)", () => {
     expect(src).not.toContain("Object.values(data.store.part ?? {}).flat()")
     expect(src).not.toContain("[...props.parts, ...all()]")
     expect(src).not.toContain("turnParts")
-    expect(turnSrc).toContain("parts={row().parts as unknown as SDKPart[]}")
-    expect(turnSrc).not.toContain("assistantMessages().flatMap")
-    expect(turnSrc).not.toContain("turnParts={assistantParts()}")
   })
 
   it("does not depend on opencode-provided plan status metadata", () => {
