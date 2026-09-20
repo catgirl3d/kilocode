@@ -6,6 +6,7 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 - The default branch in this repo is `main`.
 - Prefer automation: execute requested actions without confirmation unless blocked by missing info or safety/irreversibility.
 - You may be running in a git worktree. All changes must be made in your current working directory — never modify files in the main repo checkout.
+- **Exempt Files (NO MARKERS)**: Never put `fork_change` or `kilocode_change` comments inside test files (`*.test.ts`, `*.spec.ts`, `test/`, `tests/`), fixtures, Markdown docs (`*.md`), JSON/YAML configs, or Storybook stories — they are completely exempt from all markers.
 
 ## Build and Dev
 
@@ -21,6 +22,7 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 - **Source links**: After adding or changing URLs in `packages/kilo-vscode/`, `packages/kilo-vscode/webview-ui/`, or `packages/opencode/src/`, run `bun run script/extract-source-links.ts` from the repo root and commit the updated `packages/kilo-docs/source-links.md`. CI runs this check — the build fails if the file is stale.
 - **kilocode_change check**: `bun run check-kilocode-change` from `packages/kilo-vscode/`. CI runs this — `kilocode_change` is a marker for upstream merge conflicts and must not appear in `packages/kilo-vscode/` or `packages/kilo-ui/` (these are entirely Kilo Code additions). Remove the markers before pushing.
 - **opencode annotation check**: `bun run script/check-opencode-annotations.ts --worktree` from repo root when verifying local agent changes. CI runs `bun run script/check-opencode-annotations.ts` on PRs touching `packages/opencode/` — every Kilo-specific change in shared opencode files must be annotated with `kilocode_change` markers. Exempt paths (no markers needed): `packages/opencode/src/kilocode/`, `packages/opencode/test/kilocode/`, and any path containing `kilocode` in the name.
+- **Mandatory shared-source annotation check**: Before reporting shared OpenCode changes ready or committing them, always run `bun run script/check-opencode-annotations.ts --worktree` after the final edit. `check-kilocode-change.ts` is a separate guard for `kilo-vscode`/`kilo-ui` and does not replace this check. Do not proceed while it reports an unannotated Kilo change or unbalanced marker block.
 - **Effect facade ratchet**: Do not add runtime-backed Promise facades to shared `packages/opencode/src` Effect services; use service dependencies, `AppRuntime`, or Kilo-owned boundaries. Run `bun run script/check-opencode-promise-facades.ts` when touching service adapters.
 - **workflow allowlist**: `bun run script/check-workflows.ts` from repo root. CI runs this as part of the annotations workflow — any `.yml` / `.yaml` file added to or removed from `.github/workflows/` must be reflected in the hardcoded list in `script/check-workflows.ts`. Prevents upstream-merged workflows from silently starting to run in our CI.
 - **Backend/SDK programmatic testing**: see [TESTING.md](./TESTING.md) for spawning the local main-branch backend (`bun dev serve`) and driving it via `curl` — use this instead of `kilo serve` (prod binary) when testing backend fixes.
@@ -32,11 +34,13 @@ Before saying an implementation is ready, run the smallest relevant checks that 
 | Area | Checks |
 |---|---|
 | Root / cross-package | `bun run lint`, `bun run typecheck` |
-| CLI | From `packages/opencode/`: `bun run typecheck`, `bun test` or targeted `bun test ./path/to/file.test.ts` |
+| CLI | From `packages/opencode/`: `bun run typecheck`, `bun run test` (full suite) or targeted `bun test ./path/to/file.test.ts` (single file is safe in its own process) |
 | VS Code extension | From `packages/kilo-vscode/`: `bun run typecheck`, `bun run lint`, `bun run test:unit` or `bun run test` |
 | Extension build/package | From `packages/kilo-vscode/`: `bun run compile` or `bun run package` when touching build, packaging, SDK, or webview integration paths |
 | JetBrains plugin | From `packages/kilo-jetbrains/`: `./gradlew typecheck`, `./gradlew test`. Requires Java 21; do not run `java -version` as a routine preflight. Check Java only after a Java-version or missing-Java failure. |
 | CI/local guards | Run affected guards documented above, such as `bun run knip`, `bun run check-kilocode-change`, `bun run script/check-opencode-annotations.ts --worktree`, or source link extraction |
+
+The `pre-commit` hook runs the fast guards automatically (`format:check`, forbidden-marker check, opencode annotations, markdown table padding, fork audit); the `pre-push` hook repeats them and adds typechecks. Fix failures before committing instead of bypassing hooks.
 
 Never run root `bun test`; the root script prints `do not run tests from root` and exits with code 1. Use package-level tests instead.
 
@@ -132,6 +136,12 @@ Default to a single-word name for variables, parameters, and helper functions. R
 You MUST avoid using `mocks` as much as possible.
 Tests MUST test actual implementation, do not duplicate logic into a test.
 
+## Bug Investigation
+
+Treat reports, errors, and proposed fixes as evidence, not specifications.
+For non-trivial bugs, trace the affected execution path to a confirmed source of truth and verify the cause against relevant history, contracts, or boundaries before editing.
+Fix the confirmed cause in the narrowest owning layer; do not broaden the investigation or change adjacent behavior without evidence.
+
 ## Markdown Tables
 
 Do not pad markdown table cells for column alignment. Use the compact form with single-space-padded content cells and a minimal separator row:
@@ -151,6 +161,10 @@ Do **not** right-pad cells to line up columns:
 ```
 
 Padding makes every content change rewrite the entire table, which blows up diffs on untouched rows. Markdown files are excluded from prettier (see `.prettierignore`) so running the formatter won't re-pad them, and `script/check-md-table-padding.ts` enforces the rule in CI. Run `bun run script/check-md-table-padding.ts --fix` to auto-rewrite padded tables.
+
+## Known formatting exceptions
+
+- `packages/kilo-ui/src/components/message-part.tsx` intentionally fails `prettier --check`: four whitespace-only regions are inherited verbatim from `upstream/main`; do not reformat them, as `script/fork-audit.ts` rejects the resulting fake fork diff. Fork-added code in this file must remain Prettier-clean.
 
 ## Commit Conventions
 
@@ -212,3 +226,42 @@ When editing shared upstream files, mark Kilo-specific lines with `kilocode_chan
 Markers are NOT needed in paths that contain `kilocode` in the name (e.g. `packages/opencode/src/kilocode/`, `packages/opencode/test/kilocode/`) — these are entirely Kilo Code additions and won't conflict with upstream.
 
 For decision rules on when to keep changes inline vs. extract Kilo logic, marker placement guidance, and verification commands, load `.kilo/skills/kilocode-merge-minimizer/SKILL.md`.
+
+## Personal Fork Rules & Change Tracking
+
+This repository is a personal fork of Kilo Code (`upstream/main`).
+
+- **Fork Changelog & Changesets**:
+  - Every custom feature, enhancement, or fix in this fork MUST be documented in `CHANGELOG-FORK.md`.
+  - In addition, user-facing changes STILL require a changeset file in `.changeset/<slug>.md` (e.g. `"kilo-code": patch` or `minor`) describing the change from the user's perspective in imperative mood.
+- **Change Annotation Rules by Location**:
+  - **Exempt Files & Folders (NEVER Add Markers)**:
+    - All test files and fixtures (`*.test.ts`, `*.spec.ts`, `test/`, `tests/`, `fixture/`, `__snapshots__/`), Markdown docs (`*.md`), JSON/YAML configs, and Storybook stories are **completely exempt** from all markers — both for newly created files and for edits in existing upstream files. Never put `fork_change` or `kilocode_change` comments inside test files.
+  - **New Fork Source Files**: Put `// fork_change - new file` (or `{/* fork_change - new file */}`, `# fork_change - new file`) on Line 1 of any new non-exempt source file created for this fork. In shared OpenCode directories, use `// kilocode_change - new file`.
+  - **Edits in Existing Kilo Files**: When modifying existing upstream Kilo code in `packages/kilo-vscode/`, `packages/kilo-ui/`, or existing files in `packages/opencode/src/kilocode/`, mark only your added/changed blocks with `// fork_change` (or `// fork_change start` / `end`, `{/* fork_change */}`). In `src/kilocode/` and `kilo-gateway/`, historical `kilocode_change` comments from upstream Kilo Code (including Line 1 `// kilocode_change - new file` headers present in `upstream/main`) are preserved as-is.
+  - **NEVER use `kilocode_change` in `packages/kilo-vscode/` or `packages/kilo-ui/`**: Doing so breaks CI `check-kilocode-change`.
+  - **Shared OpenCode Files**: When editing shared upstream OpenCode files (`packages/opencode/src/` outside `kilocode/`), use `// kilocode_change` to satisfy `bun run script/check-opencode-annotations.ts`. To distinguish fork-authored changes from upstream Kilo Code, append a `[fork]` descriptor (e.g. `// kilocode_change start - [fork] <reason>` or `// kilocode_change - [fork] <reason>`). Both upstream and fork checker scripts ignore trailing commentary.
+  - **Prettier Stability**: Use block markers (`// fork_change start` / `end` on standalone lines) for multi-line expressions, hooks, and JSX to prevent Prettier from moving trailing comments onto inner lines during formatting.
+
+- **Fork Rebase Protocol**:
+  - When rebasing on `upstream/main`, strictly follow `FORK_REBASE.md`. Reuse package-scoped executor sessions and classify each stop as Mechanical, Bounded, or Deep. Mechanical stops may continue autonomously; Bounded candidates and implemented Deep decisions require coordinator approval before continue. Fork marker auditing and coverage reconciliation are deferred strictly to the post-rebase finalization pass — do not run full `fork-audit` on intermediate rebase stops. After any Bounded or Deep resolution, run the two specified final reviewers only after deterministic validation; do not launch them for conflict-free or Mechanical-only rebases. Do not run a default i18n scan.
+
+### Agent Scope Discipline
+
+- Every subagent assignment MUST define one concrete question, the allowed files or paths, the relevant behavior, and the checks required to answer it.
+- Do not dispatch open-ended tasks to inspect the whole repository, every file, all contracts, all consumers, or every related subsystem. "Read everything" is not a valid task.
+- For conflict-free and Mechanical-only rebases, use the coordinator's range-diff review and relevant checks without review subagents. During conflict resolution, use additional research agents only for a concrete unresolved Deep question; Bounded conflicts stay within their fixed local evidence boundary. After deterministic validation of any Bounded or Deep resolution, run exactly the two final reviewers required by `FORK_REBASE.md`.
+- Give parallel agents distinct, non-overlapping questions. Stop an agent when its assigned scope is answered; report adjacent findings instead of expanding the investigation.
+- Full-repository scans, broad test suites, or expanded context require explicit user approval. If the scope cannot be stated precisely, narrow the task before starting the agent.
+- Do not attempt exhaustive full-file reading to prove the absence of unrelated regressions; rely on targeted diffs and package tests.
+
+- **Finding Fork Changes & Verification**:
+  - **Worktree audit (pre-commit / local verification)**: `bun run script/fork-audit.ts --worktree [path/to/file.ts]` audits working tree changes directly from disk against `merge-base(HEAD, upstream/main)` (or `--base=<ref>`), including untracked files and uncommitted edits. To restrict the audit strictly to uncommitted staged/unstaged changes, pass `--base=HEAD`.
+  - **Worktree against the fork's main**: use `bun run script/fork-audit.ts --worktree --base=origin/main [path/to/file.ts]` when auditing working tree changes relative to the fork's tracking branch.
+  - **Committed history audit (pre-push / after rebase)**: `bun run script/fork-audit.ts [path/to/file.ts]` without `--worktree` checks committed net fork diff `merge-base(HEAD, upstream/main)...HEAD` via `git show`.
+  - An explicit `--base=<ref>` overrides the candidate base (which defaults to `upstream/main`). Keep the `upstream` remote for rebase and deliberate upstream comparisons; do not remove it to silence local audit output.
+  - **Ownership rule**: `fork-audit` derives fork ownership from the hunk-normalized diff, never from the markers themselves — a line that only gained or lost a marker is not a fork change, and a marker on such a line is rejected as redundant. Re-emitted (moved or churn) lines are matched against removed occurrences in the same file, and **one removed occurrence explains at most one added line**, so copies of lines that still exist upstream stay uncovered on purpose. A `fork_change` region may include unchanged upstream lines as justified context — a whole construct or merged neighboring regions — and such lines never become fork-owned; they are reported as non-failing `[CAPTURED]` advisories. The ownership check runs whenever the comparison base is not `HEAD`. `--overwrap-report` lists every region split into allowed context vs captured code; rename destinations are skipped and reported;
+  - **Cohesion gates (errors in every mode)**: `[FRAGMENTED_BLOCKS]` — two fork regions separated by ≤ 4 source lines must merge into one region, expanding to the enclosing construct when the merge needs it; `[DETACHED_HEADER]` — a region that covers a callable header must include the complete callable (body and closing brace); `[STRUCTURE_SPLIT]` — a region must contain the complete construct (import declaration, if/else, JSX element, property, expression) or stop at a structural boundary. Regions may legally cover complete statements inside a function body. Never split regions around unchanged context, never add blank lines to dodge the gap gate, and never change code to satisfy the audit.
+  - **Inline rule (writer parity)**: a `fork_change` region that holds exactly one changed line must use a trailing `// fork_change` marker instead of a start/end block (`[INLINE_REQUIRED]`). Keep a block only when a trailing marker is not Prettier-stable (the line ends with `{`, `(`, `=>`, or a binary operator) or the position is JSX; then wrap the complete construct. This mirrors the fork's own writer (`script/upstream/utils/markers.ts` appends the note for `range.start === range.end`) and prevents the single-line-block shredding pattern. Tooling directives (`prettier-ignore`, `eslint-disable*`) are coverage-exempt like blank lines and markers — never wrap them in markers; a region around only a directive is redundant.
+  - **Placement guards**: `fork-audit` fails when a marker renders as UI text (a `//` marker inside JSX children), sits inside a multi-line block/JSDoc comment, or splits an expression (`foo /* fork_change end */ === bar`). Use `{/* fork_change start */}` / `{/* fork_change end */}` blocks in JSX children, wrap a changed JSDoc from outside the comment, and keep markers at the end of the line. `--inline-report` lists style candidates only (a trailing marker must stay on the same line after Prettier; never restructure code to convert a block); stories, tests, docs, and configs stay exempt.
+  - Reports uncovered blocks, unbalanced markers, and layer violations; exits with code 1 on any finding, code 0 when clean.

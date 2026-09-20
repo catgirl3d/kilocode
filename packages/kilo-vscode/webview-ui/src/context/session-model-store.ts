@@ -109,28 +109,29 @@ export interface ApplyResult {
   userSetAgents: Record<string, boolean>
 }
 
+// fork_change start
 /**
  * Apply a user-initiated model selection.
  *
- * Session-scoped selections write only to the per-session override.
- * No-session selections write to the global modelSelections map so sidebar
- * default picks still mirror CLI TUI's model.json behavior.
+ * Remembered selections write to the per-mode modelSelections map, while
+ * session-scoped selections also write to the per-session override.
+ * Temporary callers can disable the remembered selection.
  */
+// fork_change end
 export function applyModel(
   store: ModelStore,
   agentName: string,
   selection: ModelSelection,
   sessionID: string | undefined,
+  remember = true, // fork_change
 ): ApplyResult {
-  const modelSelections = sessionID
-    ? { ...store.modelSelections }
-    : { ...store.modelSelections, [agentName]: selection }
+  const modelSelections = remember ? { ...store.modelSelections, [agentName]: selection } : { ...store.modelSelections } // fork_change
   const sessionOverrides = { ...store.sessionOverrides }
 
   if (sessionID) {
     sessionOverrides[sessionID] = selection
   }
 
-  const userSetAgents = sessionID ? { ...store.userSetAgents } : { ...store.userSetAgents, [agentName]: true }
+  const userSetAgents = remember ? { ...store.userSetAgents, [agentName]: true } : { ...store.userSetAgents } // fork_change
   return { modelSelections, sessionOverrides, userSetAgents }
 }

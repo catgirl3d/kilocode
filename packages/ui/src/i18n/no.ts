@@ -238,7 +238,6 @@ export const dict: Record<Keys, string> = {
   "ui.message.deleteQueued": "Slett melding i kø",
   "ui.messagePart.mcp.input": "Inndata",
   "ui.messagePart.mcp.output": "Utdata",
-  // kilocode_change start
   "ui.messagePart.board.read": "Les meldinger fra agenter",
   "ui.messagePart.board.all": "Alle agenter",
   "ui.messagePart.board.primary": "Hovedagent",

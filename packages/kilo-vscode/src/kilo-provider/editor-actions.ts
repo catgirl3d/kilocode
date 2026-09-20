@@ -1,7 +1,11 @@
 import * as vscode from "vscode"
+// fork_change start
+import path from "path"
+import os from "os"
 import { buildPreviewPath, getPreviewCommand, getPreviewDir, parseImage, trimEntries } from "../image-preview"
 import { escapeGlob, isAbsolutePath } from "../path-utils"
 import { validateFiles } from "./file-links"
+import { validate as validateInstruction } from "./instruction-path"
 import type { DiffVirtualFile, DiffVirtualProvider } from "../DiffVirtualProvider"
 import { isPRReviewComment, parseReview, type PRReviewCommentData } from "../shared/review-comments"
 
@@ -13,6 +17,30 @@ type EditorOpenMessage = {
   content?: string
   language?: string
   sessionID?: string
+  requestId?: string
+  path?: string
+  scope?: "global" | "project"
+  bindingId?: string
+}
+
+type EditorActionMessage = EditorOpenMessage & {
+  url?: unknown
+  diff?: unknown
+  initialDiffStyle?: unknown
+  dataUrl?: string
+  filename?: string
+  id?: string
+  paths?: string[]
+  comment?: unknown
+}
+
+type EditorActionOptions = {
+  dir: (sessionID?: string) => string
+  diff?: DiffVirtualProvider
+  openMarkdown?: (file: string, sessionID?: string, line?: number, column?: number) => boolean
+  openPRComment?: (comment: PRReviewCommentData, sessionID?: string) => void
+  storage?: vscode.Uri
+  post?: (msg: unknown) => void
 }
 
 function isMarkdownFile(file: string): boolean {
@@ -31,6 +59,7 @@ function openDiffVirtual(provider: DiffVirtualProvider | undefined, diff: unknow
   provider.open(file)
 }
 
+// fork_change end
 function openReview(
   message: EditorOpenMessage & { comment?: unknown },
   open?: (comment: PRReviewCommentData, sessionID?: string) => void,
@@ -78,26 +107,28 @@ function previewImage(dir: vscode.Uri | undefined, dataUrl: string, filename: st
     .then(open, (err) => console.error("[Kilo New] KiloProvider: Failed to preview image:", err))
 }
 
-export function handleEditorAction(
-  message: EditorOpenMessage & {
-    url?: unknown
-    diff?: unknown
-    initialDiffStyle?: unknown
-    dataUrl?: string
-    filename?: string
-    id?: string
-    paths?: string[]
-    comment?: unknown
-  },
-  opts: {
-    dir: (sessionID?: string) => string
-    diff?: DiffVirtualProvider
-    openMarkdown?: (file: string, sessionID?: string) => boolean
-    openPRComment?: (comment: PRReviewCommentData, sessionID?: string) => void
-    storage?: vscode.Uri
-    post?: (msg: unknown) => void
-  },
-): boolean {
+// fork_change start
+function validateInstructionPath(message: EditorActionMessage, opts: EditorActionOptions): void {
+  const id = message.requestId
+  const path = message.path
+  const scope = message.scope
+  const binding = message.bindingId
+  if (!id || !path || !scope || !opts.post) return
+
+  const post = opts.post
+  validateInstruction(opts.dir(), path, scope).then(
+    (valid) => post({ type: "validateInstructionPathResult", requestId: id, path, valid, bindingId: binding }),
+    (err) => console.error("[Kilo New] KiloProvider: instruction path validation failed:", err),
+  )
+}
+
+function openMarkdownFile(file: string, message: EditorActionMessage, opts: EditorActionOptions): boolean {
+  if (!isMarkdownFile(file)) return false
+  if (/^https?:\/\//i.test(file) || file.startsWith("~/") || isAbsolutePath(file)) return false
+  return opts.openMarkdown?.(file, message.sessionID, message.line, message.column) === true
+}
+
+export function handleEditorAction(message: EditorActionMessage, opts: EditorActionOptions): boolean {
   if (message.type === "openPRComment") {
     openReview(message, opts.openPRComment)
     return true
@@ -107,7 +138,8 @@ export function handleEditorAction(
     // for (when the webview provides it), not whatever session happens to be
     // current — mirrors the validateFiles case below.
     if (message.filePath) {
-      if (isMarkdownFile(message.filePath) && opts.openMarkdown?.(message.filePath, message.sessionID)) return true
+      const file = message.filePath
+      if (openMarkdownFile(file, message, opts)) return true
       openFile(opts.dir(message.sessionID), message.filePath, message.line, message.column)
     }
     return true
@@ -132,6 +164,10 @@ export function handleEditorAction(
     }
     return true
   }
+  if (message.type === "validateInstructionPath") {
+    validateInstructionPath(message, opts)
+    return true
+  }
   if (message.type === "openExternal") {
     openExternal(message.url)
     return true
@@ -146,6 +182,7 @@ export function handleEditorAction(
   }
   return false
 }
+// fork_change end
 
 function openContent(content: string, language?: string): void {
   vscode.workspace.openTextDocument({ content, language: language || "log" }).then(
@@ -204,8 +241,15 @@ function findFallback(dir: string, filePath: string, line?: number, column?: num
   )
 }
 
+// fork_change start
 function openFile(dir: string, filePath: string, line?: number, column?: number): void {
-  const uri = isAbsolutePath(filePath) ? vscode.Uri.file(filePath) : vscode.Uri.joinPath(vscode.Uri.file(dir), filePath)
+  if (/^https?:\/\//i.test(filePath)) {
+    openExternal(filePath)
+    return
+  }
+
+  const next = filePath.startsWith("~/") ? path.join(os.homedir(), filePath.slice(2)) : filePath
+  const uri = isAbsolutePath(next) ? vscode.Uri.file(next) : vscode.Uri.joinPath(vscode.Uri.file(dir), next)
   vscode.workspace.fs.stat(uri).then(
     (stat) => {
       if (stat.type & vscode.FileType.Directory) {
@@ -217,3 +261,4 @@ function openFile(dir: string, filePath: string, line?: number, column?: number)
     () => findFallback(dir, filePath, line, column),
   )
 }
+// fork_change end

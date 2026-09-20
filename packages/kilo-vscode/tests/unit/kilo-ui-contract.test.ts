@@ -27,12 +27,20 @@ const KILO_MESSAGE_PART_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/co
 const KILO_MESSAGE_HIGHLIGHT_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/message-highlight.ts")
 const KILO_BASIC_TOOL_CSS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/basic-tool.css")
 const KILO_MESSAGE_PART_CSS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/message-part.css")
+const TASK_RENDERER_FILE = path.join(
+  MONOREPO_ROOT,
+  "packages/kilo-vscode/webview-ui/src/components/chat/TaskToolExpanded.tsx",
+)
+const MESSAGE_PARTS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/types/messages/parts.ts")
 const SHELL_ROLLING_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/shell-rolling-results.tsx")
+const CONTEXT_TOOL_RESULTS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/context-tool-results.tsx")
+const TOOL_UTILS_FILE = path.join(MONOREPO_ROOT, "packages/kilo-ui/src/components/tool-utils.ts")
 const ASSISTANT_MESSAGE_FILE = path.join(
   MONOREPO_ROOT,
   "packages/kilo-vscode/webview-ui/src/components/chat/AssistantMessage.tsx",
 )
 const TASK_HEADER_FILE = path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/components/chat/TaskHeader.tsx")
+const SESSION_CONTEXT_FILE = path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/context/session.tsx")
 const CONTEXT_TAB_FILE = path.join(
   MONOREPO_ROOT,
   "packages/kilo-vscode/webview-ui/src/components/settings/ContextTab.tsx",
@@ -85,6 +93,30 @@ describe("ToolRegistry tool name contract (runtime)", () => {
       process.exit(0)
     `)
     expect(result.ok, `ToolRegistry check failed: ${result.output}`).toBe(true)
+  })
+})
+
+describe("Sub-agent session title contract", () => {
+  it("keeps task titles short while exposing the child session ID through copy actions", () => {
+    const expanded = fs.readFileSync(TASK_RENDERER_FILE, "utf-8")
+    const standard = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
+    const parts = fs.readFileSync(MESSAGE_PARTS_FILE, "utf-8")
+
+    expect(expanded).toContain('i18n.t("ui.tool.agent", { type: props.input.subagent_type })')
+    expect(expanded).toContain('i18n.t("ui.tool.agent.default")')
+    expect(expanded).toContain(
+      '<CopyButton value={() => childSessionId() ?? ""} label={language.t("session.action.copyId")} />',
+    )
+    expect(standard).toContain("props.metadata.sessionId ?? props.partMetadata?.sessionId")
+    expect(standard).toContain("const title = createMemo(() => agentTitle(i18n, type()))")
+    expect(standard).toContain('label={i18n.t("session.action.copyId" as UiI18nKey)}')
+    expect(standard).toContain("await clipboard.write(text)")
+    expect(standard).toContain("e.stopPropagation()")
+    expect(standard).toContain("onMouseDown={(e: MouseEvent) => e.preventDefault()}")
+    expect(standard).toContain('props.label} placement="bottom"')
+    expect(parts).toMatch(/status: "running"[\s\S]*metadata\?: Record<string, unknown>/)
+    expect(expanded).toContain('if (state.status === "completed" || state.status === "running") return state.title')
+    expect(expanded).not.toContain("chunks.push(`(${child})`)")
   })
 })
 
@@ -383,6 +415,34 @@ describe("Expanded tool motion and typography (source)", () => {
   })
 })
 
+describe("SWE-Pruner indicator contract (source)", () => {
+  it("extracts validated metadata through the shared tool utility", () => {
+    const source = fs.readFileSync(TOOL_UTILS_FILE, "utf-8")
+    expect(source).toContain("export function swePruned(part: ToolPart)")
+    expect(source).toContain('part.state.status !== "completed"')
+    expect(source).toContain("Number.isInteger")
+  })
+
+  it("shows per-tool read and grep counts only in the expanded context list", () => {
+    const source = fs.readFileSync(CONTEXT_TOOL_RESULTS_FILE, "utf-8")
+    const expanded = source.match(
+      /export function ContextToolExpandedList[\s\S]*?(?=export function ContextToolRollingResults)/,
+    )?.[0]
+    expect(expanded).toContain("swePruned(part)")
+    expect(expanded).toContain('part.tool === "read" || part.tool === "grep"')
+    expect(expanded).toContain('i18n.t("ui.tool.swePruned"')
+    expect(expanded).toContain('data-slot="swe-pruner-status"')
+  })
+
+  it("shows bash counts only after shell completion", () => {
+    const source = fs.readFileSync(SHELL_ROLLING_FILE, "utf-8")
+    expect(source).toContain("const pruned = createMemo(() => swePruned(props.part))")
+    expect(source).toContain("<Show when={!pending() && pruned()}>")
+    expect(source).toContain('i18n.t("ui.tool.swePruned"')
+    expect(source).toContain('data-slot="swe-pruner-status"')
+  })
+})
+
 describe("HighlightedText @mention regex fallback and click handler (source)", () => {
   const src = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
   const helper = fs.readFileSync(KILO_MESSAGE_HIGHLIGHT_FILE, "utf-8")
@@ -449,9 +509,10 @@ describe("AssistantMessage visible row contract (source)", () => {
     expect(live).not.toContain('part.type === "reasoning"')
   })
 
-  it("uses the native recall tool without a separate memory badge", () => {
+  it("shows recalled memory with a separate badge", () => {
     const tools = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
-    expect(src).not.toContain("assistant-memory-badge")
+    expect(src).toContain("assistant-memory-badge")
+    expect(src).toContain("MemoryMarkerMeta.fromParts")
     expect(tools).toContain("ToolRegistry.render(part.tool) ?? McpTool")
   })
 })
@@ -534,6 +595,25 @@ describe("Assistant transcript spacing contract (source)", () => {
     expect(css).toMatch(
       /\.vscode-session-turn\[data-row="assistant"\]:has\(> \.vscode-session-turn-assistant:empty\)\s*\{\s*padding-bottom: 0;/,
     )
+  })
+
+  it("uses one shared card for direct tool and reasoning parts", () => {
+    const card = css.match(/\/\* AssistantMessage emits an outer wrapper[\s\S]*?\n}\n/)?.[0] ?? ""
+    expect(card).toContain(
+      '> [data-component="tool-part-wrapper"]:is([data-part-type="tool"], [data-part-type="reasoning"])',
+    )
+    expect(card).toContain("display: flex;")
+    expect(card).toContain("flex-direction: column;")
+    expect(card).toContain("justify-content: center;")
+    expect(card).toContain("min-height: 36px;")
+    expect(card).toContain("padding: 4px 6px;")
+    expect(card).toContain("border: 1px solid var(--border-weak-base);")
+    expect(card).toContain("border-radius: var(--radius-sm);")
+    expect(card).toContain('[data-component="question-dock"]')
+    expect(card).toContain('[data-component="suggest-bar"]')
+    expect(card).toContain('[data-component="plan-exit-card"]')
+    expect(card).toContain('[data-component="card"]')
+    expect(card).toContain('[data-component="tool-error"]')
   })
 })
 
@@ -627,5 +707,48 @@ describe("Deferred tool card remount contract (source)", () => {
     // in progress must still be protected.
     expect(viewport).not.toContain("isRecent()")
     expect(viewport).toContain("userActivity.isDragging()")
+  })
+})
+
+describe("Generic tool state title contract (source)", () => {
+  const message = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
+
+  it("renders the streamed tool-state title in the fallback tool trigger", () => {
+    expect(message).toContain("stateTitle?: string")
+    expect(message).toContain("stateTitle={part.state.title}")
+    expect(message).toContain("props.stateTitle || props.tool")
+    expect(message).toContain("return { title: title(), subtitle: subtitle(), args: inputArgs() }")
+    expect(message).toContain("trigger={trigger()}")
+  })
+})
+
+describe("MCP tool output contract (source)", () => {
+  const message = fs.readFileSync(KILO_MESSAGE_PART_FILE, "utf-8")
+  const basicToolCss = fs.readFileSync(KILO_BASIC_TOOL_CSS_FILE, "utf-8")
+
+  it("renders the tool answer on the output section header with a copy action", () => {
+    const mcp = message.match(/function McpTool\(props: ToolProps\) \{[\s\S]*?(?=\nPART_MAPPING\["tool"\])/)?.[0] ?? ""
+    expect(mcp).not.toBe("")
+    expect(mcp).toContain('<CopyButton value={() => props.output ?? ""} label={i18n.t("ui.message.copy")} />')
+  })
+
+  it("does not inherit the tool-output pre-wrap whitespace into rendered markdown", () => {
+    const output =
+      basicToolCss.match(
+        /\[data-slot="mcp-section-label"\] \+ \[data-component="tool-output"\] \{[\s\S]*?\n  \}/,
+      )?.[0] ?? ""
+    expect(output).not.toBe("")
+    expect(output).toMatch(/\[data-component="markdown"\] \{[\s\S]*?white-space: normal;/)
+  })
+})
+
+describe("Tool card column contract (source)", () => {
+  const basicToolCss = fs.readFileSync(KILO_BASIC_TOOL_CSS_FILE, "utf-8")
+
+  it("keeps wide tool content from widening the tool card column", () => {
+    const content = basicToolCss.match(/\[data-slot="collapsible-content"\] \{[\s\S]*?\n {4}\}/)?.[0] ?? ""
+    expect(content).not.toBe("")
+    expect(content).toContain("display: grid;")
+    expect(content).toMatch(/> \* \{[\s\S]*?min-width: 0;/)
   })
 })

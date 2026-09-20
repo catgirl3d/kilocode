@@ -430,7 +430,12 @@ export namespace KiloToolRegistry {
     })
   }
   /** Hide Kilo memory tools from the model when project memory is disabled. */
-  export const applyVisibility = Effect.fn("KiloToolRegistry.applyVisibility")(function* (tools: Tool.Def[]) {
+  // fork_change start
+  export const applyVisibility = Effect.fn("KiloToolRegistry.applyVisibility")(function* (
+    tools: Tool.Def[],
+    cfg: Config.Info,
+    networkRestricted?: boolean,
+  ) {
     const ctx = yield* InstanceState.context
     const memoryEnabled = yield* memoryToolsEnabled({ ctx })
     const browser = tools.some((tool) => tool.id === "browser_open")
@@ -444,9 +449,11 @@ export namespace KiloToolRegistry {
     return tools.filter((tool) => {
       if (tool.id.startsWith("kilo_memory_")) return memoryEnabled
       if (tool.id === "browser_open") return browser
+      if (tool.id === "mcp") return McpOnDemand.visible(cfg, networkRestricted ?? false)
       return true
     })
   })
+  // fork_change end
 
   export function describe(tools: Tool.Def[], extra: { semantic?: Tool.Def }): Tool.Def[] {
     if (!extra.semantic) return tools

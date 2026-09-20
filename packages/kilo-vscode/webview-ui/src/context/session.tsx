@@ -138,7 +138,6 @@ interface CloseState {
   eventID?: string
   seen?: boolean
 }
-
 export const SessionContext = createContext<SessionContextValue>()
 
 export const SessionProvider: ParentComponent = (props) => {
@@ -2271,6 +2270,27 @@ export const SessionProvider: ParentComponent = (props) => {
     return true
   }
 
+  // fork_change start
+  const resolveSelection = (
+    control: boolean,
+    draftID: string | undefined,
+    sid: string | undefined,
+    overrides: { agent?: string; model?: string; variant?: string; messageID?: string } | undefined,
+    providerID: string | undefined,
+    modelID: string | undefined,
+  ) => {
+    if (control) return null
+    if (overrides?.model) return parseModelString(overrides.model)
+    const scope = draftID ?? sid
+    const model = overrides?.agent
+      ? modelForAgent(overrides.agent)
+      : scope
+        ? selected(scope)
+        : getSelected(preferences(), environment(), undefined, pendingAgentSelection() ?? defaultAgent())
+    return model ?? (providerID && modelID ? { providerID, modelID } : null)
+  }
+
+  // fork_change end
   function sendCommand(
     command: string,
     args: string,
@@ -2290,15 +2310,9 @@ export const SessionProvider: ParentComponent = (props) => {
 
     const sid = origin === undefined ? currentSessionID() : (origin ?? undefined)
     const control = goalControl(command, args)
-    const effectiveSelection = (() => {
-      if (control) return null
-      if (overrides?.model) return parseModelString(overrides.model)
-      const scope = draftID ?? sid
-      const model = scope
-        ? selected(scope)
-        : getSelected(preferences(), environment(), undefined, pendingAgentSelection() ?? defaultAgent())
-      return model ?? (providerID && modelID ? { providerID, modelID } : null)
-    })()
+    // fork_change start
+    const effectiveSelection = resolveSelection(control, draftID, sid, overrides, providerID, modelID)
+    // fork_change end
     if (!control && !available(effectiveSelection)) return false
 
     const effectiveDraftID = !sid && !draftID ? crypto.randomUUID() : draftID
@@ -2315,19 +2329,38 @@ export const SessionProvider: ParentComponent = (props) => {
         selectAgent(overrides.agent, scope)
       }
       if (overrides?.model) {
-        selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope)
+        // fork_change start - Command model overrides must remain temporary.
+        selectModel(effectiveSelection.providerID, effectiveSelection.modelID, scope, false)
+        // fork_change end
       }
       if (overrides?.variant !== undefined) {
-        selectVariant(overrides.variant, scope)
+        // fork_change start - Command overrides must not become persistent picker choices.
+        selectVariant(overrides.variant, scope, false)
+        // fork_change end
       }
       recordModelUsage(effectiveSelection.providerID, effectiveSelection.modelID)
     }
+    // fork_change start - Command agent/model overrides retain configured presets.
+    const preset = overrides?.agent !== undefined || overrides?.model !== undefined
+    // fork_change end
 
+    // fork_change start
     const settings = (() => {
       if (!effectiveSelection) return
-      const { model, ...settings } = submission(scope, effectiveSelection)
-      return { ...model, ...settings }
+      return {
+        providerID: effectiveSelection.providerID,
+        modelID: effectiveSelection.modelID,
+        agent:
+          overrides?.agent ??
+          resolvePromptAgent({
+            sessionID: scope,
+            selections: store.agentSelections,
+            pending: pendingAgentSelection(),
+          }),
+        variant: variants.request(scope, preset),
+      }
     })()
+    // fork_change end
     const messageID = overrides?.messageID ?? Identifier.ascending("message")
 
     // Cloud previews need import-then-command; post importAndSend with command metadata
@@ -2350,9 +2383,10 @@ export const SessionProvider: ParentComponent = (props) => {
       return true
     }
 
-    if (command !== "goal") dismiss(sid)
-
-    if (scope) {
+    // fork_change start
+    const prepare = () => {
+      if (command !== "goal") dismiss(sid)
+      if (!scope) return
       if (command !== "goal") {
         clearClose(scope)
         addOptimistic(scope, messageID, `/${command} ${args}`.trim(), files)
@@ -2363,6 +2397,10 @@ export const SessionProvider: ParentComponent = (props) => {
         setDraftSessionID(scope)
       }
     }
+    // fork_change end
+    // fork_change start
+    prepare()
+    // fork_change end
     vscode.postMessage({
       type: "sendCommand",
       command,

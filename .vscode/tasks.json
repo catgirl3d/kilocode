@@ -65,9 +65,6 @@
       "group": {
         "kind": "build",
         "isDefault": true
-      },
-      "runOptions": {
-        "runOn": "folderOpen"
       }
     },
     {
@@ -168,6 +165,23 @@
       "label": "VSCode - Compile (Clean Isolated)",
       "dependsOn": ["VSCode - Clear Isolated State", "VSCode - Compile"],
       "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "VSCode - Package VSIX (Windows x64)",
+      "type": "shell",
+      "command": "bun",
+      "args": [
+        "-e",
+        "const { mkdir } = await import(\"node:fs/promises\"); await Bun.$`bun run package`; await mkdir(\"out\", { recursive: true }); await Bun.$`bunx vsce package --no-dependencies --skip-license --target win32-x64 -o out/kilo-vscode-win32-x64.vsix`"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "always"
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/packages/kilo-vscode"
+      },
       "problemMatcher": []
     },
     {

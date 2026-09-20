@@ -55,10 +55,16 @@ const SCOPES = [
 const EXEMPT_SCOPES = [
   "script/upstream",
   "script/check-opencode-annotations.ts",
+  "script/fork-audit.ts",
+  "script/fork-audit.test.ts",
   "packages/script/tests/check-opencode-annotations.test.ts",
   ".github/workflows/check-opencode-annotations.yml",
   ".github/workflows/watch-opencode-releases.yml",
 ]
+// fork_change start
+const EXEMPT_FILES = [".test.ts", ".spec.ts", ".md", ".json", ".yml", ".yaml", ".stories.tsx", ".stories.ts"]
+const EXEMPT_DIRS = new Set(["test", "tests", "fixture", "fixtures", "__snapshots__"])
+// fork_change end
 
 const args = process.argv.slice(2)
 const unknown = args.find((arg, i) => arg !== "--base" && arg !== "--worktree" && args[i - 1] !== "--base")
@@ -126,6 +132,8 @@ function isUpstreamMerge() {
 function isExempt(file: string) {
   const norm = file.replaceAll("\\", "/").toLowerCase()
   if (norm.split("/").some((part) => part.includes("kilocode") || part.startsWith("kilo-"))) return true
+  if (EXEMPT_FILES.some((suffix) => norm.endsWith(suffix))) return true
+  if (norm.split("/").some((part) => EXEMPT_DIRS.has(part))) return true
   return EXEMPT_SCOPES.some((scope) => norm === scope || norm.startsWith(`${scope}/`))
 }
 
@@ -331,6 +339,8 @@ console.error(
     "  - Any directory starting with 'kilo-' (e.g. kilo-sessions/)",
     "  - script/upstream/**",
     "  - Kilo-specific annotation checker support files",
+    "  - Files ending in *.test.ts, *.spec.ts, *.md, *.json, *.yml, *.yaml, *.stories.tsx, or *.stories.ts",
+    "  - Any path segment named test/, tests/, fixture/, fixtures/, or __snapshots__/",
     "",
     "See AGENTS.md for details.",
   ].join("\n"),
