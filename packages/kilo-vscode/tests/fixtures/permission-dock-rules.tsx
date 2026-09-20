@@ -64,7 +64,9 @@ for (const mode of ["reject", "once", "approve", "deny", "keyboard"] as const) {
   // Happy DOM has no layout; make the mounted dock visible to its shortcut listener.
   Object.defineProperty(dock, "getClientRects", { value: () => [{ width: 800, height: 400 }] })
   const enter = () =>
-    document.body.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))
+    document.body.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }) as unknown as Event,
+    )
   const click = (selector: string) => {
     const button = root.querySelector<HTMLButtonElement>(selector)
     assert(button, `Missing button: ${selector}`)
@@ -87,7 +89,7 @@ for (const mode of ["reject", "once", "approve", "deny", "keyboard"] as const) {
       const input = root.querySelector<HTMLTextAreaElement>('[data-slot="permission-feedback-input"]')
       assert(input)
       input.value = "Use spaces, not tabs"
-      input.dispatchEvent(new window.Event("input", { bubbles: true }))
+      input.dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
       if (mode === "keyboard") {
         input.blur()
         enter()
