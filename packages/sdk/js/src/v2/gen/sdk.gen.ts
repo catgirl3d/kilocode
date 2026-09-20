@@ -471,6 +471,8 @@ import type {
   SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
+  SessionShakeErrors,
+  SessionShakeResponses,
   SessionShareErrors,
   SessionShareResponses,
   SessionShellErrors,
@@ -4085,6 +4087,7 @@ export class Permission extends HeyApiClient {
       enable: boolean
       requestID?: string
       sessionID?: string
+      runtime?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4098,6 +4101,7 @@ export class Permission extends HeyApiClient {
             { in: "body", key: "enable" },
             { in: "body", key: "requestID" },
             { in: "body", key: "sessionID" },
+            { in: "body", key: "runtime" },
           ],
         },
       ],
@@ -5367,6 +5371,38 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Clear tool output
+   *
+   * Clear all eligible tool output in the current context without invoking an LLM.
+   */
+  public shake<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionShakeResponses, SessionShakeErrors, ThrowOnError>({
+      url: "/session/{sessionID}/shake",
+      ...options,
+      ...params,
     })
   }
 }
@@ -6952,6 +6988,7 @@ export class Audio extends HeyApiClient {
       directory?: string
       workspace?: string
       model: string
+      mode?: "transcribe" | "translate"
       input_audio: {
         data: string
         format: string
@@ -6970,6 +7007,7 @@ export class Audio extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "model" },
+            { in: "body", key: "mode" },
             { in: "body", key: "input_audio" },
             { in: "body", key: "language" },
             { in: "body", key: "prompt" },
