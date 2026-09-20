@@ -82,6 +82,18 @@ describe("session variants", () => {
     expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "high" })
   })
 
+  it("restores an agent/model choice for a fresh task after loading", () => {
+    const state = setup("pending-new", "high")
+    state.variants.load()
+    state.dispatch({
+      type: "variantsLoaded",
+      variants: { "agent/code/anthropic/claude-sonnet-4": "max" },
+    })
+
+    expect(state.variants.current()).toBe("max")
+    expect(state.variants.request()).toBe("max")
+  })
+
   it("uses the configured agent variant when no picker selection exists", () => {
     const state = setup(undefined, "max")
     expect(state.variants.agent("code", model)).toBe("max")
@@ -106,13 +118,28 @@ describe("session variants", () => {
     expect(state.variants.agent("code", model)).toBeUndefined()
   })
 
-  it("sends an explicit model default instead of inheriting the configured agent variant", () => {
+  it("persists an explicit model default for future tasks", () => {
     const state = setup("session-a", "max")
     state.variants.select(undefined)
     expect(state.variants.current()).toBeUndefined()
     expect(state.variants.request()).toBe("")
-    expect(state.variants.current("session-b")).toBe("max")
-    expect(state.variants.request("session-b")).toBe("max")
+    expect(state.variants.current("session-b")).toBeUndefined()
+    expect(state.variants.request("session-b")).toBe("")
+    expect(state.messages).toEqual([{ type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "" }])
+  })
+
+  it("persists an active Default choice when a remembered choice exists", () => {
+    const state = setup("session-a", "max")
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = "high"
+    state.variants.select(undefined)
+
+    expect(state.variants.current()).toBeUndefined()
+    expect(state.variants.current("pending-new")).toBeUndefined()
+    expect(state.selections).toEqual({
+      "session/session-a/anthropic/claude-sonnet-4": "",
+      "agent/code/anthropic/claude-sonnet-4": "",
+    })
+    expect(state.messages).toEqual([{ type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "" }])
   })
 
   it.each(["sidebar-pending:new", "pending:new"])("remembers a pre-submit Default choice from %s", (id) => {
@@ -122,18 +149,42 @@ describe("session variants", () => {
     expect(state.variants.request(id)).toBe("")
     expect(state.remembered).toEqual([{ agent: "code", model, variant: "" }])
     expect(state.messages).toEqual([])
+    expect(state.variants.current("another-draft")).toBe("max")
   })
 
-  it("persists global selections but keeps session selections local", () => {
+  it("persists explicit selections for future tasks", () => {
     const global = setup()
     global.variants.select("high")
     expect(global.remembered).toEqual([{ agent: "code", model, variant: "high" }])
+    expect(global.messages).toEqual([])
+    expect(global.variants.current("pending-new")).toBe("high")
 
     const scoped = setup("session-a")
     scoped.variants.select("low")
-    expect(scoped.selections).toEqual({ "session/session-a/anthropic/claude-sonnet-4": "low" })
-    expect(scoped.messages).toEqual([])
-    expect(scoped.remembered).toEqual([])
+    expect(scoped.selections).toEqual({
+      "session/session-a/anthropic/claude-sonnet-4": "low",
+      "agent/code/anthropic/claude-sonnet-4": "low",
+    })
+    expect(scoped.messages).toEqual([
+      { type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "low" },
+    ])
+  })
+
+  it("restores an active picker choice in a new task", () => {
+    const state = setup("session-a", "high")
+    state.variants.select("max")
+
+    expect(state.variants.current("pending-new")).toBe("max")
+    expect(state.variants.request("pending-new")).toBe("max")
+  })
+
+  it("keeps non-persistent overrides scoped to the current task", () => {
+    const state = setup("session-a", "high")
+    state.variants.select("max", "session-a", false)
+
+    expect(state.selections).toEqual({ "session/session-a/anthropic/claude-sonnet-4": "max" })
+    expect(state.messages).toEqual([])
+    expect(state.variants.current("pending-new")).toBe("high")
   })
 
   it("persists an explicit default selection", () => {
@@ -157,5 +208,14 @@ describe("session variants", () => {
     session.variants.carry(model, undefined, "code", "session-a")
     expect(session.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "high" })
     expect(session.variants.current()).toBe("high")
+  })
+
+  it.each(["high", ""])("does not overwrite a remembered target variant when carrying %s", (value) => {
+    const state = setup("session-a")
+    state.selections["agent/code/anthropic/claude-sonnet-4"] = value
+    state.variants.carry(model, "max", "code", "session-a")
+
+    expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": value })
+    expect(state.messages).toEqual([])
   })
 })

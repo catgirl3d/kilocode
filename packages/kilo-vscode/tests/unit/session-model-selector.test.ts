@@ -4,7 +4,7 @@ import { createModelSelector } from "../../webview-ui/src/context/session-model-
 describe("model selector", () => {
   it("carries the active session variant for the selected model", () => {
     const selected = { providerID: "kilo", modelID: "old" }
-    const next: Array<{ id: string; selection: typeof selected }> = []
+    const next: Array<{ id: string; selection: typeof selected; remember?: boolean }> = []
     const variants: Array<{ value: string | undefined; session: string | undefined }> = []
     const hidden: string[] = []
     const selector = createModelSelector({
@@ -12,7 +12,7 @@ describe("model selector", () => {
       agent: () => "code",
       selected: () => selected,
       variant: () => "high",
-      apply: (_agent, selection, id) => next.push({ id: id!, selection }),
+      apply: (_agent, selection, id, remember) => next.push({ id: id!, selection, remember }),
       set: () => undefined,
       carry: (_selection, value, _agent, session) => variants.push({ value, session }),
       hide: (id) => hidden.push(id),
@@ -21,7 +21,7 @@ describe("model selector", () => {
     selector.select("kilo", "new")
 
     const model = { providerID: "kilo", modelID: "new" }
-    expect(next).toEqual([{ id: "session", selection: model }])
+    expect(next).toEqual([{ id: "session", selection: model, remember: true }])
     expect(variants).toEqual([{ value: "high", session: "session" }])
     expect(hidden).toEqual(["session"])
   })
@@ -46,5 +46,24 @@ describe("model selector", () => {
     const model = { providerID: "kilo", modelID: "new" }
     expect(models).toEqual([{ id: "session", selection: model }])
     expect(variants).toEqual([{ value: "high", session: "session" }])
+  })
+
+  it("passes temporary model overrides without remembering them", () => {
+    const selected = { providerID: "kilo", modelID: "old" }
+    const remembers: boolean[] = []
+    const selector = createModelSelector({
+      current: () => "session",
+      agent: () => "code",
+      selected: () => selected,
+      variant: () => "high",
+      apply: (_agent, _selection, _session, remember) => remembers.push(remember ?? true),
+      set: () => undefined,
+      carry: () => undefined,
+      hide: () => undefined,
+    })
+
+    selector.select("kilo", "new", undefined, false)
+
+    expect(remembers).toEqual([false])
   })
 })
