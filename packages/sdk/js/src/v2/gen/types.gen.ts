@@ -26,9 +26,9 @@ export type Event =
   | EventKilocodeNotebookCancelled
   | EventKiloSessionsRemoteStatusChanged
   | EventLspClientDiagnostics
-  | EventMemoryStatus1
-  | EventMemoryUpdated1
-  | EventMemoryError1
+  | EventMemoryStatus
+  | EventMemoryUpdated
+  | EventMemoryError
   | EventIndexingStatus
   | EventIndexingWarning
   | EventModelsDevRefreshed
@@ -99,7 +99,7 @@ export type Event =
   | EventPermissionReplied
   | EventTuiPromptAppend
   | EventTuiCommandExecute
-  | EventTuiToastShow1
+  | EventTuiToastShow
   | EventTuiSessionSelect
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
@@ -8603,128 +8603,6 @@ export type ReferenceInfo = {
 
 export type ProjectCopyCopy = {
   directory: string
-}
-
-export type EventMemoryStatus1 = {
-  id: string
-  type: "memory.status"
-  properties: {
-    directory: string
-    sessionID?: string
-    enabled: boolean
-    state: "idle" | "checking" | "injecting" | "updating" | "skipped" | "error"
-    reason?: string
-    project: {
-      bytes: number | "NaN" | "Infinity" | "-Infinity"
-      estimatedTokens: number | "NaN" | "Infinity" | "-Infinity"
-      truncated: boolean
-      updatedAt?: number | "NaN" | "Infinity" | "-Infinity"
-    }
-    consolidation?: {
-      trigger: "explicit" | "turn-close" | "rebuild"
-      operationCount: number | "NaN" | "Infinity" | "-Infinity"
-      cost: number | "NaN" | "Infinity" | "-Infinity"
-      tokens: number | "NaN" | "Infinity" | "-Infinity"
-    }
-    detail?: {
-      type: "saved" | "skipped" | "recalled"
-      message: string
-      reason?: string
-      duplicateOf?: string
-      tokens?: number | "NaN" | "Infinity" | "-Infinity"
-      operationCount?: number | "NaN" | "Infinity" | "-Infinity"
-      added?: number | "NaN" | "Infinity" | "-Infinity"
-      removed?: number | "NaN" | "Infinity" | "-Infinity"
-      skippedCount?: number | "NaN" | "Infinity" | "-Infinity"
-      sources?: Array<string>
-      files?: Array<string>
-    }
-  }
-}
-
-export type EventMemoryUpdated1 = {
-  id: string
-  type: "memory.updated"
-  properties: {
-    directory: string
-    sessionID?: string
-    enabled: boolean
-    state: "idle" | "checking" | "injecting" | "updating" | "skipped" | "error"
-    reason?: string
-    project: {
-      bytes: number | "NaN" | "Infinity" | "-Infinity"
-      estimatedTokens: number | "NaN" | "Infinity" | "-Infinity"
-      truncated: boolean
-      updatedAt?: number | "NaN" | "Infinity" | "-Infinity"
-    }
-    consolidation?: {
-      trigger: "explicit" | "turn-close" | "rebuild"
-      operationCount: number | "NaN" | "Infinity" | "-Infinity"
-      cost: number | "NaN" | "Infinity" | "-Infinity"
-      tokens: number | "NaN" | "Infinity" | "-Infinity"
-    }
-    detail?: {
-      type: "saved" | "skipped" | "recalled"
-      message: string
-      reason?: string
-      duplicateOf?: string
-      tokens?: number | "NaN" | "Infinity" | "-Infinity"
-      operationCount?: number | "NaN" | "Infinity" | "-Infinity"
-      added?: number | "NaN" | "Infinity" | "-Infinity"
-      removed?: number | "NaN" | "Infinity" | "-Infinity"
-      skippedCount?: number | "NaN" | "Infinity" | "-Infinity"
-      sources?: Array<string>
-      files?: Array<string>
-    }
-  }
-}
-
-export type EventMemoryError1 = {
-  id: string
-  type: "memory.error"
-  properties: {
-    directory: string
-    sessionID?: string
-    enabled: boolean
-    state: "idle" | "checking" | "injecting" | "updating" | "skipped" | "error"
-    reason?: string
-    project: {
-      bytes: number | "NaN" | "Infinity" | "-Infinity"
-      estimatedTokens: number | "NaN" | "Infinity" | "-Infinity"
-      truncated: boolean
-      updatedAt?: number | "NaN" | "Infinity" | "-Infinity"
-    }
-    consolidation?: {
-      trigger: "explicit" | "turn-close" | "rebuild"
-      operationCount: number | "NaN" | "Infinity" | "-Infinity"
-      cost: number | "NaN" | "Infinity" | "-Infinity"
-      tokens: number | "NaN" | "Infinity" | "-Infinity"
-    }
-    detail?: {
-      type: "saved" | "skipped" | "recalled"
-      message: string
-      reason?: string
-      duplicateOf?: string
-      tokens?: number | "NaN" | "Infinity" | "-Infinity"
-      operationCount?: number | "NaN" | "Infinity" | "-Infinity"
-      added?: number | "NaN" | "Infinity" | "-Infinity"
-      removed?: number | "NaN" | "Infinity" | "-Infinity"
-      skippedCount?: number | "NaN" | "Infinity" | "-Infinity"
-      sources?: Array<string>
-      files?: Array<string>
-    }
-  }
-}
-
-export type EventTuiToastShow1 = {
-  id: string
-  type: "tui.toast.show"
-  properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
-  }
 }
 
 export type CredentialOAuth = {
