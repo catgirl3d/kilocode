@@ -7,6 +7,8 @@ import { simpleGit } from "simple-git"
 import { WorktreeManager } from "../../src/agent-manager/WorktreeManager"
 
 const tempDirs: string[] = []
+const managers: WorktreeManager[] = []
+
 // Pool home for the current test. Slots never live inside the test repository.
 let home = ""
 
@@ -16,10 +18,28 @@ beforeEach(async () => {
   home = path.join(dir, "worktree-pool")
 })
 
+// Git may release worktree handles asynchronously on Windows.
+async function removeDir(dir: string): Promise<void> {
+  const delays = [0, 100, 100, 100, 100]
+  for (const [attempt, delay] of delays.entries()) {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+    try {
+      await fs.rm(dir, { recursive: true, force: true })
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code
+      if (attempt === delays.length - 1 || !["EBUSY", "EPERM", "ENOTEMPTY"].includes(code)) throw err
+    }
+  }
+}
+
 afterEach(async () => {
+  const active = managers.splice(0, managers.length)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await Promise.all(active.map((manager) => manager.disposePool()))
   await Promise.all(
     tempDirs.splice(0, tempDirs.length).map(async (dir) => {
-      await fs.rm(dir, { recursive: true, force: true })
+      await removeDir(dir)
     }),
   )
 })
@@ -44,7 +64,7 @@ async function createTempRepo(): Promise<string> {
   return dir
 }
 
-function createManager(root: string, poolSize = 1, rewarmDelay = 0, logs?: string[], dir = home): WorktreeManager {
+function createManager(root: string, poolSize = 1, rewarmDelay = 8_000, logs?: string[], dir = home): WorktreeManager {
   const manager = new WorktreeManager(
     root,
     logs ? (msg) => logs.push(msg) : () => undefined,
@@ -54,6 +74,7 @@ function createManager(root: string, poolSize = 1, rewarmDelay = 0, logs?: strin
     dir,
   )
   manager.rewarmDelay = rewarmDelay
+  managers.push(manager)
   return manager
 }
 
@@ -159,7 +180,7 @@ describe("WorktreeManager pool warm-up", () => {
 describe("WorktreeManager pool claim", () => {
   it("moves an exact-match slot into .kilo/worktrees for a generated name", async () => {
     const root = await createTempRepo()
-    const manager = createManager(root)
+    const manager = createManager(root, 1, 0)
 
     manager.warmPool()
     const slot = await waitForPooledSlot(root)
