@@ -24,7 +24,7 @@ export function isInsideWorktree(
   platform: NodeJS.Platform = process.platform,
 ): boolean {
   const fold = platform === "win32" || platform === "darwin"
-  const sep = platform === "win32" ? path.win32.sep : path.sep
+  const sep = platform === "win32" ? path.win32.sep : path.posix.sep // fork_change
   const base = fold ? root.toLowerCase() : root
   const target = fold ? resolved.toLowerCase() : resolved
   return target === base || target.startsWith(base + sep)

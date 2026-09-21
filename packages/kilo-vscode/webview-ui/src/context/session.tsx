@@ -2287,11 +2287,12 @@ export const SessionProvider: ParentComponent = (props) => {
     if (control) return null
     if (overrides?.model) return parseModelString(overrides.model)
     const scope = draftID ?? sid
-    const model = overrides?.agent
-      ? modelForAgent(overrides.agent)
-      : scope
-        ? selected(scope)
-        : getSelected(preferences(), environment(), undefined, pendingAgentSelection() ?? defaultAgent())
+    const model =
+      overrides?.agent && scope
+        ? modelForAgent(overrides.agent)
+        : scope
+          ? selected(scope)
+          : getSelected(preferences(), environment(), undefined, pendingAgentSelection() ?? defaultAgent())
     return model ?? (providerID && modelID ? { providerID, modelID } : null)
   }
 

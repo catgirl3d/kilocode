@@ -19,10 +19,25 @@ import simpleGit from "simple-git"
 // Each test gets its own temp directory -- no shared state, safe to run in parallel.
 const tempDirs: string[] = []
 
+// Git may release worktree handles asynchronously on Windows.
+async function removeDir(dir: string): Promise<void> {
+  const delays = [0, 100, 100, 100, 100]
+  for (const [attempt, delay] of delays.entries()) {
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+    try {
+      await fs.rm(dir, { recursive: true, force: true })
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException)?.code
+      if (attempt === delays.length - 1 || !["EBUSY", "EPERM", "ENOTEMPTY"].includes(code)) throw err
+    }
+  }
+}
+
 afterEach(async () => {
   await Promise.all(
     tempDirs.splice(0, tempDirs.length).map(async (dir) => {
-      await fs.rm(dir, { recursive: true, force: true })
+      await removeDir(dir)
     }),
   )
 })
