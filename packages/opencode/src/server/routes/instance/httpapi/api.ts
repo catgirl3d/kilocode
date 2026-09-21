@@ -59,7 +59,7 @@ const EventSchema = Schema.Union([
   ...BusEvent.effectPayloads(),
   // kilocode_change end
   InstanceDisposed,
-]).annotate({ identifier: "Event" })
+]).annotate({ identifier: "Event" }).pipe(Schema.toCodecJson) // kilocode_change - [fork] normalize Event union for spec-only AdditionalSchemas metadata so shared members dedupe instead of emitting *1 twins
 
 export const ServerApi = makeApi({
   definitions: EventManifest.Latest.values().toArray(),
