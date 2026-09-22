@@ -101,8 +101,8 @@ export interface Interface {
   // kilocode_change start
   readonly mcp: (
     agent: Agent.Info,
-    permission: PermissionV1.Ruleset | undefined,
-    networkRestricted: boolean, // kilocode_change
+    permission?: PermissionV1.Ruleset,
+    networkRestricted?: boolean, // kilocode_change
   ) => Effect.Effect<string | undefined>
   // kilocode_change end
 }
@@ -174,8 +174,8 @@ const layer = Layer.effect(
       // kilocode_change start
       mcp: Effect.fn("SystemPrompt.mcp")(function* (
         agent: Agent.Info,
-        permission: PermissionV1.Ruleset | undefined,
-        networkRestricted: boolean,
+        permission?: PermissionV1.Ruleset,
+        networkRestricted?: boolean,
       ) {
         const ruleset = Permission.merge(agent.permission, permission ?? [])
         const instructions = (yield* mcp.instructions()).filter(
