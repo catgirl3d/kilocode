@@ -133,13 +133,13 @@ describe("respondToPermission", () => {
       },
     })
     let drops = 1
-    const flaky = (request: Request) => {
+    const flaky = ((request: Request) => {
       if (drops > 0) {
         drops -= 1
         return Promise.reject(new TypeError("terminated"))
       }
       return fetch(request)
-    }
+    }) as typeof fetch
     try {
       const result = await respondToPermission(createKiloClient({ baseUrl: server.url.href, fetch: flaky }), {
         ...route,
@@ -164,13 +164,13 @@ describe("respondToPermission", () => {
       },
     })
     let drops = 1
-    const flaky = (request: Request) => {
+    const flaky = ((request: Request) => {
       if (drops > 0) {
         drops -= 1
         return Promise.reject(new TypeError("terminated"))
       }
       return fetch(request)
-    }
+    }) as typeof fetch
     try {
       const result = await respondToPermission(createKiloClient({ baseUrl: server.url.href, fetch: flaky }), {
         ...route,
@@ -210,10 +210,10 @@ describe("respondToPermission", () => {
 
   it("does not retry a status-less client error", async () => {
     let calls = 0
-    const failing = () => {
+    const failing = (() => {
       calls += 1
       return Promise.reject(new Error("Request is not supported by this version of OpenCode Server"))
-    }
+    }) as unknown as typeof fetch
     const result = await respondToPermission(createKiloClient({ baseUrl: "http://127.0.0.1:1/", fetch: failing }), {
       ...route,
       reply: "once",
