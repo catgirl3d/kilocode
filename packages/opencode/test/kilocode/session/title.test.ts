@@ -48,13 +48,13 @@ function content(messages: ModelMessage[]) {
 beforeEach(() => KiloSessionTitle.clearAll())
 
 describe("KiloSessionTitle.shouldGenerate", () => {
-  test("waits for a short first message without tool work", () => {
+  test("names a short first message immediately", () => {
     const history = [user([text("fix this bug")])]
-    expect(KiloSessionTitle.shouldGenerate({ sessionID, history })).toBe(false)
+    expect(KiloSessionTitle.shouldGenerate({ sessionID, history })).toBe(true)
   })
 
-  test("names a substantial first message and consumes one attempt", () => {
-    const history = [user([text("x".repeat(200))])]
+  test("consumes one attempt per eligible generation until the cap", () => {
+    const history = [user([text("fix this bug")])]
     expect(KiloSessionTitle.shouldGenerate({ sessionID, history })).toBe(true)
     expect(KiloSessionTitle.shouldGenerate({ sessionID, history })).toBe(true)
   })
