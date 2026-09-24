@@ -212,14 +212,14 @@ test("selected favorite remains selected when its duplicate group is collapsed",
   await expect(combobox).toHaveAttribute("aria-activedescendant", await favorites.getAttribute("id"))
 })
 
-test("favorite model strips preserve pinned slots and switch the selected model", async ({ page }) => {
+test("favorite model strips number visible favorites and switch the selected model", async ({ page }) => {
   await load(page, "prompt-input--with-favorite-models-420")
 
   const strips = page.locator(".favorite-model-switcher-slot")
-  await expect(strips).toHaveCount(4)
-  await expect(page.locator(".model-quick-switcher .favorite-model-switcher-slot")).toHaveCount(4)
+  await expect(strips).toHaveCount(5)
+  await expect(page.locator(".model-quick-switcher .favorite-model-switcher-slot")).toHaveCount(5)
   const numbered = page.locator(".model-quick-switcher .favorite-model-switcher-slot--numbered")
-  await expect(numbered).toHaveCount(4)
+  await expect(numbered).toHaveCount(5)
   for (const button of await numbered.all()) await expect(button).toHaveCSS("border-radius", "0px")
   await expect(page.locator(".prompt-input-hint-actions .favorite-model-switcher-slot")).toHaveCount(0)
   await expect(page.locator(".model-selector-quick-open")).toBeVisible()
@@ -227,8 +227,9 @@ test("favorite model strips preserve pinned slots and switch the selected model"
     "aria-pressed",
     "true",
   )
-  await expect(page.getByRole("button", { name: "4: xAI: Grok 4.1 Fast" })).toBeVisible()
-  await expect(page.getByRole("button", { name: /outside-the-quick-slots/ })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "3: xAI: Grok 4.1 Fast" })).toBeVisible()
+  await expect(page.locator(".model-quick-switcher").getByRole("button", { name: /Auto Small/ })).toHaveCount(0)
+  await expect(page.locator(".model-quick-switcher").getByRole("button", { name: /Meta: Llama 4/ })).toHaveCount(0)
 
   const target = page.getByRole("button", { name: "2: OpenAI: GPT-5.6 Luna" })
   await target.hover()
@@ -258,6 +259,33 @@ test("favorite model arrows update the quick slot order", async ({ page }) => {
     page.locator('.favorite-model-switcher-slot[aria-label="2: Anthropic: Claude Sonnet 4.6"]'),
   ).toBeVisible()
   await expect(page.getByRole("button", { name: "↑ 1: OpenAI: GPT-5.6 Luna" })).toBeDisabled()
+})
+
+test("favorite arrows skip unavailable entries and keep numbering gap-free", async ({ page }) => {
+  await load(page, "prompt-input--with-favorite-models-420")
+
+  await page.getByRole("button", { name: /Select model:/ }).click()
+  const slots = page.locator(".model-selector-favorite-slot")
+  await expect(slots).toHaveText(["1", "2", "3", "4", "5", "6"])
+  await expect(page.getByRole("treeitem", { name: /Auto Small/ })).toHaveCount(0)
+
+  await page.getByRole("button", { name: "↓ 2: OpenAI: GPT-5.6 Luna" }).click()
+
+  await expect(page.locator('.favorite-model-switcher-slot[aria-label="2: xAI: Grok 4.1 Fast"]')).toBeVisible()
+  await expect(page.locator('.favorite-model-switcher-slot[aria-label="3: OpenAI: GPT-5.6 Luna"]')).toBeVisible()
+  await expect(slots).toHaveText(["1", "2", "3", "4", "5", "6"])
+  await expect(page.getByRole("button", { name: "↓ 2: xAI: Grok 4.1 Fast" })).toBeEnabled()
+})
+
+test("opening the picker keeps the stored favorite order", async ({ page }) => {
+  await load(page, "prompt-input--with-favorite-models-420")
+
+  await page.getByRole("button", { name: "2: OpenAI: GPT-5.6 Luna" }).click()
+  await page.getByRole("button", { name: /Select model:/ }).click()
+
+  const rows = page.locator(".model-selector-row").filter({ has: page.locator(".model-selector-favorite-slot") })
+  await expect(rows.first()).toContainText("Claude Sonnet 4.6")
+  await expect(rows.first().locator(".model-selector-favorite-slot")).toHaveText("1")
 })
 
 test("model selector segment is active for a model outside quick slots", async ({ page }) => {
