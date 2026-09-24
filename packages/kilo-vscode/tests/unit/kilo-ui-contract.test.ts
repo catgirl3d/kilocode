@@ -388,6 +388,14 @@ describe("Expanded tool motion and typography (source)", () => {
     expect(reasoning).toContain("setOpen(derive())")
   })
 
+  it("keeps a title-only reasoning card compact until its body has text", () => {
+    // OpenAI placeholder comments (`<!-- -->`) produce a title with an empty
+    // body while the part is still streaming; rendering the collapsible then
+    // shows an empty padded panel until the block settles.
+    expect(reasoning).toMatch(/when=\{view\(\)\.body\}/)
+    expect(reasoning).not.toContain("view().body || !done()")
+  })
+
   it("does not smooth streaming reasoning scroll updates", () => {
     const css = fs.readFileSync(KILO_MESSAGE_PART_CSS_FILE, "utf-8")
     expect(css).not.toContain("scroll-behavior: smooth")

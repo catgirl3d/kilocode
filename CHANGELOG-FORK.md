@@ -52,3 +52,4 @@
 - Prevent nested cards around tool and reasoning output in VS Code chat.
 - Preserve earlier conversation history when reverting after message IDs roll over.
 - Remove the upstream `PLAN` badge from completed plan messages in VS Code chat.
+- Keep title-only reasoning blocks compact in VS Code chat instead of expanding an empty panel while the block is still streaming.
