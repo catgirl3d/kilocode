@@ -22,7 +22,12 @@ export function forkWriter(events: EventV2.Interface, ops: Pick<Ops, "get" | "me
     messages: (input: Parameters<Ops["messages"]>[0]) => flush.pipe(Effect.andThen(ops.messages(input))),
     updateMessage: <T extends MessageV2.Info>(info: T): Effect.Effect<T> =>
       Effect.sync(() => {
-        pending.push({ definition: SessionV1.Event.MessageUpdated, data: { sessionID: info.sessionID, info } })
+        // fork_change start - persist the message without diff patches no reader keeps
+        pending.push({
+          definition: SessionV1.Event.MessageUpdated,
+          data: { sessionID: info.sessionID, info: MessageV2.stripMessageMetadata(info) },
+        })
+        // fork_change end
         return info
       }),
     updatePart: <T extends MessageV2.Part>(part: T): Effect.Effect<T> =>
