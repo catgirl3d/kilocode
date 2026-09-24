@@ -27,6 +27,8 @@
 
 ### Fixes & Enhancements
 
+- Store only diff patches that can be displayed: patches above the 256 KB limit are no longer written into the session log, so long sessions stop growing by megabytes per turn. Export, share and remote sync now carry an empty patch for those diffs — the same content every UI already shows.
+- Publish streaming tool progress at a bounded rate and size, so a long-running command no longer copies its whole output into the session log on every chunk.
 - Cap the SQLite write-ahead log and enable incremental auto-vacuum, so compacting the database no longer leaves a multi-gigabyte `-wal` file behind and freed pages return to the filesystem without rewriting the whole file.
 - Reclaim disk space with `kilo session cleanup --vacuum` by truncating the write-ahead log after compaction, and report when another Kilo process keeps the database locked instead of claiming success.
 - Exclude the locale key validation suite (`i18n-keys.test.ts`) from VS Code unit test runs, matching the existing `i18n-unused-keys` exclusion.
