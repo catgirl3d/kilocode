@@ -103,6 +103,23 @@ export const cleanup = Effect.fn("KiloSessionMaintenance.cleanup")(function* (in
 })
 
 export const compact = Effect.fn("KiloSessionMaintenance.compact")(function* (db: Database.Interface["db"]) {
-  yield* db.run("PRAGMA wal_checkpoint(TRUNCATE)").pipe(Effect.orDie)
-  yield* db.run("VACUUM").pipe(Effect.orDie)
+  // A file built with incremental auto-vacuum hands freed pages back without a full rewrite, so it
+  // only needs incremental_vacuum - no temporary copy of the whole database. Files still in the
+  // default mode are converted by VACUUM, which rewrites them through the WAL and leaves the main
+  // file untruncated; either way the truncating checkpoint must run last, because checkpointing
+  // first is immediately undone and a stale WAL keeps its full size until the next truncating
+  // checkpoint or the last connection close.
+  const mode = yield* db.get<{ auto_vacuum: number }>("PRAGMA auto_vacuum").pipe(Effect.orDie)
+  if (mode?.auto_vacuum === 2) yield* db.run("PRAGMA incremental_vacuum").pipe(Effect.orDie)
+  else {
+    // A file in the default mode keeps its mode through VACUUM, so request the new one on this
+    // connection first: the layer already requests it at open, and repeating it here keeps compaction
+    // correct on its own, whatever connection it is handed.
+    yield* db.run("PRAGMA auto_vacuum = INCREMENTAL").pipe(Effect.orDie)
+    yield* db.run("VACUUM").pipe(Effect.orDie)
+  }
+  const row = yield* db.get<{ busy: number }>("PRAGMA wal_checkpoint(TRUNCATE)").pipe(Effect.orDie)
+  // SQLite reports a blocked checkpoint through `busy` instead of failing, and the log/checkpointed
+  // counters read zero even when frames were folded, so `busy` is the only usable signal.
+  return (row?.busy ?? 0) === 0
 })
