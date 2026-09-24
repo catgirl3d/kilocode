@@ -6,13 +6,13 @@ export type ClientOptions = {
 
 export type Event =
   | EventServerInstanceDisposed
-  | EventSessionTurnOpen
-  | EventSessionTurnClose
-  | EventSessionQueueChanged
   | EventSessionNetworkAsked
   | EventSessionNetworkReplied
   | EventSessionNetworkRejected
   | EventSessionNetworkRestored
+  | EventSessionTurnOpen
+  | EventSessionTurnClose
+  | EventSessionQueueChanged
   | EventBackgroundProcessUpdated
   | EventBackgroundProcessDeleted
   | EventSandboxStatusChanged
@@ -1056,13 +1056,13 @@ export type GlobalEvent = {
   workspace?: string
   payload:
     | EventServerInstanceDisposed
-    | EventSessionTurnOpen
-    | EventSessionTurnClose
-    | EventSessionQueueChanged
     | EventSessionNetworkAsked
     | EventSessionNetworkReplied
     | EventSessionNetworkRejected
     | EventSessionNetworkRestored
+    | EventSessionTurnOpen
+    | EventSessionTurnClose
+    | EventSessionQueueChanged
     | EventBackgroundProcessUpdated
     | EventBackgroundProcessDeleted
     | EventSandboxStatusChanged
@@ -4163,33 +4163,6 @@ export type EventServerInstanceDisposed = {
   }
 }
 
-export type EventSessionTurnOpen = {
-  id: string
-  type: "session.turn.open"
-  properties: {
-    sessionID: string
-  }
-}
-
-export type EventSessionTurnClose = {
-  id: string
-  type: "session.turn.close"
-  properties: {
-    sessionID: string
-    parentID?: string
-    reason: "completed" | "error" | "interrupted" | "superseded"
-  }
-}
-
-export type EventSessionQueueChanged = {
-  id: string
-  type: "session.queue.changed"
-  properties: {
-    sessionID: string
-    queued: Array<string>
-  }
-}
-
 export type EventSessionNetworkAsked = {
   id: string
   type: "session.network.asked"
@@ -4221,6 +4194,33 @@ export type EventSessionNetworkRestored = {
     sessionID: string
     requestID: string
     time: number
+  }
+}
+
+export type EventSessionTurnOpen = {
+  id: string
+  type: "session.turn.open"
+  properties: {
+    sessionID: string
+  }
+}
+
+export type EventSessionTurnClose = {
+  id: string
+  type: "session.turn.close"
+  properties: {
+    sessionID: string
+    parentID?: string
+    reason: "completed" | "error" | "interrupted" | "superseded"
+  }
+}
+
+export type EventSessionQueueChanged = {
+  id: string
+  type: "session.queue.changed"
+  properties: {
+    sessionID: string
+    queued: Array<string>
   }
 }
 
