@@ -21,11 +21,17 @@ export function createSessionFavorites(deps: Deps) {
     deps.post({ type: "toggleFavorite", action, providerID, modelID })
   }
 
-  function moveFavorite(providerID: string, modelID: string, direction: "up" | "down") {
-    const favorites = move(deps.favorites(), providerID, modelID, direction)
-    if (favorites === deps.favorites()) return
+  function moveFavorite(
+    providerID: string,
+    modelID: string,
+    direction: "up" | "down",
+    visible?: (favorite: ModelSelection) => boolean,
+  ) {
+    const current = deps.favorites()
+    const favorites = move(current, providerID, modelID, direction, visible)
+    if (favorites === current) return
     deps.setFavorites(favorites)
-    deps.post({ type: "moveFavorite", providerID, modelID, direction })
+    deps.post({ type: "moveFavorite", favorites })
   }
 
   function load() {

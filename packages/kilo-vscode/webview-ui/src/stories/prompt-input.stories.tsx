@@ -20,6 +20,7 @@ import type { EnrichedModel } from "../context/provider"
 import type { ModelSelection } from "../types/messages"
 import { moveFavorite } from "../../../src/shared/model-favorites"
 import { SandboxTooltipContent } from "../components/shared/SandboxButton"
+import { isSmall } from "../components/shared/model-selector-utils"
 import { contextDrafts } from "../utils/draft-store"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Icon } from "@kilocode/kilo-ui/icon"
@@ -35,6 +36,12 @@ const FAVORITE_MODELS: EnrichedModel[] = [
   {
     id: "anthropic/claude-sonnet-4-6",
     name: "Anthropic: Claude Sonnet 4.6",
+    providerID: "kilo",
+    providerName: "Kilo",
+  },
+  {
+    id: "kilo-auto/small",
+    name: "Kilo: Auto Small",
     providerID: "kilo",
     providerName: "Kilo",
   },
@@ -62,7 +69,17 @@ const FAVORITE_MODELS: EnrichedModel[] = [
     providerID: "kilo",
     providerName: "Kilo",
   },
+  {
+    id: "meta/llama-4",
+    name: "Meta: Llama 4",
+    providerID: "kilo",
+    providerName: "Kilo",
+  },
 ]
+
+const VISIBLE_FAVORITE_KEYS = new Set(
+  FAVORITE_MODELS.filter((model) => !isSmall(model)).map((model) => `${model.providerID}/${model.id}`),
+)
 
 const PromptProviders: ParentComponent<{ variants?: boolean; training?: boolean }> = (props) => {
   const base = mockSessionValue({ status: "idle" })
@@ -146,11 +163,13 @@ const FavoriteModelsPrompt = () => {
   })
   const [favorites, setFavorites] = createSignal([
     { providerID: "kilo", modelID: "anthropic/claude-sonnet-4-6" },
+    { providerID: "kilo", modelID: "kilo-auto/small" },
     { providerID: "kilo", modelID: "openai/gpt-5.6-luna" },
     { providerID: "kilo", modelID: "unavailable" },
     { providerID: "kilo", modelID: "xai/grok-4.1-fast" },
     { providerID: "kilo", modelID: "google/gemini-3-pro" },
     { providerID: "kilo", modelID: "deepseek/deepseek-v3" },
+    { providerID: "kilo", modelID: "meta/llama-4" },
   ])
   const session = {
     ...mockSessionValue({ status: "idle" }),
@@ -158,7 +177,11 @@ const FavoriteModelsPrompt = () => {
     selectModel: (providerID: string, modelID: string) => setSelected({ providerID, modelID }),
     favoriteModels: favorites,
     moveFavorite: (providerID: string, modelID: string, direction: "up" | "down") => {
-      setFavorites((items) => moveFavorite(items, providerID, modelID, direction))
+      setFavorites((items) =>
+        moveFavorite(items, providerID, modelID, direction, (item) =>
+          VISIBLE_FAVORITE_KEYS.has(`${item.providerID}/${item.modelID}`),
+        ),
+      )
     },
   }
 
