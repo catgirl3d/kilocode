@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Scope fork annotation audits to locally edited or branch-changed files without misclassifying committed fork markers.
 - Restore opt-in SWE-Pruner for task-focused `read`, `grep`, and `bash` output pruning, with explicit model selection, bounded no-retry requests, and fail-open safeguards.
 - Allow agents to stop background subagent tasks they launched via the task tool.
 - Choose the execution shell for agent commands and Kilo terminals from VS Code Settings, with presets and a custom executable path.
@@ -27,6 +28,7 @@
 
 ### Fixes & Enhancements
 
+- Generate chat titles during the first agent turn, including short prompts, and keep an active title request running if the task is stopped.
 - Number favorite models by their visible order in the model picker and quick switcher, so ranks read 1-2-3 without gaps and the reorder arrows skip unavailable favorites instead of stalling on them.
 - Store only diff patches that can be displayed: patches above the 256 KB limit are no longer written into the session log, so long sessions stop growing by megabytes per turn. Export, share and remote sync now carry an empty patch for those diffs — the same content every UI already shows.
 - Publish streaming tool progress at a bounded rate and size, so a long-running command no longer copies its whole output into the session log on every chunk.
