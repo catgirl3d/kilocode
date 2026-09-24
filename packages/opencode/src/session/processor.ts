@@ -28,6 +28,7 @@ import { KiloToolInput } from "@/kilocode/session/tool-input" // kilocode_change
 import { KiloSessionOverflow } from "@/kilocode/session/overflow"
 import { KiloRoutedModel } from "@/kilocode/session/routed-model"
 import { KiloResponseMetadata } from "@/kilocode/session/response-metadata"
+import * as Progress from "@/kilocode/session/progress"
 import { Suggestion } from "@/kilocode/suggestion"
 import { KiloSnapshotGate } from "@/kilocode/snapshot/gate"
 // kilocode_change end
@@ -91,6 +92,7 @@ type ToolCall = {
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
   toolmeta: Record<string, { title?: string; metadata?: Record<string, any> }> // kilocode_change
+  progress: Record<string, Progress.Sample> // kilocode_change
   shouldBreak: boolean
   snapshot: string | undefined
   blocked: boolean
@@ -134,6 +136,7 @@ const layer = Layer.effect(
         model: input.model,
         toolcalls: {},
         toolmeta: {}, // kilocode_change
+        progress: {}, // kilocode_change
         shouldBreak: false,
         snapshot: undefined, // kilocode_change
         blocked: false,
@@ -179,6 +182,7 @@ const layer = Layer.effect(
         const done = ctx.toolcalls[toolCallID]?.done
         delete ctx.toolcalls[toolCallID]
         delete ctx.toolmeta[toolCallID] // kilocode_change
+        delete ctx.progress[toolCallID] // kilocode_change
         if (done) yield* Deferred.succeed(done, undefined).pipe(Effect.ignore)
       })
 
@@ -193,6 +197,7 @@ const layer = Layer.effect(
         if (!part || part.type !== "tool") {
           delete ctx.toolcalls[toolCallID]
           delete ctx.toolmeta[toolCallID] // kilocode_change
+          delete ctx.progress[toolCallID] // kilocode_change
           return undefined
         }
         return { call, part }
@@ -234,6 +239,22 @@ const layer = Layer.effect(
         toolCallID: string,
         input: { title?: string; metadata?: Record<string, any> },
       ) {
+        // [fork] streaming tools republish their whole output on every chunk, and each publish becomes a
+        // durable part event - one command can copy its output into the session log hundreds of times.
+        // Publish at a bounded rate and size instead; completeToolCall always writes the final state.
+        // The fingerprint keeps the throttle honest: an update that also changed a sibling key is published.
+        const streamed = typeof input.metadata?.output === "string" ? input.metadata.output : undefined
+        if (streamed !== undefined) {
+          const sample = { at: Date.now(), size: streamed.length, rest: Progress.rest(input.metadata) }
+          // Retain only the bounded unpublished tail for terminal errors.
+          const last = ctx.progress[toolCallID]
+          if (last && !Progress.due(last, sample)) {
+            last.pending = Progress.trim(streamed)
+            return
+          }
+          ctx.progress[toolCallID] = sample
+        }
+        const payload = streamed === undefined ? input.metadata : { ...input.metadata, output: Progress.trim(streamed) }
         const match = yield* readToolCall(toolCallID)
         // approval provenance is written once during ask() and must survive later tool metadata writes
         if (!match || match.part.state.status !== "running") {
@@ -241,7 +262,7 @@ const layer = Layer.effect(
           ctx.toolmeta[toolCallID] = {
             ...prev,
             ...input,
-            metadata: PermissionProvenance.carryApproval(prev?.metadata, input.metadata),
+            metadata: PermissionProvenance.carryApproval(prev?.metadata, payload),
           }
           return
         }
@@ -252,7 +273,7 @@ const layer = Layer.effect(
             state: {
               ...part.state,
               title: input.title ?? part.state.title,
-              metadata: PermissionProvenance.carryApproval(part.state.metadata, input.metadata) ?? part.state.metadata,
+              metadata: PermissionProvenance.carryApproval(part.state.metadata, payload) ?? part.state.metadata,
             },
           }
         })
@@ -298,6 +319,7 @@ const layer = Layer.effect(
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
         if (!match || match.part.state.status !== "running") return false
+        const pending = ctx.progress[toolCallID]?.pending // kilocode_change - [fork] preserve suppressed output on failure
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -305,7 +327,10 @@ const layer = Layer.effect(
             input: match.part.state.input,
             error: errorMessage(error),
             // Keep metadata streamed while running so failures retain progress detail (e.g. execute's child calls).
-            metadata: match.part.state.metadata,
+            // kilocode_change start - [fork] include the last suppressed output in the terminal write
+            metadata:
+              pending === undefined ? match.part.state.metadata : { ...match.part.state.metadata, output: pending },
+            // kilocode_change end
             time: { start: match.part.state.time.start, end: Date.now() },
           },
         })
@@ -882,19 +907,21 @@ const layer = Layer.effect(
           const part = match.part
           const end = Date.now()
           const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+          const pending = ctx.progress[toolCallID]?.pending // kilocode_change - [fork] preserve suppressed output on abort
           yield* session.updatePart({
             ...part,
             state: {
               ...part.state,
               status: "error",
               error: "Tool execution aborted",
-              metadata: { ...metadata, interrupted: true },
+              metadata: { ...metadata, ...(pending === undefined ? {} : { output: pending }), interrupted: true }, // kilocode_change - [fork]
               time: { start: "time" in part.state ? part.state.time.start : end, end },
             },
           })
         }
         ctx.toolcalls = {}
         ctx.toolmeta = {} // kilocode_change
+        ctx.progress = {} // kilocode_change
         // kilocode_change start - read parts through the upstream Effect database
         KiloSessionProcessor.guardEmptyToolCalls(
           ctx.assistantMessage,
@@ -1068,6 +1095,7 @@ const layer = Layer.effect(
             ctx.reasoningMap = {}
             ctx.toolcalls = {}
             ctx.toolmeta = {}
+            ctx.progress = {}
             ctx.assistantMessage.finish = undefined
           })
 
