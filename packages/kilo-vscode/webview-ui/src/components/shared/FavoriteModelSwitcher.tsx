@@ -4,7 +4,7 @@ import { Button } from "@kilocode/kilo-ui/button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useProvider } from "../../context/provider"
 import { useSession } from "../../context/session"
-import { sanitizeName } from "./model-selector-utils"
+import { sanitizeName, isSmall } from "./model-selector-utils"
 
 const MAX_FAVORITES = 5
 
@@ -20,12 +20,13 @@ export const FavoriteModelSwitcher: Component<FavoriteModelSwitcherProps> = (pro
   const favorites = createMemo(() =>
     session
       .favoriteModels()
-      .slice(0, MAX_FAVORITES)
-      .flatMap((item, index) => {
+      .flatMap((item) => {
         const model = provider.findModel(item)
-        if (!model || !provider.isModelValid(item)) return []
-        return [{ item, model, number: index + 1 }]
-      }),
+        if (!model || !provider.isModelValid(item) || isSmall(model)) return []
+        return [{ item, model }]
+      })
+      .slice(0, MAX_FAVORITES)
+      .map((favorite, index) => ({ item: favorite.item, model: favorite.model, number: index + 1 })),
   )
 
   return (

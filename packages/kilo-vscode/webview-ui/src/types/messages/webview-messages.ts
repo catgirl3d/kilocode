@@ -1566,9 +1566,7 @@ export interface ToggleFavoriteRequest {
 // fork_change start
 export interface MoveFavoriteRequest {
   type: "moveFavorite"
-  providerID: string
-  modelID: string
-  direction: "up" | "down"
+  favorites: ModelSelection[]
 }
 // fork_change end
 export interface RequestFavoritesMessage {

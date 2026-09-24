@@ -148,7 +148,7 @@ import { feedbackMetadata, parseFeedback, type BrowserFeedbackData } from "./sha
 import { mergeInjected } from "./shared/injected-prompt"
 import { completesWithoutStatus, goalControl } from "./kilo-provider/command-completion"
 import { KiloProviderMemory } from "./kilo-provider/memory"
-import { moveFavorite } from "./shared/model-favorites" // fork_change
+import { isFavoriteReorder } from "./shared/model-favorites" // fork_change
 
 import {
   buildActionContext,
@@ -1893,16 +1893,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private async handleModelSelectorExpandedMessage(message: TypedWebviewMessage): Promise<boolean> {
     // fork_change start
     if (message.type === "moveFavorite") {
-      const favorite = message as TypedWebviewMessage & {
-        providerID?: unknown
-        modelID?: unknown
-        direction?: unknown
-      }
-      const providerID = typeof favorite.providerID === "string" ? favorite.providerID : undefined
-      const modelID = typeof favorite.modelID === "string" ? favorite.modelID : undefined
-      const direction = favorite.direction === "up" || favorite.direction === "down" ? favorite.direction : undefined
-      if (providerID === undefined || modelID === undefined || direction === undefined) return true
-      await this.reorderFavorite({ providerID, modelID, direction })
+      const favorite = message as TypedWebviewMessage & { favorites?: unknown }
+      await this.reorderFavorite(validateFavorites(favorite.favorites))
       return true
     }
     // fork_change end
@@ -1979,16 +1971,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   }
 
   // fork_change start
-  private async reorderFavorite(message: {
-    providerID: string
-    modelID: string
-    direction: "up" | "down"
-  }): Promise<void> {
+  private async reorderFavorite(next: Array<{ providerID: string; modelID: string }>): Promise<void> {
     const current = validateFavorites(this.extensionContext?.globalState.get("favoriteModels"))
-    const favorites = moveFavorite(current, message.providerID, message.modelID, message.direction)
-    if (favorites === current) return
-    await this.extensionContext?.globalState.update("favoriteModels", favorites)
-    this.connectionService.notifyFavoritesChanged(favorites)
+    if (!isFavoriteReorder(current, next)) {
+      this.connectionService.notifyFavoritesChanged(current)
+      return
+    }
+    await this.extensionContext?.globalState.update("favoriteModels", next)
+    this.connectionService.notifyFavoritesChanged(next)
   }
 
   // fork_change end

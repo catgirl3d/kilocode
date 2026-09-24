@@ -49,6 +49,7 @@ import {
   rankModelSearch,
 } from "./model-selector-utils"
 import { ModelPreview } from "./ModelPreview"
+import { FavoriteRowActions } from "./FavoriteRowActions" // fork_change
 
 // ---------------------------------------------------------------------------
 // Row / group key helpers — single source of truth for key formatting
@@ -191,11 +192,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
   // Per-group collapse state. Not persisted — resets every time the
   // selector mounts so groups are always expanded on reopen.
   const [collapsed, setCollapsed] = createSignal<Set<string>>(new Set())
-  // Snapshot of the active model key captured when the popover opens.
-  // Used to reorder favorites so the current model appears first — but only
-  // based on the state at open-time, not reactively, to avoid list jumps
-  // when the user picks a different model while the popover is still open.
-  const [openSnapshot, setOpenSnapshot] = createSignal<string | null>(null)
 
   let searchRef: HTMLInputElement | undefined
   let searchWrapperRef: HTMLDivElement | undefined
@@ -278,13 +274,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       .favoriteModels()
       .map((f) => map.get(modelKey(f.providerID, f.modelID)))
       .filter((m): m is EnrichedModel => !!m)
-    const snap = openSnapshot()
-    if (!snap) return list
-    const idx = list.findIndex((m) => modelKey(m.providerID, m.id) === snap)
-    if (idx <= 0) return list
-    const item = list[idx]
-    if (!item) return list
-    return [item, ...list.slice(0, idx), ...list.slice(idx + 1)]
+    return list // fork_change
   })
 
   const groups = createMemo<ModelGroup[]>(() => {
@@ -555,11 +545,10 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
 
   createEffect(() => {
     if (open()) {
-      const active = activeModel()
-      const snap = active ? modelKey(active.providerID, active.id) : null
-      setOpenSnapshot(snap)
-      // Defer key resolution to next microtask so favoriteModels/groups/rows
-      // recompute with the snapshot before we try to resolve the key.
+      // fork_change start
+      // Defer key resolution to the next microtask so the popover rows are
+      // already resolved when we pick the active key.
+      // fork_change end
       queueMicrotask(() => {
         const next = activeKey(activeModel())
         setSelectedKey(next ?? defaultKey())
@@ -574,7 +563,6 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       })
       return
     }
-    setOpenSnapshot(null)
     setBrowsing(false)
     setNavigating(false)
     setSearch("")
@@ -1060,19 +1048,13 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                           const preActive = () => isPreActive(row.key)
                           const starred = () => favoriteKeys().has(modelKey(model.providerID, model.id))
                           const showSelect = () => expanded() && preActive() && !isActive(model)
-                          const index = () =>
-                            session
-                              ?.favoriteModels()
-                              .findIndex((item) => item.providerID === model.providerID && item.modelID === model.id) ??
-                            -1
-                          const moveUp = () => index() > 0
-                          const moveDown = () => {
-                            const idx = index()
-                            return !!session && idx >= 0 && idx < session.favoriteModels().length - 1
-                          }
+                          const shown = (favorite: ModelSelection) =>
+                            favoriteModels().some(
+                              (item) => item.providerID === favorite.providerID && item.id === favorite.modelID,
+                            )
                           const shift = (direction: "up" | "down") => {
                             if (!session) return
-                            session.moveFavorite(model.providerID, model.id, direction)
+                            session.moveFavorite(model.providerID, model.id, direction, shown)
                           }
                           const starLabel = () =>
                             `${starred() ? language.t("model.favorite.remove") : language.t("model.favorite.add")}: ${sanitizeName(model.name)}`
@@ -1146,42 +1128,8 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                                   <span class="model-selector-item-provider-tag">{model.providerName}</span>
                                 </div>
                               </div>
-                              <Show
-                                when={row.kind === "favorite" && session && props.favorites !== false && index() >= 0}
-                              >
-                                <div class="model-selector-favorite-actions">
-                                  <span class="model-selector-favorite-slot">{index() + 1}</span>
-                                  <button
-                                    type="button"
-                                    class="model-selector-favorite-move"
-                                    aria-label={`↑ ${index() + 1}: ${sanitizeName(model.name)}`}
-                                    disabled={!moveUp()}
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      shift("up")
-                                    }}
-                                  >
-                                    <Icon name="arrow-up" size="small" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    class="model-selector-favorite-move"
-                                    aria-label={`↓ ${index() + 1}: ${sanitizeName(model.name)}`}
-                                    disabled={!moveDown()}
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      shift("down")
-                                    }}
-                                  >
-                                    <Icon
-                                      name="arrow-up"
-                                      size="small"
-                                      class="model-selector-favorite-move-icon--down"
-                                    />
-                                  </button>
-                                </div>
+                              <Show when={row.kind === "favorite" && session && props.favorites !== false}>
+                                <FavoriteRowActions model={model} favorites={favoriteModels()} onShift={shift} />
                               </Show>
                               <Show when={session && props.favorites !== false}>
                                 <button
