@@ -2015,6 +2015,18 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props: MessagePartProp
   let last = 0
   let follow: number | undefined
 
+  // fork_change start - the collapsible subtree can mount after the open state
+  // was resolved (a search-forced headline block whose body arrives late), so
+  // seed the inline styles from the live state instead of the mount-time value
+  // baked into the initial render. useCollapsible owns later transitions.
+  const attach = (el: HTMLDivElement) => {
+    content = el
+    if (!el) return
+    el.style.display = open() ? "" : "none"
+    el.style.height = open() ? "auto" : "0px"
+  }
+  // fork_change end
+
   const stop = () => {
     if (follow === undefined) return
     cancelAnimationFrame(follow)
@@ -2101,7 +2113,9 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props: MessagePartProp
         data-manual={manual() ? "" : undefined}
       >
         <Show
-          when={view().body || !done()}
+          /* fork_change start - keep the title-only header while the body is empty (e.g. an OpenAI placeholder comment) */
+          when={view().body}
+          /* fork_change end */
           fallback={
             <div data-slot="collapsible-trigger" data-static="">
               <Header />
@@ -2117,7 +2131,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props: MessagePartProp
             </Collapsible.Trigger>
             <Collapsible.Content>
               <div
-                ref={content}
+                ref={attach} /* fork_change */
                 style={{ overflow: "clip", height: start ? "auto" : "0px", display: start ? "" : "none" }}
               >
                 <div ref={frame} data-slot="reasoning-details">
