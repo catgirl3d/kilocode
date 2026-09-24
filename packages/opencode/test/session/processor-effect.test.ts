@@ -2,7 +2,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Database } from "@opencode-ai/core/database/database"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { expect } from "bun:test"
+import { expect, spyOn } from "bun:test"
 import { tool } from "ai"
 import { Cause, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import path from "path"
@@ -21,7 +21,7 @@ import { SessionNetwork } from "../../src/session/network" // kilocode_change
 import { Bus } from "../../src/bus" // kilocode_change
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { provideTmpdirInstance, provideTmpdirServer } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 import { raw, reply, TestLLMServer } from "../lib/llm-server"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@opencode-ai/core/provider"
@@ -958,6 +958,101 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
     { config: (url) => providerCfg(url) },
   ),
 )
+
+for (const mode of ["fail", "abort"] as const) {
+  it.live(`session.processor preserves suppressed progress when a tool ${mode}s`, () =>
+    provideTmpdirServer(
+      ({ dir, llm }) =>
+        Effect.gen(function* () {
+          const database = yield* Database.Service
+          const { processors, session, provider } = yield* boot()
+          const gate = Promise.withResolvers<void>()
+
+          yield* llm.tool("lookup", { query: "weather" })
+          const chat = yield* session.create({})
+          const parent = yield* user(chat.id, "tool progress")
+          const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+          const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+          const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+
+          const run = yield* handle
+            .process({
+              user: {
+                id: parent.id,
+                sessionID: chat.id,
+                role: "user",
+                time: parent.time,
+                agent: parent.agent,
+                model: { providerID: ref.providerID, modelID: ref.modelID },
+              } satisfies SessionV1.User,
+              sessionID: chat.id,
+              model: mdl,
+              agent: agent(),
+              system: [],
+              messages: [{ role: "user", content: "tool progress" }],
+              tools: {
+                lookup: tool({
+                  description: "Look up information",
+                  inputSchema: z.object({ query: z.string() }),
+                  execute: async () => {
+                    await gate.promise
+                    if (mode === "fail") throw new Error("tool failed")
+                    return { title: "Weather lookup", output: "done", metadata: {} }
+                  },
+                }),
+              },
+            })
+            .pipe(Effect.forkChild)
+
+          const call = yield* pollWithTimeout(
+            MessageV2.parts(msg.id).pipe(
+              Effect.map((parts) =>
+                parts.find(
+                  (part): part is SessionV1.ToolPart => part.type === "tool" && part.state.status === "running",
+                ),
+              ),
+              Effect.provideService(Database.Service, database),
+            ),
+            "timed out waiting for running tool",
+          )
+          yield* Effect.acquireUseRelease(
+            Effect.sync(() => spyOn(Date, "now").mockReturnValue(1_000)),
+            () =>
+              Effect.gen(function* () {
+                yield* handle.metadata(call.callID, { metadata: { output: "first", truncated: false } })
+                yield* handle.metadata(call.callID, { metadata: { output: "latest", truncated: false } })
+                yield* handle.metadata(call.callID, { metadata: { output: "newest", truncated: false } })
+              }),
+            (clock) => Effect.sync(() => clock.mockRestore()),
+          )
+
+          const before = (yield* MessageV2.parts(msg.id)).find(
+            (part): part is SessionV1.ToolPart => part.type === "tool",
+          )
+          expect(before?.state.status).toBe("running")
+          if (before?.state.status === "running") expect(before.state.metadata?.output).toBe("first")
+
+          if (mode === "abort") yield* Fiber.interrupt(run)
+          else {
+            gate.resolve()
+            yield* Fiber.join(run)
+          }
+
+          const after = (yield* MessageV2.parts(msg.id)).find(
+            (part): part is SessionV1.ToolPart => part.type === "tool",
+          )
+          expect(after?.state.status).toBe("error")
+          if (after?.state.status === "error") {
+            expect(after.state.metadata?.output).toBe("newest")
+            expect(after.state.metadata?.truncated).toBe(false)
+            if (mode === "abort") expect(after.state.metadata?.interrupted).toBe(true)
+          }
+          gate.resolve()
+        }),
+      { config: (url) => providerCfg(url) },
+    ),
+  )
+}
 
 it.live("session.processor effect tests mark pending tools as aborted on cleanup", () =>
   provideTmpdirServer(
