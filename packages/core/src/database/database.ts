@@ -9,6 +9,7 @@ import { isAbsolute, join } from "path"
 import { existsSync } from "fs" // kilocode_change
 import { DbPreflight } from "../kilocode/db-preflight" // kilocode_change
 import { ensure as compat } from "../kilocode/database-compat" // kilocode_change
+import { tune } from "../kilocode/database-tuning" // kilocode_change
 import { DatabaseMigration } from "./migration"
 import { InstallationChannel } from "../installation/version"
 import { makeGlobalNode } from "../effect/app-node"
@@ -29,6 +30,9 @@ const layer = Layer.effect(
 
     // kilocode_change start - install SQLite's busy handler before concurrent processes can race to recover the WAL
     yield* db.run("PRAGMA busy_timeout = 5000")
+    // [fork] tune before WAL mode writes the first page: SQLite rejects the auto_vacuum change once the
+    // database is non-empty, and journal_size_limit only applies to the connection that sets it
+    yield* tune(db)
     yield* db.run("PRAGMA journal_mode = WAL")
     // kilocode_change end
     yield* db.run("PRAGMA synchronous = NORMAL")

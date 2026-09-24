@@ -86,8 +86,12 @@ export const KiloSessionCleanupCommand = effectCmd({
     UI.println(`Removed ${result.removed.length} child sessions; skipped ${result.skipped.length}.`)
 
     if (args.vacuum) {
-      yield* Maintenance.compact(database.db)
-      UI.println("SQLite checkpoint and VACUUM completed.")
+      const truncated = yield* Maintenance.compact(database.db)
+      UI.println(
+        truncated
+          ? "SQLite compaction completed (WAL truncated)."
+          : "Compaction completed, but the WAL is still held by another process; close every Kilo window and re-run --vacuum to reclaim the space.",
+      )
     }
   }),
 })
