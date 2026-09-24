@@ -758,8 +758,13 @@ export const layer: Layer.Layer<
     const updateMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
         // kilocode_change start - ignore FK errors when session was deleted while processor was still running
+        // [fork] persist the message without diff patches no reader keeps: the durable event is the only
+        // source of the stored row, so uncapped patches are what fills the session log
         yield* KiloSession.runSyncSafe(
-          events.publish(SessionV1.Event.MessageUpdated, { sessionID: msg.sessionID, info: msg }),
+          events.publish(SessionV1.Event.MessageUpdated, {
+            sessionID: msg.sessionID,
+            info: MessageV2.stripMessageMetadata(msg),
+          }),
           { type: "message update", id: msg.id, sessionID: msg.sessionID },
         )
         // kilocode_change end
