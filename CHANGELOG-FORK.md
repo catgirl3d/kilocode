@@ -27,6 +27,8 @@
 
 ### Fixes & Enhancements
 
+- Cap the SQLite write-ahead log and enable incremental auto-vacuum, so compacting the database no longer leaves a multi-gigabyte `-wal` file behind and freed pages return to the filesystem without rewriting the whole file.
+- Reclaim disk space with `kilo session cleanup --vacuum` by truncating the write-ahead log after compaction, and report when another Kilo process keeps the database locked instead of claiming success.
 - Exclude the locale key validation suite (`i18n-keys.test.ts`) from VS Code unit test runs, matching the existing `i18n-unused-keys` exclusion.
 - Keep snapshots available when slow-repository initialization is left waiting, dismissed, or times out, so a busy machine cannot silently remove rollback support for later turns.
 - Make the on-demand `consult_advisor` tool available in plan and ask modes, so second opinions are reachable at planning checkpoints and without leaving a read-only mode.
