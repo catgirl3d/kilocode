@@ -1,5 +1,5 @@
 import type { ModelMessage } from "ai"
-import { Effect, Scope } from "effect"
+import { Cause, Effect, Scope } from "effect" // fork_change
 import { Database } from "@opencode-ai/core/database/database"
 import { MessageV2 } from "@/session/message-v2"
 import { Session } from "@/session/session"
@@ -18,12 +18,31 @@ const CHARS = 1_000
 const TOOL_CHARS = 500
 /** Max tool result excerpts included in the title context. */
 const TOOL_LIMIT = 2
-/** A single first user message at or above this length is enough to attempt a title. */
-const MIN_CHARS = 200
 /** Cap on tracked sessions. Oldest entries are dropped first. */
 const MAX_TRACKED = 2_048
 
 const attempts = new Map<string, number>()
+const inFlight = new Set<string>() // fork_change
+
+// fork_change start - keep title failure logs actionable without logging error messages
+function details(cause: Cause.Cause<unknown>) {
+  const err = Cause.squash(cause)
+  const field = (key: string) => {
+    if (err === null || typeof err !== "object") return undefined
+    return Object.getOwnPropertyDescriptor(err, key)?.value
+  }
+  const type = err instanceof Error ? err.constructor.name : typeof err
+  const status = field("statusCode") ?? field("status")
+  const code = field("code")
+  return {
+    errorType: /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/.test(type) ? type : "Error",
+    ...(typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599
+      ? { statusCode: status }
+      : {}),
+    ...(typeof code === "string" && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? { code } : {}),
+  }
+}
+// fork_change end
 
 function prune() {
   if (attempts.size <= MAX_TRACKED) return
@@ -85,35 +104,20 @@ export namespace KiloSessionTitle {
     attempts.clear()
   }
 
-  /**
-   * Consume one title-generation attempt when the conversation has enough
-   * context to name. Returns false while intent is unclear, after the attempt
-   * cap, and for synthetic-only user turns. Mirrors the deferred naming rule
-   * of Agent Manager worktree branches: the first message only arms, later
-   * messages may name, and a substantial first message or real tool work is
-   * enough on its own.
-   */
+  // fork_change start - allow the first real prompt while retaining the retry cap
+  /** Consume one title-generation attempt when history contains a real user turn. */
   export function shouldGenerate(input: { sessionID: string; history: MessageV2.WithParts[] }) {
     const used = attempts.get(input.sessionID) ?? 0
     if (used >= MAX_ATTEMPTS) return false
 
     const users = input.history.filter(real)
-    const lastUser = users.at(-1)
-    if (!lastUser) return false
-
-    const index = input.history.findIndex((msg) => msg.info.id === lastUser.info.id)
-    const turn = input.history.slice(index + 1)
-    const ranTool = turn.some(
-      (msg) =>
-        msg.info.role === "assistant" &&
-        msg.parts.some((part) => part.type === "tool" && part.state.status === "completed"),
-    )
-    if (users.length < 2 && !ranTool && text(lastUser).length < MIN_CHARS) return false
+    if (!users.at(-1)) return false
 
     attempts.set(input.sessionID, used + 1)
     prune()
     return true
   }
+  // fork_change end
 
   /**
    * Build the model request for the title agent. Returns null when the history
@@ -154,13 +158,8 @@ export namespace KiloSessionTitle {
     }
   }
 
-  /**
-   * Run the deferred title step at normal turn end. Skips the history load when
-   * the session already has a title or is a child session, gates on the context
-   * rule, then forks the shared title generator in the service scope so it
-   * outlives the turn. All Kilo-specific orchestration lives here so the shared
-   * prompt loop only makes a single call.
-   */
+  // fork_change start - run the first-step title job in service scope, once per session
+  /** Load title context and fork generation without tying it to the prompt fiber. */
   export function deferred(input: {
     sessionID: SessionID
     scope: Scope.Scope
@@ -169,28 +168,53 @@ export namespace KiloSessionTitle {
     generate: Generate
   }) {
     return Effect.gen(function* () {
-      const titled = yield* input.sessions.get(input.sessionID).pipe(Effect.orDie)
-      if (titled.parentID || !Session.isDefaultTitle(titled.title)) return
+      if (inFlight.has(input.sessionID)) return
+      inFlight.add(input.sessionID)
+      let forked = false
+      yield* Effect.gen(function* () {
+        const titled = yield* input.sessions.get(input.sessionID).pipe(Effect.orDie)
+        if (titled.parentID || !Session.isDefaultTitle(titled.title)) return
 
-      const history = KiloSessionPrompt.trimBeforeLastSummary(
-        KiloSessionPromptQueue.scope(
-          input.sessionID,
-          yield* MessageV2.filterCompactedEffect(input.sessionID).pipe(
-            Effect.provideService(Database.Service, input.database),
+        const history = KiloSessionPrompt.trimBeforeLastSummary(
+          KiloSessionPromptQueue.scope(
+            input.sessionID,
+            yield* MessageV2.filterCompactedEffect(input.sessionID).pipe(
+              Effect.provideService(Database.Service, input.database),
+            ),
           ),
+        )
+        const finalUser = KiloSessionMessageOrder.latest(history).user
+        if (!finalUser || !shouldGenerate({ sessionID: input.sessionID, history })) return
+
+        yield* input
+          .generate({
+            session: titled,
+            history,
+            providerID: finalUser.model.providerID,
+            modelID: finalUser.model.modelID,
+          })
+          .pipe(
+            Effect.catchCause((cause) => {
+              if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+              return Effect.logError("failed to generate title", { sessionID: input.sessionID, ...details(cause) })
+            }),
+            Effect.ensuring(Effect.sync(() => inFlight.delete(input.sessionID))),
+            Effect.forkIn(input.scope),
+          )
+        forked = true
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (!forked) inFlight.delete(input.sessionID)
+          }),
         ),
       )
-      const finalUser = KiloSessionMessageOrder.latest(history).user
-      if (!finalUser || !shouldGenerate({ sessionID: input.sessionID, history })) return
-
-      yield* input
-        .generate({
-          session: titled,
-          history,
-          providerID: finalUser.model.providerID,
-          modelID: finalUser.model.modelID,
-        })
-        .pipe(Effect.ignore, Effect.forkIn(input.scope))
-    })
+    }).pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+        return Effect.logError("failed to schedule title generation", { sessionID: input.sessionID, ...details(cause) })
+      }),
+    )
   }
+  // fork_change end
 }

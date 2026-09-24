@@ -1639,6 +1639,12 @@ export const layer = Layer.effect(
         }
 
         step++
+        // kilocode_change start - [fork] start title generation on the first prompt-loop step
+        if (step === 1)
+          yield* KiloSessionTitle.deferred({ sessionID, scope, sessions, database, generate: title }).pipe(
+            Effect.ignore,
+          )
+        // kilocode_change end
 
         const model = yield* getModel(lastUser.model.providerID, lastUser.model.modelID, sessionID)
         const task = tasks.pop()
@@ -2016,8 +2022,6 @@ export const layer = Layer.effect(
       }
 
       yield* compaction.prune({ sessionID, reason: "normal" }).pipe(Effect.ignore, Effect.forkIn(scope))
-      // kilocode_change - Kilo defers session titles; see kilocode/session/title.ts
-      yield* KiloSessionTitle.deferred({ sessionID, scope, sessions, database, generate: title }).pipe(Effect.ignore)
       return yield* lastAssistant(sessionID)
     })
 

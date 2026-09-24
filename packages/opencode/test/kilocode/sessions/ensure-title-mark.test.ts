@@ -9,7 +9,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { RepositoryCache } from "@opencode-ai/core/repository-cache"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { MemoryService } from "@kilocode/kilo-memory/effect/service"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { Cause, Deferred, Effect, Fiber, Layer, Logger } from "effect"
 import * as Stream from "effect/Stream"
 import path from "path"
 import { Agent as AgentSvc } from "../../../src/agent/agent"
@@ -55,17 +55,24 @@ import { ToolRegistry } from "../../../src/tool/registry"
 import { Truncate } from "../../../src/tool/truncate"
 import { RuntimeFlags } from "../../../src/effect/runtime-flags"
 import { TestInstance } from "../../fixture/fixture"
-import { pollWithTimeout, testEffect } from "../../lib/effect"
+import { awaitWithTimeout, pollWithTimeout, testEffect } from "../../lib/effect"
 import { TestLLMServer } from "../../lib/llm-server"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { KiloSessionPromptQueue } from "../../../src/kilocode/session/prompt-queue"
 
-// Drives the real SessionPrompt.ensureTitle path (forked at normal turn end) for:
+// Drives the real SessionPrompt.ensureTitle path for:
 // - mid-generation non-default skip (re-check before mark/setTitle)
 // - mark-before-setTitle + clear mark when setTitle fails
+// - safe title-generation failure metadata without prompt or provider response content
 
 const ref = {
   providerID: ProviderV2.ID.make("test"),
   modelID: ModelV2.ID.make("test-model"),
+}
+
+class ProviderFailure extends Error {
+  readonly statusCode = 429
+  readonly code = "RATE_LIMITED"
 }
 
 const mcp = Layer.succeed(
@@ -125,7 +132,10 @@ const summary = Layer.succeed(
 /** Shared mutable hooks for ensureTitle integration tests. */
 const hooks = {
   stallTitle: undefined as Deferred.Deferred<void> | undefined,
-  titleStreamEntered: false,
+  titleStreamEntered: undefined as Deferred.Deferred<void> | undefined,
+  titleStreamCalls: 0,
+  titleStreamFinished: 0,
+  failTitle: undefined as (Error & { statusCode?: number; code?: string }) | undefined,
   failSetTitle: false,
   setTitleCalls: [] as { sessionID: string; title: string }[],
 }
@@ -191,13 +201,27 @@ const installHooks = Effect.fn("test.installTitleHooks")(function* () {
   const mutableSession = sessions as { setTitle: Session.Interface["setTitle"] }
 
   mutableLLM.stream = (input) => {
-    if (input.agent.name !== "title" || !hooks.stallTitle) return stream(input)
-    hooks.titleStreamEntered = true
+    const fail = hooks.failTitle
+    if (input.agent.name === "title" && fail) {
+      hooks.titleStreamCalls++
+      return Stream.fail(fail)
+    }
+    if (input.agent.name !== "title") return stream(input)
     const gate = hooks.stallTitle
+    const entered = hooks.titleStreamEntered
     return Stream.unwrap(
       Effect.gen(function* () {
-        yield* Deferred.await(gate)
-        return stream(input)
+        hooks.titleStreamCalls++
+        if (gate) {
+          if (entered) yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(gate)
+        }
+        return Stream.ensuring(
+          stream(input),
+          Effect.sync(() => {
+            hooks.titleStreamFinished++
+          }),
+        )
       }),
     )
   }
@@ -270,7 +294,10 @@ const useServerConfig = Effect.fn("test.useServerConfig")(function* () {
 
 function resetHooks() {
   hooks.stallTitle = undefined
-  hooks.titleStreamEntered = false
+  hooks.titleStreamEntered = undefined
+  hooks.titleStreamCalls = 0
+  hooks.titleStreamFinished = 0
+  hooks.failTitle = undefined
   hooks.failSetTitle = false
   hooks.setTitleCalls = []
   clearRenameMarks()
@@ -291,7 +318,9 @@ it.instance(
       expect(Session.isDefaultTitle(chat.title)).toBe(true)
 
       const gate = yield* Deferred.make<void>()
+      const entered = yield* Deferred.make<void>()
       hooks.stallTitle = gate
+      hooks.titleStreamEntered = entered
 
       yield* llm.text("assistant reply")
 
@@ -304,12 +333,7 @@ it.instance(
         })
         .pipe(Effect.forkChild)
 
-      // The title runs at turn end. Wait until ensureTitle entered the stalled title stream.
-      yield* pollWithTimeout(
-        Effect.sync(() => (hooks.titleStreamEntered ? true : undefined)),
-        "ensureTitle never entered title stream",
-        "15 seconds",
-      )
+      yield* awaitWithTimeout(Deferred.await(entered), "ensureTitle never entered title stream", "15 seconds")
 
       // Mid-generation rename: title is no longer default → ensureTitle must skip setTitle.
       // Use inner path without recording (failSetTitle is false); wrap still records.
@@ -318,9 +342,11 @@ it.instance(
       hooks.stallTitle = undefined
 
       yield* Fiber.join(fiber)
-
-      // Drain forked ensureTitle after the main loop finishes.
-      yield* Effect.sleep(400)
+      yield* pollWithTimeout(
+        Effect.sync(() => (hooks.titleStreamFinished > 0 ? true : undefined)),
+        "title stream did not finish",
+        "15 seconds",
+      )
 
       const final = yield* sessions.get(chat.id)
       expect(final.title).toBe("User renamed mid-gen")
@@ -360,7 +386,6 @@ it.instance(
         `ensureTitle never called setTitle; calls=${JSON.stringify(hooks.setTitleCalls)}`,
         "15 seconds",
       )
-      yield* Effect.sleep(100)
 
       yield* Fiber.join(fiber)
 
@@ -426,7 +451,7 @@ it.instance(
 )
 
 it.instance(
-  "ensureTitle defers a short first turn and names on the second",
+  "ensureTitle names a short first prompt without waiting for a second prompt",
   () =>
     Effect.gen(function* () {
       resetHooks()
@@ -442,30 +467,212 @@ it.instance(
       const first = yield* prompt
         .prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: "hi" }] })
         .pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const s = yield* sessions.get(chat.id).pipe(Effect.orElseSucceed(() => null))
+          return s?.title === "E2E Title" ? true : undefined
+        }),
+        `ensureTitle never named the first prompt; calls=${JSON.stringify(hooks.setTitleCalls)}`,
+        "20 seconds",
+      )
       yield* Fiber.join(first)
-      yield* Effect.sleep(200)
+      expect(hooks.titleStreamCalls).toBe(1)
+    }),
+  40_000,
+)
 
-      // No tool work, one short message: the title is not generated yet.
-      const deferred = yield* sessions.get(chat.id)
-      expect(Session.isDefaultTitle(deferred.title)).toBe(true)
-      expect(hooks.setTitleCalls).toHaveLength(0)
+it.instance(
+  "logs safe provider failure metadata without prompt or response content",
+  () =>
+    Effect.gen(function* () {
+      resetHooks()
+      yield* installHooks()
+      const { llm } = yield* useServerConfig()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
 
+      const chat = yield* sessions.create({})
+      const logs: { message: unknown; cause: string }[] = []
+      const logger = Logger.make((input) => logs.push({ message: input.message, cause: Cause.pretty(input.cause) }))
+      const error = new ProviderFailure("raw-provider-response api-key-secret")
+      hooks.failTitle = error
       yield* llm.text("assistant reply")
-      const second = yield* prompt
-        .prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: "fix the parser" }] })
+
+      const run = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "private-user-prompt" }],
+        })
+        .pipe(
+          Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
+          Effect.forkChild,
+        )
+      yield* Fiber.join(run)
+      yield* pollWithTimeout(
+        Effect.sync(() =>
+          logs.some((entry) => JSON.stringify(entry.message).includes("failed to generate title")) ? true : undefined,
+        ),
+        "title generation failure was not logged",
+      )
+
+      const output = JSON.stringify(logs.filter((entry) => JSON.stringify(entry.message).includes("failed to generate title")))
+      expect(output).toContain("ProviderFailure")
+      expect(output).toContain("429")
+      expect(output).toContain("RATE_LIMITED")
+      expect(output).not.toContain("private-user-prompt")
+      expect(output).not.toContain("raw-provider-response")
+      expect(output).not.toContain("api-key-secret")
+    }),
+  40_000,
+)
+
+it.instance(
+  "starts title generation while the assistant turn is still open",
+  () =>
+    Effect.gen(function* () {
+      resetHooks()
+      yield* installHooks()
+      const { llm } = yield* useServerConfig()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+
+      const chat = yield* sessions.create({})
+      const reply = Promise.withResolvers<void>()
+      yield* Effect.addFinalizer(() => Effect.sync(() => reply.resolve()))
+
+      yield* llm.hold("assistant reply", reply.promise)
+      const run = yield* prompt
+        .prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: "inspect this" }] })
         .pipe(Effect.forkChild)
+
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const inputs = yield* llm.inputs
+          return inputs.some((input) => JSON.stringify(input).includes("Generate a title for this conversation"))
+            ? true
+            : undefined
+        }),
+        "title request did not reach the model while the assistant response was held",
+        "20 seconds",
+      )
+      expect((yield* status.get(chat.id)).type).toBe("busy")
+      expect(hooks.titleStreamCalls).toBe(1)
+
+      reply.resolve()
+      yield* Fiber.join(run)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const s = yield* sessions.get(chat.id).pipe(Effect.orElseSucceed(() => null))
+          return s?.title === "E2E Title" ? true : undefined
+        }),
+        "title did not finish after the assistant turn",
+        "20 seconds",
+      )
+    }),
+  40_000,
+)
+
+it.instance(
+  "keeps first-step title generation alive after Stop",
+  () =>
+    Effect.gen(function* () {
+      resetHooks()
+      yield* installHooks()
+      const { llm } = yield* useServerConfig()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+
+      const chat = yield* sessions.create({})
+      const titleGate = yield* Deferred.make<void>()
+      const titleEntered = yield* Deferred.make<void>()
+      const reply = Promise.withResolvers<void>()
+      hooks.stallTitle = titleGate
+      hooks.titleStreamEntered = titleEntered
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => reply.resolve()).pipe(Effect.andThen(Deferred.succeed(titleGate, undefined))),
+      )
+
+      yield* llm.hold("assistant reply", reply.promise)
+      const run = yield* prompt
+        .prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: "inspect this" }] })
+        .pipe(Effect.forkChild)
+
+      yield* awaitWithTimeout(Deferred.await(titleEntered), "title did not start before Stop", "15 seconds")
+      yield* awaitWithTimeout(llm.wait(1), "assistant request did not start before Stop", "15 seconds")
+      yield* prompt.cancel(chat.id)
+      reply.resolve()
+      yield* Fiber.await(run)
+      yield* Deferred.succeed(titleGate, undefined)
 
       yield* pollWithTimeout(
         Effect.gen(function* () {
           const s = yield* sessions.get(chat.id).pipe(Effect.orElseSucceed(() => null))
           return s?.title === "E2E Title" ? true : undefined
         }),
-        `ensureTitle never named the second turn; calls=${JSON.stringify(hooks.setTitleCalls)}`,
+        "Stop cancelled the title job",
         "20 seconds",
       )
-      yield* Fiber.join(second)
     }),
   40_000,
+)
+
+it.instance(
+  "suppresses an overlapping title request and preserves a manual rename",
+  () =>
+    Effect.gen(function* () {
+      resetHooks()
+      yield* installHooks()
+      const { llm } = yield* useServerConfig()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+
+      const chat = yield* sessions.create({})
+      const titleGate = yield* Deferred.make<void>()
+      const titleEntered = yield* Deferred.make<void>()
+      const reply = Promise.withResolvers<void>()
+      hooks.stallTitle = titleGate
+      hooks.titleStreamEntered = titleEntered
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => reply.resolve()).pipe(Effect.andThen(Deferred.succeed(titleGate, undefined))),
+      )
+
+      yield* llm.hold("first assistant reply", reply.promise)
+      yield* llm.text("second assistant reply")
+      const first = yield* prompt
+        .prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: "inspect this" }] })
+        .pipe(Effect.forkChild)
+      yield* awaitWithTimeout(Deferred.await(titleEntered), "first title request did not start", "15 seconds")
+
+      const second = yield* prompt
+        .prompt({ sessionID: chat.id, agent: "build", model: ref, parts: [{ type: "text", text: "fix the parser" }] })
+        .pipe(Effect.forkChild)
+      yield* pollWithTimeout(
+        Effect.sync(() => (KiloSessionPromptQueue.snapshot(chat.id).length > 0 ? true : undefined)),
+        "overlapping user prompt was not queued",
+      )
+
+      reply.resolve()
+      yield* awaitWithTimeout(llm.wait(2), "overlapping turn did not reach the model", "20 seconds")
+      expect(hooks.titleStreamCalls).toBe(1)
+
+      yield* sessions.setTitle({ sessionID: chat.id, title: "Manual title" })
+      yield* Fiber.join(first)
+      yield* Fiber.join(second)
+      yield* Deferred.succeed(titleGate, undefined)
+      yield* pollWithTimeout(
+        Effect.sync(() => (hooks.titleStreamFinished > 0 ? true : undefined)),
+        "title stream did not finish after the manual rename",
+        "20 seconds",
+      )
+
+      expect((yield* sessions.get(chat.id)).title).toBe("Manual title")
+      expect(hooks.titleStreamCalls).toBe(1)
+      expect(hooks.setTitleCalls.filter((call) => call.title === "E2E Title")).toHaveLength(0)
+    }),
+  50_000,
 )
 
 it.instance(
