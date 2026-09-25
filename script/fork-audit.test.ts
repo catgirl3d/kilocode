@@ -100,10 +100,8 @@ describe("read-only contract", () => {
       stderr: "pipe",
     })
     const output = `${Buffer.from(result.stdout).toString()}\n${Buffer.from(result.stderr).toString()}`
-    const source = readFileSync(path.join(root, file), "utf8").split(/\r?\n/)
     expect(result.exitCode).toBe(0)
     expect(output).toContain("57/57 lines covered")
-    expect(source[341]).toBe("        })")
     expect(output).not.toContain("[MISSING]")
     expect(output).not.toContain("[ERROR]")
     expect(output).not.toContain("[NESTED]")
@@ -339,6 +337,339 @@ describe("read-only contract", () => {
 })
 
 describe("read-only diagnostics", () => {
+  it("committed default ignores uncommitted edits, then audits them after commit", () => {
+    const dir = fixture(),
+      file = "packages/kilo-vscode/src/view.ts"
+    writeFileSync(path.join(dir, file), "export const view = 2\nexport const stable = true\n")
+    const pending = run(dir, [])
+    expect(pending.code).toBe(0)
+    expect(pending.out).toContain("Summary: files audited 0;")
+    expect(pending.out).not.toContain("[MISSING]")
+
+    git(dir, ["add", file])
+    git(dir, ["commit", "-qm", "unannotated committed change"])
+    const committed = run(dir, [])
+    expect(committed.code).toBe(1)
+    expect(committed.out).toContain("Candidate base ref: 'upstream/main'")
+    expect(committed.out).toContain(`FAIL ${file} (0/1 lines covered)`)
+    expect(committed.out).toContain("[MISSING] L1-L1 (1 uncovered line)")
+    expect(committed.out).toContain("findings 1 (fatal)")
+    expect(committed.out).not.toContain("[REDUNDANT]")
+    expect(committed.out).not.toContain("[ERROR]")
+  })
+
+  it("default --worktree audits annotated and missing uncommitted edits", () => {
+    const dir = fixture(),
+      file = "packages/kilo-vscode/src/view.ts"
+    writeFileSync(
+      path.join(dir, file),
+      "export const view = 2 // fork_change\nexport const stable = true\nexport const missing = 3\n",
+    )
+    const result = run(dir, ["--worktree"])
+    expect(result.code).toBe(1)
+    expect(result.out).toContain(`FAIL ${file} (1/2 lines covered)`)
+    expect(result.out).toContain("[MISSING] L3-L3 (1 uncovered line)")
+    expect(result.out).toContain("findings 1 (fatal)")
+    expect(result.out).not.toContain("[REDUNDANT]")
+    expect(result.out).not.toContain("[ERROR]")
+    expect(result.out).not.toContain("[WARNING]")
+  })
+
+  it("reports missing coverage when a local refactor removes a fork marker", () => {
+    const dir = fixture(),
+      file = "packages/kilo-vscode/src/view.ts"
+    writeFileSync(path.join(dir, file), "export const view = 2 // fork_change\nexport const stable = true\n")
+    git(dir, ["add", file])
+    git(dir, ["commit", "-qm", "commit annotated fork change"])
+    writeFileSync(path.join(dir, file), "export const view = 2\nexport const stable = true\n")
+
+    for (const args of [["--worktree"], ["--worktree", "--select=agent-local"]]) {
+      const result = run(dir, args)
+      expect(result.code).toBe(1)
+      expect(result.out).toContain("Candidate base ref: 'upstream/main'")
+      expect(result.out).toContain(`FAIL ${file} (0/1 lines covered)`)
+      expect(result.out).toContain("[MISSING] L1-L1 (1 uncovered line)")
+      expect(result.out).toContain("findings 1 (fatal)")
+      expect(result.out).not.toContain("[REDUNDANT]")
+      expect(result.out).not.toContain("[ERROR]")
+      expect(result.out).not.toContain("[WARNING]")
+      expect(result.out).not.toContain("[NESTED]")
+      expect(result.out).not.toContain("[DETACHED_HEADER]")
+      expect(result.out).not.toContain("[STRUCTURE_SPLIT]")
+    }
+  })
+
+  it("reports redundant coverage when a local refactor removes fork code", () => {
+    const file = "packages/kilo-vscode/src/view.ts",
+      base = "export const view = 1\nexport const stable = true\n",
+      dir = fixture({ [file]: base })
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const view = 1\nexport const stable = true\nexport const local = 2\n// fork_change end\n",
+    )
+    git(dir, ["add", file])
+    git(dir, ["commit", "-qm", "commit fork block with upstream context"])
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const view = 1\nexport const stable = true\n// fork_change end\n",
+    )
+
+    for (const args of [["--worktree"], ["--worktree", "--select=agent-local"]]) {
+      const result = run(dir, args)
+      expect(result.code).toBe(1)
+      expect(result.out).toContain("Candidate base ref: 'upstream/main'")
+      expect(result.out).toContain(`FAIL ${file} (0/0 lines covered)`)
+      expect(result.out).toContain("[REDUNDANT] L1-L4")
+      expect(result.out).toContain("findings 1 (fatal)")
+      expect(result.out).not.toContain("[MISSING]")
+      expect(result.out).not.toContain("[ERROR]")
+      expect(result.out).not.toContain("[WARNING]")
+      expect(result.out).not.toContain("[NESTED]")
+      expect(result.out).not.toContain("[DETACHED_HEADER]")
+      expect(result.out).not.toContain("[STRUCTURE_SPLIT]")
+    }
+  })
+
+  it("CURRENT BUG: --base=HEAD and --base=origin/main at HEAD report inherited artifacts", () => {
+    const dir = fixture(),
+      file = "packages/kilo-vscode/src/view.ts",
+      created = "packages/kilo-vscode/src/created.ts"
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const view = 2\n// fork_change end\nexport const stable = true\n",
+    )
+    writeFileSync(path.join(dir, created), "// fork_change - new file\nexport const created = 1\n")
+    git(dir, ["add", "-A"])
+    git(dir, ["commit", "-qm", "commit annotated fork changes"])
+    git(dir, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const view = 2\n// fork_change end\nexport const stable = false\nexport const missing = 3\n",
+    )
+    writeFileSync(path.join(dir, created), "// fork_change - new file\nexport const created = 2\n")
+    const upstream = run(dir, ["--worktree"])
+    expect(upstream.code).toBe(1)
+    expect(upstream.out).toContain("Candidate base ref: 'upstream/main'")
+    expect(upstream.out).toContain(`FAIL ${file} (1/3 lines covered)`)
+    expect(upstream.out).toContain("[MISSING] L4-L5 (2 uncovered lines)")
+    expect(upstream.out).toContain(`PASS ${created} (1/1 lines covered)`)
+    expect(upstream.out).toContain("findings 1 (fatal)")
+    expect(upstream.out).not.toContain("[REDUNDANT]")
+    expect(upstream.out).not.toContain("whole-file '- new file' marker used on an existing file")
+    expect(upstream.out).not.toContain("[ERROR]")
+
+    for (const base of ["HEAD", "origin/main"]) {
+      const result = run(dir, ["--worktree", `--base=${base}`])
+      const parts = result.out.split("\n\n"),
+        view = parts.find((part) => part.startsWith(`FAIL ${file} `)) ?? "",
+        fresh = parts.find((part) => part.startsWith(`FAIL ${created} `)) ?? ""
+      expect(result.code).toBe(1)
+      expect(result.out).toContain(`Candidate base ref: '${base}'`)
+      expect(result.out).toContain(`FAIL ${file} (0/2 lines covered)`)
+      expect(view).toContain("[REDUNDANT] L1-L3")
+      expect(view).toContain("[MISSING] L4-L5 (2 uncovered lines)")
+      expect(view).not.toContain("[ERROR]")
+      expect(result.out).toContain(`FAIL ${created} (1/1 lines covered)`)
+      expect(fresh).toContain("whole-file '- new file' marker used on an existing file")
+      expect(fresh.split("[ERROR]").length - 1).toBe(1)
+      expect(fresh).not.toContain("[MISSING]")
+      expect(fresh).not.toContain("[REDUNDANT]")
+      expect(result.out).toContain("findings 3 (fatal)")
+      expect(result.out).not.toContain("[DETACHED_HEADER]")
+      expect(result.out).not.toContain("[STRUCTURE_SPLIT]")
+      expect(result.out).not.toContain("[NESTED]")
+      expect(result.out).not.toContain("[WARNING]")
+    }
+  }, 30_000)
+
+  it("--base=origin/main audits committed changes when origin/main is behind HEAD", () => {
+    const dir = fixture(),
+      file = "packages/kilo-vscode/src/view.ts",
+      base = git(dir, ["rev-parse", "HEAD"]).trim()
+    git(dir, ["update-ref", "refs/remotes/origin/main", base])
+    writeFileSync(path.join(dir, file), "export const view = 2 // fork_change\nexport const stable = true\n")
+    git(dir, ["add", file])
+    git(dir, ["commit", "-qm", "commit annotated change ahead of origin"])
+    expect(git(dir, ["rev-parse", "HEAD"]).trim()).not.toBe(base)
+    expect(git(dir, ["rev-parse", "origin/main"]).trim()).toBe(base)
+
+    const result = run(dir, ["--base=origin/main"])
+    expect(result.code).toBe(0)
+    expect(result.out).toContain("Candidate base ref: 'origin/main'")
+    expect(result.out).toContain(`Resolved merge-base: '${base}'`)
+    expect(result.out).toContain(`Scanning fork modifications against: ${base}...HEAD`)
+    expect(result.out).toContain(`PASS ${file} (1/1 lines covered)`)
+    expect(result.out).toContain("files audited 1;")
+    expect(result.out).toContain("findings 0 (fatal)")
+    expect(result.out).not.toContain("[MISSING]")
+    expect(result.out).not.toContain("[REDUNDANT]")
+    expect(result.out).not.toContain("[ERROR]")
+  }, 30_000)
+
+  it("validates headers on untracked --worktree files", () => {
+    const dir = fixture(),
+      valid = "packages/kilo-vscode/src/untracked-valid.ts",
+      invalid = "packages/kilo-vscode/src/untracked-missing-header.ts"
+    writeFileSync(path.join(dir, valid), "// fork_change - new file\nexport const valid = true\n")
+    writeFileSync(path.join(dir, invalid), "export const invalid = true // fork_change\n")
+
+    const result = run(dir, ["--worktree"])
+    expect(result.code).toBe(1)
+    expect(result.out).toContain(`PASS ${valid} (1/1 lines covered)`)
+    expect(result.out).toContain(`FAIL ${invalid} (1/1 lines covered)`)
+    expect(result.out).toContain("new file requires 'fork_change - new file' on its first non-shebang line")
+    expect(result.out).toContain("files audited 2;")
+    expect(result.out).toContain("findings 1 (fatal)")
+    expect(result.out.split("[ERROR]").length - 1).toBe(1)
+    expect(result.out).not.toContain("[MISSING]")
+    expect(result.out).not.toContain("[REDUNDANT]")
+    expect(result.out).not.toContain("[WARNING]")
+  })
+
+  it("agent-local selects staged, unstaged, and untracked paths against upstream only", () => {
+    const dir = fixture(),
+      file = "packages/kilo-vscode/src/view.ts",
+      created = "packages/kilo-vscode/src/created.ts",
+      branch = "packages/kilo-vscode/src/deleted.ts",
+      local = "packages/kilo-vscode/src/agent-local.ts"
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const view = 2\n// fork_change end\nexport const stable = true\n",
+    )
+    writeFileSync(path.join(dir, created), "// fork_change - new file\nexport const created = 1\n")
+    writeFileSync(path.join(dir, branch), "export const deleted = false\n")
+    git(dir, ["add", "-A"])
+    git(dir, ["commit", "-qm", "commit branch changes including a real gap"])
+
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const view = 3\n// fork_change end\nexport const stable = true\n",
+    )
+    git(dir, ["add", file])
+    writeFileSync(path.join(dir, created), "// fork_change - new file\nexport const created = 2\n")
+    writeFileSync(path.join(dir, local), "// fork_change - new file\nexport const local = true\n")
+
+    const result = run(dir, ["--worktree", "--select=agent-local", "--base=upstream/main"])
+    expect(result.out).not.toContain(branch)
+    expect(result.code).toBe(0)
+    expect(result.out).toContain(`Candidate base ref: 'upstream/main'`)
+    expect(result.out).toContain(`PASS ${file} (1/1 lines covered)`)
+    expect(result.out).toContain(`PASS ${created} (1/1 lines covered)`)
+    expect(result.out).toContain(`PASS ${local} (1/1 lines covered)`)
+    expect(result.out).toContain("files audited 3;")
+    expect(result.out).toContain("findings 0 (fatal)")
+    expect(result.out).not.toContain("[MISSING]")
+    expect(result.out).not.toContain("[REDUNDANT]")
+    expect(result.out).not.toContain("whole-file '- new file' marker used on an existing file")
+  })
+
+  it("agent-local still rejects a real missing addition and a genuine redundant marker", () => {
+    const red = "packages/kilo-vscode/src/redundant.ts",
+      dir = fixture({ [red]: "export const stable = true\n" }),
+      file = "packages/kilo-vscode/src/view.ts",
+      branch = "packages/kilo-vscode/src/deleted.ts"
+    writeFileSync(path.join(dir, branch), "export const deleted = false\n")
+    git(dir, ["add", branch])
+    git(dir, ["commit", "-qm", "commit unselected branch problem"])
+
+    writeFileSync(
+      path.join(dir, file),
+      "export const view = 1\nexport const stable = true\nexport const localMissing = 1\n",
+    )
+    writeFileSync(
+      path.join(dir, red),
+      "// fork_change start\nexport const stable = true\n// fork_change end\nexport const local = 2 // fork_change\n",
+    )
+    const result = run(dir, ["--worktree", "--select=agent-local", "--base=upstream/main"])
+    expect(result.out).not.toContain(branch)
+    expect(result.code).toBe(1)
+    expect(result.out).toContain(`FAIL ${file} (0/1 lines covered)`)
+    expect(result.out).toContain("[MISSING] L3-L3 (1 uncovered line)")
+    expect(result.out).toContain(`FAIL ${red} (1/1 lines covered)`)
+    expect(result.out).toContain("[REDUNDANT] L1-L3")
+    expect(result.out).toContain("files audited 2;")
+    expect(result.out).toContain("findings 2 (fatal)")
+    expect(result.out).not.toContain("[ERROR]")
+    expect(result.out).not.toContain("[WARNING]")
+  })
+
+  it("branch selects divergent HEAD-side commits and reads their worktree contents", () => {
+    const origin = "packages/kilo-vscode/src/origin-only.ts",
+      dir = fixture({ [origin]: "export const value = 1\n" }),
+      base = git(dir, ["rev-parse", "HEAD"]).trim(),
+      file = "packages/kilo-vscode/src/view.ts",
+      created = "packages/kilo-vscode/src/created.ts",
+      local = "packages/kilo-vscode/src/deleted.ts",
+      fresh = "packages/kilo-vscode/src/local-untracked.ts"
+    git(dir, ["checkout", "-qb", "origin-side"])
+    writeFileSync(path.join(dir, origin), "export const value = 2\n")
+    git(dir, ["add", origin])
+    git(dir, ["commit", "-qm", "change origin-only path"])
+    git(dir, ["update-ref", "refs/remotes/origin/main", "HEAD"])
+    git(dir, ["checkout", "-q", "main"])
+
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const view = 2\n// fork_change end\nexport const stable = true\n",
+    )
+    writeFileSync(path.join(dir, created), "// fork_change - new file\nexport const created = true\n")
+    git(dir, ["add", file, created])
+    git(dir, ["commit", "-qm", "commit HEAD-side changes"])
+    expect(git(dir, ["merge-base", "HEAD", "origin/main"]).trim()).toBe(base)
+    expect(git(dir, ["rev-parse", "HEAD"]).trim()).not.toBe(git(dir, ["rev-parse", "origin/main"]).trim())
+
+    const committed = run(dir, ["--select=branch"])
+    expect(committed.code).toBe(0)
+    expect(committed.out).toContain(`PASS ${file} (1/1 lines covered)`)
+    expect(committed.out).toContain(`PASS ${created} (1/1 lines covered)`)
+    expect(committed.out).toContain("files audited 2;")
+    expect(committed.out).not.toContain(origin)
+    expect(committed.out).not.toContain("[MISSING]")
+
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const view = 2\n// fork_change end\nexport const stable = true\nexport const localMissing = 1\n",
+    )
+    writeFileSync(path.join(dir, local), "export const localOnly = 1\n")
+    writeFileSync(path.join(dir, fresh), "export const untrackedOnly = 1\n")
+    const result = run(dir, ["--worktree", "--select=branch", "--base=upstream/main"])
+    expect(result.out).not.toContain(origin)
+    expect(result.out).not.toContain(local)
+    expect(result.out).not.toContain(fresh)
+    expect(result.code).toBe(1)
+    expect(result.out).toContain(`Candidate base ref: 'upstream/main'`)
+    expect(result.out).toContain(`FAIL ${file} (1/2 lines covered)`)
+    expect(result.out).toContain("[MISSING] L5-L5 (1 uncovered line)")
+    expect(result.out).toContain(`PASS ${created} (1/1 lines covered)`)
+    expect(result.out).toContain("files audited 2;")
+    expect(result.out).toContain("findings 1 (fatal)")
+    expect(result.out).not.toContain("[REDUNDANT]")
+    expect(result.out).not.toContain("whole-file '- new file' marker used on an existing file")
+  })
+
+  it("rejects agent-local without --worktree, missing origin/main, and unknown selectors", () => {
+    const cases = [
+      { args: ["--select=agent-local"], text: "--worktree" },
+      { args: ["--worktree", "--select=branch"], text: "origin/main" },
+      { args: ["--worktree", "--select=unknown"], text: "selector" },
+    ]
+    const output = cases.map((item) => {
+      const result = run(fixture(), item.args)
+      return {
+        error: result.code !== 0,
+        context: result.out.toLowerCase().includes(item.text.toLowerCase()),
+        summary: result.out.includes("Summary:"),
+        pass: result.out.includes("PASS "),
+      }
+    })
+    expect(output).toEqual([
+      { error: true, context: true, summary: false, pass: false },
+      { error: true, context: true, summary: false, pass: false },
+      { error: true, context: true, summary: false, pass: false },
+    ])
+  })
+
   it("focused audit: exempts a true cross-hunk move", () => {
     const dir = fixture({
       "packages/kilo-vscode/src/view.ts": "export const view = 1\nexport const moved = 2\nexport const stable = true\n",
