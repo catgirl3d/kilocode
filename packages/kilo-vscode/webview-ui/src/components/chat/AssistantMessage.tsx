@@ -481,6 +481,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                           <Show
                             when={planExit()}
                             fallback={
+                              // fork_change start
                               <Show
                                 when={bash()}
                                 fallback={
@@ -514,6 +515,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                   />
                                 )}
                               </Show>
+                              // fork_change end
                             }
                           >
                             {(tp) => <PlanExitCard part={tp()} sessionID={props.message.sessionID} />}
