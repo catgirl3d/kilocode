@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { MemoryText } from "../src/text"
 
 describe("memory text helpers", () => {
+  test("normalize trims edges and collapses internal whitespace", () => {
+    expect(MemoryText.normalize("  a\t b\n c  ")).toBe("a b c")
+  })
+
   test("brief collapses internal whitespace and trims edges", () => {
     expect(MemoryText.brief("  a\t b\n c  ", 80)).toBe("a b c")
   })

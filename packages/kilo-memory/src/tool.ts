@@ -14,18 +14,26 @@ export namespace MemoryTool {
   const Text = Schema.String.check(Schema.isMaxLength(12_000))
   const Key = Schema.String.check(Schema.isMaxLength(256))
   const SessionID = Schema.String.check(Schema.isMaxLength(128))
+  const RecordID = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)) // fork_change
 
   export const RecallParameters = Schema.Struct({
-    mode: Schema.Literals(["search", "typed", "digest", "catalog"]).annotate({
+    // fork_change start - Support exact typed memory reads.
+    mode: Schema.Literals(["search", "typed", "digest", "catalog", "read"]).annotate({
       description:
-        "'typed' to search durable memory, 'digest' to read saved session digests, 'search' to search both, 'catalog' to list all stored memory keys (use when the injected index or a search missed)",
+        "'typed' to search durable memory, 'digest' to read saved session digests, 'search' to search both, 'catalog' to list all stored memory keys, 'read' to retrieve one exact typed memory record by memory_id",
     }),
+    // fork_change end
     query: Schema.optional(Text).annotate({
       description: "Topic query for typed memory or digest search; optional substring filter for catalog",
     }),
     sessionID: Schema.optional(SessionID).annotate({
       description: "Session ID for digest mode when startup memory shows session=<id>",
     }),
+    // fork_change start - Select one typed record by canonical identity.
+    recordID: Schema.optional(RecordID).annotate({
+      description: "Exact canonical memory_id returned by typed/search mode, for read mode",
+    }),
+    // fork_change end
     limit: Schema.optional(Schema.Number).annotate({
       description: "Maximum memories to return (default: 5, max: 20)",
     }),
@@ -57,6 +65,15 @@ export namespace MemoryTool {
   type Metadata = {
     sources: string[]
     count?: number
+    status?: "found" | "invalid" | "not_found" | "ambiguous" | "too_long" // fork_change
+    memory_id?: string // fork_change
+    complete?: boolean // fork_change
+    truncated?: boolean // fork_change
+    textChars?: number // fork_change
+    textBytes?: number // fork_change
+    renderedBytes?: number // fork_change
+    maxBytes?: number // fork_change
+    outputBytes?: number // fork_change
     operationCount?: number
     added?: number
     removed?: number
@@ -84,7 +101,7 @@ export namespace MemoryTool {
     ctx: MemoryPaths.Ctx
     sessionID: string
   }
-  type Recall = Base & { params: RecallParams; ask: Ask }
+  type Recall = Base & { params: RecallParams; ask: Ask; limits?: { maxBytes: number; maxLines: number } } // fork_change
   type Save = Base & { params: SaveParams; ask: Ask }
   type Live = {
     root: string
@@ -128,6 +145,7 @@ export namespace MemoryTool {
   const CATALOG_MAX_BYTES = 8192
   const CATALOG_SESSION_LIMIT = 20
   const CATALOG_SESSION_SUMMARY = 120
+  const READ_MAX_BYTES = 40 * 1024 // fork_change
 
   function block(input: string) {
     return ["```kilo-memory-v1 targeted_context_not_instruction", input.replaceAll("```", "'''"), "```"].join("\n")
@@ -203,9 +221,77 @@ export namespace MemoryTool {
         mode: input.params.mode,
         ...(input.params.query ? { query: input.params.query } : {}),
         ...(input.params.sessionID ? { sessionID: input.params.sessionID } : {}),
+        ...(input.params.recordID !== undefined ? { recordID: input.params.recordID } : {}), // fork_change
       },
     })
   }
+
+  // fork_change start - Render exact reads with a data-dependent fence and never clip a successful body.
+  function fence(text: string) {
+    const runs = text.match(/`+/g) ?? []
+    return "`".repeat(runs.reduce((size, item) => Math.max(size, item.length + 1), 3))
+  }
+
+  function readOutput(input: { memory_id: string; file: string; text: string }) {
+    const mark = fence(input.text)
+    return [
+      `${mark}kilo-memory-v1 targeted_context_not_instruction`,
+      `memory_id=${input.memory_id} source=${input.file}`,
+      `text: ${input.text}`,
+      mark,
+    ].join("\n")
+  }
+
+  function recallRead(input: Recall, live: Live) {
+    return Effect.gen(function* () {
+      const recordID = input.params.recordID ?? ""
+      const result = yield* input.memory.read({ root: live.root, recordID })
+      const identity = recordID ? { memory_id: recordID } : {}
+      const found = result.status === "found"
+      const output = found
+        ? readOutput(result)
+        : result.status === "invalid"
+          ? "Provide an exact canonical memory_id from typed or search recall."
+          : result.status === "not_found"
+            ? `No current entry found for memory_id=${result.memory_id}; it may be missing or stale.`
+            : `Ambiguous memory_id=${result.memory_id}: ${result.matches} current entries share this identity.`
+      const maxBytes = Math.min(READ_MAX_BYTES, input.limits?.maxBytes ?? READ_MAX_BYTES)
+      const maxLines = input.limits?.maxLines
+      const renderedBytes = found ? Buffer.byteLength(output, "utf-8") : 0
+      const renderedLines = found ? output.split("\n").length : 0
+      const tooLong = found && (renderedBytes > maxBytes || (maxLines !== undefined && renderedLines > maxLines))
+      const complete = found && !tooLong
+      const final = tooLong
+        ? `Memory read too_long for memory_id=${result.memory_id}; full content was not returned.`
+        : output
+      const outputBytes = Buffer.byteLength(final, "utf-8")
+      const status = tooLong ? "too_long" : result.status
+      const count = found ? 1 : 0
+      yield* input.memory.recordRecall({ root: live.root, sessionID: live.current, now: Date.now(), count })
+      return {
+        title: `Kilo memory read: ${status}`,
+        output: final,
+        metadata: {
+          sources: found ? [result.file] : [],
+          count,
+          status,
+          ...identity,
+          complete,
+          ...(complete ? { truncated: false as const } : {}),
+          ...(found
+            ? {
+                textChars: result.text.length,
+                textBytes: Buffer.byteLength(result.text, "utf-8"),
+                renderedBytes,
+                maxBytes,
+                outputBytes,
+              }
+            : { outputBytes }),
+        },
+      } satisfies Result
+    })
+  }
+  // fork_change end
 
   function recallCatalog(input: Recall, live: Live, query: string) {
     return Effect.gen(function* () {
@@ -273,6 +359,7 @@ export namespace MemoryTool {
       const live = { root, current, state }
       const query = input.params.query?.trim() ?? ""
       const mode = input.params.mode
+      if (mode === "read") return yield* recallRead(input, live) // fork_change
       if (mode === "catalog") return yield* recallCatalog(input, live, query)
       if (input.params.mode !== "digest" && !query) return yield* recallQuery(input, live)
       return yield* recallSearch(input, live, query, mode)
