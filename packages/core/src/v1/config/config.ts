@@ -258,7 +258,13 @@ export const Info = Schema.Struct({
           enabled: Schema.optional(Schema.Boolean),
           on_demand: Schema.optional(Schema.Boolean),
           description: Schema.optional(Schema.String),
-        }),
+        }).check(
+          Schema.makeFilter((value) =>
+            Object.keys(value).length > 0
+              ? undefined
+              : "Partial MCP override must set at least one of enabled, on_demand, or description",
+          ),
+        ),
       ]),
     ),
     // kilocode_change end

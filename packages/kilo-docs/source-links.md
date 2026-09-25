@@ -138,7 +138,6 @@
   <!-- packages/kilo-vscode/webview-ui/src/components/marketplace/MarketplaceListView.tsx -->
 - <https://kilo.ai/docs/getting-started/settings>
   <!-- packages/opencode/src/kilocode/config/claude-migration.ts -->
-  <!-- packages/opencode/src/kilocode/config/config.ts -->
 - <https://kilo.ai/docs/oauth/kilo/client.json>
   <!-- packages/opencode/src/kilocode/mcp/client-metadata.ts -->
 - <https://kilo.ai/gateway>

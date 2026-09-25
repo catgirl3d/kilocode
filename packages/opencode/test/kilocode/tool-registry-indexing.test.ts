@@ -379,8 +379,10 @@ describe("kilocode tool registry indexing", () => {
         "kilo_memory_save",
         "recall",
         "background_process",
+        "agent_manager_models",
         "notify_user",
         "send_file",
+        "link_pr",
         "consult_advisor",
       ])
       expect(
@@ -429,6 +431,7 @@ describe("kilocode tool registry indexing", () => {
         "browser_open",
         "notify_user",
         "send_file",
+        "link_pr",
         "consult_advisor",
       ])
       expect(
