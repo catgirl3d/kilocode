@@ -117,6 +117,92 @@ describe("MemoryCapture (fake ports)", () => {
     }
   })
 
+  test("turn-close persists an accepted typed value beyond the 240-character preview", async () => {
+    const t = await tmp()
+    try {
+      await KiloMemory.enable({ root: t.root })
+      await KiloMemory.configure({ root: t.root, settings: { autoConsolidate: true } })
+      const value = `${"automatic detail ".repeat(17)}\n  TURN_CLOSE_TAIL ::  after delimiter  `
+
+      const result = await run({
+        root: t.root,
+        session: session(view()),
+        model: model({
+          digest: '{"topic":"repo setup","summary":"Explored repo setup commands. Next: verify memory tests."}',
+          typed: JSON.stringify({
+            operations: [{ op: "upsert_project_fact", key: "long_auto_fact", value }],
+            skipped: [],
+          }),
+        }),
+      })
+      const source = await MemoryFiles.readSource(t.root, "project.md")
+
+      expect(result).toMatchObject({ skipped: false, operationCount: 1 })
+      expect(source.split("\n")).toContain(
+        `- long_auto_fact :: ${"automatic detail ".repeat(17)}TURN_CLOSE_TAIL :: after delimiter`,
+      )
+    } finally {
+      await t.done()
+    }
+  })
+
+  test("turn-close accepts and fully stores a typed value of exactly 2000 characters", async () => {
+    const t = await tmp()
+    try {
+      await KiloMemory.enable({ root: t.root })
+      await KiloMemory.configure({ root: t.root, settings: { autoConsolidate: true } })
+      const prefix = "automaticdetail".repeat(80)
+      const tail = "\n  EXACT_2000_TAIL :: after delimiter"
+      const fill = "x".repeat(2_000 - prefix.length - tail.length)
+      const value = `${prefix}${fill}${tail}`
+
+      const result = await run({
+        root: t.root,
+        session: session(view()),
+        model: model({
+          digest: '{"topic":"repo setup","summary":"Explored repo setup commands. Next: verify memory tests."}',
+          typed: JSON.stringify({
+            operations: [{ op: "upsert_project_fact", key: "exact_limit_fact", value }],
+            skipped: [],
+          }),
+        }),
+      })
+      const source = await MemoryFiles.readSource(t.root, "project.md")
+
+      expect(value).toHaveLength(2_000)
+      expect(result).toMatchObject({ skipped: false, operationCount: 1 })
+      expect(source.split("\n")).toContain(`- exact_limit_fact :: ${prefix}${fill} EXACT_2000_TAIL :: after delimiter`)
+    } finally {
+      await t.done()
+    }
+  })
+
+  test("turn-close does not write a typed value over the 2000-character capture limit", async () => {
+    const t = await tmp()
+    try {
+      await KiloMemory.enable({ root: t.root })
+      await KiloMemory.configure({ root: t.root, settings: { autoConsolidate: true } })
+      const before = await MemoryFiles.readSource(t.root, "project.md")
+      const result = await run({
+        root: t.root,
+        session: session(view()),
+        model: model({
+          digest: '{"topic":"repo setup","summary":"Explored repo setup commands. Next: verify memory tests."}',
+          typed: JSON.stringify({
+            operations: [{ op: "upsert_project_fact", key: "overlong_fact", value: "x".repeat(2_001) }],
+            skipped: [],
+          }),
+        }),
+      })
+      const after = await MemoryFiles.readSource(t.root, "project.md")
+
+      expect(result).toMatchObject({ skipped: false, operationCount: 0 })
+      expect(after).toBe(before)
+    } finally {
+      await t.done()
+    }
+  })
+
   test("typed timeout preserves digest progress without advancing the typed clock", async () => {
     const t = await tmp()
     const events: MemoryEvents.Status[] = []
