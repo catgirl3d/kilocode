@@ -183,8 +183,9 @@ it.effect("preserves running tool start time across metadata updates", () =>
           }
           updates.push(state.state.time.start)
         }),
+      ensureSnapshot: () => Effect.succeed(undefined),
       completeToolCall: () => Effect.void,
-    } satisfies Pick<SessionProcessor.Handle, "message" | "metadata" | "completeToolCall">
+    } satisfies Pick<SessionProcessor.Handle, "message" | "metadata" | "completeToolCall" | "ensureSnapshot">
 
     const tools = yield* SessionTools.resolve({
       agent,
