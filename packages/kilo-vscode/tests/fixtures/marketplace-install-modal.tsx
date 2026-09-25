@@ -5,7 +5,7 @@ import type { MarketplaceItem, McpMarketplaceItem } from "../../webview-ui/src/t
 
 const window = new Window({ url: "https://kilo.test" })
 const errors: unknown[] = []
-window.addEventListener("error", (event) => errors.push(event.error))
+window.addEventListener("error", (event) => errors.push((event as unknown as ErrorEvent).error))
 Object.defineProperty(window, "origin", { value: window.location.origin })
 Object.assign(globalThis, {
   window,
