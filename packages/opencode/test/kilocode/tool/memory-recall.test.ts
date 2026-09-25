@@ -12,7 +12,7 @@ import { RemoteSender } from "@/kilo-sessions/remote-sender"
 import type { Tool } from "@/tool/tool"
 import { resetDatabase } from "../../fixture/db"
 import { provideTestInstance, tmpdir } from "../../fixture/fixture"
-import { runMemoryTool } from "./memory-runtime"
+import { runMemoryTool, runMemoryToolMany } from "./memory-runtime"
 
 const watch = process.env.KILO_EXPERIMENTAL_DISABLE_FILEWATCHER
 
@@ -65,16 +65,33 @@ async function withConfig<T>(dir: string, fn: () => Promise<T> | T) {
 }
 
 type RecallParams = {
-  mode: "search" | "typed" | "digest" | "catalog"
+  mode: "search" | "typed" | "digest" | "catalog" | "read"
   query?: string
   sessionID?: string
+  recordID?: string
   limit?: number
 }
 
-async function execute(dir: string, params: RecallParams, context: Tool.Context = ctx) {
+async function execute(
+  dir: string,
+  params: RecallParams,
+  context: Tool.Context = ctx,
+  runtime: NonNullable<Parameters<typeof runMemoryTool>[3]> = {},
+) {
   return provideTestInstance({
     directory: dir,
-    fn: () => runMemoryTool(MemoryRecallTool, params, context),
+    fn: () => runMemoryTool(MemoryRecallTool, params, context, runtime),
+  })
+}
+
+async function executeMany(
+  dir: string,
+  params: RecallParams[],
+  runtime: NonNullable<Parameters<typeof runMemoryToolMany>[3]>,
+) {
+  return provideTestInstance({
+    directory: dir,
+    fn: () => runMemoryToolMany(MemoryRecallTool, params, ctx, runtime),
   })
 }
 
@@ -104,6 +121,367 @@ describe("kilo_memory_recall", () => {
     expect(() =>
       Schema.decodeUnknownSync(MemoryTool.RecallParameters)({ mode: "digest", sessionID: "s".repeat(129) }),
     ).toThrow()
+    expect(() =>
+      Schema.decodeUnknownSync(MemoryTool.RecallParameters)({ mode: "read", recordID: "x".repeat(257) }),
+    ).toThrow()
+    expect(() => Schema.decodeUnknownSync(MemoryTool.RecallParameters)({ mode: "read", recordID: "" })).toThrow()
+    expect(() =>
+      Schema.decodeUnknownSync(MemoryTool.RecallParameters)({ mode: "read", recordID: "project.md:Facts:key" }),
+    ).not.toThrow()
+    expect(Object.keys(MemoryTool.RecallParameters.fields)).not.toContain("limits")
+  })
+
+  test("typed tail search exposes an id for a complete, permissioned exact read", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const asks: Parameters<Tool.Context["ask"]>[0][] = []
+      const gate: Tool.Context = {
+        ...ctx,
+        ask: (req) =>
+          Effect.sync(() => {
+            asks.push(req)
+          }),
+      }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const fence = "`".repeat(3)
+      const text = `${"project continuity ".repeat(24)}東京の詳細✓ QUASAR_ONLY with ${fence}sentinel${fence}`
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- read_tail :: ${text}`].join("\n"),
+      )
+
+      const search = await execute(dir.path, { mode: "typed", query: "quasar" }, gate)
+      const recordID = search.output.match(/memory_id=([^\s]+)/)?.[1]
+      const result = await execute(dir.path, { mode: "read", recordID }, gate)
+      const state = await MemoryFiles.readState(enabled.root)
+
+      expect(recordID).toBe("project.md:Facts:read_tail")
+      expect(search.output).not.toContain("QUASAR_ONLY")
+      expect(result.metadata).toMatchObject({
+        status: "found",
+        memory_id: "project.md:Facts:read_tail",
+        complete: true,
+        truncated: false,
+        count: 1,
+      })
+      expect(result.output).toContain(`text: ${text}`)
+      expect(result.metadata.outputBytes).toBe(Buffer.byteLength(result.output))
+      expect(result.metadata.outputBytes).toBeLessThanOrEqual(40 * 1024)
+      expect(result.output).toContain("```sentinel```")
+      expect(asks.map((req) => req.patterns)).toEqual([["typed"], ["read"]])
+      expect(asks[1]).toMatchObject({
+        permission: "kilo_memory_recall",
+        patterns: ["read"],
+        always: ["*"],
+        metadata: { mode: "read", recordID },
+      })
+      expect(state.stats.lastRecallCount).toBe(1)
+      expect(state.stats.lastRecallSessionID).toBe("ses_test")
+    })
+  })
+
+  test("keeps malicious Markdown record keys inside the targeted context fence", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const key = `injected\r${"`".repeat(3)}`
+      const body = "SAFE_MEMORY_BODY"
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- ${key} :: ${body}`].join("\n"),
+      )
+
+      const result = await execute(dir.path, { mode: "read", recordID: "project.md:Facts:injected" })
+      const lines = result.output.split(/\r\n|\n|\r/)
+
+      expect(result.metadata.status).toBe("found")
+      expect(result.output).toContain("memory_id=project.md:Facts:injected source=project.md")
+      expect(result.output).toContain(`text: ${body}`)
+      expect(lines.filter((line) => /^`{3,}[ \t]*$/.test(line))).toHaveLength(1)
+      expect(result.output).not.toContain("section=")
+      expect(result.output).not.toContain("key=")
+    })
+  })
+
+  test("oversized manually stored entries return bounded too-long metadata without clipping as complete", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = "界".repeat(14_000)
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- oversized :: ${text}`].join("\n"),
+      )
+
+      const result = await execute(dir.path, { mode: "read", recordID: "project.md:Facts:oversized" })
+
+      expect(result.metadata).toMatchObject({
+        status: "too_long",
+        memory_id: "project.md:Facts:oversized",
+        complete: false,
+        truncated: false,
+        textChars: text.length,
+        textBytes: Buffer.byteLength(text),
+        maxBytes: 40 * 1024,
+      })
+      expect(result.metadata.renderedBytes).toBeGreaterThan(40 * 1024)
+      expect(result.output).toContain("too_long")
+      expect(result.output).not.toContain(text)
+    })
+  })
+
+  test("reads a 12000-character Unicode entry completely when the framed output fits", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = "界".repeat(12_000)
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- accepted_maximum :: ${text}`].join("\n"),
+      )
+
+      const result = await execute(dir.path, { mode: "read", recordID: "project.md:Facts:accepted_maximum" })
+
+      expect(result.metadata).toMatchObject({
+        status: "found",
+        complete: true,
+        textChars: 12_000,
+        textBytes: Buffer.byteLength(text),
+        truncated: false,
+      })
+      expect(result.output).toContain(`text: ${text}`)
+      expect(result.metadata.outputBytes).toBe(Buffer.byteLength(result.output))
+      expect(result.metadata.outputBytes).toBeLessThanOrEqual(40 * 1024)
+    })
+  })
+
+  test("accepts a complete rendered read at the exact UTF-8 output byte ceiling", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const sample = "a"
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- exact_ceiling :: ${sample}`].join("\n"),
+      )
+      const first = await execute(dir.path, { mode: "read", recordID: "project.md:Facts:exact_ceiling" })
+      const overhead = Buffer.byteLength(first.output) - Buffer.byteLength(sample)
+      const text = "a".repeat(40 * 1024 - overhead)
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- exact_ceiling :: ${text}`].join("\n"),
+      )
+
+      const result = await execute(dir.path, { mode: "read", recordID: "project.md:Facts:exact_ceiling" })
+
+      expect(result.metadata.status).toBe("found")
+      expect(result.metadata.complete).toBe(true)
+      expect(result.output).toContain(`text: ${text}`)
+      expect(Buffer.byteLength(result.output)).toBe(40 * 1024)
+      expect(result.metadata.outputBytes).toBe(40 * 1024)
+    })
+  })
+
+  test("rejects a read when configured bytes fit the body but not its framing", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = `FRAMED_BODY_SECRET_${"x".repeat(128)}`
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- framed_body :: ${text}`].join("\n"),
+      )
+
+      const result = await execute(dir.path, { mode: "read", recordID: "project.md:Facts:framed_body" }, ctx, {
+        limits: () => ({ maxBytes: Buffer.byteLength(text), maxLines: 2000 }),
+      })
+
+      expect(result.metadata).toMatchObject({ status: "too_long", complete: false })
+      expect(result.metadata.renderedBytes).toBeGreaterThan(Buffer.byteLength(text))
+      expect(result.output).toContain("too_long")
+      expect(result.output).not.toContain("FRAMED_BODY_SECRET")
+    })
+  })
+
+  test("accepts configured byte equality and rejects a result one byte over", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = "EXACT_CONFIGURED_BYTE_BODY"
+      const params = { mode: "read", recordID: "project.md:Facts:exact_bytes" } as const
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- exact_bytes :: ${text}`].join("\n"),
+      )
+      const first = await execute(dir.path, params)
+      const maxBytes = Buffer.byteLength(first.output)
+      const equal = await execute(dir.path, params, ctx, { limits: () => ({ maxBytes, maxLines: 2000 }) })
+      const over = await execute(dir.path, params, ctx, {
+        limits: () => ({ maxBytes: maxBytes - 1, maxLines: 2000 }),
+      })
+
+      expect(equal.metadata).toMatchObject({ status: "found", complete: true })
+      expect(Buffer.byteLength(equal.output)).toBe(maxBytes)
+      expect(over.metadata).toMatchObject({ status: "too_long", complete: false })
+      expect(over.output).not.toContain(text)
+    })
+  })
+
+  test("uses configured line equality and rejects a result one line over", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = "LINE_LIMIT_BODY"
+      const params = { mode: "read", recordID: "project.md:Facts:line_limit" } as const
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- line_limit :: ${text}`].join("\n"),
+      )
+      const first = await execute(dir.path, params)
+      const maxLines = first.output.split("\n").length
+      const equal = await execute(dir.path, params, ctx, { limits: () => ({ maxBytes: 100_000, maxLines }) })
+      const over = await execute(dir.path, params, ctx, {
+        limits: () => ({ maxBytes: 100_000, maxLines: maxLines - 1 }),
+      })
+
+      expect(equal.metadata).toMatchObject({ status: "found", complete: true })
+      expect(equal.output.split("\n")).toHaveLength(maxLines)
+      expect(over.metadata).toMatchObject({ status: "too_long", complete: false })
+      expect(over.output).not.toContain(text)
+    })
+  })
+
+  test("uses UTF-8 bytes rather than JavaScript string length for configured limits", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = `MULTIBYTE_BODY_${"界".repeat(128)}`
+      const params = { mode: "read", recordID: "project.md:Facts:utf8_bytes" } as const
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- utf8_bytes :: ${text}`].join("\n"),
+      )
+      const first = await execute(dir.path, params)
+      const maxBytes = Math.floor((first.output.length + Buffer.byteLength(first.output)) / 2)
+      const result = await execute(dir.path, params, ctx, { limits: () => ({ maxBytes, maxLines: 2000 }) })
+
+      expect(first.output.length).toBeLessThan(maxBytes)
+      expect(Buffer.byteLength(first.output)).toBeGreaterThan(maxBytes)
+      expect(result.metadata).toMatchObject({ status: "too_long", complete: false })
+      expect(result.output).not.toContain("MULTIBYTE_BODY")
+    })
+  })
+
+  test("resolves configured limits on each call to one initialized wrapped tool", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = "PER_INVOCATION_LIMIT_BODY"
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- per_invocation :: ${text}`].join("\n"),
+      )
+      const settings = [
+        { maxBytes: 100_000, maxLines: 2000 },
+        { maxBytes: 1, maxLines: 2000 },
+      ]
+      let calls = 0
+      const results = await executeMany(
+        dir.path,
+        [
+          { mode: "read", recordID: "project.md:Facts:per_invocation" },
+          { mode: "read", recordID: "project.md:Facts:per_invocation" },
+        ],
+        { limits: () => settings[calls++] },
+      )
+
+      expect(calls).toBe(2)
+      expect(results[0]?.metadata).toMatchObject({ status: "found", complete: true })
+      expect(results[1]?.metadata).toMatchObject({ status: "too_long", complete: false })
+      expect(results[1]?.output).not.toContain(text)
+    })
+  })
+
+  test("sends non-complete read failures through generic truncation under tiny limits", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = "FAILURE_BODY_MUST_NOT_ESCAPE"
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- bounded_failure :: ${text}`].join("\n"),
+      )
+      const seen: string[] = []
+      const results = await executeMany(
+        dir.path,
+        [
+          { mode: "read", recordID: "project.md:Facts:bounded_failure" },
+          { mode: "read", recordID: "project.md:Facts:missing" },
+        ],
+        {
+          limits: () => ({ maxBytes: 1, maxLines: 1 }),
+          output: (value) => {
+            seen.push(value)
+            return { content: "generic bounded output", truncated: true, outputPath: "test-output" }
+          },
+        },
+      )
+
+      expect(results.map((result) => result.metadata.status)).toEqual(["too_long", "not_found"])
+      expect(results.map((result) => result.metadata.truncated)).toEqual([true, true])
+      expect(results.map((result) => result.output)).toEqual(["generic bounded output", "generic bounded output"])
+      expect(seen).toHaveLength(2)
+      expect(seen.every((value) => !value.includes(text))).toBe(true)
+    })
+  })
+
+  test("metadata represents generic truncation outcomes", () => {
+    const metadata: MemoryTool.Result["metadata"] = { sources: [], truncated: true }
+
+    expect(metadata.truncated).toBe(true)
+  })
+
+  test("returns invalid for schema-valid noncanonical record IDs without exposing stored bodies", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      const text = "INVALID_RECORD_ID_MUST_NOT_EXPOSE_THIS_BODY"
+      await MemoryFiles.writeSource(
+        enabled.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- private_entry :: ${text}`].join("\n"),
+      )
+
+      const result = await execute(dir.path, { mode: "read", recordID: "project.md:Facts/invalid:private_entry" })
+
+      expect(result.metadata).toMatchObject({ status: "invalid", complete: false })
+      expect(result.output).toContain("Provide an exact canonical memory_id")
+      expect(result.output).not.toContain(text)
+    })
   })
 
   test("does not prompt for permission when memory is disabled", async () => {
@@ -172,7 +550,6 @@ describe("kilo_memory_recall", () => {
       const direct = await execute(dir.path, { mode: "digest", sessionID: "ses_memory_only", query: "unrelated" })
 
       expect(direct.output).toContain("continue memory digest recall")
-
     })
   })
 
@@ -391,7 +768,6 @@ describe("kilo_memory_recall", () => {
       expect(result.title).toContain("no results")
       expect(result.output).toContain("active session")
       expect(result.output).not.toContain("useful prior work")
-
     })
   })
 
@@ -487,7 +863,6 @@ describe("kilo_memory_recall", () => {
       expect(result.output).toContain("cli_tests")
       expect(result.output).toContain("type=session_digest")
       expect(result.output).toContain('topic="catalog recall"')
-
     })
   })
 

@@ -1,4 +1,5 @@
 import { MemoryDigest } from "../capture/digest"
+import { MemoryMarkdown } from "../storage/markdown" // fork_change
 import { MemoryFiles } from "../storage/store"
 import { MemoryIndexer } from "./indexer"
 import { MemorySchema } from "../schema"
@@ -8,6 +9,12 @@ import { MemoryToken } from "./token"
 import { MemorySlug } from "../slug"
 
 export namespace MemoryRecall {
+  // fork_change start - Keep recall presentation limits independent from startup index limits.
+  const previewChars = 350
+  const searchBytes = 2000
+  const digestBytes = 1200
+  // fork_change end
+
   export type Mode = "search" | "typed" | "digest"
 
   export type Hit = {
@@ -20,8 +27,26 @@ export namespace MemoryRecall {
     current?: boolean
     updatedAt?: number
     id?: string
+    memory_id?: string // fork_change
     time?: string
   }
+
+  type Candidate = Hit & { searchText: string } // fork_change
+
+  // fork_change start - Resolve records against current parsed source content.
+  export type ReadResult =
+    | { status: "invalid" }
+    | { status: "not_found"; memory_id: string }
+    | { status: "ambiguous"; memory_id: string; matches: number }
+    | {
+        status: "found"
+        memory_id: string
+        file: MemorySchema.Source
+        section: string
+        key: string
+        text: string
+      }
+  // fork_change end
 
   export type Result = {
     block: string
@@ -54,11 +79,13 @@ export namespace MemoryRecall {
           kind: MemorySchema.recordKind(item.file, item.section),
           source: item.file,
           text: `${item.key} :: ${item.text}`,
+          memory_id: item.memory_id, // fork_change
+          searchText: `${item.key} ${item.searchText}`, // fork_change
           score: 0,
           topics: item.topics,
           current: true,
           updatedAt: item.updatedAt,
-        }) satisfies Hit,
+        }) satisfies Candidate, // fork_change
     )
   }
 
@@ -73,7 +100,7 @@ export namespace MemoryRecall {
         typed({
           file,
           text: await MemoryFiles.readSource(input.root, file),
-          max: input.state.limits.maxLineChars,
+          max: previewChars, // fork_change
           inventory: input.inventory,
           now: input.now,
         }),
@@ -88,8 +115,9 @@ export namespace MemoryRecall {
     return Number.isFinite(value) ? value : undefined
   }
 
-  function digest(input: { file: string; id: string; time: string; topic: string; summary: string }): Hit {
-    return {
+  // fork_change start - Resolve exact typed reads and retain full candidate text for scoring.
+  function digest(input: { file: string; id: string; time: string; topic: string; summary: string }): Candidate {
+    const hit = {
       type: "digest",
       kind: "SESSION_DIGEST",
       source: input.file,
@@ -100,6 +128,47 @@ export namespace MemoryRecall {
       updatedAt: time(input.time),
       id: input.id,
       time: input.time,
+    } satisfies Hit
+    return { ...hit, searchText: hit.text }
+  }
+
+  function selector(recordID: string) {
+    const parts = recordID.split(":")
+    if (parts.length !== 3 || parts.slice(1).some((item) => !item || /[\\/]/u.test(item))) {
+      return undefined
+    }
+    const file = MemorySchema.source(parts[0])
+    const section = parts[1]
+    const key = parts[2]
+    if (!file || !section || !key) return undefined
+    if (MemoryFiles.inventoryKey({ file, section, key }) !== recordID) return undefined
+    return { file, section, key }
+  }
+
+  export async function read(input: { root: string; recordID: string }): Promise<ReadResult> {
+    if (!selector(input.recordID)) return { status: "invalid" }
+
+    const matches: Array<{ file: MemorySchema.Source; section: string; key: string; text: string }> = []
+    for (const file of MemorySchema.Sources) {
+      const text = await MemoryFiles.readSource(input.root, file)
+      for (const item of MemoryMarkdown.parse(text)) {
+        const id = MemoryFiles.inventoryKey({ file, section: item.section, key: item.key })
+        if (id !== input.recordID) continue
+        matches.push({ file, section: item.section, key: item.key, text: item.text })
+      }
+    }
+    if (matches.length === 0) return { status: "not_found", memory_id: input.recordID }
+    if (matches.length > 1) return { status: "ambiguous", memory_id: input.recordID, matches: matches.length }
+
+    const item = matches.at(0)
+    if (!item) return { status: "not_found", memory_id: input.recordID }
+    return {
+      status: "found",
+      memory_id: input.recordID,
+      file: item.file,
+      section: item.section,
+      key: item.key,
+      text: item.text,
     }
   }
 
@@ -110,15 +179,15 @@ export namespace MemoryRecall {
     limit: number
     sessionID?: string
     currentSessionID?: string
-  }) {
-    if (input.mode === "typed") return [] as Hit[]
+  }): Promise<Candidate[]> {
+    if (input.mode === "typed") return []
     if (input.sessionID) {
-      if (input.sessionID === input.currentSessionID) return [] as Hit[]
+      if (input.sessionID === input.currentSessionID) return []
       const item = await MemoryFiles.readSession(input.root, {
         sessionID: input.sessionID,
         max: MemorySchema.maxStoredDigestSummary,
       })
-      if (!item || MemoryDigest.empty(item)) return [] as Hit[]
+      if (!item || MemoryDigest.empty(item)) return []
       return [digest(item)]
     }
     const items = await MemoryFiles.recentSessions(
@@ -129,10 +198,11 @@ export namespace MemoryRecall {
     return items.filter((item) => item.id !== input.currentSessionID && !MemoryDigest.empty(item)).map(digest)
   }
 
-  function score(input: { hit: Hit; keys: string[] }) {
-    const body = `${input.hit.kind} ${input.hit.source} ${input.hit.text}`
+  function score(input: { hit: Candidate; keys: string[] }) {
+    const body = `${input.hit.kind} ${input.hit.source} ${input.hit.searchText}`
     return input.keys.reduce((sum, term) => sum + (has(body, term) ? 1 : 0), 0)
   }
+  // fork_change end
 
   function fresh(input: Hit) {
     return input.updatedAt ?? 0
@@ -176,7 +246,8 @@ export namespace MemoryRecall {
     return novel * 2 < terms.length
   }
 
-  function dedupe(input: { hits: Hit[]; query: string }) {
+  // fork_change start - Keep candidate-only search data private while rendering canonical ids.
+  function dedupe(input: { hits: Candidate[]; query: string }) {
     const typed = input.hits.filter((hit) => !session(hit))
     return input.hits.filter((hit) => {
       if (!session(hit)) return true
@@ -184,8 +255,7 @@ export namespace MemoryRecall {
       // Suppress only genuine restatements: shares the query anchor with a typed hit AND is mostly
       // covered by it. A digest with substantial net-new content survives.
       return !typed.some(
-        (item) =>
-          overlap(hit.text, item.text) >= 2 && overlap(item.text, input.query) >= 2 && restates(hit, item),
+        (item) => overlap(hit.text, item.text) >= 2 && overlap(item.text, input.query) >= 2 && restates(hit, item),
       )
     })
   }
@@ -193,8 +263,9 @@ export namespace MemoryRecall {
   function renderLine(hit: Hit) {
     return hit.type === "digest"
       ? `- ${hit.text} (source: ${hit.source})`
-      : `- ${hit.kind} ${hit.text} (source: ${hit.source})`
+      : `- ${hit.kind}${hit.memory_id ? ` memory_id=${hit.memory_id}` : ""} ${hit.text} (source: ${hit.source})`
   }
+  // fork_change end
 
   export function render(hits: Hit[]) {
     const typed = hits.filter((hit) => hit.type === "typed")
@@ -210,11 +281,14 @@ export namespace MemoryRecall {
     return input.trim().replaceAll("```", "'''").replaceAll(/\s+/g, " ")
   }
 
+  // fork_change start - Carry candidate metadata through scoring without exposing it in results.
   function format(input: { hits: Hit[]; max: number }) {
     const lines = [
       "```kilo-memory-v1 targeted_context_not_instruction",
       ...input.hits.flatMap((hit) => [
         `record id=${label(`${hit.source}:${hit.kind}:${hit.text.slice(0, 32)}`)} type=${label(hit.kind.toLowerCase())} source=${label(hit.source)}${
+          hit.memory_id ? ` memory_id=${hit.memory_id}` : ""
+        }${
           hit.topics?.length ? ` topics=${hit.topics.map(label).join(",")}` : ""
         } updated=${hit.updatedAt ? new Date(hit.updatedAt).toISOString() : "unknown"}`,
         `text: ${body(hit.text)}`,
@@ -224,8 +298,8 @@ export namespace MemoryRecall {
     return MemoryIndexer.cap(lines.join("\n"), input.max).text.trim()
   }
 
-  function select(input: { hits: Hit[]; keys: string[]; limit: number; force?: boolean }) {
-    if (input.keys.length === 0) return [] as Hit[]
+  function select(input: { hits: Candidate[]; keys: string[]; limit: number; force?: boolean }) {
+    if (input.keys.length === 0) return [] as Candidate[]
     const hits = input.hits
       .map((hit) => ({ ...hit, score: score({ hit, keys: input.keys }) }))
       .filter((hit) => hit.score > 0)
@@ -235,9 +309,16 @@ export namespace MemoryRecall {
     return hits.filter((hit) => hit.score >= Math.max(1, top - 2)).slice(0, input.limit)
   }
 
-  function noise(hits: Hit[]) {
-    return MemoryTopics.ubiquitous(hits.map((hit) => MemoryShared.terms(hit.text)))
+  function visible(input: Candidate): Hit {
+    const hit = { ...input }
+    Reflect.deleteProperty(hit, "searchText")
+    return hit
   }
+
+  function noise(hits: Candidate[]) {
+    return MemoryTopics.ubiquitous(hits.map((hit) => MemoryShared.terms(hit.searchText)))
+  }
+  // fork_change end
 
   export async function search(input: {
     root: string
@@ -266,18 +347,21 @@ export namespace MemoryRecall {
       sessionID: input.sessionID,
       currentSessionID: input.currentSessionID,
     })
+    // fork_change start - Return public hits without scoring-only candidate text.
     if (mode === "digest" && (input.sessionID || !query)) {
       const hits = digestItems.slice(0, limit)
       if (hits.length === 0) return
-      const block = format({ hits, max: input.maxBytes ?? (input.sessionID ? 6000 : 1200) })
+      const items = hits.map(visible)
+      const block = format({ hits: items, max: input.maxBytes ?? (input.sessionID ? 6000 : digestBytes) })
       if (!block) return
       return {
         block,
-        hits,
+        hits: items,
         bytes: Buffer.byteLength(block),
         tokens: MemoryToken.estimate(block),
       }
     }
+    // fork_change end
     // Query terms absent from the corpus add zero to every hit; only corpus-ubiquitous terms need removal.
     const keys = MemoryTopics.expand(MemoryShared.terms(query, { drop: noise([...typedItems, ...digestItems]) }))
     const hits = dedupe({
@@ -285,13 +369,16 @@ export namespace MemoryRecall {
       query,
     })
     if (hits.length === 0) return
-    const block = format({ hits, max: input.maxBytes ?? 1200 })
+    // fork_change start - Strip scoring-only text from public recall results.
+    const items = hits.map(visible)
+    const block = format({ hits: items, max: input.maxBytes ?? (mode === "digest" ? digestBytes : searchBytes) })
     if (!block) return
     return {
       block,
-      hits,
+      hits: items,
       bytes: Buffer.byteLength(block),
       tokens: MemoryToken.estimate(block),
     }
+    // fork_change end
   }
 }
