@@ -47,6 +47,7 @@ type RecallInput = KiloMemory.Input & {
 }
 
 type SearchInput = Parameters<typeof MemoryRecall.search>[0]
+type ReadInput = Parameters<typeof MemoryRecall.read>[0] // fork_change
 
 type RecordInput = KiloMemory.Input & {
   sessionID: string
@@ -143,6 +144,7 @@ export namespace MemoryService {
     readonly purge: (input: KiloMemory.Input) => Effect.Effect<Awaited<ReturnType<typeof KiloMemory.purge>>, Failure>
     readonly recall: (input: RecallInput) => Effect.Effect<Awaited<ReturnType<typeof KiloMemory.recall>>, Failure>
     readonly search: (input: SearchInput) => Effect.Effect<Awaited<ReturnType<typeof MemoryRecall.search>>, Failure>
+    readonly read: (input: ReadInput) => Effect.Effect<MemoryRecall.ReadResult, Failure> // fork_change
     readonly recordSession: (
       input: RecordInput,
     ) => Effect.Effect<Awaited<ReturnType<typeof KiloMemory.recordSession>>, Failure>
@@ -188,6 +190,7 @@ export namespace MemoryService {
       purge: (input) => bridge(() => KiloMemory.purge(input)),
       recall: (input) => bridge(() => KiloMemory.recall(input)),
       search: (input) => bridge(() => MemoryRecall.search(input)),
+      read: (input) => bridge(() => MemoryRecall.read(input)), // fork_change
       recordSession: (input) => bridge(() => KiloMemory.recordSession(input)),
       state: (input) => bridge(() => MemoryFiles.readState(input.root)),
       session: (input) =>
