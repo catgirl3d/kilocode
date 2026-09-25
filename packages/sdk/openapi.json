@@ -27886,15 +27886,6 @@
             "$ref": "#/components/schemas/EventServerInstanceDisposed"
           },
           {
-            "$ref": "#/components/schemas/EventSessionTurnOpen"
-          },
-          {
-            "$ref": "#/components/schemas/EventSessionTurnClose"
-          },
-          {
-            "$ref": "#/components/schemas/EventSessionQueueChanged"
-          },
-          {
             "$ref": "#/components/schemas/EventSessionNetworkAsked"
           },
           {
@@ -27905,6 +27896,15 @@
           },
           {
             "$ref": "#/components/schemas/EventSessionNetworkRestored"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionTurnOpen"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionTurnClose"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionQueueChanged"
           },
           {
             "$ref": "#/components/schemas/EventBackground_processUpdated"
@@ -31026,15 +31026,6 @@
                 "$ref": "#/components/schemas/EventServerInstanceDisposed"
               },
               {
-                "$ref": "#/components/schemas/EventSessionTurnOpen"
-              },
-              {
-                "$ref": "#/components/schemas/EventSessionTurnClose"
-              },
-              {
-                "$ref": "#/components/schemas/EventSessionQueueChanged"
-              },
-              {
                 "$ref": "#/components/schemas/EventSessionNetworkAsked"
               },
               {
@@ -31045,6 +31036,15 @@
               },
               {
                 "$ref": "#/components/schemas/EventSessionNetworkRestored"
+              },
+              {
+                "$ref": "#/components/schemas/EventSessionTurnOpen"
+              },
+              {
+                "$ref": "#/components/schemas/EventSessionTurnClose"
+              },
+              {
+                "$ref": "#/components/schemas/EventSessionQueueChanged"
               },
               {
                 "$ref": "#/components/schemas/EventBackground_processUpdated"
@@ -40345,96 +40345,6 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
-      "EventSessionTurnOpen": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.turn.open"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              }
-            },
-            "required": ["sessionID"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventSessionTurnClose": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.turn.close"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "parentID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "reason": {
-                "type": "string",
-                "enum": ["completed", "error", "interrupted", "superseded"]
-              }
-            },
-            "required": ["sessionID", "reason"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventSessionQueueChanged": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["session.queue.changed"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "sessionID": {
-                "type": "string",
-                "pattern": "^ses"
-              },
-              "queued": {
-                "type": "array",
-                "items": {
-                  "type": "string",
-                  "pattern": "^msg"
-                }
-              }
-            },
-            "required": ["sessionID", "queued"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
       "EventSessionNetworkAsked": {
         "type": "object",
         "properties": {
@@ -40536,6 +40446,96 @@
               }
             },
             "required": ["sessionID", "requestID", "time"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionTurnOpen": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.turn.open"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              }
+            },
+            "required": ["sessionID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionTurnClose": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.turn.close"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "parentID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "reason": {
+                "type": "string",
+                "enum": ["completed", "error", "interrupted", "superseded"]
+              }
+            },
+            "required": ["sessionID", "reason"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionQueueChanged": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.queue.changed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "queued": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^msg"
+                }
+              }
+            },
+            "required": ["sessionID", "queued"],
             "additionalProperties": false
           }
         },
