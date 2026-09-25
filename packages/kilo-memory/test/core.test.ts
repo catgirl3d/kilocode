@@ -571,6 +571,266 @@ describe("memory core package", () => {
     })
   })
 
+  test("remember and correct persist normalized text beyond the 240-character preview", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.remember({
+        root: t.root,
+        key: "long_fact",
+        text: `  ${"project detail  ".repeat(26)}\n  REMEMBER_TAIL ::  after delimiter  `,
+      })
+      await Memory.correct({
+        root: t.root,
+        key: "long_correction",
+        text: `\n  ${"review guidance  ".repeat(15)}\n  CORRECT_TAIL ::  after delimiter  \n`,
+      })
+
+      const project = await MemoryFiles.readSource(t.root, "project.md")
+      const corrections = await MemoryFiles.readSource(t.root, "corrections.md")
+      const index = await MemoryFiles.readIndex(t.root)
+      const found = await Memory.recall({ root: t.root, query: "long_fact" })
+      const hit = found.hits.find((item) => item.text.startsWith("long_fact :: "))
+
+      expect(project.split("\n")).toContain(
+        `- long_fact :: ${"project detail ".repeat(26)}REMEMBER_TAIL :: after delimiter`,
+      )
+      expect(corrections.split("\n")).toContain(
+        `- long_correction :: ${"review guidance ".repeat(15)}CORRECT_TAIL :: after delimiter`,
+      )
+      expect(hit?.text.slice("long_fact :: ".length)).toHaveLength(350)
+      expect(hit?.text).not.toContain("REMEMBER_TAIL")
+      expect(index).toContain(`text: long_fact :: ${"project detail ".repeat(15)}project deta...`)
+      expect(index).not.toContain("REMEMBER_TAIL")
+    })
+  })
+
+  test("keeps different long tails under distinct keys when their shared prefix exceeds 240 characters", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const prefix = "sharedprefix".repeat(22)
+      const first = `${prefix} alpha amber quartz violet cedar`
+      const second = `${prefix} bravo basalt copper silver granite`
+
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", key: "first_long_tail", text: first },
+          { action: "add", key: "second_long_tail", text: second },
+        ],
+      })
+      const lines = (await MemoryFiles.readSource(t.root, "project.md")).split("\n")
+
+      expect(prefix.length).toBeGreaterThan(240)
+      expect(lines.some((line) => line.startsWith("- first_long_tail :: "))).toBe(true)
+      expect(lines.some((line) => line.startsWith("- second_long_tail :: "))).toBe(true)
+      expect(lines).toContain(`- first_long_tail :: ${first}`)
+      expect(lines).toContain(`- second_long_tail :: ${second}`)
+    })
+  })
+
+  test("typed and search recall find tail-only terms and expose canonical memory ids", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const text = `${"common material detail ".repeat(20)}TAIL_QUASAR`
+      await Memory.remember({ root: t.root, key: "tail_entry", text })
+
+      const typed = await MemoryRecall.search({ root: t.root, query: "quasar", mode: "typed" })
+      const search = await MemoryRecall.search({ root: t.root, query: "quasar", mode: "search" })
+      const index = await MemoryFiles.readIndex(t.root)
+      const preview = index.match(/text: tail_entry :: ([^\n]+)/)?.[1]
+
+      for (const result of [typed, search]) {
+        const hit = result?.hits.at(0)
+        expect(hit).toBeDefined()
+        expect(hit?.memory_id).toBe("project.md:Facts:tail_entry")
+        expect(hit?.text.startsWith("tail_entry :: ")).toBe(true)
+        expect(hit?.text.slice("tail_entry :: ".length)).toHaveLength(350)
+        expect(hit?.text).not.toContain("TAIL_QUASAR")
+        expect(result?.block).toContain("memory_id=project.md:Facts:tail_entry")
+      }
+      expect(preview).toHaveLength(240)
+      expect(preview).not.toContain("TAIL_QUASAR")
+    })
+  })
+
+  test("filters ubiquitous query terms found only beyond typed previews", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const prefix = "filler ".repeat(51)
+      const quartz = `${prefix}nebula quartz`
+      const common = `${prefix}nebula`
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "## Facts",
+          `- quartz_record :: ${quartz}`,
+          `- first_common :: ${common}`,
+          `- second_common :: ${common}`,
+        ].join("\n"),
+      )
+
+      const result = await MemoryRecall.search({ root: t.root, query: "nebula quartz" })
+
+      expect(result?.bytes).toBeLessThan(2000)
+      expect(result?.hits.map((hit) => hit.memory_id)).toEqual(["project.md:Facts:quartz_record"])
+      const read = await MemoryRecall.read({ root: t.root, recordID: result?.hits.at(0)?.memory_id ?? "" })
+      expect(read.status).toBe("found")
+      if (read.status === "found") expect(read.text).toBe(quartz)
+    })
+  })
+
+  test("typed and search recall fit multiple complete long records within the default response budget", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const prefix = `${"a".repeat(250)}${"界".repeat(100)}`
+      const keys = ["long_entry_alpha", "long_entry_bravo"]
+      await Memory.apply({
+        root: t.root,
+        ops: keys.map((key, idx) => ({ action: "add" as const, key, text: `${prefix} ${idx} NEBULA` })),
+      })
+
+      for (const mode of ["typed", "search"] as const) {
+        const result = await MemoryRecall.search({ root: t.root, query: "nebula", mode })
+        const records = result?.block.match(/record id=[^\n]*\ntext: [^\n]*/g) ?? []
+
+        expect(result?.bytes).toBeLessThanOrEqual(2000)
+        expect(records).toHaveLength(2)
+        for (const key of keys) {
+          const record = records.find((item) => item.includes(`memory_id=project.md:Facts:${key}`))
+          expect(record).toBeDefined()
+          expect(record).toContain(`\ntext: ${key} :: ${prefix.slice(0, 347)}...`)
+        }
+      }
+    })
+  })
+
+  test("exact read accepts dot-only keys emitted by typed search", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        ["# Project Memory", "## Facts", "- .. :: distinctive value", "- . :: period marker"].join("\n"),
+      )
+
+      for (const item of [
+        { key: "..", query: "distinctive", text: "distinctive value" },
+        { key: ".", query: "marker", text: "period marker" },
+      ]) {
+        const found = await MemoryRecall.search({ root: t.root, query: item.query, mode: "typed" })
+        const hit = found?.hits.find((entry) => entry.text.startsWith(`${item.key} :: `))
+        expect(hit?.memory_id).toBe(`project.md:Facts:${item.key}`)
+
+        const read = await MemoryRecall.read({ root: t.root, recordID: hit?.memory_id ?? "" })
+        expect(read.status).toBe("found")
+        if (read.status === "found") expect(read.text).toBe(item.text)
+      }
+    })
+  })
+
+  test("exact read returns current full content for matching file and section identity", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "## Facts",
+          `- shared :: ${"Project detail ".repeat(24)}初回の保存✓`,
+          "## Decisions",
+          "- shared :: Project decision content.",
+        ].join("\n"),
+      )
+      await MemoryFiles.writeSource(
+        t.root,
+        "environment.md",
+        ["# Environment", "## Commands", "- shared :: Environment command content."].join("\n"),
+      )
+
+      const fact = await MemoryRecall.read({ root: t.root, recordID: "project.md:Facts:shared" })
+      const decision = await MemoryRecall.read({ root: t.root, recordID: "project.md:Decisions:shared" })
+      const command = await MemoryRecall.read({ root: t.root, recordID: "environment.md:Commands:shared" })
+      const updated = `${"Current material ".repeat(24)}最新の保存✓`
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "## Facts",
+          `- shared :: ${updated}`,
+          "## Decisions",
+          "- shared :: Project decision content.",
+        ].join("\n"),
+      )
+      const current = await MemoryRecall.read({ root: t.root, recordID: "project.md:Facts:shared" })
+
+      expect(fact.status).toBe("found")
+      expect(fact.text).toBe(`${"Project detail ".repeat(24)}初回の保存✓`)
+      expect(fact.text.length).toBeGreaterThan(240)
+      expect(decision.status).toBe("found")
+      expect(decision.text).toBe("Project decision content.")
+      expect(command.status).toBe("found")
+      expect(command.text).toBe("Environment command content.")
+      expect(current.status).toBe("found")
+      expect(current.text).toBe(updated)
+    })
+  })
+
+  test("exact read preserves text as parsed from a manually edited source", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const text = "External   formatting\tis retained"
+      await MemoryFiles.writeSource(t.root, "project.md", `# Project Memory\n## Facts\n- manual_edit :: ${text}`)
+
+      const result = await MemoryRecall.read({ root: t.root, recordID: "project.md:Facts:manual_edit" })
+
+      expect(result.status).toBe("found")
+      expect(result.text).toBe(text)
+    })
+  })
+
+  test("exact read rejects malformed path selectors and does not fuzzy-fallback stale ids", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        "# Project Memory\n## Facts\n- stable_record :: Current entry.\n",
+      )
+
+      const malformed = await MemoryRecall.read({ root: t.root, recordID: "project.md:Facts:../stable_record" })
+      const stale = await MemoryRecall.read({ root: t.root, recordID: "project.md:Facts:stable" })
+
+      expect(malformed.status).toBe("invalid")
+      expect(stale.status).toBe("not_found")
+    })
+  })
+
+  test("exact read reports canonical-id collisions as ambiguous", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "## Facts!",
+          `- duplicate :: ${"界".repeat(14_000)}`,
+          "## Facts?",
+          "- duplicate :: Second entry.",
+        ].join("\n"),
+      )
+
+      const result = await MemoryRecall.read({ root: t.root, recordID: "project.md:Facts:duplicate" })
+
+      expect(result.status).toBe("ambiguous")
+      expect(result.matches).toBe(2)
+    })
+  })
+
   test("targeted recall uses source recency as a tiebreaker", async () => {
     await use(async (t) => {
       await Memory.enable({ root: t.root })
