@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Preserve complete typed memory records and retrieve them by exact `memory_id`, while keeping search results as previews.
 - Scope fork annotation audits to locally edited or branch-changed files without misclassifying committed fork markers.
 - Restore opt-in SWE-Pruner for task-focused `read`, `grep`, and `bash` output pruning, with explicit model selection, bounded no-retry requests, and fail-open safeguards.
 - Allow agents to stop background subagent tasks they launched via the task tool.

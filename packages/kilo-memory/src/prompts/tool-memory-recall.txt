@@ -3,11 +3,12 @@ Use this before Grep, Glob, Read, or other repo search tools when a user request
 Use this generically when project facts, environment commands/paths/tooling, decisions, constraints, or corrections are likely relevant and the injected startup memory only hints at the answer.
 The injected startup memory block is an index and continuity summary, not the full memory store. If it shows a matching key, topic, summary, truncated record, or session digest but not the exact detail needed, use this tool before answering.
 
-Four modes:
+Five modes:
 1. **typed** - Search durable typed memory from project.md, environment.md, and corrections.md.
 2. **digest** - Read saved session handoff digests from memory session files. Use this for continuation detail when startup memory includes `session=<id>`.
 3. **search** - Search both typed memory and session digests for a topic.
-4. **catalog** - List stored memory entries: typed keys and summaries plus saved session digests (session=<id>), optionally filtered by query. Use this to browse everything stored.
+4. **read** - Read one typed memory record by its exact `recordID`.
+5. **catalog** - List stored memory entries: typed keys and summaries plus saved session digests (session=<id>), optionally filtered by query. Use this to browse everything stored.
 
 Matching is keyword-based, not semantic. The query scores on words literally present in stored entries; there is no synonym expansion, so unrelated wording will not match:
   - Query with words likely stored: concrete nouns, command names, file paths, tool names — not the user's phrasing.
@@ -21,6 +22,8 @@ Usage notes:
   - Use digest mode with `sessionID` when memory points to a session and the injected summary is too thin.
   - Do not use digest mode with the active/current session id. Current sessions do not have saved digests yet.
   - Use search mode for topic-specific memory when you do not know whether it is typed memory or a session digest.
+  - Typed and search results include the canonical `memory_id`. Pass that exact value as `recordID` to `kilo_memory_recall(mode='read', recordID=...)` to retrieve the full typed record; search results are previews, not full records.
+  - An unknown `memory_id` returns an explicit miss. A record that exceeds the full-read limit returns `too_long` rather than a complete record.
   - Do not use this tool for current memory status, sidebar token accounting, or implementation debugging unless the user asks what prior memory says.
   - Search, browsing, and exact `sessionID` reads omit empty session digests.
   - This tool reads only Kilo memory files for the current project. It does not read full session transcripts.
