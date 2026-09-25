@@ -49,9 +49,11 @@ export namespace MemoryOperations {
     return MemoryRedact.has(input.text) || MemoryRedact.has(input.key)
   }
 
-  function line(input: Add, max: number) {
+  // fork_change start - Persist normalized entry text independently of preview limits.
+  function line(input: Add) {
+    // fork_change end
     const id = key(input.key)
-    const body = MemoryText.brief(input.text, max)
+    const body = MemoryText.normalize(input.text) // fork_change
     if (!id) throw new Error("memory operation key is required")
     if (!body) throw new Error("memory operation text is required")
     return { key: id, text: body, line: MemoryMarkdown.line(id, body) }
@@ -121,7 +123,9 @@ export namespace MemoryOperations {
     return { ids, items, ...(ids.size === 0 ? { fallback: slug || query } : {}) }
   }
 
-  function prepare(input: { state: MemorySchema.State; ops: Op[]; max: number }) {
+  // fork_change start - Keep storage preparation separate from the display preview limit.
+  function prepare(input: { state: MemorySchema.State; ops: Op[] }) {
+    // fork_change end
     const skipped: Rejection[] = []
     const adds = input.ops
       .filter((item): item is Add => item.action === "add")
@@ -145,7 +149,7 @@ export namespace MemoryOperations {
           throw new Error(`memory source ${file} is not valid for project`)
         }
         const section = heading(op, file)
-        const item = line(op, input.max)
+        const item = line(op) // fork_change
         return {
           op,
           file,
@@ -361,7 +365,7 @@ export namespace MemoryOperations {
       const inventory = await MemoryFiles.deriveInventory(input.root)
       const docs = await readDocs(input.root)
       // Plan (pure): validate/normalize ops, then dedupe + edit documents + update inventory in memory.
-      const prepared = prepare({ state, ops: input.ops, max: state.limits.maxLineChars })
+      const prepared = prepare({ state, ops: input.ops }) // fork_change
       const removes = input.ops.filter((item): item is Remove => item.action === "remove")
       const plan = planOps({ docs, inventory, removes, adds: prepared.adds, now: Date.now() })
       // Commit (IO): write changed documents, then rebuild the index and persist state.
