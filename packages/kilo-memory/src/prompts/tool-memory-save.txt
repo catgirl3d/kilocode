@@ -15,7 +15,7 @@ Usage notes:
   - If the request is a personal preference, habit, opinion, or user-level memory, use action=skip with reason=out_of_scope and explain that user-level memory is not supported.
   - Save facts in the language the user expressed them. Do not translate to English. Keep code, file paths, commands, and identifiers verbatim regardless of language.
   - Do not save secrets, credentials, tokens, private keys, or one-off transient task details.
-  - Use concise text that will still make sense in a future session.
+  - State each fact as a complete thought, including all necessary context, conditions, and exceptions. Be concise, but never drop important qualifiers just to fit a 350 character limit.
   - For forget, pass the user's exact key or the most specific query phrase available.
   - If the user asks whether you can save memory, answer based on this tool when it is available.
   - This tool writes only Kilo memory files for the current project. It does not use MCP memory or external memory.
