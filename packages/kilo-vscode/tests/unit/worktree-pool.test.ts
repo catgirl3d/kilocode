@@ -242,7 +242,7 @@ describe("WorktreeManager pool stale slot", () => {
     manager.warmPool()
     const slot = await waitForPooledSlot(root)
 
-    await fs.rm(slot, { recursive: true, force: true })
+    await removeDir(slot)
     expect(existsSync(slot)).toBe(false)
 
     const result = await manager.createWorktree({})
@@ -280,7 +280,7 @@ describe("WorktreeManager pool stale slot", () => {
     const healthy = refilled.find((slot) => slot !== stale)
     expect(healthy).toBeDefined()
 
-    await fs.rm(stale, { recursive: true, force: true })
+    await removeDir(stale)
     expect(existsSync(stale)).toBe(false)
 
     const result = await manager.createWorktree({})
