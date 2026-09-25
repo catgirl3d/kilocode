@@ -40,7 +40,11 @@
  *
  * CLI:
  * - `bun run script/fork-audit.ts [--worktree] [--base=<ref>]
- *   [--overwrap-report] [--inline-report] [--fragment-report] [paths...]`
+ *   [--select=agent-local|branch] [--overwrap-report] [--inline-report]
+ *   [--fragment-report] [paths...]`
+ * - `--select` changes file selection only: `agent-local` requires `--worktree`
+ *   and includes local tracked/untracked changes; `branch` selects HEAD-side
+ *   paths from `origin/main...HEAD`. Audits still use the canonical `--base`.
  * - `--help` and `-h` print usage. Retired `--fix` and `--dry-run` options
  *   (including assignment forms) are rejected. The audit never writes source
  *   files, the index, refs, or configuration.
@@ -988,15 +992,42 @@ function main() {
   }
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      "Usage: bun run script/fork-audit.ts [--worktree] [--base=<ref>] [--overwrap-report] [--inline-report] [paths...]",
+      "Usage: bun run script/fork-audit.ts [--worktree] [--base=<ref>] [--select=agent-local|branch] [--overwrap-report] [--inline-report] [paths...]\n" +
+        "  --select changes file selection only; agent-local requires --worktree, while branch selects HEAD-side paths from origin/main...HEAD.",
     )
     process.exit(0)
   }
+  const selects = args.filter((arg) => arg === "--select" || arg.startsWith("--select=")),
+    option = selects.at(0),
+    selector = option?.slice("--select=".length)
+  if (selects.length > 1) {
+    console.error("Only one --select selector may be specified")
+    process.exit(1)
+  }
+  if (option && !["agent-local", "branch"].includes(selector ?? "")) {
+    console.error(
+      option === "--select"
+        ? "Missing selector value; use --select=agent-local or --select=branch"
+        : `Unknown selector '${selector}'; expected --select=agent-local or --select=branch`,
+    )
+    process.exit(1)
+  }
   const s = scope(args),
     repo = git(["rev-parse", "--git-dir"])
+  if (selector === "agent-local" && !s.worktree) {
+    console.error("The agent-local selector requires --worktree")
+    process.exit(1)
+  }
   if (repo.code) {
     console.error(`${ROOT} is not a Git repository`)
     process.exit(1)
+  }
+  if (selector === "branch") {
+    const origin = git(["rev-parse", "--verify", "origin/main^{commit}"])
+    if (origin.code) {
+      console.error(`The branch selector requires origin/main: ${origin.err.trim() || origin.out.trim()}`)
+      process.exit(1)
+    }
   }
   if (git(["rev-parse", "--verify", s.candidate]).code) {
     console.error(`Candidate base reference '${s.candidate}' is unavailable`)
@@ -1013,7 +1044,8 @@ function main() {
     `Candidate base ref: '${s.candidate}'\nResolved merge-base: '${base}'\nScanning fork modifications against: ${ref}...\n` +
       `ℹ️  NOTE: Upstream marker anomalies inherited from upstream/main must NOT be modified to prevent rebase conflicts.\n`,
   )
-  const status = fatalGit(["diff", "--name-status", "-M", ref]).trim().split("\n").filter(Boolean)
+  const selection = selector === "agent-local" ? "HEAD" : selector === "branch" ? "origin/main...HEAD" : ref
+  const status = fatalGit(["diff", "--name-status", "-M", selection]).trim().split("\n").filter(Boolean)
   const renameDestinations = new Set(
     status
       .filter((line) => /^R\d*\t/.test(line))
@@ -1021,10 +1053,13 @@ function main() {
       .filter((file): file is string => file !== undefined),
   )
   const deletionOnly = status.filter((line) => line.startsWith("D\t")).length
-  const changed = fatalGit(["diff", "--name-only", "--diff-filter=AMRT", ref]).trim().split("\n").filter(Boolean),
-    untracked = s.worktree
-      ? fatalGit(["ls-files", "--others", "--exclude-standard"]).trim().split("\n").filter(Boolean)
-      : [],
+  const changed = fatalGit(["diff", "--name-only", "--diff-filter=AMRT", selection]).trim().split("\n").filter(Boolean),
+    untracked =
+      selector === "branch"
+        ? []
+        : s.worktree
+          ? fatalGit(["ls-files", "--others", "--exclude-standard"]).trim().split("\n").filter(Boolean)
+          : [],
     allFiles = [...new Set([...changed, ...untracked])],
     ignoredCount = allFiles.filter(ignored).length,
     files = allFiles.filter((f) => !ignored(f) && !renameDestinations.has(f)),
