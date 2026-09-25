@@ -19,29 +19,49 @@ const agents = Agent.Service.of({
   generate: () => Effect.succeed({ identifier: "code", whenToUse: "", systemPrompt: "" }),
 })
 
-const truncate = Truncate.Service.of({
-  cleanup: () => Effect.void,
-  write: () => Effect.succeed(""),
-  output: (text) => Effect.succeed({ content: text, truncated: false }),
-  limits: () => Effect.succeed({ maxLines: Truncate.MAX_LINES, maxBytes: Truncate.MAX_BYTES }),
-})
+type Runtime = {
+  limits?: () => { maxBytes: number; maxLines: number }
+  output?: (text: string) => Truncate.Result
+}
 
-const layer = Layer.mergeAll(
-  MemoryService.layer,
-  Layer.succeed(Agent.Service, agents),
-  Layer.succeed(Truncate.Service, truncate),
-)
+function layer(runtime: Runtime) {
+  const truncate = Truncate.Service.of({
+    cleanup: () => Effect.void,
+    write: () => Effect.succeed(""),
+    output: (text) => Effect.sync(() => runtime.output?.(text) ?? { content: text, truncated: false as const }),
+    limits: () =>
+      Effect.sync(() => runtime.limits?.() ?? { maxLines: Truncate.MAX_LINES, maxBytes: Truncate.MAX_BYTES }),
+  })
+
+  return Layer.mergeAll(
+    MemoryService.layer,
+    Layer.succeed(Agent.Service, agents),
+    Layer.succeed(Truncate.Service, truncate),
+  )
+}
 
 export function runMemoryTool(
   input: Effect.Effect<Tool.Info, never, MemoryService.Service | Agent.Service | Truncate.Service>,
   params: unknown,
   ctx: Tool.Context,
+  runtime: Runtime = {},
+) {
+  return runMemoryToolMany(input, [params], ctx, runtime).then((result) => result[0])
+}
+
+export function runMemoryToolMany(
+  input: Effect.Effect<Tool.Info, never, MemoryService.Service | Agent.Service | Truncate.Service>,
+  params: unknown[],
+  ctx: Tool.Context,
+  runtime: Runtime = {},
 ) {
   return Effect.runPromise(
     Effect.gen(function* () {
       const result = yield* input
       const tool = yield* result.init()
-      return yield* tool.execute(params, ctx)
-    }).pipe(Effect.provide(layer)),
+      const out = []
+      for (const item of params) out.push(yield* tool.execute(item, ctx))
+      return out
+    }).pipe(Effect.provide(layer(runtime))),
   )
 }
