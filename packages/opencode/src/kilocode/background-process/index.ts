@@ -34,6 +34,7 @@ export namespace BackgroundProcess {
   const log = Log.create({ service: "background-process" })
   const MAX = 200 * 1024
   const KILL_MS = 3_000
+  const STOP_MS = 12_000 // fork_change - persistent stop confirmation must outlast the runner's drain budget
   const READY_MS = 30_000
   const PUBLISH_MS = 500
   // How long after `exit` a non-persistent process waits for its stdio pipes
@@ -708,14 +709,16 @@ export namespace BackgroundProcess {
     })
   }
 
-  async function waitGone(active: Active) {
-    const end = Date.now() + KILL_MS
+  // fork_change start
+  async function waitGone(active: Active, timeout = KILL_MS) {
+    const end = Date.now() + timeout
     while (Date.now() < end) {
       const status = await probe(active)
       if (status === "gone" || status === "foreign") return
       await Bun.sleep(100)
     }
   }
+  // fork_change end
 
   async function kill(active: Active) {
     const pid = active.info.pid
@@ -727,7 +730,7 @@ export namespace BackgroundProcess {
       if (process.platform === "win32") {
         if (!active.control) throw new Error(`Persistent process control path is missing: ${active.info.id}`)
         await Filesystem.write(active.control, "stop", 0o600)
-        await waitGone(active)
+        await waitGone(active, STOP_MS) // fork_change
         const stopped = await probe(active)
         if (stopped === "gone" || stopped === "foreign") return
         throw new Error(`Persistent process runner did not stop safely: ${active.info.id}`)
