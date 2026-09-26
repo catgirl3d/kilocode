@@ -1,12 +1,15 @@
 import { KiloPtySelfCommand } from "@/kilocode/pty/self-command"
+import { ProcessTree } from "@/kilocode/background-process/process-tree" // fork_change
 import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
 import { isRecord } from "@/util/record"
+import * as Log from "@opencode-ai/core/util/log" // fork_change
 import { mkdir, open, rm } from "fs/promises"
 import { spawn } from "child_process"
 import path from "path"
 
 export namespace BackgroundProcessRunner {
+  const log = Log.create({ service: "background-process" }) // fork_change
   const MARKER = "__background-process-runner"
   const MODE = 0o600
   const MAX = 1024 * 1024
@@ -93,60 +96,12 @@ export namespace BackgroundProcessRunner {
     }
   }
 
-  async function descendants(root: number, seen: Map<number, string>, active: boolean) {
-    const query =
-      "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate | ConvertTo-Json -Compress"
-    const out = await Process.text(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", query], {
-      nothrow: true,
-      abort: AbortSignal.timeout(2_000),
-      timeout: 2_000,
-    })
-    if (out.code !== 0 || !out.text.trim()) return seen
-    const value: unknown = JSON.parse(out.text)
-    const items = Array.isArray(value) ? value : [value]
-    const rows = items.flatMap((item) => {
-      if (
-        !isRecord(item) ||
-        typeof item.ProcessId !== "number" ||
-        typeof item.ParentProcessId !== "number" ||
-        typeof item.CreationDate !== "string"
-      )
-        return []
-      return [{ pid: item.ProcessId, parent: item.ParentProcessId, birth: item.CreationDate }]
-    })
-    const live = new Map(rows.map((item) => [item.pid, item.birth]))
-    const children = new Map<number, Array<{ pid: number; birth: string }>>()
-    for (const row of rows) {
-      children.set(row.parent, [...(children.get(row.parent) ?? []), { pid: row.pid, birth: row.birth }])
-    }
-    const result = new Map(Array.from(seen).filter(([pid, birth]) => live.get(pid) === birth))
-    const stack = [...(active ? [root] : []), ...result.keys()]
-    while (stack.length > 0) {
-      const pid = stack.pop()
-      if (!pid) continue
-      for (const child of children.get(pid) ?? []) {
-        if (result.has(child.pid)) continue
-        result.set(child.pid, child.birth)
-        stack.push(child.pid)
-      }
-    }
-    return result
-  }
-
-  // Grace window after the leader exits during which we keep walking from its
-  // pid. A detached descendant spawned just before the leader died may not yet
-  // be visible in Win32_Process, and its ParentProcessId still points at the
-  // (now dead) leader, so seeding the walk from the leader's pid for a short
-  // window lets us capture it before concluding the tree is empty.
-  const GRACE = 1_000
-
   async function windows(input: Input, child: ReturnType<typeof spawn>, done: Promise<number>) {
     const pid = child.pid
     if (!pid) throw new Error("Background process runner child did not provide a pid")
     let code: number | undefined
     let exited: number | undefined
     let failure: unknown
-    let seen = new Map<number, string>()
     void done.then(
       (value) => {
         code = value
@@ -156,28 +111,34 @@ export namespace BackgroundProcessRunner {
         failure = err
       },
     )
-    while (true) {
-      if (failure) throw failure
-      const active = code === undefined || (exited !== undefined && Date.now() - exited < GRACE)
-      seen = await descendants(pid, seen, active)
-      if (await Bun.file(input.control).exists()) {
-        await Promise.all(
-          [pid, ...seen.keys()].map((item) =>
-            Process.run(["taskkill", "/pid", String(item), "/f", "/t"], { nothrow: true }),
+    // fork_change start
+    const wait = new AbortController()
+    const watcher = setInterval(() => {
+      void Bun.file(input.control)
+        .exists()
+        .then((exists) => {
+          if (exists) wait.abort()
+        })
+    }, 100)
+    watcher.unref?.()
+    try {
+      return await ProcessTree.track(pid, () => ({ code, exited, failure }), {
+        snapshot: (maxAge, signal) => ProcessTree.snapshot(maxAge, signal),
+        kill: (items) =>
+          Promise.all(
+            items.map((item) => Process.run(["taskkill", "/pid", String(item), "/f", "/t"], { nothrow: true })),
           ),
-        )
-        await rm(input.control, { force: true })
-        const end = Date.now() + 5_000
-        while (Date.now() < end) {
-          seen = await descendants(pid, seen, false)
-          if (code !== undefined && seen.size === 0) return code
-          await Bun.sleep(100)
-        }
-        throw new Error("Background process runner could not terminate its Windows process tree")
-      }
-      if (code !== undefined && !active && seen.size === 0) return code
-      await Bun.sleep(100)
+        control: () => Bun.file(input.control).exists(),
+        clear: () => rm(input.control, { force: true }),
+        sleep: (ms) => Bun.sleep(ms),
+        now: () => Date.now(),
+        alert: (fails) => log.error("background process tree enumeration keeps failing", { fails }),
+        interrupt: wait.signal,
+      })
+    } finally {
+      clearInterval(watcher)
     }
+    // fork_change end
   }
 
   async function run(input: Input) {
