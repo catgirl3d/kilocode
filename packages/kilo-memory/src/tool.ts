@@ -31,7 +31,7 @@ export namespace MemoryTool {
     }),
     // fork_change start - Select one typed record by canonical identity.
     recordID: Schema.optional(RecordID).annotate({
-      description: "Exact canonical memory_id returned by typed/search mode, for read mode",
+      description: "For read: exact memory_id returned by typed/search, not a startup index record id or catalog key",
     }),
     // fork_change end
     limit: Schema.optional(Schema.Number).annotate({
@@ -44,7 +44,7 @@ export namespace MemoryTool {
       description: "Memory write action to perform.",
     }),
     text: Schema.optional(Text).annotate({
-      description: "Memory text for remember/correct. Keep it concise and durable.",
+      description: "Remember/correct: one concise fact with conditions and exceptions; stored in full.", // fork_change
     }),
     query: Schema.optional(Text).annotate({
       description: "Exact key, id, or query text for forget.",
