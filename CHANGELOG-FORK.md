@@ -55,3 +55,4 @@
 - Preserve earlier conversation history when reverting after message IDs roll over.
 - Remove the upstream `PLAN` badge from completed plan messages in VS Code chat.
 - Keep title-only reasoning blocks compact in VS Code chat instead of expanding an empty panel while the block is still streaming.
+- Stop the background-process runner from spawning a fresh PowerShell per poll, because continuous full WMI enumeration by every running dev server saturated the WMI service and burned CPU: process-tree scans are shared machine-wide through a snapshot cache (about once per 2 seconds in normal operation, faster around exits and stops), probe failures back off instead of killing the process, stop waits for confirmation instead of failing early, and descendants discovered late are still terminated.
