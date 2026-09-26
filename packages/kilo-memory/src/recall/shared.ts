@@ -12,6 +12,7 @@ export namespace MemoryShared {
     section: string
     key: string
     text: string
+    full: string // fork_change
     memory_id: string // fork_change
     searchText: string // fork_change
     topics: MemorySchema.Topic[]
@@ -67,6 +68,7 @@ export namespace MemoryShared {
         section: item.section,
         key: item.key,
         text: brief(item.text, input.max),
+        full: `${item.key} :: ${item.text}`, // fork_change
         memory_id: id, // fork_change
         searchText: item.text, // fork_change
         topics: inv?.topics?.length ? inv.topics : MemoryTopics.assign(data),
