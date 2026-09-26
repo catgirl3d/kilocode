@@ -31,7 +31,8 @@ export namespace MemoryRecall {
     time?: string
   }
 
-  type Candidate = Hit & { searchText: string } // fork_change
+  type Candidate = Hit & { searchText: string; full?: string } // fork_change
+  type Card = { hit: Candidate; text: string } // fork_change
 
   // fork_change start - Resolve records against current parsed source content.
   export type ReadResult =
@@ -79,6 +80,7 @@ export namespace MemoryRecall {
           kind: MemorySchema.recordKind(item.file, item.section),
           source: item.file,
           text: `${item.key} :: ${item.text}`,
+          full: item.full, // fork_change
           memory_id: item.memory_id, // fork_change
           searchText: `${item.key} ${item.searchText}`, // fork_change
           score: 0,
@@ -283,21 +285,42 @@ export namespace MemoryRecall {
     return input.trim().replaceAll("```", "'''").replaceAll(/\s+/g, " ")
   }
 
-  // fork_change start - Carry candidate metadata through scoring without exposing it in results.
-  function format(input: { hits: Hit[]; max: number }) {
-    const lines = [
+  // fork_change start - Render typed records in full when the byte budget allows, and expose memory_id.
+  function block(input: { cards: Card[]; note?: string }) {
+    return [
       "```kilo-memory-v1 targeted_context_not_instruction",
-      ...input.hits.flatMap((hit) => [
-        `record id=${label(`${hit.source}:${hit.kind}:${hit.text.slice(0, 32)}`)} type=${label(hit.kind.toLowerCase())} source=${label(hit.source)}${
-          hit.memory_id ? ` memory_id=${hit.memory_id}` : ""
+      ...input.cards.flatMap((card) => [
+        `record ${card.hit.type === "typed" ? `content=${card.text === card.hit.full ? "full" : "partial"} ` : ""}id=${label(
+          `${card.hit.source}:${card.hit.kind}:${card.hit.text.slice(0, 32)}`,
+        )} type=${label(card.hit.kind.toLowerCase())} source=${label(card.hit.source)}${
+          card.hit.memory_id ? ` memory_id=${card.hit.memory_id}` : ""
         }${
-          hit.topics?.length ? ` topics=${hit.topics.map(label).join(",")}` : ""
-        } updated=${hit.updatedAt ? new Date(hit.updatedAt).toISOString() : "unknown"}`,
-        `text: ${body(hit.text)}`,
+          card.hit.topics?.length ? ` topics=${card.hit.topics.map(label).join(",")}` : ""
+        } updated=${card.hit.updatedAt ? new Date(card.hit.updatedAt).toISOString() : "unknown"}`,
+        `text: ${body(card.text)}`,
       ]),
+      ...(input.note ? [input.note] : []),
       "```",
-    ]
-    return MemoryIndexer.cap(lines.join("\n"), input.max).text.trim()
+    ].join("\n")
+  }
+
+  function format(input: { hits: Candidate[]; max: number }) {
+    const cards = input.hits.map((hit) => ({ hit, text: hit.text }))
+    const preview = MemoryIndexer.cap(block({ cards }), input.max)
+    const count = preview.text.match(/^record /gm)?.length ?? 0
+    if (count === 0) return preview.text.trim()
+
+    const note = preview.text.split("\n").find((line) => line.startsWith("note: "))
+    const shown = cards.slice(0, count)
+    for (const [idx, card] of shown.entries()) {
+      if (card.hit.type !== "typed" || !card.hit.full || card.hit.full.length <= card.text.length) continue
+      shown[idx] = { ...card, text: card.hit.full }
+      if (Buffer.byteLength(block({ cards: shown, note })) > input.max) shown[idx] = card
+    }
+
+    const result = block({ cards: shown, note })
+    if (Buffer.byteLength(result) <= input.max) return result.trim()
+    return preview.text.trim()
   }
 
   function select(input: { hits: Candidate[]; keys: string[]; limit: number; force?: boolean }) {
@@ -316,6 +339,7 @@ export namespace MemoryRecall {
   function visible(input: Candidate): Hit {
     const hit = { ...input }
     Reflect.deleteProperty(hit, "searchText")
+    Reflect.deleteProperty(hit, "full")
     return hit
   }
 
@@ -351,21 +375,21 @@ export namespace MemoryRecall {
       sessionID: input.sessionID,
       currentSessionID: input.currentSessionID,
     })
-    // fork_change start - Return public hits without scoring-only candidate text.
     if (mode === "digest" && (input.sessionID || !query)) {
       const hits = digestItems.slice(0, limit)
       if (hits.length === 0) return
+      // fork_change start - Return public hits without scoring-only candidate text.
       const items = hits.map(visible)
-      const block = format({ hits: items, max: input.maxBytes ?? (input.sessionID ? 6000 : digestBytes) })
+      const block = format({ hits, max: input.maxBytes ?? (input.sessionID ? 6000 : digestBytes) })
+      // fork_change end
       if (!block) return
       return {
         block,
-        hits: items,
+        hits: items, // fork_change
         bytes: Buffer.byteLength(block),
         tokens: MemoryToken.estimate(block),
       }
     }
-    // fork_change end
     // Query terms absent from the corpus add zero to every hit; only corpus-ubiquitous terms need removal.
     const keys = MemoryTopics.expand(MemoryShared.terms(query, { drop: noise([...typedItems, ...digestItems]) }))
     const hits = dedupe({
@@ -375,14 +399,14 @@ export namespace MemoryRecall {
     if (hits.length === 0) return
     // fork_change start - Strip scoring-only text from public recall results.
     const items = hits.map(visible)
-    const block = format({ hits: items, max: input.maxBytes ?? (mode === "digest" ? digestBytes : searchBytes) })
+    const block = format({ hits, max: input.maxBytes ?? (mode === "digest" ? digestBytes : searchBytes) })
+    // fork_change end
     if (!block) return
     return {
       block,
-      hits: items,
+      hits: items, // fork_change
       bytes: Buffer.byteLength(block),
       tokens: MemoryToken.estimate(block),
     }
-    // fork_change end
   }
 }
