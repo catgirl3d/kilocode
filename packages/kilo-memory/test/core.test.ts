@@ -693,16 +693,206 @@ describe("memory core package", () => {
 
       for (const mode of ["typed", "search"] as const) {
         const result = await MemoryRecall.search({ root: t.root, query: "nebula", mode })
-        const records = result?.block.match(/record id=[^\n]*\ntext: [^\n]*/g) ?? []
+        const records = result?.block.match(/record [^\n]*\ntext: [^\n]*/g) ?? []
 
         expect(result?.bytes).toBeLessThanOrEqual(2000)
         expect(records).toHaveLength(2)
         for (const key of keys) {
           const record = records.find((item) => item.includes(`memory_id=project.md:Facts:${key}`))
           expect(record).toBeDefined()
-          expect(record).toContain(`\ntext: ${key} :: ${prefix.slice(0, 347)}...`)
+          const idx = keys.indexOf(key)
+          expect(record).toContain(`\ntext: ${key} :: ${prefix} ${idx} NEBULA`)
+          expect(record).toContain("content=full")
         }
       }
+    })
+  })
+
+  test("typed recall returns a complete long body when the full card fits", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const text = `${"Project continuity detail ".repeat(18)}FIT_TAIL_QUASAR`
+      await Memory.remember({ root: t.root, key: "fitting_fact", text })
+
+      const result = await MemoryRecall.search({ root: t.root, query: "quasar", mode: "typed" })
+      const hit = result?.hits.at(0)
+
+      expect(result?.block).toContain("record content=full id=")
+      expect(result?.block).toContain("memory_id=project.md:Facts:fitting_fact")
+      expect(result?.block).toContain(`text: fitting_fact :: ${text}`)
+      expect(result?.block).toContain("FIT_TAIL_QUASAR")
+      expect(hit).not.toHaveProperty("full")
+      expect(hit).not.toHaveProperty("searchText")
+      expect(result?.bytes).toBe(Buffer.byteLength(result?.block ?? ""))
+      expect(result?.bytes).toBeLessThanOrEqual(2000)
+    })
+  })
+
+  test("typed recall marks oversized bodies partial and keeps them exactly readable", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const text = `${"Partial record detail ".repeat(90)}PARTIAL_TAIL_QUASAR`
+      await Memory.remember({ root: t.root, key: "oversized_fact", text })
+
+      const result = await MemoryRecall.search({ root: t.root, query: "quasar", mode: "typed", maxBytes: 1000 })
+      const hit = result?.hits.at(0)
+      const read = await MemoryRecall.read({ root: t.root, recordID: hit?.memory_id ?? "" })
+
+      expect(result?.block).toContain("record content=partial id=")
+      expect(result?.block).toContain("memory_id=project.md:Facts:oversized_fact")
+      expect(hit?.text.slice("oversized_fact :: ".length)).toHaveLength(350)
+      expect(result?.block).toContain(`text: ${hit?.text}`)
+      expect(result?.block).not.toContain("PARTIAL_TAIL_QUASAR")
+      expect(read.status).toBe("found")
+      if (read.status === "found") expect(read.text).toBe(text)
+    })
+  })
+
+  test("typed recall marks short bodies full without changing their text", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const text = "Short current fact QUASAR"
+      await Memory.remember({ root: t.root, key: "short_fact", text })
+
+      const result = await MemoryRecall.search({ root: t.root, query: "quasar", mode: "typed" })
+
+      expect(result?.block).toContain("record content=full id=")
+      expect(result?.block).toContain("memory_id=project.md:Facts:short_fact")
+      expect(result?.block).toContain(`text: short_fact :: ${text}`)
+    })
+  })
+
+  test("typed full-body upgrades honor exact UTF-8 byte boundaries", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const text = `${"Русский текст для границы бюджета ".repeat(24)}BYTE_BOUNDARY_QUASAR`
+      await Memory.remember({ root: t.root, key: "utf8_boundary", text })
+      const input = { root: t.root, query: "quasar", mode: "typed" as const }
+      const initial = await MemoryRecall.search(input)
+      const hit = initial?.hits.at(0)
+      const full = (initial?.block ?? "")
+        .replace("record id=", "record content=full id=")
+        .replace(`text: ${hit?.text}`, `text: utf8_boundary :: ${text}`)
+      const exactBytes = Buffer.byteLength(full)
+      const exact = await MemoryRecall.search({ ...input, maxBytes: exactBytes })
+      const over = await MemoryRecall.search({ ...input, maxBytes: exactBytes - 1 })
+
+      expect(exactBytes).toBeGreaterThan(full.length)
+      expect(exact?.block).toContain("record content=full id=")
+      expect(exact?.block).toContain("memory_id=project.md:Facts:utf8_boundary")
+      expect(exact?.block).toContain(`text: utf8_boundary :: ${text}`)
+      expect(exact?.bytes).toBe(exactBytes)
+      expect(over?.block).toContain("record content=partial id=")
+      expect(over?.block).toContain("memory_id=project.md:Facts:utf8_boundary")
+      expect(over?.block).not.toContain("BYTE_BOUNDARY_QUASAR")
+      expect(over?.bytes).toBeLessThanOrEqual(exactBytes - 1)
+    })
+  })
+
+  test("a long first hit cannot evict another selected hit during full-body upgrades", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const long = `${"Long continuity detail ".repeat(68)}FIRST_QUASAR_PRIORITY_TAIL`
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", key: "aaa_long_first", text: long },
+          { action: "add", key: "bbb_short_second", text: "Short QUASAR fact." },
+        ],
+      })
+
+      const result = await MemoryRecall.search({ root: t.root, query: "quasar priority", limit: 2 })
+
+      expect(result?.block).toContain("record content=partial id=")
+      expect(result?.block).toContain("record content=full id=")
+      expect(result?.block).toContain("memory_id=project.md:Facts:aaa_long_first")
+      expect(result?.block).toContain("memory_id=project.md:Facts:bbb_short_second")
+      expect(result?.hits.map((hit) => hit.memory_id)).toEqual([
+        "project.md:Facts:aaa_long_first",
+        "project.md:Facts:bbb_short_second",
+      ])
+      expect(result?.bytes).toBeLessThanOrEqual(2000)
+    })
+  })
+
+  test("typed recall keeps the existing omitted-results note when cards are dropped", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const terms = ["quartz", "nebula", "tulip", "cobalt", "spruce", "violet"]
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        ["# Project Memory", "## Facts", ...terms.map((term, idx) => `- entry_${idx} :: ${term} saved detail.`)].join(
+          "\n",
+        ),
+      )
+
+      const result = await MemoryRecall.search({
+        root: t.root,
+        query: terms.join(" "),
+        mode: "typed",
+        limit: 10,
+        maxBytes: 1024,
+      })
+
+      expect(result?.hits).toHaveLength(6)
+      expect(result?.block).toContain(
+        "note: index truncated; call kilo_memory_recall mode=typed|digest|search query=<topic> to search omitted memory",
+      )
+      expect((result?.block.match(/^record /gm) ?? []).length).toBeLessThan(result?.hits.length ?? 0)
+      expect(result?.bytes).toBeLessThanOrEqual(1024)
+    })
+  })
+
+  test("typed recall keeps the omitted-results note when rejecting a long-card upgrade", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const long = `${"Long continuity detail ".repeat(80)}QUASAR priority FULL_UPGRADE_TAIL`
+      const terms = ["quartz", "nebula", "tulip", "cobalt", "spruce", "violet"]
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "## Facts",
+          `- aaa_long_first :: ${long}`,
+          "- bbb_short_second :: Short QUASAR priority fact.",
+          ...terms.map((term, idx) => `- entry_${idx} :: ${term} saved detail.`),
+        ].join("\n"),
+      )
+
+      const result = await MemoryRecall.search({
+        root: t.root,
+        query: "quasar priority quartz nebula tulip cobalt spruce violet",
+        mode: "typed",
+        limit: 10,
+        maxBytes: 1024,
+      })
+      const cards = result?.block.match(/^record [^\n]*\ntext: [^\n]*/gm) ?? []
+      const ids = cards.map((card) => card.match(/memory_id=([^\s]+)/)?.[1])
+      const longCard = cards.at(0) ?? ""
+      const shortCard = cards.at(1) ?? ""
+
+      expect(result?.hits.map((hit) => hit.memory_id)).toEqual([
+        "project.md:Facts:aaa_long_first",
+        "project.md:Facts:bbb_short_second",
+        "project.md:Facts:entry_0",
+        "project.md:Facts:entry_1",
+        "project.md:Facts:entry_2",
+        "project.md:Facts:entry_3",
+        "project.md:Facts:entry_4",
+        "project.md:Facts:entry_5",
+      ])
+      expect(ids).toEqual(["project.md:Facts:aaa_long_first", "project.md:Facts:bbb_short_second"])
+      expect(result?.block).toContain(
+        "note: index truncated; call kilo_memory_recall mode=typed|digest|search query=<topic> to search omitted memory",
+      )
+      expect(longCard).toContain("record content=partial id=")
+      expect(longCard).not.toContain("FULL_UPGRADE_TAIL")
+      expect(shortCard).toContain("record content=full id=")
+      expect(shortCard).toContain("text: bbb_short_second :: Short QUASAR priority fact.")
+      expect(cards.length).toBeLessThan(result?.hits.length ?? 0)
+      expect(result?.bytes).toBeLessThanOrEqual(1024)
     })
   })
 
@@ -980,6 +1170,7 @@ describe("memory core package", () => {
       expect(brief.length).toBeLessThanOrEqual(480)
       expect(recalled?.block).toContain(tail)
       expect(recalled?.block.length).toBeGreaterThan(480)
+      expect(recalled?.block).not.toContain("content=")
     })
   })
 
