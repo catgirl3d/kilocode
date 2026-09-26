@@ -158,7 +158,9 @@ describe("kilo_memory_recall", () => {
       const state = await MemoryFiles.readState(enabled.root)
 
       expect(recordID).toBe("project.md:Facts:read_tail")
-      expect(search.output).not.toContain("QUASAR_ONLY")
+      expect(search.output).toContain("record content=full id=")
+      expect(search.output).toContain("memory_id=project.md:Facts:read_tail")
+      expect(search.output).toContain("QUASAR_ONLY")
       expect(result.metadata).toMatchObject({
         status: "found",
         memory_id: "project.md:Facts:read_tail",
