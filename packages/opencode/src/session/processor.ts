@@ -739,7 +739,7 @@ const layer = Layer.effect(
             // kilocode_change end
             yield* session.updateMessage(ctx.assistantMessage)
             if (ctx.snapshot) {
-              const patch = yield* snapshot.patch(ctx.snapshot)
+              const patch = yield* snapshot.patch(ctx.snapshot, completedSnapshot) // kilocode_change - [fork] reuse the captured after-tree
               if (patch.files.length) {
                 yield* session.updatePart({
                   id: PartID.ascending(),

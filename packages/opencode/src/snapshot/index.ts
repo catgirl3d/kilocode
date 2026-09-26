@@ -67,7 +67,7 @@ export interface Interface {
     snapshotInitialization?: KiloSnapshotTrack.SnapshotInitialization
   }) => Effect.Effect<string | undefined>
   // kilocode_change end
-  readonly patch: (hash: string) => Effect.Effect<Patch>
+  readonly patch: (hash: string, after?: string) => Effect.Effect<Patch> // kilocode_change - [fork] optional known after-tree
   readonly restore: (snapshot: string) => Effect.Effect<void>
   readonly revert: (patches: Patch[]) => Effect.Effect<void>
   readonly diff: (hash: string) => Effect.Effect<string>
@@ -234,15 +234,20 @@ export const layer: Layer.Layer<Service, never, Requirements> =
             return (yield* config.get()).snapshot !== false
           })
 
+          // kilocode_change start - [fork] resolve the source exclude path once; contents are re-read per sync
+          let excludePath: string | undefined
           const excludes = Effect.fnUntraced(function* () {
+            if (excludePath) return excludePath
             const result = yield* git(["rev-parse", "--path-format=absolute", "--git-path", "info/exclude"], {
               cwd: state.worktree,
             })
             const file = result.text.trim()
             if (!file) return
+            excludePath = file
             if (!(yield* exists(file))) return
             return file
           })
+          // kilocode_change end
 
           const sync = Effect.fnUntraced(function* (list: string[] = []) {
             const file = yield* excludes()
@@ -474,17 +479,21 @@ export const layer: Layer.Layer<Service, never, Requirements> =
             )
           })
 
-          const patch = Effect.fnUntraced(function* (hash: string) {
+          // kilocode_change start - [fork] a known after-tree skips re-staging and diffs the two trees; equal trees skip the work entirely
+          const patch = Effect.fnUntraced(function* (hash: string, after?: string) {
+            if (after === hash) return { hash, files: [] }
             return yield* locked(
               Effect.gen(function* () {
-                yield* add()
+                if (after === undefined) yield* add()
                 const result = yield* git(
-                  // kilocode_change start
                   [
                     ...quote,
-                    ...args(["diff", "--cached", "--no-ext-diff", "--no-renames", "--name-only", hash, "--", "."]),
+                    ...args(
+                      after === undefined
+                        ? ["diff", "--cached", "--no-ext-diff", "--no-renames", "--name-only", hash, "--", "."]
+                        : ["diff", "--no-ext-diff", "--no-renames", "--name-only", hash, after, "--", "."],
+                    ),
                   ],
-                  // kilocode_change end
                   {
                     cwd: state.directory,
                   },
@@ -511,6 +520,7 @@ export const layer: Layer.Layer<Service, never, Requirements> =
               }),
             )
           })
+          // kilocode_change end
 
           const restore = Effect.fnUntraced(function* (snapshot: string) {
             return yield* locked(
@@ -1001,12 +1011,12 @@ export const layer: Layer.Layer<Service, never, Requirements> =
             operation: "track",
           })
         }),
-        patch: Effect.fn("Snapshot.patch")(function* (hash: string) {
+        patch: Effect.fn("Snapshot.patch")(function* (hash: string, after?: string) {
           if ((yield* config.get()).snapshot === false) return { hash, files: [] }
           const ctx = yield* InstanceState.context
           const guard = trackState(ctx.worktree)
           return yield* KiloSnapshotTrack.protect({
-            inner: InstanceState.useEffect(state, (s) => s.patch(hash)),
+            inner: InstanceState.useEffect(state, (s) => s.patch(hash, after)),
             state: guard,
             fallback: { hash, files: [] },
             operation: "patch",
