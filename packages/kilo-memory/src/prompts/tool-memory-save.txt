@@ -15,7 +15,12 @@ Usage notes:
   - If the request is a personal preference, habit, opinion, or user-level memory, use action=skip with reason=out_of_scope and explain that user-level memory is not supported.
   - Save facts in the language the user expressed them. Do not translate to English. Keep code, file paths, commands, and identifiers verbatim regardless of language.
   - Do not save secrets, credentials, tokens, private keys, or one-off transient task details.
-  - State each fact as a complete thought, including all necessary context, conditions, and exceptions. Be concise, but never drop important qualifiers just to fit a 350 character limit.
-  - For forget, pass the user's exact key or the most specific query phrase available.
+  - Write one concise, self-contained fact per record, with only the context needed to interpret it correctly. Preserve all conditions, exceptions, and qualifiers that affect its meaning; omit unnecessary narrative and repetition.
+  - Accepted text is stored in full after whitespace normalization: line breaks and repeated whitespace collapse into a single line; original formatting is not preserved.
+  - Index and preview limits affect display only; do not shorten a fact to fit them. Oversized inputs are rejected, not truncated.
+  - If rejected for size, separate genuinely independent, self-contained facts only; never remove meaning-bearing details or split one fact into dependent fragments. If a complete fact still cannot fit, report that it was not saved.
+  - Treat a write to an existing key as replacing the whole record, not appending. Before replacing, retrieve the full current text with kilo_memory_recall(mode='read') and preserve everything still valid; change only what is explicitly superseded. Never rewrite an existing record from a startup index entry, a search preview, or a session digest.
+  - Deduplication and later consolidation may merge or replace records, so verify critical writes with typed/search followed by read; a save acknowledgment is not a versioned backup.
+  - For forget, pass the user's exact key, or the most specific unambiguous query phrase; a broad topic query can remove the wrong record.
   - If the user asks whether you can save memory, answer based on this tool when it is available.
   - This tool writes only Kilo memory files for the current project. It does not use MCP memory or external memory.
