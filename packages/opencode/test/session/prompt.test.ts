@@ -705,6 +705,45 @@ noLLMServer.instance(
   { config: cfg },
 )
 
+it.instance("rejected tool permission stops the running prompt loop", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const permission = yield* Permission.Service
+    const session = yield* sessions.create({
+      title: "Permission rejection",
+      permission: [{ permission: "glob", pattern: "opencode.json", action: "ask" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "find the config file" }],
+    })
+    yield* llm.tool("glob", { pattern: "opencode.json" })
+
+    const run = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+    const pending = yield* pollWithTimeout(
+      permission
+        .list()
+        .pipe(Effect.map((items) => items.find((item) => item.sessionID === session.id && item.permission === "glob"))),
+      "timed out waiting for running tool permission",
+    )
+    yield* permission.reply({ requestID: pending.id, reply: "reject" })
+
+    const result = yield* Fiber.join(run)
+    const part = errorTool(result.parts)
+
+    expect(yield* llm.calls).toBe(1)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.finish).toBe("tool-calls")
+    expect(part?.state.error).toBe("The user rejected permission to use this specific tool call.")
+    expect(yield* permission.list()).toEqual([])
+  }),
+  30_000,
+)
+
 noLLMServer.instance(
   "normalizes user data images before persistence",
   () =>
@@ -932,6 +971,38 @@ it.instance("loop surfaces content-filter finishes as session errors", () =>
   }),
 )
 
+it.instance("loop records missing structured output as a terminal error", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ title: "Structured output" })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "return structured output" }],
+      format: new SessionV1.OutputFormatJsonSchema({
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: { answer: { type: "string" } },
+          required: ["answer"],
+        },
+        retryCount: 0,
+      }),
+    })
+    yield* llm.text("plain text response")
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+
+    expect(yield* llm.calls).toBe(1)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.error?.name).toBe("StructuredOutputError")
+  }),
+  30_000,
+)
+
 it.instance("loop stops provider overflow instead of auto-compacting when disabled", () =>
   Effect.gen(function* () {
     const { llm } = yield* useServerConfig((url) => ({
@@ -1108,6 +1179,45 @@ it.instance("loop continues when finish is tool-calls", () =>
       expect(result.info.finish).toBe("stop")
     }
   }),
+)
+
+it.instance("loop resumes with tool results after a mid-stream failure", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+    })
+    yield* llm.push(reply().tool("glob", { pattern: "opencode.json" }).streamError("provider stream failed"))
+    yield* llm.text("second")
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    const inputs = yield* llm.inputs
+    const messages = inputs.at(-1)?.messages
+
+    // Tool chunks precede the retryable stream error, so the next request must resume from the finished result.
+    expect(yield* llm.calls).toBe(2)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") {
+      expect(result.parts.some((part) => part.type === "text" && part.text === "second")).toBe(true)
+      expect(result.info.finish).toBe("stop")
+    }
+    if (!Array.isArray(messages)) throw new Error("expected LLM messages")
+    expect(messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ role: "tool", content: expect.stringContaining("opencode.json") }),
+      ]),
+    )
+  }),
+  30_000,
 )
 
 it.instance("loop continues when finish is unknown", () =>
@@ -1413,7 +1523,7 @@ it.instance(
         prompt: "look into the cache key path",
         subagent_type: "general",
       })
-      yield* llm.error(400, { error: { message: "child prompt failed" } })
+      yield* llm.push(reply().text("child blocked").contentFilter())
       yield* llm.text("parent recovered")
       yield* user(chat.id, "hello")
 
@@ -1430,14 +1540,14 @@ it.instance(
         )
       expect(part).toBeDefined()
       if (!part) return
-      expect(part.state.error).toContain("child prompt failed")
+      expect(part.state.error).toContain("content filter")
       expect(part.state.metadata?.sessionId).toBeDefined()
 
       const hits = yield* llm.hits
       expect(hits).toHaveLength(3)
-      expect(JSON.stringify(hits.at(-1)?.body)).toContain("child prompt failed")
+      expect(JSON.stringify(hits.at(-1)?.body)).toContain("content filter")
     }),
-  10_000,
+  20_000,
 )
 
 // kilocode_change start - TUI subagent-view Esc and the VS Code task-card Stop both abort the child as a tree
@@ -3568,7 +3678,7 @@ it.instance(
         parts: [{ type: "text", text: "review the advisor failure lifecycle" }],
       })
       yield* llm.tool("consult_advisor", { question: "review the failure phase" })
-      yield* llm.error(503, { error: "provider unavailable" })
+      yield* llm.error(400, { error: { message: "advisor request rejected" } })
       yield* llm.text("final response")
 
       yield* prompt.loop({ sessionID: chat.id })

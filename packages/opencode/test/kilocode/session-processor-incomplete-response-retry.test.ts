@@ -14,7 +14,7 @@ import { Config } from "../../src/config/config"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Image } from "../../src/image/image"
-import { KiloSessionProcessor } from "../../src/kilocode/session/processor"
+import { KiloErrorPolicy } from "../../src/kilocode/session/error-policy"
 import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
 import { ProviderError } from "../../src/provider/error"
@@ -124,6 +124,13 @@ function retryable429() {
     responseHeaders: { "content-type": "application/json" },
     isRetryable: true,
   })
+}
+
+function hopeless403() {
+  return {
+    name: "APIError",
+    data: { message: "Forbidden", statusCode: 403, isRetryable: false, metadata: {} },
+  }
 }
 
 const reference = Layer.mock(Reference.Service, {
@@ -288,7 +295,7 @@ describe("session processor incomplete response retry", () => {
           const error = ctx.handle.message.error
           expect(MessageV2.APIError.isInstance(error)).toBe(true)
           if (!MessageV2.APIError.isInstance(error)) throw new Error("expected API error")
-          expect(error.data.message).toBe(KiloSessionProcessor.INCOMPLETE_RESPONSE_MESSAGE)
+          expect(error.data.message).toBe(KiloErrorPolicy.INCOMPLETE_RESPONSE_MESSAGE)
           expect(error.data.responseHeaders?.["x-vercel-id"]).toBe("final-id")
           expect(yield* MessageV2.parts(ctx.msg.id)).toEqual([])
         }),
@@ -549,27 +556,37 @@ describe("session processor incomplete response retry", () => {
     ),
   )
 
-  it.effect("keeps provider retries independent after an empty response", () =>
+  it.effect("does not carry the provider retry budget across incomplete-response recovery", () =>
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
-          process.env.KILO_SESSION_RETRY_LIMIT = "2"
-          const ctx = yield* setup(dir)
-          yield* ctx.test.reply(...empty())
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          yield* ctx.test.reply(...success())
-          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
+          const prev = process.env.KILO_SESSION_RETRY_LIMIT
+          process.env.KILO_SESSION_RETRY_LIMIT = "5"
 
           try {
-            expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
-          } finally {
-            delay.mockRestore()
-            delete process.env.KILO_SESSION_RETRY_LIMIT
-          }
+            const ctx = yield* setup(dir)
+            yield* Effect.forEach(Array.from({ length: 3 }), () => ctx.test.push(Stream.fail(retryable429())), {
+              discard: true,
+            })
+            yield* ctx.test.reply(...empty())
+            yield* Effect.forEach(Array.from({ length: 3 }), () => ctx.test.push(Stream.fail(retryable429())), {
+              discard: true,
+            })
+            yield* ctx.test.reply(...success())
+            const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
 
-          expect(yield* ctx.test.calls).toBe(4)
-          expect(ctx.handle.message.finish).toBe("stop")
+            try {
+              expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
+            } finally {
+              delay.mockRestore()
+            }
+
+            expect(yield* ctx.test.calls).toBe(8)
+            expect(ctx.handle.message.finish).toBe("stop")
+          } finally {
+            if (prev === undefined) delete process.env.KILO_SESSION_RETRY_LIMIT
+            else process.env.KILO_SESSION_RETRY_LIMIT = prev
+          }
         }),
       { git: true },
     ),
@@ -651,12 +668,86 @@ describe("session processor incomplete response retry", () => {
     ),
   )
 
-  it.effect("does not retry a provider error after final output", () =>
+  it.live("keeps opaque reasoning across provider retries and clears it on incomplete recovery", () =>
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
-          process.env.KILO_SESSION_RETRY_LIMIT = "1"
           const ctx = yield* setup(dir)
+          const db = yield* Database.Service
+          const seen: { reasoning: unknown[]; completed: boolean }[] = []
+          const snap = Stream.fromEffectDrain(
+            Effect.gen(function* () {
+              const parts = yield* MessageV2.parts(ctx.msg.id)
+              const info = (yield* MessageV2.get({ sessionID: ctx.msg.sessionID, messageID: ctx.msg.id })).info
+              seen.push({
+                reasoning: parts
+                  .filter((part) => part.type === "reasoning")
+                  .map((part) => [part.text, part.metadata, part.time.end != null]),
+                completed: info.role === "assistant" && info.time.completed != null,
+              })
+            }).pipe(Effect.provideService(Database.Service, db), Effect.orDie),
+          )
+          yield* ctx.test.push(
+            snap.pipe(
+              Stream.concat(
+                Stream.make(
+                  LLMEvent.stepStart({ index: 0 }),
+                  LLMEvent.reasoningStart({ id: "reasoning-a", providerMetadata: { openai: { itemId: "rs_a" } } }),
+                ),
+              ),
+              Stream.concat(Stream.fail(new ProviderError.ResponseStreamError("stream dropped"))),
+            ),
+          )
+          const usage = new Usage({})
+          yield* ctx.test.push(
+            snap.pipe(
+              Stream.concat(
+                Stream.make(
+                  LLMEvent.stepStart({ index: 0 }),
+                  LLMEvent.reasoningStart({ id: "reasoning-b", providerMetadata: { openai: { itemId: "rs_b" } } }),
+                  LLMEvent.reasoningEnd({ id: "reasoning-b" }),
+                  LLMEvent.stepFinish({ index: 0, reason: "unknown", usage }),
+                  LLMEvent.finish({ reason: "unknown", usage }),
+                ),
+              ),
+            ),
+          )
+          yield* ctx.test.push(snap.pipe(Stream.concat(Stream.make(...success()))))
+          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
+
+          try {
+            expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
+          } finally {
+            delay.mockRestore()
+          }
+
+          expect(yield* ctx.test.calls).toBe(3)
+          expect(seen).toEqual([
+            { reasoning: [], completed: false },
+            { reasoning: [["", { openai: { itemId: "rs_a" } }, true]], completed: false },
+            { reasoning: [], completed: false },
+          ])
+          const info = (yield* MessageV2.get({ sessionID: ctx.msg.sessionID, messageID: ctx.msg.id })).info
+          expect(info.role === "assistant" && info.time.completed).toBeNumber()
+          const parts = yield* MessageV2.parts(ctx.msg.id)
+          expect(parts.map((part) => part.type)).toEqual(["step-start", "text", "step-finish"])
+          expect(parts.find((part) => part.type === "text")?.text).toBe("Recovered")
+        }),
+      { git: true },
+    ),
+  )
+
+  it.effect("retries a provider error after partial text and removes the failed attempt", () =>
+    provideTmpdirProject(
+      (dir) =>
+        Effect.gen(function* () {
+          const ctx = yield* setup(dir)
+          const events = yield* EventV2Bridge.Service
+          const seen: string[] = []
+          const off = yield* events.listen((event) => {
+            seen.push(JSON.stringify(event))
+            return Effect.void
+          })
           yield* ctx.test.push(
             Stream.make(
               LLMEvent.stepStart({ index: 0 }),
@@ -664,45 +755,129 @@ describe("session processor incomplete response retry", () => {
               LLMEvent.textDelta({ id: "partial", text: "Partial" }),
             ).pipe(Stream.concat(Stream.fail(retryable429()))),
           )
-          yield* ctx.test.reply(...empty())
+          yield* ctx.test.reply(...success())
           const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
 
           try {
-            expect(yield* ctx.handle.process(ctx.input)).toBe("stop")
+            expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
           } finally {
             delay.mockRestore()
-            delete process.env.KILO_SESSION_RETRY_LIMIT
           }
+          yield* off
 
-          expect(yield* ctx.test.calls).toBe(1)
-          expect(ctx.handle.message.error).toBeDefined()
-          expect((yield* MessageV2.parts(ctx.msg.id)).some((part) => part.type === "text")).toBe(true)
+          expect(yield* ctx.test.calls).toBe(2)
+          expect(ctx.handle.message.error).toBeUndefined()
+          expect(ctx.handle.message.finish).toBe("stop")
+          const texts = (yield* MessageV2.parts(ctx.msg.id)).flatMap((part) => (part.type === "text" ? [part.text] : []))
+          expect(texts).toEqual(["Recovered"])
+          const removed = seen.findIndex((item) => item.includes(MessageV2.Event.PartRemoved.type))
+          const recovered = seen.findIndex((item) => item.includes("Recovered"))
+          expect(removed).toBeGreaterThanOrEqual(0)
+          expect(recovered).toBeGreaterThan(removed)
         }),
       { git: true },
     ),
   )
 
-  it.effect("keeps the provider retry budget cumulative across incomplete retries", () =>
+  it.effect("retries a provider error after partial reasoning and removes the failed attempt", () =>
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
-          process.env.KILO_SESSION_RETRY_LIMIT = "2"
           const ctx = yield* setup(dir)
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          yield* ctx.test.reply(...empty())
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          yield* ctx.test.push(Stream.fail(retryable429()))
+          yield* ctx.test.push(
+            Stream.make(
+              LLMEvent.stepStart({ index: 0 }),
+              LLMEvent.reasoningStart({ id: "thinking" }),
+              LLMEvent.reasoningDelta({ id: "thinking", text: "Halfway through" }),
+            ).pipe(Stream.concat(Stream.fail(retryable429()))),
+          )
+          yield* ctx.test.reply(...success())
+          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
+
+          try {
+            expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
+          } finally {
+            delay.mockRestore()
+          }
+
+          expect(yield* ctx.test.calls).toBe(2)
+          expect(ctx.handle.message.error).toBeUndefined()
+          expect((yield* MessageV2.parts(ctx.msg.id)).some((part) => part.type === "reasoning")).toBe(false)
+        }),
+      { git: true },
+    ),
+  )
+
+  it.effect("closes a step that already ran a tool as a tool turn when the stream then fails", () =>
+    provideTmpdirProject(
+      (dir) =>
+        Effect.gen(function* () {
+          const ctx = yield* setup(dir)
+          yield* ctx.test.push(
+            Stream.make(
+              LLMEvent.stepStart({ index: 0 }),
+              LLMEvent.toolCall({ id: "call", name: "web_search", input: { query: "Kilo" }, providerExecuted: true }),
+              LLMEvent.toolResult({
+                id: "call",
+                name: "web_search",
+                result: { type: "json", value: { output: "result" } },
+                providerExecuted: true,
+              }),
+            ).pipe(Stream.concat(Stream.fail(retryable429()))),
+          )
+          yield* ctx.test.reply(...success())
+          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
+
+          try {
+            expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
+            expect(delay).toHaveBeenCalledWith(1)
+            expect(delay).toHaveBeenCalledTimes(1)
+          } finally {
+            delay.mockRestore()
+          }
+
+          expect(yield* ctx.test.calls).toBe(1)
+          expect(ctx.handle.message.error).toBeUndefined()
+          expect(ctx.handle.message.finish).toBe("tool-calls")
+          expect((yield* MessageV2.parts(ctx.msg.id)).some((part) => part.type === "tool")).toBe(true)
+
+          const status = yield* SessionStatus.Service
+          const info = yield* status.get(ctx.msg.sessionID)
+          expect(info).toMatchObject({ type: "retry", attempt: 1 })
+          if (info?.type === "retry") expect(info.message).toBe("429 status code (no body)")
+        }),
+      { git: true },
+    ),
+  )
+
+  it.effect("ends the turn after a tool ran when the failure is hopeless", () =>
+    provideTmpdirProject(
+      (dir) =>
+        Effect.gen(function* () {
+          const ctx = yield* setup(dir)
+          yield* ctx.test.push(
+            Stream.make(
+              LLMEvent.stepStart({ index: 0 }),
+              LLMEvent.toolCall({ id: "call", name: "web_search", input: { query: "Kilo" }, providerExecuted: true }),
+              LLMEvent.toolResult({
+                id: "call",
+                name: "web_search",
+                result: { type: "json", value: { output: "result" } },
+                providerExecuted: true,
+              }),
+            ).pipe(Stream.concat(Stream.fail(hopeless403()))),
+          )
           const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
 
           try {
             expect(yield* ctx.handle.process(ctx.input)).toBe("stop")
           } finally {
             delay.mockRestore()
-            delete process.env.KILO_SESSION_RETRY_LIMIT
           }
 
-          expect(yield* ctx.test.calls).toBe(4)
-          expect(MessageV2.APIError.isInstance(ctx.handle.message.error)).toBe(true)
+          expect(yield* ctx.test.calls).toBe(1)
+          expect(ctx.handle.message.error).toBeDefined()
+          expect(ctx.handle.message.finish).not.toBe("tool-calls")
         }),
       { git: true },
     ),
