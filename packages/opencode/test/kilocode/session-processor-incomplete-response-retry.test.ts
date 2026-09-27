@@ -548,27 +548,37 @@ describe("session processor incomplete response retry", () => {
     ),
   )
 
-  it.effect("keeps provider retries independent after an empty response", () =>
+  it.effect("does not carry the provider retry budget across incomplete-response recovery", () =>
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
-          process.env.KILO_SESSION_RETRY_LIMIT = "2"
-          const ctx = yield* setup(dir)
-          yield* ctx.test.reply(...empty())
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          yield* ctx.test.reply(...success())
-          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
+          const prev = process.env.KILO_SESSION_RETRY_LIMIT
+          process.env.KILO_SESSION_RETRY_LIMIT = "5"
 
           try {
-            expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
-          } finally {
-            delay.mockRestore()
-            delete process.env.KILO_SESSION_RETRY_LIMIT
-          }
+            const ctx = yield* setup(dir)
+            yield* Effect.forEach(Array.from({ length: 3 }), () => ctx.test.push(Stream.fail(retryable429())), {
+              discard: true,
+            })
+            yield* ctx.test.reply(...empty())
+            yield* Effect.forEach(Array.from({ length: 3 }), () => ctx.test.push(Stream.fail(retryable429())), {
+              discard: true,
+            })
+            yield* ctx.test.reply(...success())
+            const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
 
-          expect(yield* ctx.test.calls).toBe(4)
-          expect(ctx.handle.message.finish).toBe("stop")
+            try {
+              expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
+            } finally {
+              delay.mockRestore()
+            }
+
+            expect(yield* ctx.test.calls).toBe(8)
+            expect(ctx.handle.message.finish).toBe("stop")
+          } finally {
+            if (prev === undefined) delete process.env.KILO_SESSION_RETRY_LIMIT
+            else process.env.KILO_SESSION_RETRY_LIMIT = prev
+          }
         }),
       { git: true },
     ),
@@ -578,7 +588,6 @@ describe("session processor incomplete response retry", () => {
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
-          process.env.KILO_SESSION_RETRY_LIMIT = "1"
           const ctx = yield* setup(dir)
           yield* ctx.test.push(
             Stream.make(
@@ -594,38 +603,11 @@ describe("session processor incomplete response retry", () => {
             expect(yield* ctx.handle.process(ctx.input)).toBe("stop")
           } finally {
             delay.mockRestore()
-            delete process.env.KILO_SESSION_RETRY_LIMIT
           }
 
           expect(yield* ctx.test.calls).toBe(1)
           expect(ctx.handle.message.error).toBeDefined()
           expect((yield* MessageV2.parts(ctx.msg.id)).some((part) => part.type === "text")).toBe(true)
-        }),
-      { git: true },
-    ),
-  )
-
-  it.effect("keeps the provider retry budget cumulative across incomplete retries", () =>
-    provideTmpdirProject(
-      (dir) =>
-        Effect.gen(function* () {
-          process.env.KILO_SESSION_RETRY_LIMIT = "2"
-          const ctx = yield* setup(dir)
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          yield* ctx.test.reply(...empty())
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          yield* ctx.test.push(Stream.fail(retryable429()))
-          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
-
-          try {
-            expect(yield* ctx.handle.process(ctx.input)).toBe("stop")
-          } finally {
-            delay.mockRestore()
-            delete process.env.KILO_SESSION_RETRY_LIMIT
-          }
-
-          expect(yield* ctx.test.calls).toBe(4)
-          expect(MessageV2.APIError.isInstance(ctx.handle.message.error)).toBe(true)
         }),
       { git: true },
     ),

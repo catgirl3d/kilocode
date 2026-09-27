@@ -56,18 +56,18 @@ export function delay(attempt: number, error?: SessionV1.APIError, random = Math
       const retryAfterMs = headers["retry-after-ms"]
       if (retryAfterMs) {
         const parsedMs = Number.parseFloat(retryAfterMs)
-        if (!Number.isNaN(parsedMs)) {
-          return cap(parsedMs)
-        }
+        if (parsedMs > 0) return cap(parsedMs) // kilocode_change - [fork] ignore non-positive retry hints that would retry with no wait
       }
 
       const retryAfter = headers["retry-after"]
       if (retryAfter) {
         const parsedSeconds = Number.parseFloat(retryAfter)
-        if (!Number.isNaN(parsedSeconds)) {
+        // kilocode_change start - [fork] ignore non-positive retry hints that would retry with no wait
+        if (parsedSeconds > 0) {
           // convert seconds to milliseconds
           return cap(Math.ceil(parsedSeconds * 1000))
         }
+        // kilocode_change end
         // Try parsing as HTTP date format
         const parsed = Date.parse(retryAfter) - Date.now()
         if (!Number.isNaN(parsed) && parsed > 0) {
@@ -93,9 +93,18 @@ export function retryable(error: Err, _provider?: string): Retryable | undefined
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {
     const status = error.data.statusCode
-    // kilocode_change start - Current Kilo errors require user action (login/signup), don't retry
+    // kilocode_change start - [fork] keep user-action errors terminal except expired-authentication 401s
     if (isKiloError(error)) return undefined
-    if (error.data.isRetryable === false && (status === undefined || status < 500) && !error.data.responseBody) return undefined
+    if (
+      status === 401 &&
+      !error.data.responseBody?.includes("FreeUsageLimitError") &&
+      (/authentication token is expired/i.test(error.data.message) ||
+        /authentication token is expired/i.test(error.data.responseBody ?? ""))
+    ) {
+      return { message: error.data.message }
+    }
+    if (error.data.isRetryable === false && (status === undefined || status < 500) && !error.data.responseBody)
+      return undefined
     // kilocode_change end
 
     // 5xx errors are transient server failures and should always be retried,
@@ -177,9 +186,8 @@ export function policy(opts: {
         }
         // kilocode_change end
 
-        // kilocode_change start
+        // kilocode_change start - [fork] without an explicit limit, retry errors indefinitely; cap each wait at RETRY_MAX_DELAY_HEADERS (60s)
         const attempt = opts.limit === undefined ? meta.attempt - state.offline : meta.attempt
-        if (opts.limit === undefined && attempt > RETRY_MAX_RETRIES) return yield* Cause.done(attempt)
         // kilocode_change end
         const wait = delay(attempt, SessionV1.APIError.isInstance(error) ? error : undefined) // kilocode_change
         const now = yield* Clock.currentTimeMillis
