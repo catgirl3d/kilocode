@@ -250,20 +250,31 @@ const lateToolInputEnv = LayerNode.compile(root, [...replacements, [LLM.node, la
 const itLateToolInput = testEffect(lateToolInputEnv)
 // kilocode_change end
 
-const fragmentFailureLLM = Layer.succeed(
-  LLM.Service,
-  LLM.Service.of({
-    stream: () =>
-      Stream.make(
+const fragmentFailureLLM = Layer.sync(LLM.Service, () => {
+  const state = { calls: 0 }
+  return LLM.Service.of({
+    stream: () => {
+      state.calls += 1
+      if (state.calls > 1)
+        return Stream.make(
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.textStart({ id: "text-2" }),
+          LLMEvent.textDelta({ id: "text-2", text: "recovered" }),
+          LLMEvent.textEnd({ id: "text-2" }),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        )
+      return Stream.make(
         LLMEvent.stepStart({ index: 0 }),
         LLMEvent.reasoningStart({ id: "reasoning-1" }),
         LLMEvent.reasoningDelta({ id: "reasoning-1", text: "thinking" }),
         LLMEvent.textStart({ id: "text-1" }),
         LLMEvent.textDelta({ id: "text-1", text: "partial" }),
         LLMEvent.providerError({ message: "provider boom" }),
-      ),
-  }),
-)
+      )
+    },
+  })
+})
 const fragmentFailureEnv = LayerNode.compile(root, [...replacements, [LLM.node, fragmentFailureLLM]])
 const itFragmentFailure = testEffect(fragmentFailureEnv)
 
@@ -603,13 +614,14 @@ it.live("session.processor effect tests reset reasoning state across retries", (
   ),
 )
 
-it.live("session.processor effect tests do not retry unknown json errors", () =>
+it.live("session.processor effect tests retry unknown json errors until the provider recovers", () =>
   provideTmpdirServer(
     ({ dir, llm }) =>
       Effect.gen(function* () {
         const { processors, session, provider } = yield* boot()
 
         yield* llm.error(400, { error: { message: "no_kv_space" } })
+        yield* llm.text("recovered")
 
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "json")
@@ -638,9 +650,9 @@ it.live("session.processor effect tests do not retry unknown json errors", () =>
           tools: {},
         })
 
-        expect(value).toBe("stop")
-        expect(yield* llm.calls).toBe(1)
-        expect(handle.message.error?.name).toBe("APIError")
+        expect(value).toBe("continue")
+        expect(yield* llm.calls).toBe(2)
+        expect(handle.message.error).toBeUndefined()
       }),
     { config: (url) => providerCfg(url) },
   ),
@@ -1358,7 +1370,7 @@ itLateToolInput.live("session.processor effect tests ignore tool input after the
 )
 // kilocode_change end
 
-itFragmentFailure.live("session.processor effect tests retain partial legacy parts without v2 events", () =>
+itFragmentFailure.live("session.processor effect tests rewind partial legacy parts on retry without v2 events", () =>
   provideTmpdirInstance(
     (dir) =>
       Effect.gen(function* () {
@@ -1393,18 +1405,15 @@ itFragmentFailure.live("session.processor effect tests retain partial legacy par
             messages: [{ role: "user", content: "provider failure" }],
             tools: {},
           }),
-        ).toBe("stop")
+        ).toBe("continue")
         yield* off
 
         const parts = yield* MessageV2.parts(msg.id)
-        expect(parts).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({ type: "text", text: "partial" }),
-            expect.objectContaining({ type: "reasoning", text: "thinking" }),
-          ]),
-        )
+        expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual(["recovered"])
+        expect(parts.some((part) => part.type === "reasoning")).toBe(false)
         expect(seen).toContain(MessageV2.Event.PartUpdated.type)
-        expect(seen).toContain(Session.Event.Error.type)
+        expect(seen).toContain(MessageV2.Event.PartRemoved.type)
+        expect(seen).not.toContain(Session.Event.Error.type)
         expect(seen.filter((type) => type.startsWith("session.next."))).toEqual([])
       }),
     { config: cfg },

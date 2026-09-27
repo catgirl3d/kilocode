@@ -2,7 +2,7 @@ import type { NamedError } from "@opencode-ai/core/util/error"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { Cause, Clock, Duration, Effect, Schedule } from "effect"
 import { MessageV2 } from "./message-v2"
-import { isKiloError } from "@/kilocode/kilo-errors" // kilocode_change
+import { KiloErrorPolicy } from "@/kilocode/session/error-policy" // kilocode_change
 import { SessionNetwork } from "./network" // kilocode_change
 import { iife } from "@/util/iife"
 import { isRecord } from "@/util/record"
@@ -56,18 +56,18 @@ export function delay(attempt: number, error?: SessionV1.APIError, random = Math
       const retryAfterMs = headers["retry-after-ms"]
       if (retryAfterMs) {
         const parsedMs = Number.parseFloat(retryAfterMs)
-        if (!Number.isNaN(parsedMs)) {
-          return cap(parsedMs)
-        }
+        if (parsedMs > 0) return cap(parsedMs) // kilocode_change - [fork] ignore non-positive retry hints that would retry with no wait
       }
 
       const retryAfter = headers["retry-after"]
       if (retryAfter) {
         const parsedSeconds = Number.parseFloat(retryAfter)
-        if (!Number.isNaN(parsedSeconds)) {
+        // kilocode_change start - [fork] ignore non-positive retry hints that would retry with no wait
+        if (parsedSeconds > 0) {
           // convert seconds to milliseconds
           return cap(Math.ceil(parsedSeconds * 1000))
         }
+        // kilocode_change end
         // Try parsing as HTTP date format
         const parsed = Date.parse(retryAfter) - Date.now()
         if (!Number.isNaN(parsed) && parsed > 0) {
@@ -93,9 +93,9 @@ export function retryable(error: Err, _provider?: string): Retryable | undefined
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {
     const status = error.data.statusCode
-    // kilocode_change start - Current Kilo errors require user action (login/signup), don't retry
-    if (isKiloError(error)) return undefined
-    if (error.data.isRetryable === false && (status === undefined || status < 500) && !error.data.responseBody) return undefined
+    // kilocode_change start - [fork] Kilo's share of the classification lives in KiloErrorPolicy.classify
+    const kilo = KiloErrorPolicy.classify(error)
+    if (kilo) return kilo === "persistent" ? undefined : kilo
     // kilocode_change end
 
     // 5xx errors are transient server failures and should always be retried,
@@ -108,11 +108,6 @@ export function retryable(error: Err, _provider?: string): Retryable | undefined
     )
       return undefined
 
-    // kilocode_change start - Kilo does not support OpenCode Go upsells. FreeUsageLimitError is not retryable: retrying
-    // the same capped model is futile and the backoff loop cannot be broken by switching models in the chat selector
-    // because the retry loop holds a stale model ref.
-    if (error.data.responseBody?.includes("FreeUsageLimitError")) return undefined
-    // kilocode_change end
     return { message: error.data.message.includes("Overloaded") ? "Provider is overloaded" : error.data.message }
   }
 
@@ -146,6 +141,7 @@ export function policy(opts: {
   set: (input: { attempt: number; message: string; action?: Retryable["action"]; next: number }) => Effect.Effect<void>
   // kilocode_change start
   limit?: number
+  always?: (error: Err, raw?: unknown) => Retryable | undefined
   offline?: (input: { error: unknown; message: string }) => Effect.Effect<"retry" | "blocked" | "aborted">
   // kilocode_change end
 }) {
@@ -159,7 +155,7 @@ export function policy(opts: {
       // kilocode_change end
 
       const error = opts.parse(meta.input)
-      const retry = retryable(error, opts.provider)
+      const retry = retryable(error, opts.provider) ?? opts.always?.(error, meta.input) // kilocode_change - [fork]
       if (!retry) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
         // kilocode_change start — handle network disconnect via offline handler
@@ -179,9 +175,8 @@ export function policy(opts: {
         }
         // kilocode_change end
 
-        // kilocode_change start
+        // kilocode_change start - [fork] without an explicit limit, retry errors indefinitely; cap each wait at RETRY_MAX_DELAY_HEADERS (60s)
         const attempt = opts.limit === undefined ? meta.attempt - state.offline : meta.attempt
-        if (opts.limit === undefined && attempt > RETRY_MAX_RETRIES) return yield* Cause.done(attempt)
         // kilocode_change end
         const wait = delay(attempt, SessionV1.APIError.isInstance(error) ? error : undefined) // kilocode_change
         const now = yield* Clock.currentTimeMillis

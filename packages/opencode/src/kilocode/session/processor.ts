@@ -8,11 +8,11 @@ import { isRecord } from "@/util/record"
 import { parseReviewCommand, reviewCommandName } from "@/kilocode/review/command"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Duration, Effect, Exit } from "effect"
-import { Flag } from "@opencode-ai/core/flag/flag"
 import { EffectBridge } from "@/effect/bridge"
 import type { LLMEvent, ProviderMetadata, Usage } from "@opencode-ai/llm"
 import type { ProviderV2 } from "@opencode-ai/core/provider"
 import { SessionRetry } from "@/session/retry"
+import { KiloErrorPolicy } from "@/kilocode/session/error-policy"
 import { computeMetrics as computeMetricsHelper, type TokenRates } from "@/kilocode/session/metrics"
 import { InvalidArgumentsError } from "@/tool/tool"
 
@@ -25,16 +25,8 @@ export type ReviewTelemetry = {
 
 export namespace KiloSessionProcessor {
   const log = Log.create({ service: "session.processor.kilo" })
-  export const INCOMPLETE_RESPONSE_RETRIES = 2
-  export const INCOMPLETE_RESPONSE_MESSAGE =
-    "The provider repeatedly ended the response before returning usable output."
-  export class IncompleteResponseError extends Error {
-    constructor(readonly vercelID?: string) {
-      super(INCOMPLETE_RESPONSE_MESSAGE)
-      this.name = "IncompleteResponseError"
-    }
-  }
   export type Attempt = {
+    started: boolean
     text: boolean
     reasoning: boolean
     tool: boolean
@@ -330,7 +322,7 @@ export namespace KiloSessionProcessor {
   }
 
   /**
-   * Returns the Kilo-specific retry policy options (limit + offline handler).
+   * Returns the Kilo-specific offline retry handler options.
    * Designed to be spread into SessionRetry.policy() opts.
    *
    * The `abort` signal is used by the offline handler to cancel the network
@@ -340,11 +332,9 @@ export namespace KiloSessionProcessor {
     sessionID: SessionID
     abort: AbortSignal
     set: (sessionID: SessionID, status: SessionStatus.Info) => Effect.Effect<void>
-    used?: number
   }) {
-    const limit = Flag.KILO_SESSION_RETRY_LIMIT
     return {
-      limit: limit === undefined ? undefined : Math.max(0, limit - (input.used ?? 0)),
+      always: KiloErrorPolicy.fallback,
       offline: (info: { error: unknown; message: string }) =>
         handleOffline({
           error: info.error,
@@ -369,7 +359,7 @@ export namespace KiloSessionProcessor {
   }
 
   export function attempt(): Attempt {
-    return { text: false, reasoning: false, tool: false, usage: false, finished: false }
+    return { started: false, text: false, reasoning: false, tool: false, usage: false, finished: false }
   }
 
   /**
@@ -428,6 +418,7 @@ export namespace KiloSessionProcessor {
   }
 
   export function observe(attempt: Attempt, event: LLMEvent) {
+    attempt.started = true
     if (event.type === "text-delta" && event.text.trim()) attempt.text = true
     if (event.type === "reasoning-delta" && event.text.trim()) attempt.reasoning = true
     if (event.type === "tool-call" || event.type === "tool-result" || event.type === "tool-error") attempt.tool = true
@@ -442,28 +433,6 @@ export namespace KiloSessionProcessor {
     }
   }
 
-  export function replayable(input: {
-    finish?: string
-    text: boolean
-    reasoning: boolean
-    tool: boolean
-    usage: boolean
-  }) {
-    if (input.finish !== undefined && input.finish !== "unknown") return false
-    if (input.text || input.tool) return false
-    // Reasoning without text or tools has no actionable output. Retry it through
-    // the existing bounded recovery budget instead of silently settling unknown.
-    // Keeping this decision here avoids the unbounded loop caused by continuing
-    // every unknown finish at the prompt-loop boundary.
-    if (input.reasoning) return true
-    return !input.usage
-  }
-
-  export function blockRetry(error: ReturnType<typeof MessageV2.fromError>) {
-    const message = MessageV2.APIError.isInstance(error) ? error.data.message : "Response interrupted after output"
-    return new MessageV2.APIError({ message, isRetryable: false }).toObject()
-  }
-
   export function recover(input: {
     run: () => Effect.Effect<void, unknown>
     replayable: () => boolean
@@ -471,23 +440,29 @@ export namespace KiloSessionProcessor {
     set: (info: { attempt: number; message: string; next: number }) => Effect.Effect<void>
   }) {
     return Effect.gen(function* () {
-      for (const index of Array.from({ length: INCOMPLETE_RESPONSE_RETRIES + 1 }, (_, index) => index)) {
+      const budget = KiloErrorPolicy.INCOMPLETE_RESPONSE_RETRIES
+      for (const index of Array.from({ length: budget + 1 }, (_, index) => index)) {
         const result = yield* input.run().pipe(Effect.exit)
         const error = Exit.isFailure(result) ? Cause.squash(result.cause) : undefined
-        if (error && !(error instanceof IncompleteResponseError)) return yield* Effect.fail(error)
+        if (error && !(error instanceof KiloErrorPolicy.IncompleteResponseError)) return yield* Effect.fail(error)
         if (!error && !input.replayable()) return
 
         yield* input.discard()
-        if (index === INCOMPLETE_RESPONSE_RETRIES) return yield* Effect.fail(error ?? new IncompleteResponseError())
+        if (index === budget) return yield* Effect.fail(error ?? new KiloErrorPolicy.IncompleteResponseError())
         const wait = SessionRetry.delay(index + 1)
-        yield* input.set({ attempt: index + 1, message: INCOMPLETE_RESPONSE_MESSAGE, next: Date.now() + wait })
+        yield* input.set({
+          attempt: index + 1,
+          message: KiloErrorPolicy.INCOMPLETE_RESPONSE_MESSAGE,
+          next: Date.now() + wait,
+        })
         yield* Effect.sleep(`${wait} millis`)
       }
     })
   }
 
   export function parseError(error: unknown, input: { providerID: ProviderV2.ID; aborted: boolean }) {
-    if (!(error instanceof IncompleteResponseError)) return MessageV2.fromError(error, input)
+    if (MessageV2.APIError.isInstance(error)) return error
+    if (!(error instanceof KiloErrorPolicy.IncompleteResponseError)) return MessageV2.fromError(error, input)
     return new MessageV2.APIError({
       message: error.message,
       isRetryable: true,
