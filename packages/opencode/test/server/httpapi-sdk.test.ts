@@ -20,7 +20,7 @@ import { MessageV2 } from "../../src/session/message-v2"
 import type { Config } from "@/config/config"
 import { Session as SessionNs } from "@/session/session"
 import { errorMessage } from "../../src/util/error"
-import { TestLLMServer } from "../lib/llm-server"
+import { TestLLMServer, reply } from "../lib/llm-server"
 import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
@@ -984,7 +984,6 @@ describe("HttpApi SDK", () => {
   serverPathParity("preserves provider errors through the generated SDK", (serverPath) =>
     withFakeLlm(serverPath, ({ sdk, llm }) =>
       Effect.gen(function* () {
-        const gateway = { error: { code: "PAID_MODEL_AUTH_REQUIRED", message: "Authentication required" } }
         const create = () =>
           capture(() =>
             sdk.session.create({
@@ -999,11 +998,11 @@ describe("HttpApi SDK", () => {
           parts: [{ type: "text" as const, text: "trigger provider error" }],
         })
 
-        yield* llm.error(401, gateway)
+        yield* llm.push(reply().text("blocked").contentFilter())
         const tupleSession = yield* create()
         const tuple = yield* capture(() => sdk.session.prompt(prompt(String(record(tupleSession.data).id))))
 
-        yield* llm.error(401, gateway)
+        yield* llm.push(reply().text("blocked").contentFilter())
         const strictSession = yield* create()
         const strict = yield* call(() =>
           sdk.session.prompt(prompt(String(record(strictSession.data).id)), { throwOnError: true }),
@@ -1015,21 +1014,17 @@ describe("HttpApi SDK", () => {
         const strictData = record(record(strictError).data)
 
         expect(tuple.status).toBe(200)
-        expect(record(tupleError).name).toBe("APIError")
-        expect(tupleData.statusCode).toBe(401)
-        expect(JSON.parse(String(tupleData.responseBody))).toEqual(gateway)
-        expect(record(strictError).name).toBe("APIError")
-        expect(strictData.statusCode).toBe(401)
-        expect(JSON.parse(String(strictData.responseBody))).toEqual(gateway)
+        expect(record(tupleError).name).toBe("ContentFilterError")
+        expect(tupleData.message).toContain("content filter")
+        expect(record(strictError).name).toBe("ContentFilterError")
+        expect(strictData.message).toContain("content filter")
 
         return {
           tupleStatus: tuple.status,
           tupleName: record(tupleError).name,
-          providerStatus: tupleData.statusCode,
-          providerBody: tupleData.responseBody,
+          providerMessage: tupleData.message,
           strictName: record(strictError).name,
-          strictStatus: strictData.statusCode,
-          strictBody: strictData.responseBody,
+          strictMessage: strictData.message,
         }
       }),
     ),
