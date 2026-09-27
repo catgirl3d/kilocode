@@ -152,9 +152,4 @@ export const Flag = {
   get KILO_CLIENT() {
     return process.env["KILO_CLIENT"] ?? "cli"
   },
-  // kilocode_change start
-  get KILO_SESSION_RETRY_LIMIT() {
-    return number("KILO_SESSION_RETRY_LIMIT")
-  },
-  // kilocode_change end
 }
