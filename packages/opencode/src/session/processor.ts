@@ -26,6 +26,7 @@ import { KiloSessionProcessor, type ReviewTelemetry } from "@/kilocode/session/p
 import { PermissionProvenance } from "@/kilocode/permission/provenance" // kilocode_change
 import { KiloToolInput } from "@/kilocode/session/tool-input" // kilocode_change
 import { KiloSessionOverflow } from "@/kilocode/session/overflow"
+import { KiloErrorPolicy } from "@/kilocode/session/error-policy" // [fork]
 import { KiloRoutedModel } from "@/kilocode/session/routed-model"
 import { KiloResponseMetadata } from "@/kilocode/session/response-metadata"
 import { KiloReasoningReplay } from "@/kilocode/session/reasoning-replay"
@@ -152,6 +153,8 @@ const layer = Layer.effect(
       let aborted = false
       const ac = new AbortController() // kilocode_change — abort controller for offline handler
       let attempt = KiloSessionProcessor.attempt() // kilocode_change
+      const baseline = new Set<string>() // kilocode_change
+      const pause: { message?: string } = {} // kilocode_change
 
       // kilocode_change start
       const parse = (e: unknown) =>
@@ -161,9 +164,10 @@ const layer = Layer.effect(
         })
       const retryParse = (e: unknown) => {
         const error = parse(e)
-        if (e instanceof KiloSessionProcessor.IncompleteResponseError) return KiloSessionProcessor.blockRetry(error)
-        if (attempt.text || attempt.reasoning || attempt.tool) return KiloSessionProcessor.blockRetry(error)
-        return error
+        // [fork] only a plain retry reaches the schedule; KiloErrorPolicy.RULES says why the rest do not
+        return KiloErrorPolicy.decide({ raw: e, error, attempt }).action === "retry"
+          ? error // [fork]
+          : KiloErrorPolicy.blockRetry(error) // [fork]
       }
       // kilocode_change end
 
@@ -620,7 +624,7 @@ const layer = Layer.effect(
           case "step-finish": {
             // kilocode_change start - retry only terminally incomplete attempts before settlement
             if (
-              KiloSessionProcessor.replayable({
+              KiloErrorPolicy.replayable({ // [fork]
                 finish: attempt.finish,
                 text: attempt.text,
                 reasoning: attempt.reasoning,
@@ -629,7 +633,7 @@ const layer = Layer.effect(
               })
             )
               return yield* Effect.fail(
-                new KiloSessionProcessor.IncompleteResponseError(KiloResponseMetadata.read(value.providerMetadata)),
+                new KiloErrorPolicy.IncompleteResponseError(KiloResponseMetadata.read(value.providerMetadata)), // [fork]
               )
             // kilocode_change end
             if (input.snapshotOwner) yield* input.snapshotOwner.finishStep() // kilocode_change - clear the active step without tracking
@@ -893,7 +897,7 @@ const layer = Layer.effect(
         // kilocode_change start - internal preflight signal, not a provider error
         if (e instanceof KiloSessionOverflow.PreflightError) {
           ctx.needsCompaction = true
-          return
+          return "compact" as const // [fork] report compact halt outcome
         }
         // kilocode_change end
         yield* Effect.logError("process", {
@@ -904,31 +908,41 @@ const layer = Layer.effect(
         })
         const error = parse(e)
         // kilocode_change start
-        if (e instanceof KiloSessionProcessor.IncompleteResponseError) ctx.assistantMessage.finish = "unknown"
+        if (e instanceof KiloErrorPolicy.IncompleteResponseError) ctx.assistantMessage.finish = "unknown" // [fork]
         ctx.compactionError = MessageV2.ContextOverflowError.isInstance(error) ? error : ctx.compactionError
+        // [fork] a step that already ran tools closes as a tool turn, so the loop continues with their results
+        const verdict = KiloErrorPolicy.decide({ raw: e, error, attempt })
+        if (verdict.action === "resume") { // [fork]
+          ctx.assistantMessage.finish = "tool-calls" // [fork]
+          pause.message = verdict.message ?? error.name // [fork]
+          return "resume" as const // [fork] report resume halt outcome
+        }
         // kilocode_change end
-        if (MessageV2.ContextOverflowError.isInstance(error)) {
+        // kilocode_change start - [fork] the compact verdict drives compaction, so new compact rules are honoured
+        if (verdict.action === "compact") {
           // respect compaction.auto === false by surfacing overflow as a hard error instead of auto-compacting
           if ((yield* config.get()).compaction?.auto === false && !ctx.assistantMessage.summary) {
             ctx.assistantMessage.error = error
             ctx.assistantMessage.finish = "error"
             yield* events.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
             yield* status.set(ctx.sessionID, { type: "idle" })
-            return
+            return "terminal" as const
           }
           ctx.needsCompaction = true
           // kilocode_change start - let compaction publish overflow only after recovery is exhausted
           if (!ctx.assistantMessage.summary)
             yield* events.publish(Session.Event.Error, { sessionID: ctx.sessionID, error })
           // kilocode_change end
-          return
+          return "compact" as const // kilocode_change - [fork] report compact halt outcome
         }
+        // kilocode_change end
         ctx.assistantMessage.error = error
         yield* events.publish(Session.Event.Error, {
           sessionID: ctx.assistantMessage.sessionID,
           error: ctx.assistantMessage.error,
         })
         yield* status.set(ctx.sessionID, { type: "idle" })
+        return "terminal" as const // kilocode_change - [fork] report terminal halt outcome
       })
 
       // kilocode_change start
@@ -955,7 +969,6 @@ const layer = Layer.effect(
 
         return yield* Effect.gen(function* () {
           // kilocode_change start - publish retry state consistently for provider and empty-response retries
-          const retries = { provider: 0 }
           const setRetry = (info: {
             attempt: number
             message: string
@@ -971,8 +984,37 @@ const layer = Layer.effect(
             })
           }
 
+          // kilocode_change start - [fork] retain meaningful output removed by retries until recovery settles terminally
+          const fallback: {
+            parts: Array<SessionV1.TextPart | SessionV1.ReasoningPart>
+            restored: boolean
+          } = { parts: [], restored: false }
+          const restore = Effect.fn("SessionProcessor.restoreFallback")(function* () {
+            if (fallback.restored || fallback.parts.length === 0) return
+            fallback.restored = true
+            const parts = fallback.parts
+            fallback.parts = []
+            yield* Effect.forEach(parts, (part) => session.updatePart(part), { concurrency: 1 }).pipe(
+              Effect.catchCause((cause) => {
+                if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+                return Effect.logError("failed to restore removed response parts", {
+                  sessionID: ctx.sessionID,
+                  messageID: ctx.assistantMessage.id,
+                  cause: Cause.pretty(cause),
+                })
+              }),
+            )
+          })
+          // kilocode_change end
+
           const request = () =>
             Effect.gen(function* () {
+              // kilocode_change start - [fork] a retried attempt starts from the parts present before the failed one
+              if (attempt.started) {
+                yield* discard(baseline, true)
+                attempt = KiloSessionProcessor.attempt()
+              }
+              // kilocode_change end
               ctx.currentText = undefined
               ctx.reasoningMap = {}
               yield* status.set(ctx.sessionID, { type: "busy" })
@@ -1024,17 +1066,13 @@ const layer = Layer.effect(
                     sessionID: ctx.sessionID,
                     abort: ac.signal,
                     set: status.set,
-                    used: retries.provider,
                   }),
-                  set: (info) => {
-                    if (info.attempt > 0) retries.provider += 1
-                    return setRetry(info)
-                  },
+                  set: setRetry, // [fork] publish retry state
                 }),
               ),
             )
 
-          const discard = Effect.fn("SessionProcessor.discardIncomplete")(function* (baseline: Set<string>) {
+          const discard = Effect.fn("SessionProcessor.discardIncomplete")(function* (baseline: Set<string>, opaque = false) { // [fork] retain closed opaque reasoning during provider retries
             yield* Effect.forEach(
               Object.values(ctx.toolcalls),
               (call) => Deferred.succeed(call.done, undefined).pipe(Effect.ignore),
@@ -1043,22 +1081,47 @@ const layer = Layer.effect(
             const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
               Effect.provideService(Database.Service, database),
             )
+            const removed = parts.filter( // kilocode_change - [fork] capture the exact retry removal set
+              // kilocode_change start - [fork] only provider retries retain closed opaque reasoning
+              (part) =>
+                !baseline.has(part.id) &&
+                !(opaque && part.type === "reasoning" && part.text === "" && part.metadata != null && part.time.end != null),
+              // kilocode_change end
+            ) // kilocode_change - [fork] finish the exact retry removal set
+            // kilocode_change start - [fork] capture detached meaningful output from removed live parts
+            const live = new Map<string, SessionV1.TextPart | SessionV1.ReasoningPart>()
+            if (ctx.currentText) live.set(ctx.currentText.id, ctx.currentText)
+            for (const part of Object.values(ctx.reasoningMap)) live.set(part.id, part)
+            const meaningful = removed
+              .map((part) => (part.type === "text" || part.type === "reasoning" ? (live.get(part.id) ?? part) : part))
+              .filter(
+                (part): part is SessionV1.TextPart | SessionV1.ReasoningPart =>
+                  (part.type === "text" || part.type === "reasoning") && part.text.trim() !== "",
+              )
+              .map((part) => {
+                const copy = structuredClone(part)
+                if (copy.time?.end != null) return copy
+                const end = Date.now()
+                copy.time = { start: copy.time?.start ?? end, end }
+                return copy
+              })
             yield* Effect.forEach(
-              parts.filter((part) => !baseline.has(part.id)),
+              removed,
               (part) =>
                 session.removePart({ sessionID: ctx.sessionID, messageID: ctx.assistantMessage.id, partID: part.id }),
               { concurrency: 1 },
             )
+            if (meaningful.length > 0) fallback.parts = meaningful
+            // kilocode_change end
             ctx.currentText = undefined
             ctx.reasoningMap = {}
             ctx.toolcalls = {}
             ctx.toolmeta = {}
-            ctx.progress = {}
+            ctx.progress = {} // [fork]
             ctx.assistantMessage.finish = undefined
           })
 
           const recover = () => {
-            const baseline = new Set<string>()
             return KiloSessionProcessor.recover({
               run: Effect.fn("SessionProcessor.incompleteAttempt")(function* () {
                 baseline.clear()
@@ -1069,20 +1132,42 @@ const layer = Layer.effect(
                 attempt = KiloSessionProcessor.attempt()
                 yield* request()
               }),
+              // kilocode_change start - [fork] replayability is owned by the error policy module
               replayable: () =>
-                KiloSessionProcessor.replayable({
+                KiloErrorPolicy.replayable({
                   finish: attempt.finish,
                   text: attempt.text,
                   reasoning: attempt.reasoning,
                   tool: attempt.tool,
                   usage: attempt.usage,
                 }),
+              // kilocode_change end
               discard: () => discard(baseline),
               set: setRetry,
             })
           }
 
-          yield* recover().pipe(Effect.catch(halt), Effect.ensuring(cleanup()))
+          // kilocode_change start - [fork] restore fallback only after terminal recovery failure
+          yield* recover().pipe(
+            Effect.catch((error) =>
+              Effect.gen(function* () {
+                const outcome = yield* halt(error)
+                if (outcome !== "terminal" || aborted || attempt.text || attempt.reasoning || attempt.tool) return
+                yield* restore()
+              }),
+            ),
+            Effect.ensuring(cleanup()),
+          )
+          fallback.parts = []
+          // kilocode_change end
+          // kilocode_change start - [fork] pace the next step after a tool turn was closed by a retryable error
+          if (pause.message !== undefined) {
+            const wait = SessionRetry.delay(1)
+            yield* setRetry({ attempt: 1, message: pause.message, next: Date.now() + wait })
+            yield* Effect.sleep(`${wait} millis`)
+            pause.message = undefined
+          }
+          // kilocode_change end
           // kilocode_change end
 
           if (ctx.needsCompaction) return "compact"

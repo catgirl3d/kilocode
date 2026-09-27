@@ -1,19 +1,13 @@
-// Set env before any imports that transitively load flag.ts (e.g. LLM, SessionRetry).
-// This MUST happen before static imports, but ES module imports are hoisted.
-// So we set it here and use mock.module + dynamic imports for modules that
-// transitively load flag.ts to ensure the env is captured at load time.
-process.env.KILO_SESSION_RETRY_LIMIT = "2"
-
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { NodeFileSystem } from "@effect/platform-node"
-import { afterEach, describe, expect, spyOn, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { APICallError } from "ai"
 import { Context, Effect, Exit, Fiber, Layer, Schedule } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import * as Stream from "effect/Stream"
-import type { LLMEvent } from "@opencode-ai/llm"
+import { LLMEvent, Usage, type LLMEvent as Event } from "@opencode-ai/llm"
 import { Database } from "@opencode-ai/core/database/database"
 import path from "path"
 import { Agent as AgentSvc } from "../../src/agent/agent"
@@ -50,7 +44,7 @@ const ref = {
   modelID: ModelV2.ID.make("test-model"),
 }
 
-type Script = Stream.Stream<LLMEvent, unknown>
+type Script = Stream.Stream<Event, unknown>
 
 class TestLLM extends Context.Service<
   TestLLM,
@@ -159,26 +153,34 @@ const env = LayerNode.compile(root, [
 
 const it = testEffect(env)
 
-afterEach(() => {
-  delete process.env.KILO_SESSION_RETRY_LIMIT
-})
-
-describe("session processor retry limit", () => {
-  const run = (limit: number) =>
+describe("session processor unbounded retry", () => {
+  const run = (
+    retries: number,
+    error: unknown = retryable429(),
+    check?: (ctx: { result: string; calls: number; message: MessageV2.Assistant }) => void,
+  ) =>
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
-          process.env.KILO_SESSION_RETRY_LIMIT = String(limit)
           const test = yield* TestLLM
           const processors = yield* SessionProcessor.Service
           const session = yield* Session.Service
 
-          yield* Effect.forEach(Array.from({ length: limit + 1 }), () => test.push(Stream.fail(retryable429())), {
+          yield* Effect.forEach(Array.from({ length: retries }), () => test.push(Stream.fail(error)), {
             discard: true,
           })
+          const usage = new Usage({})
+          yield* test.push(
+            Stream.make(
+              LLMEvent.stepStart({ index: 0 }),
+              LLMEvent.textStart({ id: "text" }),
+              LLMEvent.textDelta({ id: "text", text: "Recovered" }),
+              LLMEvent.textEnd({ id: "text" }),
+              LLMEvent.stepFinish({ index: 0, reason: "stop", usage }),
+              LLMEvent.finish({ reason: "stop", usage }),
+            ),
+          )
           yield* test.push(Stream.fail(new Error("unexpected extra llm call")))
-
-          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
 
           const chat = yield* session.create({})
           const parent = yield* session.updateMessage({
@@ -222,14 +224,23 @@ describe("session processor retry limit", () => {
             tools: {},
           }
 
-          const expected = MessageV2.fromError(retryable429(), { providerID: ProviderV2.ID.make("test") })
+          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
+
           try {
             const result = yield* handle.process(input)
             const calls = yield* test.calls
+            const parts = yield* MessageV2.parts(msg.id)
 
-            expect(result).toBe("stop")
-            expect(calls).toBe(limit + 1)
-            expect(handle.message.error).toStrictEqual(expected)
+            if (check) {
+              check({ result, calls, message: handle.message })
+              return
+            }
+
+            expect(result).toBe("continue")
+            expect(calls).toBe(retries + 1)
+            expect(handle.message.error).toBeUndefined()
+            expect(handle.message.finish).toBe("stop")
+            expect(parts.find((part) => part.type === "text")?.text).toBe("Recovered")
           } finally {
             delay.mockRestore()
           }
@@ -237,24 +248,118 @@ describe("session processor retry limit", () => {
       { git: true },
     )
 
-  it.live("stops after two retries with the normalized retryable error", () => run(2), 15000)
+  it.live(
+    "retries provider errors past the previous five-retry cap despite the obsolete env limit",
+    () =>
+      Effect.gen(function* () {
+        const prev = process.env.KILO_SESSION_RETRY_LIMIT
+        process.env.KILO_SESSION_RETRY_LIMIT = "1"
+        try {
+          yield* run(6)
+        } finally {
+          if (prev === undefined) delete process.env.KILO_SESSION_RETRY_LIMIT
+          else process.env.KILO_SESSION_RETRY_LIMIT = prev
+        }
+      }),
+    15000,
+  )
 
-  it.live("honors a configured retry limit above the upstream default", () => run(10), 15000)
+  it.live(
+    "retries a serialized APIError from the stream and completes the follow-up response",
+    () =>
+      Effect.gen(function* () {
+        yield* run(1, {
+          name: "APIError",
+          data: {
+            message: "Network connection failed",
+            isRetryable: true,
+            metadata: { code: "", syscall: "", message: "network connection was lost" },
+          },
+        })
+      }),
+    20_000,
+  )
 
-  const policy = (items: ("offline" | "provider" | "reset")[], limit?: number) =>
+  it.live(
+    "retries a serialized non-retryable APIError until the provider recovers",
+    () =>
+      Effect.gen(function* () {
+        yield* run(2, {
+          name: "APIError",
+          data: {
+            message: "Bad request",
+            statusCode: 400,
+            isRetryable: false,
+            metadata: { code: "", syscall: "", message: "bad request" },
+          },
+        })
+      }),
+    20_000,
+  )
+
+  it.live(
+    "retries an unclassified error instead of stopping the turn",
+    () =>
+      Effect.gen(function* () {
+        yield* run(2, new Error("something unexpected broke"))
+      }),
+    20_000,
+  )
+
+  it.live(
+    "waits on an expired sign-in 401 instead of ending the turn",
+    () =>
+      Effect.gen(function* () {
+        yield* run(1, {
+          name: "APIError",
+          data: {
+            message: "Your authentication token is expired",
+            statusCode: 401,
+            isRetryable: false,
+            metadata: { code: "", syscall: "", message: "expired token" },
+          },
+        })
+      }),
+    20_000,
+  )
+
+  it.live(
+    "ends the turn with the error instead of retrying a hopeless failure",
+    () =>
+      Effect.gen(function* () {
+        yield* run(
+          1,
+          {
+            name: "APIError",
+            data: { message: "Forbidden", statusCode: 403, isRetryable: false, metadata: {} },
+          },
+          ({ result, calls, message }) => {
+            expect(result).toBe("stop")
+            expect(calls).toBe(1)
+            expect(message.error).toBeDefined()
+            expect(message.finish).not.toBe("tool-calls")
+          },
+        )
+      }),
+    20_000,
+  )
+
+  const policy = (
+    items: ("offline" | "provider" | "reset")[],
+    offlineResult: "retry" | "blocked" | "aborted" = "retry",
+  ) =>
     Effect.gen(function* () {
       const attempts: number[] = []
       const state = { offline: 0, stopped: false }
       const step = yield* Schedule.toStepWithMetadata(
         SessionRetry.policy({
           provider: "test",
-          limit,
           parse: (error) => MessageV2.fromError(error, { providerID: ref.providerID }),
           set: (info) => Effect.sync(() => attempts.push(info.attempt)).pipe(Effect.asVoid),
           offline: () =>
             Effect.sync(() => {
               state.offline += 1
-              return "retry" as const
+              return offlineResult
             }),
         }),
       )
@@ -265,7 +370,7 @@ describe("session processor retry limit", () => {
             ? new Error("fetch failed")
             : item === "reset"
               ? connectionReset()
-              : retryable429({ "retry-after-ms": "0" })
+              : retryable429({ "retry-after-ms": "1" })
         // the step sleeps for the decided backoff; advance the test clock past it
         const fiber = yield* Effect.suspend(() => step(raw)).pipe(Effect.forkChild)
         yield* TestClock.adjust("35 seconds")
@@ -279,7 +384,7 @@ describe("session processor retry limit", () => {
       return { attempts, ...state }
     })
 
-  it.effect("recovers beyond the default cap without consuming provider retries", () =>
+  it.effect("offline reconnect resets the attempt and continues retry scheduling", () =>
     Effect.gen(function* () {
       const result = yield* policy([...Array.from({ length: 6 }, () => "offline" as const), "provider"])
       expect(result.offline).toBe(6)
@@ -288,39 +393,20 @@ describe("session processor retry limit", () => {
     }),
   )
 
-  it.effect("preserves the upstream provider cap across mixed reconnects", () =>
+  it.effect("offline rejection ends retry scheduling", () =>
     Effect.gen(function* () {
-      const result = yield* policy(Array.from({ length: 6 }, () => ["provider", "offline"] as const).flat())
-      expect(result.offline).toBe(5)
-      expect(result.attempts).toEqual([1, 0, 2, 0, 3, 0, 4, 0, 5, 0])
+      const result = yield* policy(["offline"], "blocked")
+      expect(result.offline).toBe(1)
+      expect(result.attempts).toEqual([])
       expect(result.stopped).toBe(true)
     }),
   )
-
-  it.effect("preserves explicit raw attempt limits before reconnect handlers", () =>
-    Effect.gen(function* () {
-      const result = yield* policy(["offline", "provider", "offline", "provider", "offline", "offline"], 5)
-      expect(result.offline).toBe(3)
-      expect(result.attempts).toEqual([0, 2, 0, 4, 0])
-      expect(result.stopped).toBe(true)
-    }),
-  )
-
   it.effect("retries retryable connection resets without the offline handler", () =>
     Effect.gen(function* () {
       const result = yield* policy(["reset", "reset", "provider"])
       expect(result.offline).toBe(0)
       expect(result.attempts).toEqual([1, 2, 3])
       expect(result.stopped).toBe(false)
-    }),
-  )
-
-  it.effect("retryable connection resets count against the retry limit", () =>
-    Effect.gen(function* () {
-      const result = yield* policy(["reset", "reset", "reset"], 2)
-      expect(result.offline).toBe(0)
-      expect(result.attempts).toEqual([1, 2])
-      expect(result.stopped).toBe(true)
     }),
   )
 
@@ -347,36 +433,4 @@ describe("session processor retry limit", () => {
 
     expect(SessionNetwork.serverReset(new Error("fetch failed"))).toBe(false)
   })
-
-  it.effect("only positive integers enable the limit", () =>
-    Effect.promise(async () => {
-      const { Flag } = await import("@opencode-ai/core/flag/flag")
-
-      delete process.env.KILO_SESSION_RETRY_LIMIT
-      expect(Flag.KILO_SESSION_RETRY_LIMIT).toBeUndefined()
-
-      process.env.KILO_SESSION_RETRY_LIMIT = "0"
-      expect(Flag.KILO_SESSION_RETRY_LIMIT).toBeUndefined()
-
-      process.env.KILO_SESSION_RETRY_LIMIT = "-1"
-      expect(Flag.KILO_SESSION_RETRY_LIMIT).toBeUndefined()
-
-      process.env.KILO_SESSION_RETRY_LIMIT = "abc"
-      expect(Flag.KILO_SESSION_RETRY_LIMIT).toBeUndefined()
-
-      process.env.KILO_SESSION_RETRY_LIMIT = "2"
-      expect(Flag.KILO_SESSION_RETRY_LIMIT).toBe(2)
-    }),
-  )
-
-  it.effect("reads env at access time (dynamic getter)", () =>
-    Effect.promise(async () => {
-      const { Flag } = await import("@opencode-ai/core/flag/flag")
-      delete process.env.KILO_SESSION_RETRY_LIMIT
-      expect(Flag.KILO_SESSION_RETRY_LIMIT).toBeUndefined()
-      process.env.KILO_SESSION_RETRY_LIMIT = "5"
-      expect(Flag.KILO_SESSION_RETRY_LIMIT).toBe(5)
-      delete process.env.KILO_SESSION_RETRY_LIMIT
-    }),
-  )
 })
