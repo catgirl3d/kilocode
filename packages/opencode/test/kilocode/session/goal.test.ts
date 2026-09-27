@@ -1021,7 +1021,7 @@ for (const idle of [false, true]) {
         shell(),
         reply().wait(gate.promise).text("Validation checked").stop(),
         shell(),
-        httpError(400, { error: { message: 'Command not found: "gaol".', type: "invalid_request_error" } }),
+        reply().text("Blocked").contentFilter(),
       )
       yield* run.command(objective)
       yield* run.wait(2)
@@ -1061,7 +1061,7 @@ for (const idle of [false, true]) {
       yield* run.wait(4)
       yield* run.paused
       const last = (yield* run.sessions.messages({ sessionID: run.session.id })).at(-1)
-      expect(last?.info.role === "assistant" && last.info.error?.name).toBe("APIError")
+      expect(last?.info.role === "assistant" && last.info.error?.name).toBe("ContentFilterError")
       expect(yield* run.llm.hits).toHaveLength(4)
     }),
     30_000,
@@ -1149,10 +1149,10 @@ for (const busy of [true, false]) {
 }
 
 it.instance(
-  "pauses after a non-retryable model error",
+  "pauses after a terminal model error",
   Effect.gen(function* () {
     const { llm, sessions, session, command, paused, wait } = yield* setup()
-    yield* llm.error(400, { error: { message: "Invalid goal request", type: "invalid_request_error" } })
+    yield* llm.push(reply().text("Blocked").contentFilter())
     yield* command(objective)
     yield* wait(1)
     yield* paused
@@ -1964,7 +1964,7 @@ for (const kind of ["success", "delivery-error", "independent-child"] as const) 
         }),
         reply().text("Waiting for the child").stop(),
         ...(kind === "delivery-error"
-          ? [httpError(400, { error: { message: "Delivery failed", type: "invalid_request_error" } })]
+          ? [reply().text("Blocked").contentFilter()]
           : [reply().wait(finish.promise).text("Child result received").stop(), reply().hang()]),
       )
       yield* run.command(objective)
