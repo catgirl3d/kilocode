@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
+import { APICallError } from "ai"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LLMEvent } from "@opencode-ai/llm"
-import { Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { Agent } from "../../../src/agent/agent"
 import { Config } from "../../../src/config/config"
 import { ConsultAdvisorTool, acquire, release } from "../../../src/kilocode/tool/consult-advisor"
@@ -69,6 +71,7 @@ function context(
   currentAssistant?: SessionV1.Assistant & { parts?: SessionV1.Part[] },
   metadata?: { title?: string; metadata?: Record<string, any> }[],
   signal?: AbortSignal,
+  retrying?: Deferred.Deferred<void>,
 ): Tool.Context {
   return {
     sessionID: SessionID.make(sessionID),
@@ -77,7 +80,11 @@ function context(
     abort: signal ?? AbortSignal.any([]),
     extra: currentAssistant ? { currentAssistant } : undefined,
     messages: [],
-    metadata: (input) => Effect.sync(() => metadata?.push(input)),
+    metadata: (input) =>
+      Effect.sync(() => {
+        metadata?.push(input)
+        if (input.title === "Advisor retrying" && retrying) Deferred.doneUnsafe(retrying, Effect.void)
+      }),
     ask: () => Effect.void,
   }
 }
@@ -230,7 +237,7 @@ itStreams.effect("streams one guidance consultation with the resolved variant", 
 )
 
 const failed: LLM.StreamInput[] = []
-const itFailed = testEffect(layer("high", failed, "guidance", new Error("provider unavailable")))
+const itFailed = testEffect(layer("high", failed, "guidance", new Error("plain failure")))
 
 itFailed.effect("reports a failed status when the advisor stream fails", () =>
   Effect.gen(function* () {
@@ -239,7 +246,7 @@ itFailed.effect("reports a failed status when the advisor stream fails", () =>
     const result = yield* tool.execute({ question: "review" }, context("ses_failed", undefined, titles))
 
     expect(result.title).toBe("Advisor failed")
-    expect(result.output).toContain("Advisor consultation failed: provider unavailable")
+    expect(result.output).toContain("Advisor consultation failed: plain failure")
     expect(titles).toEqual([
       { title: "Preparing advisor context" },
       { title: "Waiting for first response" },
@@ -249,6 +256,141 @@ itFailed.effect("reports a failed status when the advisor stream fails", () =>
     const retry = yield* tool.execute({ question: "retry" }, context("ses_failed"))
     expect(retry.title).toBe("Advisor failed")
     expect(failed).toHaveLength(2)
+  }),
+)
+
+const rateLimit = new APICallError({
+  message: "429 usage limit",
+  url: "https://example.com",
+  requestBodyValues: {},
+  statusCode: 429,
+  responseHeaders: { "retry-after-ms": "1" },
+  isRetryable: true,
+})
+const retried: LLM.StreamInput[] = []
+const itRetried = testEffect(
+  layer("high", retried, "guidance", undefined, () => {
+    if (retried.length <= 6) {
+      return Stream.make(
+        LLMEvent.textStart({ id: "text" }),
+        LLMEvent.textDelta({ id: "text", text: "partial failed guidance" }),
+      ).pipe(Stream.concat(Stream.fail(rateLimit)))
+    }
+    return Stream.make(
+      LLMEvent.textStart({ id: "text" }),
+      LLMEvent.textDelta({ id: "text", text: "guidance from the final attempt" }),
+      LLMEvent.textEnd({ id: "text" }),
+    )
+  }),
+)
+
+itRetried.live("retries repeated rate limits with fresh streams and returns only final guidance", () =>
+  Effect.gen(function* () {
+    retried.length = 0
+    const titles: { title?: string; metadata?: Record<string, any> }[] = []
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const result = yield* tool.execute({ question: "review" }, context("ses_retry", undefined, titles))
+
+    expect(retried).toHaveLength(7)
+    expect(result.title).toBe("Advisor completed")
+    expect(result.output).toBe("guidance from the final attempt")
+    expect(result.output).not.toContain("Advisor consultation failed")
+    expect(titles).toContainEqual({ title: "Advisor retrying" })
+  }),
+)
+
+const network: LLM.StreamInput[] = []
+const itNetwork = testEffect(
+  layer("high", network, "guidance", undefined, () => {
+    if (network.length === 1) return Stream.fail(new Error("fetch failed"))
+    return Stream.make(
+      LLMEvent.textStart({ id: "text" }),
+      LLMEvent.textDelta({ id: "text", text: "guidance after network retry" }),
+      LLMEvent.textEnd({ id: "text" }),
+    )
+  }),
+)
+
+itNetwork.effect("retries a transient network failure and returns guidance", () =>
+  Effect.gen(function* () {
+    network.length = 0
+    const retrying = yield* Deferred.make<void>()
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const call = yield* tool
+      .execute({ question: "review" }, context("ses_network_retry", undefined, undefined, undefined, retrying))
+      .pipe(Effect.forkChild)
+
+    const state = yield* Effect.raceFirst(
+      Deferred.await(retrying).pipe(Effect.as("retrying" as const)),
+      Fiber.await(call).pipe(Effect.as("finished" as const)),
+    )
+    expect(state).toBe("retrying")
+    yield* Effect.yieldNow
+    yield* TestClock.adjust("3 seconds")
+
+    const result = yield* Fiber.join(call)
+    expect(network).toHaveLength(2)
+    expect(result.title).toBe("Advisor completed")
+    expect(result.output).toBe("guidance after network retry")
+  }),
+)
+
+const delayed = new APICallError({
+  message: "429 usage limit",
+  url: "https://example.com",
+  requestBodyValues: {},
+  statusCode: 429,
+  responseHeaders: { "retry-after-ms": "60000" },
+  isRetryable: true,
+})
+const waiting: LLM.StreamInput[] = []
+const itWaiting = testEffect(layer("high", waiting, "guidance", undefined, () => Stream.fail(delayed)))
+
+itWaiting.effect("interrupts during an advisor retry wait without another stream", () =>
+  Effect.gen(function* () {
+    const retrying = yield* Deferred.make<void>()
+    const ctl = new AbortController()
+    const titles: { title?: string; metadata?: Record<string, any> }[] = []
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const call = yield* tool
+      .execute({ question: "review" }, context("ses_retry_abort", undefined, titles, ctl.signal, retrying))
+      .pipe(Effect.forkChild)
+
+    const state = yield* Effect.raceFirst(
+      Deferred.await(retrying).pipe(Effect.as("retrying" as const)),
+      Fiber.await(call).pipe(Effect.as("finished" as const)),
+    )
+    expect(state).toBe("retrying")
+    yield* Effect.yieldNow
+    ctl.abort()
+
+    const exit = yield* Fiber.await(call)
+    if (Exit.isSuccess(exit)) throw new Error("expected advisor cancellation")
+    expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+    expect(waiting).toHaveLength(1)
+    expect(titles).toContainEqual({ title: "Advisor retrying" })
+    expect(titles.at(-1)).toEqual({ title: "Advisor cancelled" })
+  }),
+)
+
+const badRequest = new APICallError({
+  message: "Bad request",
+  url: "https://example.com",
+  requestBodyValues: {},
+  statusCode: 400,
+  isRetryable: false,
+})
+const terminal: LLM.StreamInput[] = []
+const itTerminal = testEffect(layer("high", terminal, "guidance", badRequest))
+
+itTerminal.effect("does not retry a non-retryable advisor API error", () =>
+  Effect.gen(function* () {
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const result = yield* tool.execute({ question: "review" }, context("ses_terminal"))
+
+    expect(terminal).toHaveLength(1)
+    expect(result.title).toBe("Advisor failed")
+    expect(result.output).toContain("Advisor consultation failed: Bad request")
   }),
 )
 

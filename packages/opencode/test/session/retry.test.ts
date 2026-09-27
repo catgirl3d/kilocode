@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import type { NamedError } from "@opencode-ai/core/util/error"
@@ -13,6 +13,7 @@ import { SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { testEffect } from "../lib/effect"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import { KiloSessionProcessor } from "../../src/kilocode/session/processor"
 
 const providerID = ProviderV2.ID.make("test")
 const retryProvider = "test"
@@ -25,6 +26,12 @@ function apiError(headers?: Record<string, string>): SessionV1.APIError {
       isRetryable: true,
       responseHeaders: headers,
     }).toObject(),
+  )
+}
+
+function unauthorized(message: string, responseBody?: string): SessionV1.APIError {
+  return Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+    new SessionV1.APIError({ message, isRetryable: false, statusCode: 401, responseBody }).toObject(),
   )
 }
 
@@ -65,6 +72,12 @@ describe("session.retry.delay", () => {
     expect(d).toBeLessThanOrEqual(20000)
   })
 
+  test("caps far-future http-date retry-after values at 60 seconds", () => {
+    const date = new Date(Date.now() + 120_000).toUTCString()
+    const error = apiError({ "retry-after": date })
+    expect(SessionRetry.delay(1, error)).toBe(60_000)
+  })
+
   test("ignores invalid retry hints", () => {
     const error = apiError({ "retry-after": "not-a-number" })
     expect(SessionRetry.delay(1, error, 0)).toBe(2000)
@@ -81,6 +94,13 @@ describe("session.retry.delay", () => {
     expect(SessionRetry.delay(1, error, 0)).toBe(2000)
   })
 
+  test("ignores non-positive retry hints instead of retrying with no wait", () => {
+    expect(SessionRetry.delay(1, apiError({ "retry-after-ms": "0" }), 0)).toBe(2000)
+    expect(SessionRetry.delay(1, apiError({ "retry-after-ms": "-100" }), 0)).toBe(2000)
+    expect(SessionRetry.delay(1, apiError({ "retry-after": "0" }), 0)).toBe(2000)
+    expect(SessionRetry.delay(1, apiError({ "retry-after": "-5" }), 0)).toBe(2000)
+  })
+
   // kilocode_change start - provider retry headers now clamp at RETRY_MAX_DELAY_HEADERS
   test("uses short retry-after values unchanged", () => {
     const error = apiError({ "retry-after": "50" })
@@ -89,57 +109,106 @@ describe("session.retry.delay", () => {
 
   test("clamps long header waits to 60 seconds", () => {
     const seconds = apiError({ "retry-after": "700" })
-    expect(SessionRetry.delay(1, seconds)).toBe(SessionRetry.RETRY_MAX_DELAY_HEADERS)
+    expect(SessionRetry.delay(1, seconds)).toBe(60_000)
 
     const millis = apiError({ "retry-after-ms": "700000" })
-    expect(SessionRetry.delay(1, millis)).toBe(SessionRetry.RETRY_MAX_DELAY_HEADERS)
+    expect(SessionRetry.delay(1, millis)).toBe(60_000)
   })
 
   test("caps oversized header delays to 60 seconds", () => {
     const error = apiError({ "retry-after-ms": "999999999999" })
-    expect(SessionRetry.delay(1, error)).toBe(SessionRetry.RETRY_MAX_DELAY_HEADERS)
+    expect(SessionRetry.delay(1, error)).toBe(60_000)
   })
 
   test("caps exponential growth when headers exist but hints are unparsable", () => {
     const error = apiError({ "retry-after": "not-a-number" })
-    expect(SessionRetry.delay(20, error)).toBe(SessionRetry.RETRY_MAX_DELAY_HEADERS)
+    expect(SessionRetry.delay(20, error)).toBe(60_000)
   })
   // kilocode_change end
 
   it.instance("policy updates retry status and increments attempts", () =>
     Effect.gen(function* () {
       const sessionID = SessionID.make("session-retry-test")
-      const error = apiError({ "retry-after-ms": "0" })
+      const error = apiError()
       const status = yield* SessionStatus.Service
+      const started = Date.now()
+      const seen: Array<{ attempt: number; next: number }> = []
+      const delay = spyOn(SessionRetry, "delay").mockReturnValue(300)
 
-      const step = yield* Schedule.toStepWithMetadata(
-        SessionRetry.policy({
-          provider: "test",
-          parse: Schema.decodeUnknownSync(SessionV1.APIError.Schema),
-          set: (info) =>
-            status.set(sessionID, {
-              type: "retry",
-              attempt: info.attempt,
-              message: info.message,
-              next: info.next,
-            }),
-        }),
-      )
-      yield* step(error)
-      yield* step(error)
+      try {
+        const step = yield* Schedule.toStepWithMetadata(
+          SessionRetry.policy({
+            provider: "test",
+            parse: Schema.decodeUnknownSync(SessionV1.APIError.Schema),
+            set: (info) => {
+              seen.push({ attempt: info.attempt, next: info.next })
+              return status.set(sessionID, {
+                type: "retry",
+                attempt: info.attempt,
+                message: info.message,
+                next: info.next,
+              })
+            },
+          }),
+        )
+        yield* step(error)
+        yield* step(error)
+      } finally {
+        delay.mockRestore()
+      }
+      const elapsed = Date.now() - started
 
       expect(yield* status.get(sessionID)).toMatchObject({
         type: "retry",
         attempt: 2,
         message: "boom",
       })
+      expect(seen.map((item) => item.attempt)).toEqual([1, 2])
+      const [first, last] = seen
+      if (!first || !last) throw new Error("expected two retry attempts")
+      expect(elapsed).toBeGreaterThanOrEqual(550)
+      expect(first.next - started).toBeGreaterThanOrEqual(300)
+      expect(first.next - started).toBeLessThan(3000)
+      expect(last.next - started).toBeGreaterThanOrEqual(600)
+      expect(last.next - started).toBeLessThan(3500)
     }),
   )
 
-  it.instance("policy stops after five retries", () =>
+  it.instance("policy waits for the computed delay before retrying", () =>
+    Effect.gen(function* () {
+      const delay = spyOn(SessionRetry, "delay").mockReturnValue(300)
+
+      try {
+        let calls = 0
+        const started = Date.now()
+        const result = yield* Effect.suspend(() => {
+          calls += 1
+          return calls === 1 ? Effect.fail(apiError()) : Effect.succeed("recovered")
+        }).pipe(
+          Effect.retry(
+            SessionRetry.policy({
+              provider: "test",
+              parse: Schema.decodeUnknownSync(SessionV1.APIError.Schema),
+              set: () => Effect.void,
+            }),
+          ),
+        )
+        const elapsed = Date.now() - started
+
+        expect(result).toBe("recovered")
+        expect(calls).toBe(2)
+        expect(elapsed).toBeGreaterThanOrEqual(250)
+        expect(elapsed).toBeLessThan(5000)
+      } finally {
+        delay.mockRestore()
+      }
+    }),
+  )
+
+  it.instance("policy schedules retryable errors past the previous cap", () =>
     Effect.gen(function* () {
       const attempts: number[] = []
-      const error = apiError({ "retry-after-ms": "0" })
+      const error = apiError({ "retry-after-ms": "1" })
       const step = yield* Schedule.toStepWithMetadata(
         SessionRetry.policy({
           provider: "test",
@@ -151,16 +220,107 @@ describe("session.retry.delay", () => {
         }),
       )
 
-      yield* Effect.forEach(Array.from({ length: SessionRetry.RETRY_MAX_RETRIES + 1 }), () =>
-        Effect.ignore(step(error)),
-      )
+      yield* Effect.forEach(Array.from({ length: 12 }), () => Effect.ignore(step(error)))
 
-      expect(attempts).toStrictEqual([1, 2, 3, 4, 5])
+      expect(attempts).toStrictEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
     }),
   )
 })
 
 describe("session.retry.retryable", () => {
+  it.instance("routes converted Codex expired-auth 401s to retry and keeps other 401s terminal", () =>
+    Effect.gen(function* () {
+      const openai = ProviderV2.ID.make("openai")
+      const call = (responseBody: string) =>
+        new APICallError({
+          message: "Unauthorized",
+          url: "https://api.openai.com/v1/responses",
+          requestBodyValues: { model: "codex-latest" },
+          statusCode: 401,
+          responseHeaders: { "content-type": "application/json", "retry-after-ms": "1" },
+          responseBody,
+          isRetryable: false,
+        })
+      const errors = [
+        call(JSON.stringify({ error: { message: "Provided authentication token is expired." } })),
+        call(JSON.stringify({ error: { message: "Invalid credentials" } })),
+        call(
+          JSON.stringify({
+            type: "error",
+            error: { type: "FreeUsageLimitError", message: "Provided authentication token is expired." },
+          }),
+        ),
+      ]
+      const attempts: number[][] = []
+
+      for (const error of errors) {
+        const scheduled: number[] = []
+        const step = yield* Schedule.toStepWithMetadata(
+          SessionRetry.policy({
+            provider: "openai",
+            parse: (input) => KiloSessionProcessor.parseError(input, { providerID: openai, aborted: false }),
+            set: (info) => Effect.sync(() => scheduled.push(info.attempt)),
+          }),
+        )
+        yield* Effect.ignore(step(error))
+        attempts.push(scheduled)
+      }
+
+      expect(attempts).toStrictEqual([[1], [], []])
+    }),
+  )
+
+  test("retries 401 errors when the message identifies an expired authentication token", () => {
+    const message = "Provided authentication token is expired."
+    expect(SessionRetry.retryable(unauthorized(message), retryProvider)).toEqual({ message })
+  })
+
+  test("retries 401 errors when the response body identifies an expired authentication token", () => {
+    const message = "Unauthorized"
+    const body = '{"error":"Provided authentication token is expired."}'
+    expect(SessionRetry.retryable(unauthorized(message, body), retryProvider)).toEqual({ message })
+  })
+
+  test("matches expired authentication tokens case-insensitively", () => {
+    const message = "Unauthorized"
+    const body = "PROVIDED AUTHENTICATION TOKEN IS EXPIRED."
+    expect(SessionRetry.retryable(unauthorized(message, body), retryProvider)).toEqual({ message })
+  })
+
+  test("does not retry unrelated 401 errors", () => {
+    const error = unauthorized("Invalid credentials", '{"error":"account is disabled"}')
+    expect(SessionRetry.retryable(error, retryProvider)).toBeUndefined()
+  })
+
+  test("does not retry expired-auth response bodies on 400 errors", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "Bad request",
+        isRetryable: false,
+        statusCode: 400,
+        responseBody: '{"error":"Provided authentication token is expired."}',
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toBeUndefined()
+  })
+
+  test("keeps free usage limits terminal when the body also mentions an expired token", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "Free usage exceeded",
+        isRetryable: true,
+        statusCode: 401,
+        responseBody: JSON.stringify({
+          type: "error",
+          error: { type: "FreeUsageLimitError", message: "Provided authentication token is expired." },
+        }),
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, "kilo")).toBeUndefined()
+  })
+
   test("retries serialized too_many_requests messages", () => {
     const error = wrap(JSON.stringify({ type: "error", error: { type: "too_many_requests" } }))
     expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "Too Many Requests" })
