@@ -8,7 +8,6 @@ import { isRecord } from "@/util/record"
 import { parseReviewCommand, reviewCommandName } from "@/kilocode/review/command"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Duration, Effect, Exit } from "effect"
-import { Flag } from "@opencode-ai/core/flag/flag"
 import { EffectBridge } from "@/effect/bridge"
 import type { LLMEvent, ProviderMetadata, Usage } from "@opencode-ai/llm"
 import type { ProviderV2 } from "@opencode-ai/core/provider"
@@ -330,7 +329,7 @@ export namespace KiloSessionProcessor {
   }
 
   /**
-   * Returns the Kilo-specific retry policy options (limit + offline handler).
+   * Returns the Kilo-specific offline retry handler options.
    * Designed to be spread into SessionRetry.policy() opts.
    *
    * The `abort` signal is used by the offline handler to cancel the network
@@ -340,11 +339,8 @@ export namespace KiloSessionProcessor {
     sessionID: SessionID
     abort: AbortSignal
     set: (sessionID: SessionID, status: SessionStatus.Info) => Effect.Effect<void>
-    used?: number
   }) {
-    const limit = Flag.KILO_SESSION_RETRY_LIMIT
     return {
-      limit: limit === undefined ? undefined : Math.max(0, limit - (input.used ?? 0)),
       offline: (info: { error: unknown; message: string }) =>
         handleOffline({
           error: info.error,

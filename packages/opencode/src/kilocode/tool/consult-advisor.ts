@@ -5,8 +5,10 @@ import { LLM } from "@/session/llm"
 import { Session } from "@/session/session"
 import { MessageID, SessionID } from "@/session/schema"
 import { Provider, parseModel } from "@/provider/provider"
+import { SessionRetry } from "@/session/retry"
 import { hasVariant } from "@/kilocode/provider/provider"
 import { KiloLLM } from "@/kilocode/session/llm"
+import { KiloSessionProcessor } from "@/kilocode/session/processor"
 import { SessionTranscript } from "@/kilocode/session/transcript"
 import { Tool } from "@/tool/tool"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
@@ -85,8 +87,10 @@ function clip(text: string) {
 const BUSY_TITLE = "Advisor busy"
 const UNAVAILABLE_TITLE = "Advisor unavailable"
 const FAILED_TITLE = "Advisor failed"
+const CANCELLED_TITLE = "Advisor cancelled"
 const PREPARING_TITLE = "Preparing advisor context"
 const WAITING_TITLE = "Waiting for first response"
+const RETRYING_TITLE = "Advisor retrying"
 const REASONING_TITLE = "Advisor is reasoning"
 const WRITING_TITLE = "Advisor is writing"
 const COMPLETED_TITLE = "Advisor completed"
@@ -200,33 +204,52 @@ export const ConsultAdvisorTool = Tool.define<
               ...(currentText ? ["Current assistant message (in progress):", clip(currentText)] : []),
             ].join("\n\n")
             yield* setTitle(WAITING_TITLE)
-            const stream = KiloLLM.text(
-              llm
-                .stream({
-                  agent: reviewer(model.value),
-                  user: user(SessionID.make(`${ctx.sessionID}-advisor`), model.value, variant.variant),
-                  sessionID: SessionID.make(`${ctx.sessionID}-advisor`),
-                  parentSessionID: ctx.sessionID,
-                  model: model.value,
-                  system: [],
-                  messages: [{ role: "user", content: body }],
-                  tools: {},
-                  toolChoice: "none",
-                })
-                .pipe(
-                  Stream.tap((event) => {
-                    if (event.type === "reasoning-start" || event.type === "reasoning-delta") {
-                      return setTitle(REASONING_TITLE)
-                    }
-                    if (event.type === "text-start" || event.type === "text-delta") {
-                      return setTitle(WRITING_TITLE)
-                    }
-                    return Effect.void
-                  }),
-                ),
+            const freshRun = Effect.suspend(() =>
+              KiloLLM.text(
+                llm
+                  .stream({
+                    agent: reviewer(model.value),
+                    user: user(SessionID.make(`${ctx.sessionID}-advisor`), model.value, variant.variant),
+                    sessionID: SessionID.make(`${ctx.sessionID}-advisor`),
+                    parentSessionID: ctx.sessionID,
+                    model: model.value,
+                    system: [],
+                    messages: [{ role: "user", content: body }],
+                    tools: {},
+                    toolChoice: "none",
+                  })
+                  .pipe(
+                    Stream.tap((event) => {
+                      if (event.type === "reasoning-start" || event.type === "reasoning-delta") {
+                        return setTitle(REASONING_TITLE)
+                      }
+                      if (event.type === "text-start" || event.type === "text-delta") {
+                        return setTitle(WRITING_TITLE)
+                      }
+                      return Effect.void
+                    }),
+                  ),
+              ),
             )
-            const exit = yield* Effect.raceFirst(stream, abort(ctx)).pipe(Effect.exit)
-            if (ctx.abort.aborted) return yield* Effect.interrupt
+            const exit = yield* Effect.raceFirst(
+              Effect.retry(
+                freshRun,
+                SessionRetry.policy({
+                  provider: model.value.providerID,
+                  parse: (error) =>
+                    KiloSessionProcessor.parseError(error, {
+                      providerID: model.value.providerID,
+                      aborted: ctx.abort.aborted,
+                    }),
+                  set: () => setTitle(RETRYING_TITLE),
+                }),
+              ),
+              abort(ctx),
+            ).pipe(Effect.exit)
+            if (ctx.abort.aborted) {
+              yield* setTitle(CANCELLED_TITLE)
+              return yield* Effect.interrupt
+            }
             if (Exit.isFailure(exit)) {
               yield* setTitle(FAILED_TITLE)
               const err = Cause.squash(exit.cause)

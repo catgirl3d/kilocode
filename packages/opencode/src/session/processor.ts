@@ -998,7 +998,6 @@ const layer = Layer.effect(
 
         return yield* Effect.gen(function* () {
           // kilocode_change start - publish retry state consistently for provider and empty-response retries
-          const retries = { provider: 0 }
           const setRetry = (info: {
             attempt: number
             message: string
@@ -1066,12 +1065,8 @@ const layer = Layer.effect(
                     sessionID: ctx.sessionID,
                     abort: ac.signal,
                     set: status.set,
-                    used: retries.provider,
                   }),
-                  set: (info) => {
-                    if (info.attempt > 0) retries.provider += 1
-                    return setRetry(info)
-                  },
+                  set: setRetry, // kilocode_change
                 }),
               ),
             )

@@ -29,6 +29,9 @@
 
 ### Fixes & Enhancements
 
+- Keep retryable provider errors (rate limits, usage caps, network failures) waiting indefinitely instead of failing the turn after five attempts; each wait stays capped at 60 seconds.
+- Keep ChatGPT Codex sessions alive when the access token is rejected early: an expired-token 401 now waits for token refresh or re-authentication instead of failing the turn, and the session resumes once the token is renewed.
+- Make the on-demand `consult_advisor` tool wait through retryable provider errors like the main agent instead of failing the consultation immediately.
 - Generate chat titles during the first agent turn, including short prompts, and keep an active title request running if the task is stopped.
 - Number favorite models by their visible order in the model picker and quick switcher, so ranks read 1-2-3 without gaps and the reorder arrows skip unavailable favorites instead of stalling on them.
 - Store only diff patches that can be displayed: patches above the 256 KB limit are no longer written into the session log, so long sessions stop growing by megabytes per turn. Export, share and remote sync now carry an empty patch for those diffs — the same content every UI already shows.
