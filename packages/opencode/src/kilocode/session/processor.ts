@@ -483,6 +483,7 @@ export namespace KiloSessionProcessor {
   }
 
   export function parseError(error: unknown, input: { providerID: ProviderV2.ID; aborted: boolean }) {
+    if (MessageV2.APIError.isInstance(error)) return error
     if (!(error instanceof IncompleteResponseError)) return MessageV2.fromError(error, input)
     return new MessageV2.APIError({
       message: error.message,
