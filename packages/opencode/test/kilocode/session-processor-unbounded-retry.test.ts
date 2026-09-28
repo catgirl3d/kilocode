@@ -147,7 +147,7 @@ const env = LayerNode.compile(root, [
 const it = testEffect(env)
 
 describe("session processor unbounded retry", () => {
-  const run = (retries: number, error: unknown = retryable429()) =>
+  const run = (retries: number, error: unknown = retryable429(), mode: "retry" | "terminal" = "retry") =>
     provideTmpdirProject(
       (dir) =>
         Effect.gen(function* () {
@@ -170,8 +170,6 @@ describe("session processor unbounded retry", () => {
             ),
           )
           yield* test.push(Stream.fail(new Error("unexpected extra llm call")))
-
-          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
 
           const chat = yield* session.create({})
           const parent = yield* session.updateMessage({
@@ -215,14 +213,28 @@ describe("session processor unbounded retry", () => {
             tools: {},
           }
 
+          const delay = spyOn(SessionRetry, "delay").mockReturnValue(0)
+
           try {
             const result = yield* handle.process(input)
             const calls = yield* test.calls
+            const parts = yield* MessageV2.parts(msg.id)
+
+            if (mode === "terminal") {
+              expect({ result, calls }).toEqual({ result: "stop", calls: 1 })
+              expect(handle.message.error).toMatchObject({
+                name: "APIError",
+                data: { statusCode: 400, isRetryable: false },
+              })
+              expect(parts.some((part) => part.type === "text" && part.text === "Recovered")).toBe(false)
+              return
+            }
 
             expect(result).toBe("continue")
             expect(calls).toBe(retries + 1)
             expect(handle.message.error).toBeUndefined()
             expect(handle.message.finish).toBe("stop")
+            expect(parts.find((part) => part.type === "text")?.text).toBe("Recovered")
           } finally {
             delay.mockRestore()
           }
@@ -246,17 +258,41 @@ describe("session processor unbounded retry", () => {
     15000,
   )
 
-  it.live("retries a serialized APIError from the stream and completes the follow-up response", () =>
-    Effect.gen(function* () {
-      yield* run(1, {
-        name: "APIError",
-        data: {
-          message: "Network connection failed",
-          isRetryable: true,
-          metadata: { code: "", syscall: "", message: "network connection was lost" },
-        },
-      })
-    }),
+  it.live(
+    "retries a serialized APIError from the stream and completes the follow-up response",
+    () =>
+      Effect.gen(function* () {
+        yield* run(1, {
+          name: "APIError",
+          data: {
+            message: "Network connection failed",
+            isRetryable: true,
+            metadata: { code: "", syscall: "", message: "network connection was lost" },
+          },
+        })
+      }),
+    20_000,
+  )
+
+  it.live(
+    "stops on a serialized terminal APIError without retrying or persisting response text",
+    () =>
+      Effect.gen(function* () {
+        yield* run(
+          1,
+          {
+            name: "APIError",
+            data: {
+              message: "Network connection failed",
+              statusCode: 400,
+              isRetryable: false,
+              metadata: { code: "", syscall: "", message: "network connection was lost" },
+            },
+          },
+          "terminal",
+        )
+      }),
+    20_000,
   )
 
   const policy = (items: ("offline" | "provider")[], offlineResult: "retry" | "blocked" | "aborted" = "retry") =>
