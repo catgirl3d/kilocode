@@ -36,7 +36,7 @@ export interface TaskPromptOps {
 const id = "task"
 const BACKGROUND_DESCRIPTION = [
   "Background mode: background=true launches the subagent asynchronously and returns immediately.",
-  "Use foreground when you need the result before proceeding; otherwise use background for non-overlapping work, but do not give the final answer until all required background results have arrived.", // kilocode_change
+  "Use foreground if you need the result before proceeding. Otherwise use background for non-overlapping work, or end this turn with a brief interim status. Ending the turn does not mean the task is done: its completion notification will resume you with the result, so report completion only after that notification arrives.", // kilocode_change - [fork] distinguish turn end from task completion
   "You will be notified automatically when it finishes.",
 ].join(" ")
 const BACKGROUND_STARTED = [
