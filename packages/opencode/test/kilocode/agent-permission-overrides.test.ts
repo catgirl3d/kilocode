@@ -443,6 +443,76 @@ test("plan carries guarded denies into delegated sessions under a global catch-a
   })
 })
 
+// Broad rules reach the subagent through its own agent config, and the caller's inherited
+// rules never mention agent_manager. The child session itself therefore has to deny both
+// orchestration tools, or a subagent could start Agent Manager sessions (or nest subagents)
+// from a code-mode session under a global catch-all.
+test("delegated sessions deny agent_manager and task under a global catch-all", async () => {
+  await using tmp = await tmpdir({ config: { permission: { "*": { "*": "allow" } } } })
+
+  await provideTestInstance({
+    directory: tmp.path,
+    fn: async () => {
+      const code = await load(tmp.path, (svc) => svc.get("code"))
+      const general = await load(tmp.path, (svc) => svc.get("general"))
+      expect(general).toBeDefined()
+      const child = KiloTask.merge(
+        deriveSubagentSessionPermission({ parentSessionPermission: [], subagent: general! }),
+        KiloTask.permissions(KiloTask.inherited({ caller: code!, session: { permission: [] }, mcp: undefined })),
+      )
+      // A subagent session is evaluated as merge(agent, session), so session rules win.
+      const runtime = Permission.merge(general!.permission, child)
+      expect(Permission.evaluate("agent_manager", "start", runtime).action).toBe("deny")
+      expect(Permission.evaluate("task", "*", runtime).action).toBe("deny")
+      expect(Permission.disabled(["agent_manager", "task"], runtime)).toEqual(new Set(["agent_manager", "task"]))
+    },
+  })
+})
+
+// The Agent Manager opt-in reads the raw per-agent config on purpose: the resolved agent
+// Info already carries global rules and persisted approvals, so only the agent's own
+// declaration may lift the subagent boundary.
+test("allowsOrchestration honors only the named agent's own raw config", () => {
+  const run = (agent: ConfigV1.Info["agent"], name = "lead") =>
+    KiloTask.allowsOrchestration({ config: { agent }, name })
+  expect(run(undefined)).toBe(false)
+  expect(run({})).toBe(false)
+  expect(run({ lead: { permission: { agent_manager: "allow" } } })).toBe(true)
+  expect(run({ lead: { permission: { agent_manager: { "*": "allow" } } } })).toBe(true)
+  expect(run({ lead: { permission: { agent_manager: { local: "allow" } } } })).toBe(true)
+  expect(run({ lead: { permission: { agent_manager: "ask" } } })).toBe(false)
+  expect(run({ lead: { permission: { agent_manager: { "*": "deny" } } } })).toBe(false)
+  expect(run({ lead: { permission: { agent_manager: null } } })).toBe(false)
+  expect(run({ lead: { permission: {} } })).toBe(false)
+  expect(run({ other: { permission: { agent_manager: "allow" } } })).toBe(false)
+})
+
+// Opting a subagent into Agent Manager must not pierce a read-only caller's ceiling: plan's
+// inherited guarded denies stay in the child ruleset, so the session remains closed.
+test("plan ceiling keeps agent_manager denied for an opted-in subagent", async () => {
+  await using tmp = await tmpdir({ config: { permission: { "*": { "*": "allow" } } } })
+
+  await provideTestInstance({
+    directory: tmp.path,
+    fn: async () => {
+      const plan = await load(tmp.path, (svc) => svc.get("plan"))
+      const general = await load(tmp.path, (svc) => svc.get("general"))
+      const child = KiloTask.merge(
+        deriveSubagentSessionPermission({ parentSessionPermission: [], subagent: general! }),
+        KiloTask.permissions(
+          KiloTask.inherited({ caller: plan!, session: { permission: [] }, mcp: undefined }),
+          false,
+          true,
+        ),
+      )
+      // A subagent session is evaluated as merge(agent, session), so session rules win.
+      const runtime = Permission.merge(general!.permission, child)
+      expect(Permission.evaluate("agent_manager", "worktree", runtime).action).toBe("deny")
+      expect(Permission.disabled(["agent_manager"], runtime)).toEqual(new Set(["agent_manager"]))
+    },
+  })
+})
+
 // Upstream's per-subagent opt-in (test/agent/agent.test.ts). Naming `general` exactly is
 // the one thing that lifts plan's deny — a wildcard covering it never does, and ask seals
 // `task` outright, so neither form reaches it there.

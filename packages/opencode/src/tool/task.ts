@@ -212,7 +212,10 @@ export const TaskTool = Tool.define(
       KiloTask.validate(next, subagentType)
       // kilocode_change end
 
-      const canTask = depth + 1 < (cfg.subagent_depth ?? 1) // kilocode_change - honor upstream's opt-in depth limit
+      // kilocode_change start - nested task follows subagent_depth; Agent Manager needs the subagent's own opt-in
+      const canTask = depth + 1 < (cfg.subagent_depth ?? 1)
+      const canOrchestrate = KiloTask.allowsOrchestration({ config: cfg, name: next.name })
+      // kilocode_change end
       const canTodo = next.permission.some((rule) => rule.permission === "todowrite")
 
       const session = params.task_id
@@ -258,7 +261,7 @@ export const TaskTool = Tool.define(
           pattern: "*",
           action: "deny" as const,
         })) ?? [],
-        KiloTask.permissions(rules, canTask),
+        KiloTask.permissions(rules, canTask, canOrchestrate),
       )
       // kilocode_change end
       // kilocode_change start - refresh current parent restrictions when resuming an existing task session
@@ -321,6 +324,7 @@ export const TaskTool = Tool.define(
               question: false, // kilocode_change - subagents cannot prompt the user directly
               ...(canTodo ? {} : { todowrite: false }),
               ...(canTask ? {} : { task: false }),
+              ...(canOrchestrate ? {} : { agent_manager: false }),
               ...Object.fromEntries((cfg.experimental?.primary_tools ?? []).map((item) => [item, false])),
             },
             parts,

@@ -29,6 +29,7 @@
 
 ### Fixes & Enhancements
 
+- Keep subagents out of Agent Manager by default: a subagent session no longer receives the `agent_manager` tool unless its own agent config explicitly allows it, and global permission rules or persisted "always allow" approvals cannot reopen that boundary. Nested subagents remain governed by `subagent_depth` as before.
 - Keep retryable provider errors (rate limits, usage caps, network failures) waiting indefinitely instead of failing the turn after five attempts; each wait stays capped at 60 seconds.
 - Keep ChatGPT Codex sessions alive when the access token is rejected early: an expired-token 401 now waits for token refresh or re-authentication instead of failing the turn, and the session resumes once the token is renewed.
 - Make the on-demand `consult_advisor` tool wait through retryable provider errors like the main agent instead of failing the consultation immediately.
@@ -59,3 +60,4 @@
 - Keep title-only reasoning blocks compact in VS Code chat instead of expanding an empty panel while the block is still streaming.
 - Stop the background-process runner from spawning a fresh PowerShell per poll, because continuous full WMI enumeration by every running dev server saturated the WMI service and burned CPU: process-tree scans are shared machine-wide through a snapshot cache (about once per 2 seconds in normal operation, faster around exits and stops), probe failures back off instead of killing the process, stop waits for confirmation instead of failing early, and descendants discovered late are still terminated.
 - Cut snapshot latency on every mutating agent step by diffing the captured snapshot trees instead of re-staging the worktree, skipping the diff entirely when a step changed nothing, and resolving the repository exclude path once per session instead of on every snapshot.
+- Stop the parent agent from idling inside its turn while a background subagent runs: prompts now state that ending the turn does not end the task and that the completion notification resumes the session.
