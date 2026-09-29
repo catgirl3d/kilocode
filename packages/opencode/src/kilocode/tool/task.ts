@@ -172,15 +172,39 @@ export namespace KiloTask {
     return merge(inherited)
   }
 
-  /** Extra permission rules appended to subagent sessions */
-  export function permissions(rules: Permission.Ruleset, task = false): Permission.Ruleset {
+  // fork_change start
+  /**
+   * Extra permission rules appended to subagent sessions.
+   *
+   * Both orchestration tools stay closed by default: `task` follows upstream's
+   * `subagent_depth` opt-in, and `agent_manager` opens only when the subagent's own
+   * config explicitly allows it (`allowsOrchestration`). A global catch-all or a
+   * persisted "always allow" approval merges into every agent and must not lift the
+   * Agent Manager boundary. Session rules are evaluated after the agent's, so these
+   * denies also hide the tools from the subagent.
+   */
+  export function permissions(rules: Permission.Ruleset, task = false, orchestrate = false): Permission.Ruleset {
     return [
       ...(task ? [] : [{ permission: "task", pattern: "*", action: "deny" as const }]),
+      ...(orchestrate ? [] : [{ permission: "agent_manager", pattern: "*", action: "deny" as const }]),
       { permission: "question", pattern: "*", action: "deny" },
       { permission: "suggest", pattern: "*", action: "deny" },
       ...rules,
     ]
   }
+
+  /**
+   * True when the agent's own configuration explicitly allows the Agent Manager tool.
+   * Reads the raw per-agent block, not the resolved agent Info: global permission rules
+   * and persisted approvals merge into every agent and would otherwise reopen the boundary.
+   */
+  export function allowsOrchestration(input: { config: Pick<Config.Info, "agent">; name: string }): boolean {
+    const entry = input.config.agent?.[input.name]?.permission?.agent_manager
+    if (entry == null) return false
+    if (typeof entry === "string") return entry === "allow"
+    return Object.values(entry).some((action) => action === "allow")
+  }
+  // fork_change end
 
   export function merge(...rulesets: Permission.Ruleset[]): Permission.Rule[] {
     const result: Permission.Rule[] = []
