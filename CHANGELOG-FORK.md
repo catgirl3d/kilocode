@@ -29,6 +29,7 @@
 
 ### Fixes & Enhancements
 
+- Keep subagents out of Agent Manager by default: a subagent session no longer receives the `agent_manager` tool unless its own agent config explicitly allows it, and global permission rules or persisted "always allow" approvals cannot reopen that boundary. Nested subagents remain governed by `subagent_depth` as before.
 - Generate chat titles during the first agent turn, including short prompts, and keep an active title request running if the task is stopped.
 - Number favorite models by their visible order in the model picker and quick switcher, so ranks read 1-2-3 without gaps and the reorder arrows skip unavailable favorites instead of stalling on them.
 - Store only diff patches that can be displayed: patches above the 256 KB limit are no longer written into the session log, so long sessions stop growing by megabytes per turn. Export, share and remote sync now carry an empty patch for those diffs — the same content every UI already shows.
@@ -57,3 +58,4 @@
 - Keep title-only reasoning blocks compact in VS Code chat instead of expanding an empty panel while the block is still streaming.
 - Stop the background-process runner from spawning a fresh PowerShell per poll, because continuous full WMI enumeration by every running dev server saturated the WMI service and burned CPU: process-tree scans are shared machine-wide through a snapshot cache (about once per 2 seconds in normal operation, faster around exits and stops), probe failures back off instead of killing the process, stop waits for confirmation instead of failing early, and descendants discovered late are still terminated.
 - Cut snapshot latency on every mutating agent step by diffing the captured snapshot trees instead of re-staging the worktree, skipping the diff entirely when a step changed nothing, and resolving the repository exclude path once per session instead of on every snapshot.
+- Stop the parent agent from idling inside its turn while a background subagent runs: prompts now state that ending the turn does not end the task and that the completion notification resumes the session.
