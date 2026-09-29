@@ -19,6 +19,7 @@ import { SessionDrain } from "@/kilocode/session/drain" // kilocode_change
 import { SessionStatus } from "@/session/status"
 import { Provider } from "../../src/provider/provider" // kilocode_change
 import { KiloSession } from "../../src/kilocode/session" // kilocode_change
+import { Permission } from "../../src/permission" // kilocode_change
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import type * as Tool from "../../src/tool/tool"
 import { Truncate } from "@/tool/truncate"
@@ -1174,19 +1175,36 @@ describe("tool.task", () => {
               pattern: "*",
               action: "deny",
             },
+            {
+              permission: "agent_manager",
+              pattern: "*",
+              action: "deny",
+            },
           ]),
         )
         // kilocode_change end
+        // A global permission rule must not lift the Agent Manager boundary: the opt-in is the
+        // subagent's own config, not a catch-all, and nested task stays closed at the default depth.
+        const agents = yield* Agent.Service
+        const reviewer = yield* agents.get("reviewer")
+        const runtime = Permission.merge(reviewer!.permission, child.permission ?? [])
+        expect(Permission.evaluate("task", "*", runtime).action).toBe("deny")
+        expect(Permission.evaluate("agent_manager", "worktree", runtime).action).toBe("deny")
+        expect(Permission.disabled(["task", "agent_manager"], runtime)).toEqual(new Set(["task", "agent_manager"]))
         expect(seen?.tools).toEqual({
           question: false, // kilocode_change - subagents cannot prompt the user directly
           todowrite: false,
           task: false, // kilocode_change - Kilo disallows nested subagents
+          agent_manager: false, // kilocode_change - Agent Manager requires the subagent's own opt-in
           bash: false,
           read: false,
         })
       }),
     {
       config: {
+        permission: {
+          agent_manager: "allow",
+        },
         agent: {
           reviewer: {
             mode: "subagent",
@@ -1202,6 +1220,115 @@ describe("tool.task", () => {
       },
     },
   )
+
+  // kilocode_change start - explicit per-agent opt-in for Agent Manager orchestration
+  it.instance(
+    "execute opens agent_manager for a subagent only when its own config allows it",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+        const promptOps = stubOps({ onPrompt: (input) => (seen = input) })
+
+        const result = yield* def.execute(
+          {
+            description: "coordinate work",
+            prompt: "coordinate the workstreams",
+            subagent_type: "lead",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        const child = yield* sessions.get(result.metadata.sessionId)
+        const agents = yield* Agent.Service
+        const lead = yield* agents.get("lead")
+        const runtime = Permission.merge(lead!.permission, child.permission ?? [])
+        expect(Permission.evaluate("agent_manager", "worktree", runtime).action).toBe("allow")
+        expect(Permission.disabled(["agent_manager"], runtime)).toEqual(new Set())
+        expect(seen?.tools?.["agent_manager"]).toBeUndefined()
+        // Nested subagents remain governed by subagent_depth; the default keeps task closed.
+        expect(Permission.evaluate("task", "*", runtime).action).toBe("deny")
+      }),
+    {
+      config: {
+        agent: {
+          lead: {
+            mode: "subagent",
+            permission: {
+              agent_manager: "allow",
+            },
+          },
+        },
+      },
+    },
+  )
+  // kilocode_change end
+
+  // kilocode_change start - subagent_depth reopens nested task only for agents that declare it
+  it.instance(
+    "execute keeps task open when subagent_depth allows it and the agent declares task",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        let seen: SessionPrompt.PromptInput | undefined
+        const promptOps = stubOps({ onPrompt: (input) => (seen = input) })
+
+        const result = yield* def.execute(
+          {
+            description: "split work",
+            prompt: "split the work across workers",
+            subagent_type: "lead",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        const child = yield* sessions.get(result.metadata.sessionId)
+        const agents = yield* Agent.Service
+        const lead = yield* agents.get("lead")
+        const runtime = Permission.merge(lead!.permission, child.permission ?? [])
+        expect(Permission.evaluate("task", "*", runtime).action).toBe("allow")
+        expect(Permission.disabled(["task"], runtime)).toEqual(new Set())
+        expect(seen?.tools?.["task"]).toBeUndefined()
+      }),
+    {
+      config: {
+        subagent_depth: 2,
+        agent: {
+          lead: {
+            mode: "subagent",
+            permission: {
+              task: "allow",
+            },
+          },
+        },
+      },
+    },
+  )
+  // kilocode_change end
 
   // kilocode_change start - terminal child assistant errors fail the task tool boundary
   it.instance("execute fails when child prompt returns assistant error", () =>
