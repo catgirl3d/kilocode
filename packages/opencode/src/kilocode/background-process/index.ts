@@ -1,5 +1,6 @@
 import { Bus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
+import { InstanceRef } from "@/effect/instance-ref" // fork_change
 import { InstanceState } from "@/effect/instance-state"
 import { makeRuntime } from "@/effect/run-service"
 import { Identifier } from "@/id/id"
@@ -909,7 +910,13 @@ export namespace BackgroundProcess {
   }
 
   async function launch(state: State, input: StartInput, id = ID.ascending()) {
-    const sh = Shell.acceptable()
+    // fork_change start
+    const [{ AppRuntime }, { Config }] = await Promise.all([import("@/effect/app-runtime"), import("@/config/config")])
+    const cfg = await AppRuntime.runPromise(
+      Config.Service.use((svc) => svc.get()).pipe(Effect.provideService(InstanceRef, state.ctx)),
+    )
+    const sh = Shell.acceptable(cfg.shell)
+    // fork_change end
     const cwd = path.resolve(state.dir, input.cwd ?? state.dir)
     const readyPattern = pattern(input.ready?.pattern)
     if (input.ready?.port && (await connected(input.ready.port))) {
