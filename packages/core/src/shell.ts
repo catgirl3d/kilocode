@@ -185,12 +185,14 @@ export function args(file: string, command: string, cwd: string) {
     return [
       "-l",
       "-c",
+      // kilocode_change start - [fork] preserve Bash command text through eval
       `
         shopt -s expand_aliases
         [[ -f ~/.bashrc ]] && source ~/.bashrc >/dev/null 2>&1 || true
         cd -- "$1"
-        eval ${JSON.stringify(command)}
+        eval '${command.replaceAll("'", "'\\''")}'
       `,
+      // kilocode_change end
       "kilo", // kilocode_change
       cwd,
     ]
