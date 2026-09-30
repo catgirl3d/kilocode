@@ -15,6 +15,9 @@ import { it } from "../lib/effect"
 // runs against a real shell on every host instead of a wrapper that buffers.
 if (process.platform !== "win32") process.env.SHELL = "/bin/sh"
 
+const other = process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : Bun.which("dash")
+const bash = other && Shell.name(Shell.acceptable("bash")) === "bash" ? it.instance : it.instance.skip
+
 function quote(input: string) {
   const value = input.replaceAll("\\", "/")
   if (process.platform === "win32") return `"${value.replaceAll('"', '""')}"`
@@ -40,7 +43,11 @@ function alive(pid: number) {
 }
 
 async function read(pidfile: string) {
-  const value = Number(await Bun.file(pidfile).text().catch(() => ""))
+  const value = Number(
+    await Bun.file(pidfile)
+      .text()
+      .catch(() => ""),
+  )
   return Number.isInteger(value) && value > 0 ? value : undefined
 }
 
@@ -117,6 +124,43 @@ function context(sessionID: SessionID) {
 }
 
 describe("background_process monitor", () => {
+  bash(
+    "runs monitor commands with configured Bash instead of SHELL",
+    () =>
+      Effect.gen(function* () {
+        const sessionID = SessionID.descending()
+        const prev = process.env.SHELL
+        if (!other) return
+        process.env.SHELL = other
+        Shell.acceptable.reset()
+
+        try {
+          const tool = yield* build()
+          const { ctx } = context(sessionID)
+          const result = yield* tool.execute(
+            { action: "monitor", command: `[[ -n "$BASH_VERSION" ]] && printf 'monitor-bash-sentinel\\n'` },
+            ctx,
+          )
+
+          expect(result.metadata.reason).toBe("exit")
+          expect(result.metadata.status).toBe("exited")
+          expect(result.output).toContain("monitor-bash-sentinel")
+        } finally {
+          yield* Effect.promise(async () => {
+            try {
+              await BackgroundProcess.stopSession(sessionID)
+            } finally {
+              if (prev === undefined) delete process.env.SHELL
+              else process.env.SHELL = prev
+              Shell.acceptable.reset()
+            }
+          })
+        }
+      }),
+    { config: { shell: "bash" } },
+    30_000,
+  )
+
   it.instance(
     "returns the output of a process that exits",
     () =>
