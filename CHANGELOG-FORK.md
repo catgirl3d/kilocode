@@ -29,7 +29,7 @@
 
 ### Fixes & Enhancements
 
-- Run background processes with the configured execution shell, matching normal Bash commands while preserving Auto fallback.
+- Run background processes with the configured execution shell, preserving Bash variable expansion and Auto fallback.
 - Keep subagents out of Agent Manager by default: a subagent session no longer receives the `agent_manager` tool unless its own agent config explicitly allows it, and global permission rules or persisted "always allow" approvals cannot reopen that boundary. Nested subagents remain governed by `subagent_depth` as before.
 - Keep retryable provider errors (rate limits, usage caps, network failures) waiting indefinitely instead of failing the turn after five attempts; each wait stays capped at 60 seconds.
 - Keep ChatGPT Codex sessions alive when the access token is rejected early: an expired-token 401 now waits for token refresh or re-authentication instead of failing the turn, and the session resumes once the token is renewed.

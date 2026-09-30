@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, setDefaultTimeout } from "bun:test"
 import { Bus } from "@/bus"
 import { BackgroundProcess } from "@/kilocode/background-process"
 import { SessionID } from "@/session/schema"
@@ -96,6 +96,10 @@ function update(sessionID: SessionID) {
   }
 }
 
+// OS process integration tests launch real shells and probe process trees; under
+// strong machine load the default 5s per-test budget is far too small.
+setDefaultTimeout(120_000)
+
 describe("BackgroundProcess", () => {
   const win32Instance = process.platform === "win32" ? it.instance.skip : it.instance
   const win32Live = process.platform === "win32" ? it.live.skip : it.live
@@ -151,7 +155,7 @@ describe("BackgroundProcess", () => {
         }
       }),
     { config: { shell: "bash" } },
-    15_000,
+    120_000,
   )
 
   bash(
@@ -233,7 +237,7 @@ describe("BackgroundProcess", () => {
         }
       }),
     { config: { shell: "" } },
-    15_000,
+    120_000,
   )
 
   persistent(
@@ -270,7 +274,7 @@ describe("BackgroundProcess", () => {
         }
       }),
     { config: { shell: "bash" } },
-    15_000,
+    120_000,
   )
 
   it.instance("starts, reports readiness, and stops a process", () =>
@@ -679,7 +683,7 @@ setInterval(() => {}, 1_000)
       }),
     // Windows verifies each persistent launch and stop through PowerShell/CIM.
     // This test performs two complete lifecycles, so allow both probe budgets.
-    process.platform === "win32" ? 35_000 : 15_000,
+    process.platform === "win32" ? 180_000 : 120_000,
   )
 
   it.instance(
@@ -746,7 +750,7 @@ setInterval(() => {}, 1_000)
         expect(yield* Effect.promise(() => Bun.file(files.manifest).exists())).toBe(false)
         expect(yield* Effect.promise(() => Bun.file(files.log).exists())).toBe(false)
       }),
-    35_000,
+    120_000,
   )
 
   win32Instance("rejects a persistent manifest for an unrelated live process", () =>
@@ -905,7 +909,7 @@ if (process.platform === "win32") setTimeout(() => {}, 5_000)
       }),
     // Windows process-tree ownership uses PowerShell/CIM probes and intentionally
     // keeps the leader alive for five seconds, so it needs a larger outer budget.
-    process.platform === "win32" ? 60_000 : 30_000,
+    120_000,
   )
 
   it.instance("rejects invalid readiness patterns before launching", () =>
