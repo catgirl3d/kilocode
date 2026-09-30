@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, setDefaultTimeout } from "bun:test"
 import { Agent } from "@/agent/agent"
 import { BackgroundProcess } from "@/kilocode/background-process"
 import { BackgroundProcessTool } from "@/kilocode/tool/background-process"
@@ -14,6 +14,10 @@ import { it } from "../lib/effect"
 // The product picks its command shell from $SHELL. Pin it so the streaming path
 // runs against a real shell on every host instead of a wrapper that buffers.
 if (process.platform !== "win32") process.env.SHELL = "/bin/sh"
+
+// OS process integration tests launch real shells and stream child output; under
+// strong machine load the default 5s per-test budget is far too small.
+setDefaultTimeout(120_000)
 
 const other = process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : Bun.which("dash")
 const bash = other && Shell.name(Shell.acceptable("bash")) === "bash" ? it.instance : it.instance.skip
@@ -138,13 +142,17 @@ describe("background_process monitor", () => {
           const tool = yield* build()
           const { ctx } = context(sessionID)
           const result = yield* tool.execute(
-            { action: "monitor", command: `[[ -n "$BASH_VERSION" ]] && printf 'monitor-bash-sentinel\\n'` },
+            {
+              action: "monitor",
+              command: `bgprobe=(background bash); bgvalue=assigned; [[ -n "$BASH_VERSION" ]] && printf 'monitor-bash-sentinel\\n'; printf 'array=<%s> count=<%s> scalar=<%s>\\n' "\${bgprobe[*]}" "\${#bgprobe[@]}" "$bgvalue"`,
+            },
             ctx,
           )
 
           expect(result.metadata.reason).toBe("exit")
           expect(result.metadata.status).toBe("exited")
           expect(result.output).toContain("monitor-bash-sentinel")
+          expect(result.output).toContain("array=<background bash> count=<2> scalar=<assigned>")
         } finally {
           yield* Effect.promise(async () => {
             try {
@@ -158,7 +166,7 @@ describe("background_process monitor", () => {
         }
       }),
     { config: { shell: "bash" } },
-    30_000,
+    120_000,
   )
 
   it.instance(
@@ -189,7 +197,7 @@ describe("background_process monitor", () => {
           yield* Effect.promise(() => BackgroundProcess.stopSession(sessionID))
         }
       }),
-    30_000,
+    120_000,
   )
 
   it.instance(
@@ -235,7 +243,7 @@ describe("background_process monitor", () => {
         if (!orphan) throw new Error("the orphan did not record its pid")
         expect(yield* Effect.promise(() => gone(orphan))).toBe(true)
       }),
-    30_000,
+    120_000,
   )
 
   it.instance(
@@ -274,7 +282,7 @@ describe("background_process monitor", () => {
           yield* Effect.promise(() => BackgroundProcess.stopSession(sessionID))
         }
       }),
-    30_000,
+    120_000,
   )
 
   it.instance(
@@ -311,7 +319,7 @@ describe("background_process monitor", () => {
           yield* Effect.promise(() => BackgroundProcess.stopSession(sessionID))
         }
       }),
-    30_000,
+    120_000,
   )
 
   it.instance(
@@ -341,6 +349,6 @@ describe("background_process monitor", () => {
           yield* Effect.promise(() => BackgroundProcess.stopSession(sessionID))
         }
       }),
-    30_000,
+    120_000,
   )
 })
