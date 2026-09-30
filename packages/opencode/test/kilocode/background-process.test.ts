@@ -1,4 +1,4 @@
-import { describe, expect, mock, spyOn, test } from "bun:test"
+import { describe, expect, mock, spyOn, test, setDefaultTimeout } from "bun:test"
 import { Bus } from "@/bus"
 import { BackgroundProcess } from "@/kilocode/background-process"
 import { BackgroundProcessWindows } from "@/kilocode/background-process/windows"
@@ -143,6 +143,10 @@ function update(sessionID: SessionID) {
     },
   }
 }
+
+// OS process integration tests launch real shells and probe process trees; under
+// strong machine load the default 5s per-test budget is far too small.
+setDefaultTimeout(120_000)
 
 describe("BackgroundProcess", () => {
   test("process exit and persistent stop remove each artifact once", async () => {
@@ -478,7 +482,7 @@ process.exit(process.exitCode ?? 0)
         }
       }),
     { config: { shell: "bash" } },
-    15_000,
+    120_000,
   )
 
   bash(
@@ -560,7 +564,7 @@ process.exit(process.exitCode ?? 0)
         }
       }),
     { config: { shell: "" } },
-    15_000,
+    120_000,
   )
 
   persistent(
@@ -597,7 +601,7 @@ process.exit(process.exitCode ?? 0)
         }
       }),
     { config: { shell: "bash" } },
-    15_000,
+    120_000,
   )
 
   it.instance("starts, reports readiness, and stops a process", () =>
