@@ -12,7 +12,7 @@ import { once } from "node:events"
 import fs from "fs/promises"
 import path from "path"
 import { provideTestInstance, TestInstance, tmpdir } from "../fixture/fixture"
-import { it } from "../lib/effect"
+import { it, pollWithTimeout } from "../lib/effect"
 
 function quote(input: string) {
   const value = input.replaceAll("\\", "/")
@@ -64,6 +64,13 @@ async function until(check: () => boolean | Promise<boolean>, message: string, t
   throw new Error(message)
 }
 
+const other = process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : Bun.which("dash")
+const bash = other && Shell.name(Shell.acceptable("bash")) === "bash" ? it.instance : it.instance.skip
+const persistent =
+  process.platform !== "win32" && other && Shell.name(Shell.acceptable("bash")) === "bash"
+    ? it.instance
+    : it.instance.skip
+
 function update(sessionID: SessionID) {
   const state: { off?: () => void; timer?: ReturnType<typeof setTimeout> } = {}
   const promise = new Promise<BackgroundProcess.Info>((resolve, reject) => {
@@ -92,6 +99,179 @@ function update(sessionID: SessionID) {
 describe("BackgroundProcess", () => {
   const win32Instance = process.platform === "win32" ? it.instance.skip : it.instance
   const win32Live = process.platform === "win32" ? it.live.skip : it.live
+
+  bash(
+    "uses configured Bash for start and restart instead of SHELL",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessionID = SessionID.descending()
+        const prev = process.env.SHELL
+        if (!other) return
+        process.env.SHELL = other
+        Shell.acceptable.reset()
+
+        try {
+          const file = path.join(test.directory, "configured-bash-runs.txt")
+          const command = `[[ -n "$BASH_VERSION" ]] || exit 90; printf 'configured-bash-sentinel\\n'; printf 'run\\n' >> configured-bash-runs.txt`
+          const info = yield* Effect.promise(() => BackgroundProcess.start({ sessionID, command, cwd: test.directory }))
+          const first = yield* pollWithTimeout(
+            Effect.promise(() => BackgroundProcess.get(info.id)).pipe(
+              Effect.map((item) => (item?.time.ended ? item : undefined)),
+            ),
+            "initial process did not exit",
+          )
+          expect(first.status).toBe("exited")
+          expect(first.exitCode).toBe(0)
+          expect(first.output).toContain("configured-bash-sentinel")
+          expect(yield* Effect.promise(() => Bun.file(file).text())).toBe("run\n")
+
+          const restarted = yield* Effect.promise(() => BackgroundProcess.restart(info.id))
+          if (!restarted) throw new Error("background process was not restarted")
+          const second = yield* pollWithTimeout(
+            Effect.promise(() => BackgroundProcess.get(restarted.id)).pipe(
+              Effect.map((item) => (item?.time.ended ? item : undefined)),
+            ),
+            "restarted process did not exit",
+          )
+          expect(second.status).toBe("exited")
+          expect(second.exitCode).toBe(0)
+          expect(second.output).toContain("configured-bash-sentinel")
+          expect(yield* Effect.promise(() => Bun.file(file).text())).toBe("run\nrun\n")
+        } finally {
+          yield* Effect.promise(async () => {
+            try {
+              await BackgroundProcess.stopSession(sessionID)
+            } finally {
+              if (prev === undefined) delete process.env.SHELL
+              else process.env.SHELL = prev
+              Shell.acceptable.reset()
+            }
+          })
+        }
+      }),
+    { config: { shell: "bash" } },
+    15_000,
+  )
+
+  bash(
+    "keeps Auto on SHELL and the normal fallback",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessionID = SessionID.descending()
+        const prev = process.env.SHELL
+        if (!other) return
+        const probe = (sh: string) => {
+          const name = Shell.name(sh)
+          const command =
+            name === "cmd"
+              ? "echo %COMSPEC%"
+              : name === "powershell" || name === "pwsh"
+                ? "Write-Output $PSVersionTable.PSVersion"
+                : name === "bash"
+                  ? `printf '%s\\n' "$BASH_VERSION"`
+                  : name === "zsh"
+                    ? `printf '%s\\n' "$ZSH_VERSION"`
+                    : `printf '%s\\n' "$0"`
+          return { name, command }
+        }
+        const check = (name: string, output: string) => {
+          if (name === "cmd") {
+            expect(output.trim()).toBe(process.env.COMSPEC ?? "%COMSPEC%")
+            return
+          }
+          if (["bash", "zsh", "powershell", "pwsh"].includes(name)) {
+            expect(output.trim()).not.toBe("")
+            return
+          }
+          expect(path.basename(output.trim())).toBe(name)
+        }
+
+        try {
+          process.env.SHELL = other
+          Shell.acceptable.reset()
+          const env = probe(Shell.acceptable())
+          const envInfo = yield* Effect.promise(() =>
+            BackgroundProcess.start({ sessionID, command: env.command, cwd: test.directory }),
+          )
+          const envResult = yield* pollWithTimeout(
+            Effect.promise(() => BackgroundProcess.get(envInfo.id)).pipe(
+              Effect.map((item) => (item?.time.ended ? item : undefined)),
+            ),
+            "SHELL process did not exit",
+          )
+          expect(envResult?.status).toBe("exited")
+          expect(envResult?.exitCode).toBe(0)
+          check(env.name, envResult?.output ?? "")
+
+          delete process.env.SHELL
+          Shell.acceptable.reset()
+          const want = probe(Shell.acceptable())
+          const next = yield* Effect.promise(() =>
+            BackgroundProcess.start({ sessionID, command: want.command, cwd: test.directory }),
+          )
+          const fallbackInfo = yield* pollWithTimeout(
+            Effect.promise(() => BackgroundProcess.get(next.id)).pipe(
+              Effect.map((item) => (item?.time.ended ? item : undefined)),
+            ),
+            "fallback process did not exit",
+          )
+          expect(fallbackInfo?.status).toBe("exited")
+          expect(fallbackInfo?.exitCode).toBe(0)
+          check(want.name, fallbackInfo?.output ?? "")
+        } finally {
+          yield* Effect.promise(async () => {
+            try {
+              await BackgroundProcess.stopSession(sessionID)
+            } finally {
+              if (prev === undefined) delete process.env.SHELL
+              else process.env.SHELL = prev
+              Shell.acceptable.reset()
+            }
+          })
+        }
+      }),
+    { config: { shell: "" } },
+    15_000,
+  )
+
+  persistent(
+    "uses configured Bash through the persistent runner",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessionID = SessionID.descending()
+        const prev = process.env.SHELL
+        if (!other) return
+        process.env.SHELL = other
+        Shell.acceptable.reset()
+
+        try {
+          const info = yield* Effect.promise(() =>
+            BackgroundProcess.start({
+              sessionID,
+              command: `[[ -n "$BASH_VERSION" ]] || exit 90; printf 'persistent-bash-sentinel\\n'; while true; do sleep 1; done`,
+              cwd: test.directory,
+              lifetime: "persistent",
+              ready: { pattern: "persistent-bash-sentinel", timeout: 5_000 },
+            }),
+          )
+          try {
+            expect(info.status).toBe("ready")
+            expect(info.output).toContain("persistent-bash-sentinel")
+          } finally {
+            yield* Effect.promise(() => BackgroundProcess.stop(info.id))
+          }
+        } finally {
+          if (prev === undefined) delete process.env.SHELL
+          else process.env.SHELL = prev
+          Shell.acceptable.reset()
+        }
+      }),
+    { config: { shell: "bash" } },
+    15_000,
+  )
 
   it.instance("starts, reports readiness, and stops a process", () =>
     Effect.gen(function* () {
