@@ -29,7 +29,7 @@
 
 ### Fixes & Enhancements
 
-- Run background processes with the configured execution shell, matching normal Bash commands while preserving Auto fallback.
+- Run background processes with the configured execution shell, preserving Bash variable expansion and Auto fallback.
 - Keep subagents out of Agent Manager by default: a subagent session no longer receives the `agent_manager` tool unless its own agent config explicitly allows it, and global permission rules or persisted "always allow" approvals cannot reopen that boundary. Nested subagents remain governed by `subagent_depth` as before.
 - Generate chat titles during the first agent turn, including short prompts, and keep an active title request running if the task is stopped.
 - Number favorite models by their visible order in the model picker and quick switcher, so ranks read 1-2-3 without gaps and the reorder arrows skip unavailable favorites instead of stalling on them.
