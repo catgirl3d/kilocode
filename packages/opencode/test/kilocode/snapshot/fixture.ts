@@ -15,17 +15,23 @@ import { MCP } from "../../../src/mcp"
 import { LSP } from "../../../src/lsp/lsp"
 import { TestLLMServer } from "../../lib/llm-server"
 
-export type TrackEvent = { messageID?: string; hash: string; exists?: boolean }
+export type TrackEvent = { sessionID: string; messageID?: string; hash: string; exists?: boolean }
 
 export const events: TrackEvent[] = []
 let count = 0
+let attempts = 0
+let failures = 0
 let watched: string | undefined
 
-export const reset = (file?: string) => {
+export const reset = (file?: string, fail = 0) => {
   count = 0
+  attempts = 0
+  failures = fail
   watched = file
   events.length = 0
 }
+
+export const trackCount = () => attempts
 
 export const mcp = Layer.succeed(
   MCP.Service,
@@ -100,8 +106,18 @@ export const recording = Layer.succeed(
     cleanup: () => Effect.void,
     track: (input) =>
       Effect.sync(() => {
+        attempts++
+        if (failures > 0) {
+          failures--
+          return undefined
+        }
         const hash = `hash-${++count}`
-        events.push({ messageID: input?.messageID, hash, exists: watched ? fs.existsSync(watched) : undefined })
+        events.push({
+          sessionID: input?.sessionID ?? "",
+          messageID: input?.messageID,
+          hash,
+          exists: watched ? fs.existsSync(watched) : undefined,
+        })
         return hash
       }),
     patch: () => Effect.succeed({ hash: "patch", files: [] }),
