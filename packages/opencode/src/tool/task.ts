@@ -26,11 +26,13 @@ import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as SandboxPolicy from "@/kilocode/sandbox/policy" // kilocode_change
 import { Database } from "@opencode-ai/core/database/database"
+import { KiloSnapshotGate } from "@/kilocode/snapshot/gate" // kilocode_change - [fork]
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
   resolvePromptParts(template: string): Effect.Effect<SessionPrompt.PromptInput["parts"]>
   prompt(input: SessionPrompt.PromptInput): Effect.Effect<SessionV1.WithParts>
+  snapshot?: KiloSnapshotGate.Owner // kilocode_change - [fork] keep background settlement on its root prompt
 }
 
 const id = "task"
@@ -115,6 +117,7 @@ export const TaskTool = Tool.define(
     const drain = yield* SessionDrain.Service // kilocode_change
     const events = yield* EventV2Bridge.Service // kilocode_change
     const scope = yield* Scope.Scope
+    const delivered = yield* KiloTask.makeSettlementState // kilocode_change - [fork] initialize settlement claims per tool service
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
 
@@ -371,7 +374,7 @@ export const TaskTool = Tool.define(
             {
               type: "text",
               synthetic: true,
-              metadata: { background: true },
+              metadata: { background: true, sourceMessageID: ctx.messageID }, // [fork] link synthetic replies to their originating assistant turn
               text: renderOutput({
                 sessionID: nextSession.id,
                 state,
@@ -387,38 +390,61 @@ export const TaskTool = Tool.define(
       })
       // kilocode_change end
 
-      // kilocode_change start - background tasks propagate only cost accrued by this invocation
+      // kilocode_change start - [fork] background costs and root snapshot settlement are invocation-scoped
       let notified = false
       const notify = Effect.fn("TaskTool.notifyBackgroundResult")((jobID: string) =>
         Effect.uninterruptible(
           Effect.gen(function* () {
             if (notified) return
             notified = true
-            const owner = yield* Scope.fork(scope, "parallel")
-            const release = yield* drain.hold(ctx.sessionID)
-            yield* Scope.addFinalizer(owner, Effect.sync(release))
-            yield* background.wait({ id: jobID }).pipe(
-              Effect.flatMap((result) => {
-                if (result.info?.status === "completed") return inject("completed", result.info.output ?? "")
-                if (result.info?.status === "error") return inject("error", result.info.error ?? "")
-                if (result.info?.status === "cancelled") return Effect.void
-                return Effect.die(new Error("Background task result is unavailable"))
-              }),
-              Effect.interruptible,
-              Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.void
-                  : events.publish(Session.Event.Error, {
-                      sessionID: ctx.sessionID,
-                      error: new MessageV2.APIError({
-                        message: "Failed to deliver background task result",
-                        isRetryable: false,
-                      }).toObject(),
+            const start = (settle: Effect.Effect<void>) =>
+              Effect.gen(function* () {
+                const owner = yield* Scope.fork(scope, "parallel")
+                const release = yield* drain.hold(ctx.sessionID)
+                yield* Scope.addFinalizer(owner, Effect.sync(release))
+                const wait = background.wait({ id: jobID }).pipe(
+                  // [fork] release the snapshot-gate observer as soon as the
+                  // settlement arrives; holding it until the injected wake turn finishes made a
+                  // resume issued during that turn arm no waiter and lose its settlement.
+                  Effect.tap(() => settle),
+                  Effect.flatMap((result) =>
+                    Effect.gen(function* () {
+                      if (result.info && !(yield* KiloTask.claimSettlement(delivered, jobID, result.info.started_at)))
+                        return
+                      if (result.info && ops.snapshot)
+                        yield* ops.snapshot
+                          .checkpoint({ messageID: ctx.messageID, append: true })
+                          .pipe(Effect.catchCause(() => Effect.void))
+                      if (result.info?.status === "completed")
+                        return yield* inject("completed", result.info.output ?? "")
+                      if (result.info?.status === "error") return yield* inject("error", result.info.error ?? "")
+                      if (result.info?.status === "cancelled") return
+                      return yield* Effect.die(new Error("Background task result is unavailable"))
                     }),
-              ),
-              Effect.ensuring(Scope.close(owner, Exit.void)),
-              Effect.forkIn(scope, { startImmediately: true }),
-            )
+                  ),
+                  Effect.interruptible,
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.void
+                      : events.publish(Session.Event.Error, {
+                          sessionID: ctx.sessionID,
+                          error: new MessageV2.APIError({
+                            message: "Failed to deliver background task result",
+                            isRetryable: false,
+                          }).toObject(),
+                        }),
+                  ),
+                  Effect.ensuring(Scope.close(owner, Exit.void)),
+                  Effect.ensuring(settle),
+                )
+                const fork = yield* Effect.exit(Effect.forkIn(wait, scope, { startImmediately: true }))
+                if (Exit.isFailure(fork)) {
+                  yield* Scope.close(owner, Exit.void)
+                  return yield* Effect.failCause(fork.cause)
+                }
+              })
+            if (ops.snapshot) yield* ops.snapshot.observe(jobID, start)
+            else yield* start(Effect.void)
           }),
         ),
       )
@@ -446,6 +472,7 @@ export const TaskTool = Tool.define(
           run: withCostPropagation(runTask().pipe(Effect.onInterrupt(() => ops.cancel(nextSession.id)))),
         })
       ) {
+        yield* notify(nextSession.id) // kilocode_change - [fork] observe settlement after extending the running job
         return {
           title: description, // kilocode_change
           metadata: {
@@ -592,10 +619,7 @@ export const TaskTool = Tool.define(
           ...KiloTask.ModelFields,
         }),
       ),
-      execute: (
-        params: Schema.Schema.Type<typeof Parameters>,
-        ctx: Tool.Context,
-      ): Effect.Effect<Tool.ExecuteResult> =>
+      execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context): Effect.Effect<Tool.ExecuteResult> =>
         drain.track(ctx.sessionID, run(params, ctx).pipe(Effect.scoped)).pipe(Effect.orDie),
     }
     // kilocode_change end
