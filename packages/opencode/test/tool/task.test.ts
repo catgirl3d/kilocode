@@ -16,6 +16,7 @@ import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema" // kilocode_change - SessionID used by cost propagation tests
 import { SessionRunState } from "@/session/run-state"
 import { SessionDrain } from "@/kilocode/session/drain" // kilocode_change
+import { KiloSnapshotGate } from "@/kilocode/snapshot/gate"
 import { SessionStatus } from "@/session/status"
 import { Provider } from "../../src/provider/provider" // kilocode_change
 import { KiloSession } from "../../src/kilocode/session" // kilocode_change
@@ -1653,6 +1654,101 @@ describe("tool.task", () => {
       expect(notification.variant).toBe("xhigh")
       expect(notification.parts[0]?.type).toBe("text")
       if (notification.parts[0]?.type === "text") expect(notification.parts[0].text).toContain("second done")
+    }),
+  )
+
+  background.instance("delivers a resumed settlement while the first wake prompt keeps running", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      // Real snapshot gate: the observer dedupe that once swallowed the resumed settlement lives here.
+      // Snapshot IO never engages because no baseline is acquired.
+      const gate = KiloSnapshotGate.make({
+        sessionID: chat.id,
+        messageID: assistant.id,
+        track: () => Effect.succeed(undefined),
+        patch: () => Effect.succeed({ hash: "test", files: [] }),
+        updatePart: (part) => Effect.succeed(part),
+        persist: () => Effect.void,
+      })
+      const wakeStarted = yield* Deferred.make<void>()
+      const releaseWake = yield* Deferred.make<void>()
+      const resumedInjected = yield* Deferred.make<void>()
+      const injected: SessionPrompt.PromptInput[] = []
+      let childRuns = 0
+      const promptOps: TaskPromptOps = {
+        cancel: () => Effect.void,
+        resolvePromptParts: (template) => Effect.succeed([{ type: "text" as const, text: template }]),
+        snapshot: gate,
+        prompt: (input) => {
+          if (input.sessionID === chat.id) {
+            injected.push(input)
+            if (injected.length === 1) {
+              // Hold the wake prompt from the first delivery open while the resume arrives.
+              return Deferred.succeed(wakeStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseWake)),
+                Effect.as(reply(input, "ack")),
+              )
+            }
+            return Deferred.succeed(resumedInjected, undefined).pipe(Effect.as(reply(input, "ack")))
+          }
+          childRuns += 1
+          return Effect.succeed(reply(input, childRuns === 1 ? "first done" : "second done"))
+        },
+      }
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+
+      const started = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        context,
+      )
+      const childID = started.metadata.sessionId
+      // The first settlement is delivered and its wake prompt is now in flight.
+      yield* Deferred.await(wakeStarted).pipe(Effect.timeout("5 seconds"))
+
+      const resumed = yield* def.execute(
+        {
+          description: "resume the task",
+          prompt: "continue",
+          subagent_type: "general",
+          task_id: childID,
+          background: true,
+        },
+        context,
+      )
+      expect(resumed.metadata.sessionId).toBe(childID)
+
+      const settled = yield* jobs.wait({ id: childID, timeout: 5_000 })
+      expect(settled.info?.status).toBe("completed")
+      expect(settled.info?.output).toBe("second done")
+      yield* Deferred.succeed(releaseWake, undefined)
+
+      // The resumed settlement must still be injected while the previous wake prompt is in flight.
+      yield* Deferred.await(resumedInjected).pipe(Effect.timeout("5 seconds"))
+      expect(injected).toHaveLength(2)
+      const first = injected[0]
+      const firstText = (first?.parts ?? []).map((part) => (part.type === "text" ? part.text : "")).join("\n")
+      expect(firstText).toContain("first done")
+      const second = injected[1]
+      const secondText = (second?.parts ?? []).map((part) => (part.type === "text" ? part.text : "")).join("\n")
+      expect(secondText).toContain(`<task id="${childID}" state="completed">`)
+      expect(secondText).toContain("second done")
     }),
   )
 
