@@ -1,11 +1,18 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { KiloSnapshotGate } from "@/kilocode/snapshot/gate"
 import { KiloSnapshotMutation } from "@/kilocode/snapshot/mutation"
 import { testEffect } from "../../lib/effect"
 
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
-const makeGate = (input: Omit<KiloSnapshotGate.Input, "scope">) => KiloSnapshotGate.make(input)
+const makeGate = (
+  input: Omit<KiloSnapshotGate.Input, "patch" | "persist"> & Partial<Pick<KiloSnapshotGate.Input, "patch" | "persist">>,
+) =>
+  KiloSnapshotGate.make({
+    ...input,
+    patch: input.patch ?? (() => Effect.succeed({ hash: "patch", files: [] })),
+    persist: input.persist ?? (() => Effect.void),
+  })
 const runtime = testEffect(Layer.empty)
 const it = (name: string, body: () => void | Promise<void>) =>
   runtime.live(
@@ -87,7 +94,7 @@ describe("lazy snapshot mutation gate", () => {
     expect(parts[1]).toEqual({ ...step, snapshot: "baseline" })
   })
 
-  it("only performs terminal tracking for a step with a baseline", async () => {
+  it("does not capture at SDK step boundaries", async () => {
     let tracks = 0
     const gate = makeGate({
       sessionID: "ses_test" as never,
@@ -98,18 +105,15 @@ describe("lazy snapshot mutation gate", () => {
 
     const result = await run(
       Effect.gen(function* () {
-        const empty = yield* gate.finishStep()
+        yield* gate.finishStep()
         const baseline = yield* gate.ensure()
-        const finish = yield* gate.finishStep()
-        const again = yield* gate.finishStep()
-        return { empty, baseline, finish, again }
+        yield* gate.finishStep()
+        yield* gate.finishStep()
+        return baseline
       }),
     )
-    expect(result.empty.finish).toBeUndefined()
-    expect(result.baseline).toBe("baseline")
-    expect(result.finish.finish).toBe("finish")
-    expect(result.again.finish).toBeUndefined()
-    expect(tracks).toBe(2)
+    expect(result).toBe("baseline")
+    expect(tracks).toBe(1)
   })
 
   it("waits for an in-flight baseline before finishing a step", async () => {
@@ -143,11 +147,11 @@ describe("lazy snapshot mutation gate", () => {
       }),
     )
 
-    expect(result.finished.baseline).toBe("baseline")
+    expect(result.finished).toBeUndefined()
     expect(result.ensured).toBe("baseline")
   })
 
-  it("retries an unsuccessful baseline only after a real step reset", async () => {
+  it("does not retry an unsuccessful baseline on another SDK step", async () => {
     let tracks = 0
     const gate = makeGate({
       sessionID: "ses_test" as never,
@@ -168,12 +172,12 @@ describe("lazy snapshot mutation gate", () => {
     expect(await run(gate.ensure())).toBeUndefined()
     await run(gate.finishStep())
     await run(gate.startStep(step("part-2")))
-    expect(await run(gate.ensure())).toBe("baseline-2")
-    expect(await run(gate.ensure())).toBe("baseline-2")
-    expect(tracks).toBe(2)
+    expect(await run(gate.ensure())).toBeUndefined()
+    expect(await run(gate.ensure())).toBeUndefined()
+    expect(tracks).toBe(1)
   })
 
-  it("resets the complete baseline and terminal lifecycle between sequential mutating steps", async () => {
+  it("retains one baseline across sequential mutating steps", async () => {
     let tracks = 0
     const gate = makeGate({
       sessionID: "ses_test" as never,
@@ -191,14 +195,14 @@ describe("lazy snapshot mutation gate", () => {
 
     await run(gate.startStep(step("part-1")))
     expect(await run(gate.ensure())).toBe("snapshot-1")
-    expect(await run(gate.finishStep())).toEqual({ baseline: "snapshot-1", finish: "snapshot-2" })
+    await run(gate.finishStep())
     await run(gate.startStep(step("part-2")))
-    expect(await run(gate.ensure())).toBe("snapshot-3")
-    expect(await run(gate.finishStep())).toEqual({ baseline: "snapshot-3", finish: "snapshot-4" })
-    expect(tracks).toBe(4)
+    expect(await run(gate.ensure())).toBe("snapshot-1")
+    await run(gate.finishStep())
+    expect(tracks).toBe(1)
   })
 
-  it("shares concurrent ensure and performs exactly one terminal track", async () => {
+  it("shares one baseline across concurrent mutation requests", async () => {
     let tracks = 0
     const gate = makeGate({
       sessionID: "ses_test" as never,
@@ -208,15 +212,14 @@ describe("lazy snapshot mutation gate", () => {
     })
 
     const [first, second] = await run(Effect.all([gate.ensure(), gate.ensure()], { concurrency: "unbounded" }))
-    const finish = await run(gate.finishStep())
+    await run(gate.finishStep())
 
     expect(first).toBe("snapshot-1")
     expect(second).toBe("snapshot-1")
-    expect(finish).toEqual({ baseline: "snapshot-1", finish: "snapshot-2" })
-    expect(tracks).toBe(2)
+    expect(tracks).toBe(1)
   })
 
-  it("resets after a terminal track failure and allows the next step to retry", async () => {
+  it("keeps an unsuccessful baseline attempt sticky across SDK steps", async () => {
     let tracks = 0
     const gate = makeGate({
       sessionID: "ses_test" as never,
@@ -224,8 +227,7 @@ describe("lazy snapshot mutation gate", () => {
       track: () =>
         Effect.sync(() => {
           tracks += 1
-          if (tracks === 2) return undefined
-          return `snapshot-${tracks}`
+          return undefined
         }),
       updatePart: (part) => Effect.succeed(part),
     })
@@ -239,10 +241,126 @@ describe("lazy snapshot mutation gate", () => {
 
     await run(gate.startStep(step("part-1")))
     await run(gate.ensure())
-    expect(await run(gate.finishStep())).toEqual({ baseline: "snapshot-1", finish: undefined })
+    await run(gate.finishStep())
     await run(gate.startStep(step("part-2")))
-    expect(await run(gate.ensure())).toBe("snapshot-3")
-    expect(tracks).toBe(3)
+    expect(await run(gate.ensure())).toBeUndefined()
+    expect(tracks).toBe(1)
+  })
+
+  it("serializes response and settlement captures using the same baseline", async () => {
+    const state = await run(
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        let tracks = 0
+        let active = 0
+        let max = 0
+        const patches: Array<[string, string]> = []
+        const stored: Array<{ snapshot: string; append: boolean }> = []
+        const gate = makeGate({
+          sessionID: "ses_test" as never,
+          messageID: "msg_test" as never,
+          track: () =>
+            Effect.gen(function* () {
+              tracks++
+              active++
+              max = Math.max(max, active)
+              if (tracks === 2) {
+                yield* Deferred.succeed(entered, undefined)
+                yield* Deferred.await(release)
+              }
+              active--
+              return tracks === 1 ? "baseline" : `after-${tracks}`
+            }),
+          updatePart: (part) => Effect.succeed(part),
+          patch: (before, after) =>
+            Effect.sync(() => {
+              patches.push([before, after])
+              return { hash: after, files: [] }
+            }),
+          persist: (input) =>
+            Effect.sync(() => {
+              stored.push({ snapshot: input.snapshot, append: input.append })
+            }),
+        })
+        yield* gate.ensure()
+        const response = yield* Effect.forkChild(gate.checkpoint())
+        yield* Deferred.await(entered)
+        const settled = yield* Effect.forkChild(gate.checkpoint({ append: true }))
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(response)
+        yield* Fiber.join(settled)
+        return { tracks, max, patches, stored }
+      }),
+    )
+
+    expect(state.tracks).toBe(3)
+    expect(state.max).toBe(1)
+    expect(state.patches).toEqual([
+      ["baseline", "after-2"],
+      ["baseline", "after-3"],
+    ])
+    expect(state.stored).toEqual([
+      { snapshot: "after-2", append: false },
+      { snapshot: "after-3", append: true },
+    ])
+  })
+
+  it("retries a response checkpoint after persist fails", async () => {
+    let tracks = 0
+    let persists = 0
+    const gate = makeGate({
+      sessionID: "ses_test" as never,
+      messageID: "msg_test" as never,
+      baseline: "baseline",
+      track: () => Effect.sync(() => `after-${++tracks}`),
+      updatePart: (part) => Effect.succeed(part),
+      persist: () =>
+        Effect.gen(function* () {
+          persists++
+          if (persists === 1) return yield* Effect.die(new Error("persist failed"))
+        }),
+    })
+    await run(gate.ensure())
+
+    const first = await run(Effect.exit(gate.checkpoint()))
+    expect(Exit.isFailure(first)).toBe(true)
+    await run(gate.checkpoint())
+
+    expect(tracks).toBe(2)
+    expect(persists).toBe(2)
+  })
+
+  it("releases a settled job observer so a later invocation can observe it", async () => {
+    const state = await run(
+      Effect.gen(function* () {
+        const end: Array<Effect.Effect<void>> = []
+        let starts = 0
+        const gate = makeGate({
+          sessionID: "ses_test" as never,
+          messageID: "msg_test" as never,
+          track: () => Effect.succeed("baseline"),
+          updatePart: (part) => Effect.succeed(part),
+        })
+        const observe = gate.observe("job_test", (settle) =>
+          Effect.sync(() => {
+            starts++
+            end.push(settle)
+          }),
+        )
+        yield* Effect.all([observe, observe], { concurrency: "unbounded" })
+        yield* end[0]!
+        yield* gate.observe("job_test", (settle) =>
+          Effect.sync(() => {
+            starts++
+            end.push(settle)
+          }),
+        )
+        return starts
+      }),
+    )
+
+    expect(state).toBe(2)
   })
   // Keep classifier cases in this serial suite because Effect's test runtime
   // owns shared fibers while the gate tests exercise concurrency.
