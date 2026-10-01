@@ -7,6 +7,7 @@ import { guarded } from "../agent"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
+import { InstanceState } from "@/effect/instance-state" // fork_change
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import type { Session } from "../../session/session"
@@ -435,4 +436,24 @@ export namespace KiloTask {
       variant: typeof variant === "string" ? variant : undefined,
     }
   }
+
+  // fork_change start - [fork] claim each background settlement once per instance
+  export const makeSettlementState = InstanceState.make(() => Effect.succeed(new Set<string>()))
+
+  export const claimSettlement = (
+    delivered: InstanceState.InstanceState<Set<string>>,
+    jobID: string,
+    startedAt: number,
+  ) =>
+    InstanceState.useEffect(delivered, (set) =>
+      Effect.sync(() => {
+        // A resumed task reuses the child session id, so the run start time keeps
+        // each settlement claimable once while still deduplicating its waiters.
+        const key = `${jobID}:${startedAt}`
+        if (set.has(key)) return false
+        set.add(key)
+        return true
+      }),
+    )
+  // fork_change end
 }
