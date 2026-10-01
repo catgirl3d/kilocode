@@ -7,6 +7,7 @@ import { guarded } from "../agent"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 import * as Log from "@opencode-ai/core/util/log"
+import { InstanceState } from "@/effect/instance-state" // fork_change
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import type { Session } from "../../session/session"
@@ -365,4 +366,17 @@ export namespace KiloTask {
       variant: typeof variant === "string" ? variant : undefined,
     }
   }
+
+  // fork_change start - [fork] claim each background settlement once per instance
+  export const makeSettlementState = InstanceState.make(() => Effect.succeed(new Set<string>()))
+
+  export const claimSettlement = (delivered: InstanceState.InstanceState<Set<string>>, jobID: string) =>
+    InstanceState.useEffect(delivered, (set) =>
+      Effect.sync(() => {
+        if (set.has(jobID)) return false
+        set.add(jobID)
+        return true
+      }),
+    )
+  // fork_change end
 }

@@ -222,111 +222,98 @@ const setup = Effect.fn("SnapshotCleanupTest.setup")(function* (dir: string) {
 })
 
 describe("session processor snapshot cleanup", () => {
-  it.live("persists an abnormal provider-error checkpoint before invoking summary", () =>
-    provideTmpdirProject(
-      (dir) =>
-        Effect.gen(function* () {
-          const ctx = yield* setup(dir)
-          expect(yield* ctx.handle.ensureSnapshot()).toBe("baseline")
-          ctx.handle.message.cost = 7
-          ctx.handle.message.tokens = { input: 10, output: 4, reasoning: 2, cache: { read: 3, write: 1 } }
-          yield* ctx.test.reply(
-            LLMEvent.stepStart({ index: 0 }),
-            LLMEvent.textStart({ id: "partial" }),
-            LLMEvent.textDelta({ id: "partial", text: "Partial" }),
-            LLMEvent.textEnd({ id: "partial" }),
-            LLMEvent.providerError({ message: "provider boom" }),
-          )
-          expect(yield* ctx.handle.process(ctx.input)).toBe("stop")
-          const parts = yield* MessageV2.parts(ctx.msg.id)
-          const finishes = parts.filter((part) => part.type === "step-finish")
-          expect(finishes).toHaveLength(1)
-          expect(finishes[0]).toMatchObject({ snapshot: "finish", cost: 0 })
-          expect(finishes[0]?.type === "step-finish" ? finishes[0].tokens : undefined).toEqual({
-            input: 0,
-            output: 0,
-            reasoning: 0,
-            cache: { read: 0, write: 0 },
-          })
-          expect(parts.some((part) => part.type === "patch")).toBe(true)
-          expect(parts.findIndex((part) => part.type === "step-finish")).toBeLessThan(
-            parts.findIndex((part) => part.type === "patch"),
-          )
-          yield* pollWithTimeout(Effect.sync(() => summaryChecks.get(ctx.msg.sessionID)?.[0]), "summary was not invoked")
-          expect(summaryChecks.get(ctx.msg.sessionID)).toEqual([{ terminal: true }])
-        }),
-      { git: true },
-    ),
+  it.live(
+    "settles partial provider-error output without per-processor snapshot capture",
+    () =>
+      provideTmpdirProject(
+        (dir) =>
+          Effect.gen(function* () {
+            const ctx = yield* setup(dir)
+            expect(yield* ctx.handle.ensureSnapshot()).toBeUndefined()
+            ctx.handle.message.cost = 7
+            ctx.handle.message.tokens = { input: 10, output: 4, reasoning: 2, cache: { read: 3, write: 1 } }
+            yield* ctx.test.reply(
+              LLMEvent.stepStart({ index: 0 }),
+              LLMEvent.textStart({ id: "partial" }),
+              LLMEvent.textDelta({ id: "partial", text: "Partial" }),
+              LLMEvent.textEnd({ id: "partial" }),
+              LLMEvent.providerError({ message: "provider boom" }),
+            )
+            expect(yield* ctx.handle.process(ctx.input)).toBe("stop")
+            const parts = yield* MessageV2.parts(ctx.msg.id)
+            expect(parts.some((part) => part.type === "text" && part.text === "Partial")).toBe(true)
+            expect(parts.some((part) => part.type === "step-finish" || part.type === "patch")).toBe(false)
+            expect([...tracks.values()].reduce((sum, count) => sum + count, 0)).toBe(0)
+            expect(summaryChecks.get(ctx.msg.sessionID)).toBeUndefined()
+            const stored = yield* MessageV2.get({ sessionID: ctx.msg.sessionID, messageID: ctx.msg.id })
+            expect(stored.info.role === "assistant" ? stored.info.cost : undefined).toBe(7)
+            expect(stored.info.role === "assistant" ? stored.info.tokens : undefined).toEqual({
+              input: 10,
+              output: 4,
+              reasoning: 2,
+              cache: { read: 3, write: 1 },
+            })
+          }),
+        { git: true },
+      ),
     15_000,
   )
 
-  it.live("persists an abnormal abort checkpoint without duplicating the terminal part", () =>
-    provideTmpdirProject(
-      (dir) =>
-        Effect.gen(function* () {
-          const ctx = yield* setup(dir)
-          expect(yield* ctx.handle.ensureSnapshot()).toBe("baseline")
-          yield* ctx.test.push(Stream.make(LLMEvent.stepStart({ index: 0 })).pipe(Stream.concat(Stream.never)))
-          const fiber = yield* Effect.forkChild(ctx.handle.process(ctx.input))
-          yield* pollWithTimeout(
-            Effect.gen(function* () {
-              const parts = yield* MessageV2.parts(ctx.msg.id)
-              return parts.some((part) => part.type === "step-start") ? true : undefined
-            }),
-            "aborted processor did not start its step",
-          )
-          yield* Fiber.interrupt(fiber)
-          const parts = yield* MessageV2.parts(ctx.msg.id)
-          const finishes = parts.filter((part) => part.type === "step-finish")
-          expect(finishes).toHaveLength(1)
-          expect(finishes[0]).toMatchObject({ snapshot: "finish", cost: 0 })
-          expect(parts.some((part) => part.type === "patch")).toBe(true)
-          expect(parts.findIndex((part) => part.type === "step-finish")).toBeLessThan(
-            parts.findIndex((part) => part.type === "patch"),
-          )
-          yield* pollWithTimeout(Effect.sync(() => summaryChecks.get(ctx.msg.sessionID)?.[0]), "abort summary was not invoked")
-          expect(summaryChecks.get(ctx.msg.sessionID)).toEqual([{ terminal: true }])
-        }),
-      { git: true },
-    ),
+  it.live(
+    "settles an aborted processor without capturing a snapshot",
+    () =>
+      provideTmpdirProject(
+        (dir) =>
+          Effect.gen(function* () {
+            const ctx = yield* setup(dir)
+            expect(yield* ctx.handle.ensureSnapshot()).toBeUndefined()
+            yield* ctx.test.push(Stream.make(LLMEvent.stepStart({ index: 0 })).pipe(Stream.concat(Stream.never)))
+            const fiber = yield* Effect.forkChild(ctx.handle.process(ctx.input))
+            yield* pollWithTimeout(
+              Effect.gen(function* () {
+                const parts = yield* MessageV2.parts(ctx.msg.id)
+                return parts.some((part) => part.type === "step-start") ? true : undefined
+              }),
+              "aborted processor did not start its step",
+            )
+            yield* Fiber.interrupt(fiber)
+            const parts = yield* MessageV2.parts(ctx.msg.id)
+            expect(parts.some((part) => part.type === "step-start" && part.snapshot)).toBe(false)
+            expect(parts.some((part) => part.type === "step-finish" && part.snapshot)).toBe(false)
+            expect(parts.some((part) => part.type === "patch")).toBe(false)
+            expect([...tracks.values()].reduce((sum, count) => sum + count, 0)).toBe(0)
+            expect(summaryChecks.get(ctx.msg.sessionID)).toBeUndefined()
+          }),
+        { git: true },
+      ),
     15_000,
   )
 
-  it.live("does not persist a terminal checkpoint or invoke summary without a baseline", () =>
-    provideTmpdirProject(
-      (dir) =>
-        Effect.gen(function* () {
-          const ctx = yield* setup(dir)
-          yield* ctx.test.reply(LLMEvent.stepStart({ index: 0 }), LLMEvent.providerError({ message: "provider boom" }))
-          expect(yield* ctx.handle.process(ctx.input)).toBe("stop")
-          const parts = yield* MessageV2.parts(ctx.msg.id)
-          expect(parts.some((part) => part.type === "step-finish" || part.type === "patch")).toBe(false)
-          expect(summaryChecks.get(ctx.msg.sessionID)).toBeUndefined()
-        }),
-      { git: true },
-    ),
-    15_000,
-  )
-
-  it.live("does not add a synthetic checkpoint after a normal step finish", () =>
-    provideTmpdirProject(
-      (dir) =>
-        Effect.gen(function* () {
-          const ctx = yield* setup(dir)
-          expect(yield* ctx.handle.ensureSnapshot()).toBe("baseline")
-          yield* ctx.test.reply(
-            LLMEvent.stepStart({ index: 0 }),
-            LLMEvent.stepFinish({ index: 0, reason: "stop", usage: new Usage({}) }),
-            LLMEvent.finish({ reason: "stop", usage: new Usage({}) }),
-          )
-          expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
-          const parts = yield* MessageV2.parts(ctx.msg.id)
-          expect(parts.filter((part) => part.type === "step-finish")).toHaveLength(1)
-          yield* pollWithTimeout(Effect.sync(() => summaryChecks.get(ctx.msg.sessionID)?.[0]), "normal summary was not invoked")
-          expect(summaryChecks.get(ctx.msg.sessionID)).toEqual([{ terminal: true }])
-        }),
-      { git: true },
-    ),
+  it.live(
+    "does not add a synthetic checkpoint after a normal step finish",
+    () =>
+      provideTmpdirProject(
+        (dir) =>
+          Effect.gen(function* () {
+            const ctx = yield* setup(dir)
+            expect(yield* ctx.handle.ensureSnapshot()).toBeUndefined()
+            yield* ctx.test.reply(
+              LLMEvent.stepStart({ index: 0 }),
+              LLMEvent.stepFinish({ index: 0, reason: "stop", usage: new Usage({}) }),
+              LLMEvent.finish({ reason: "stop", usage: new Usage({}) }),
+            )
+            expect(yield* ctx.handle.process(ctx.input)).toBe("continue")
+            const parts = yield* MessageV2.parts(ctx.msg.id)
+            expect(parts.filter((part) => part.type === "step-finish")).toHaveLength(1)
+            expect(parts.some((part) => part.type === "step-finish" && part.snapshot)).toBe(false)
+            yield* pollWithTimeout(
+              Effect.sync(() => summaryChecks.get(ctx.msg.sessionID)?.[0]),
+              "normal summary was not invoked",
+            )
+            expect(summaryChecks.get(ctx.msg.sessionID)).toEqual([{ terminal: false }])
+          }),
+        { git: true },
+      ),
     15_000,
   )
 })

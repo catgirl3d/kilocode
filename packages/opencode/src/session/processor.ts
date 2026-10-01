@@ -8,7 +8,6 @@ import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
-import { Snapshot } from "@/snapshot"
 import { Session } from "./session"
 import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
@@ -73,7 +72,7 @@ type Input = {
   model: Provider.Model
   // kilocode_change start
   telemetry?: ReviewTelemetry
-  snapshotInitialization?: "wait"
+  snapshotOwner?: KiloSnapshotGate.Owner
   // kilocode_change end
 }
 
@@ -94,7 +93,6 @@ interface ProcessorContext extends Input {
   toolmeta: Record<string, { title?: string; metadata?: Record<string, any> }> // kilocode_change
   progress: Record<string, Progress.Sample> // kilocode_change
   shouldBreak: boolean
-  snapshot: string | undefined
   blocked: boolean
   needsCompaction: boolean
   compactionError: ReturnType<typeof MessageV2.ContextOverflowError.prototype.toObject> | undefined // kilocode_change
@@ -116,7 +114,6 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const session = yield* Session.Service
     const config = yield* Config.Service
-    const snapshot = yield* Snapshot.Service
     const agents = yield* Agent.Service
     const llm = yield* LLM.Service
     const permission = yield* Permission.Service
@@ -138,7 +135,6 @@ const layer = Layer.effect(
         toolmeta: {}, // kilocode_change
         progress: {}, // kilocode_change
         shouldBreak: false,
-        snapshot: undefined, // kilocode_change
         blocked: false,
         needsCompaction: false,
         compactionError: undefined, // kilocode_change
@@ -151,15 +147,6 @@ const layer = Layer.effect(
         step: { reasoning: false, text: false, tool: false },
         // kilocode_change end
       }
-      // kilocode_change start - capture only at a tool mutation boundary
-      const gate = KiloSnapshotGate.make({
-        sessionID: input.sessionID,
-        messageID: input.assistantMessage.id,
-        snapshotInitialization: input.snapshotInitialization,
-        track: (opts) => snapshot.track(opts),
-        updatePart: (part) => session.updatePart(part),
-      })
-      // kilocode_change end
       let aborted = false
       const ac = new AbortController() // kilocode_change — abort controller for offline handler
       let attempt = KiloSessionProcessor.attempt() // kilocode_change
@@ -616,13 +603,15 @@ const layer = Layer.effect(
             ctx.stepStart = performance.now()
             ctx.stepStartDate = Date.now()
             ctx.step = { reasoning: false, text: false, tool: false }
-            yield* gate.startStep({
+            const part = {
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.sessionID,
               type: "step-start",
               time: { start: ctx.stepStartDate },
-            })
+            } as const
+            if (input.snapshotOwner) yield* input.snapshotOwner.startStep(part)
+            else yield* session.updatePart(part)
             // kilocode_change end
             return
 
@@ -641,11 +630,7 @@ const layer = Layer.effect(
                 new KiloSessionProcessor.IncompleteResponseError(KiloResponseMetadata.read(value.providerMetadata)),
               )
             // kilocode_change end
-            // kilocode_change start - finish only steps that acquired a baseline
-            const finished = yield* gate.finishStep()
-            ctx.snapshot = finished.baseline
-            const completedSnapshot = finished.finish
-            // kilocode_change end
+            if (input.snapshotOwner) yield* input.snapshotOwner.finishStep() // kilocode_change - clear the active step without tracking
             yield* Effect.forEach(Object.keys(ctx.reasoningMap), finishReasoning)
             // Anthropic reports thinking blocks it removed before the model saw the
             // prompt. Prefix mismatches mean opencode changed history behind a signed
@@ -704,7 +689,6 @@ const layer = Layer.effect(
             yield* session.updatePart({
               id: PartID.ascending(),
               reason: value.reason,
-              snapshot: completedSnapshot,
               messageID: ctx.assistantMessage.id,
               sessionID: ctx.assistantMessage.sessionID,
               type: "step-finish",
@@ -738,26 +722,15 @@ const layer = Layer.effect(
             }
             // kilocode_change end
             yield* session.updateMessage(ctx.assistantMessage)
-            if (ctx.snapshot) {
-              const patch = yield* snapshot.patch(ctx.snapshot, completedSnapshot) // kilocode_change - [fork] reuse the captured after-tree
-              if (patch.files.length) {
-                yield* session.updatePart({
-                  id: PartID.ascending(),
-                  messageID: ctx.assistantMessage.id,
+            // kilocode_change start - [fork] defer root summaries until checkpoint persistence
+            if (!input.snapshotOwner)
+              yield* summary
+                .summarize({
                   sessionID: ctx.sessionID,
-                  type: "patch",
-                  hash: patch.hash,
-                  files: patch.files,
+                  messageID: ctx.assistantMessage.parentID,
                 })
-              }
-              ctx.snapshot = undefined
-            }
-            yield* summary
-              .summarize({
-                sessionID: ctx.sessionID,
-                messageID: ctx.assistantMessage.parentID,
-              })
-              .pipe(Effect.ignore, Effect.forkIn(scope))
+                .pipe(Effect.ignore, Effect.forkIn(scope))
+            // kilocode_change end
             if (
               !ctx.assistantMessage.summary &&
               // kilocode_change start
@@ -838,47 +811,6 @@ const layer = Layer.effect(
       })
 
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
-        // kilocode_change start - close lazy snapshot before cleanup patch and write terminal checkpoint
-        const finished = yield* gate.finishStep()
-        const baseline = ctx.snapshot ?? finished.baseline
-        const terminal = baseline && finished.finish
-        if (terminal) {
-          yield* session.updatePart({
-            id: PartID.ascending(),
-            messageID: ctx.assistantMessage.id,
-            sessionID: ctx.sessionID,
-            type: "step-finish",
-            reason: ctx.assistantMessage.finish ?? "error",
-            snapshot: terminal,
-            cost: 0,
-            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-          })
-        }
-        // kilocode_change end
-        if (baseline) { // kilocode_change
-          const patch = yield* snapshot.patch(baseline) // kilocode_change
-          if (patch.files.length) {
-            yield* session.updatePart({
-              id: PartID.ascending(),
-              messageID: ctx.assistantMessage.id,
-              sessionID: ctx.sessionID,
-              type: "patch",
-              hash: patch.hash,
-              files: patch.files,
-            })
-          }
-          ctx.snapshot = undefined
-        }
-        // kilocode_change start - summary must observe the terminal checkpoint after its patch
-        if (terminal) {
-          yield* summary
-            .summarize({
-              sessionID: ctx.sessionID,
-              messageID: ctx.assistantMessage.parentID,
-            })
-            .pipe(Effect.ignore, Effect.forkIn(scope))
-        }
-        // kilocode_change end
         if (ctx.currentText) {
           const end = Date.now()
           ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
@@ -1134,7 +1066,7 @@ const layer = Layer.effect(
         },
         updateToolCall,
         metadata, // kilocode_change
-        ensureSnapshot: () => gate.ensure(), // kilocode_change
+        ensureSnapshot: () => input.snapshotOwner?.ensure(ctx.assistantMessage.id) ?? Effect.succeed(undefined), // kilocode_change - [fork] delegate ensureSnapshot to active owner
         completeToolCall,
         ...output, // kilocode_change
         process,
@@ -1151,7 +1083,6 @@ export const node = LayerNode.make({
   deps: [
     Session.node,
     Config.node,
-    Snapshot.node,
     Agent.node,
     LLM.node,
     Permission.node,

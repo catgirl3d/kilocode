@@ -97,6 +97,10 @@ import { KiloSessionControl } from "@/kilocode/session/control" // kilocode_chan
 import { Goal } from "@/kilocode/session/goal/runner" // kilocode_change
 import { GoalPolicy } from "@/kilocode/session/goal/policy" // kilocode_change
 import { GoalState } from "@/kilocode/session/goal/state" // kilocode_change
+import { Snapshot } from "@/snapshot" // kilocode_change - [fork] root prompt snapshot boundaries
+import { KiloSnapshotGate } from "@/kilocode/snapshot/gate" // kilocode_change - [fork]
+import { KiloSnapshotResume } from "@/kilocode/snapshot/resume" // kilocode_change - [fork] Continue resume-history walk
+import { ShellPermission } from "@/tool/shell" // kilocode_change - [fork] reuse parser-approved shell access for Continue history
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -177,6 +181,7 @@ export const layer = Layer.effect(
     const truncate = yield* Truncate.Service
     const image = yield* Image.Service
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const shellPermission = yield* ShellPermission // kilocode_change - [fork] reuse parser-approved shell access for Continue
     const scope = yield* Scope.Scope
     const instruction = yield* Instruction.Service
     const state = yield* SessionRunState.Service
@@ -188,14 +193,74 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const snapshot = yield* Snapshot.Service // kilocode_change - [fork] root prompt snapshot boundaries
     const cache = Option.getOrUndefined(yield* Effect.serviceOption(RepositoryCache.Service)) // kilocode_change
     const { db } = database
-    // kilocode_change start
-    const ops = Effect.fn("SessionPrompt.ops")(function* (sessionID: SessionID) {
+    // kilocode_change start - [fork] persist snapshots only at prompt and background boundaries
+    const snapshotGate = (sessionID: SessionID, snapshotInitialization?: "wait", baseline?: string) =>
+      KiloSnapshotGate.make({
+        sessionID,
+        snapshotInitialization,
+        baseline,
+        track: (input) => snapshot.track(input),
+        patch: (before, after) => snapshot.patch(before, after),
+        updatePart: (part) => sessions.updatePart(part),
+        persist: (input) =>
+          Effect.gen(function* () {
+            const parts = yield* MessageV2.parts(input.messageID)
+            const finish = input.append
+              ? undefined
+              : parts.findLast((part): part is MessageV2.StepFinishPart => part.type === "step-finish")
+            if (finish) {
+              yield* sessions.updatePart({ ...finish, snapshot: input.snapshot })
+            } else {
+              yield* sessions.updatePart({
+                id: PartID.ascending(),
+                messageID: input.messageID,
+                sessionID,
+                type: "step-finish",
+                reason: input.append ? "background" : "error",
+                snapshot: input.snapshot,
+                cost: 0,
+                tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              })
+            }
+            if (input.patch.files.length)
+              yield* sessions.updatePart({
+                id: PartID.ascending(),
+                messageID: input.messageID,
+                sessionID,
+                type: "patch",
+                hash: input.patch.hash,
+                files: input.patch.files,
+              })
+            const message = yield* MessageV2.get({ sessionID, messageID: input.messageID }).pipe(Effect.orDie)
+            if (message.info.role !== "assistant") return
+            yield* summary
+              .summarize({ sessionID, messageID: message.info.parentID })
+              .pipe(
+                Effect.provideService(Database.Service, database),
+                Effect.provideService(Session.Service, sessions),
+                Effect.ignore,
+                Effect.forkIn(scope),
+              )
+          }).pipe(
+            Effect.provideService(Database.Service, database),
+            Effect.provideService(Session.Service, sessions),
+            Effect.catchCause((cause) =>
+              Effect.gen(function* () {
+                yield* Effect.logError("failed to persist snapshot checkpoint", cause)
+                return yield* Effect.failCause(cause)
+              }),
+            ),
+          ),
+      })
+    const ops = Effect.fn("SessionPrompt.ops")(function* (sessionID: SessionID, owner?: KiloSnapshotGate.Owner) {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
         resolvePromptParts: (template: string) => resolvePromptParts(template),
-        prompt: GoalPolicy.bind(sessionID, (input) => prompt(input).pipe(Effect.catch(Effect.die))),
+        prompt: GoalPolicy.bind(sessionID, (input) => prompt(input, undefined, owner).pipe(Effect.catch(Effect.die))),
+        snapshot: owner,
       } satisfies TaskPromptOps
     })
     // kilocode_change end
@@ -381,11 +446,11 @@ export const layer = Layer.effect(
       sessionID: SessionID
       session: Session.Info
       msgs: SessionV1.WithParts[]
-      snapshotInitialization?: "wait" // kilocode_change
+      snapshot?: KiloSnapshotGate.Owner // kilocode_change - [fork]
     }) {
-      const { task, model, lastUser, sessionID, session, msgs, snapshotInitialization } = input // kilocode_change
+      const { task, model, lastUser, sessionID, session, msgs, snapshot } = input // kilocode_change
       const ctx = yield* InstanceState.context
-      const promptOps = yield* ops(sessionID) // kilocode_change
+      const promptOps = yield* ops(sessionID, snapshot) // kilocode_change
       const { task: taskTool } = yield* registry.named()
       const taskModel = task.model ? yield* getModel(task.model.providerID, task.model.modelID, sessionID) : model
       const taskVariant = task.variant ?? lastUser.model.variant // kilocode_change
@@ -428,12 +493,20 @@ export const layer = Layer.effect(
         subagent_type: task.agent,
         command: task.command,
       }
-      // kilocode_change start - queued tasks bypass SessionTools
+      // kilocode_change start - [fork] anchor queued task baselines without SDK step streaming
+      if (snapshot)
+        yield* snapshot.startStep({
+          id: PartID.ascending(),
+          messageID: assistantMessage.id,
+          sessionID,
+          type: "step-start",
+          time: { start: Date.now() },
+        })
       const handle = yield* processor.create({
         assistantMessage,
         sessionID,
         model,
-        snapshotInitialization,
+        snapshotOwner: snapshot,
       })
       yield* handle.ensureSnapshot()
       // kilocode_change end
@@ -1445,8 +1518,9 @@ export const layer = Layer.effect(
     const prompt: (
       input: PromptInput,
       prior?: KiloSessionControl.Ticket,
+      owner?: KiloSnapshotGate.Owner,
     ) => Effect.Effect<SessionV1.WithParts, Image.Error> = Effect.fn("SessionPrompt.prompt")(
-      function* (input: PromptInput, prior?: KiloSessionControl.Ticket) {
+      function* (input: PromptInput, prior?: KiloSessionControl.Ticket, owner?: KiloSnapshotGate.Owner) {
         const background = KiloSessionControl.background(input.parts)
         // kilocode_change - a real user message takes priority over an active goal
         // for its turn but must not pause the goal; the goal loop resumes after it.
@@ -1504,9 +1578,11 @@ export const layer = Layer.effect(
           input.sessionID,
           message.info.id,
           bridge.run(
-            loop({ sessionID: input.sessionID, snapshotInitialization: input.snapshotInitialization }, ticket).pipe(
-              Effect.orDie,
-            ),
+            loop(
+              { sessionID: input.sessionID, snapshotInitialization: input.snapshotInitialization },
+              ticket,
+              owner,
+            ).pipe(Effect.orDie), // kilocode_change - [fork] continue automatic prompts on their originating snapshot gate
           ), // kilocode_change
           bridge.run(lastAssistant(input.sessionID)),
           dismiss,
@@ -1534,9 +1610,13 @@ export const layer = Layer.effect(
     const closeReasons = new Map<string, KiloSession.CloseReason>()
 
     // kilocode_change start - retain request-scoped snapshot initialization policy
-    const runLoop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts, NotFoundError> = Effect.fn(
-      "SessionPrompt.run",
-    )(function* (input: LoopInput) {
+    const runLoop: (
+      input: LoopInput,
+      owner?: KiloSnapshotGate.Owner,
+    ) => Effect.Effect<MessageV2.WithParts, NotFoundError> = Effect.fn("SessionPrompt.run")(function* (
+      input: LoopInput,
+      owner?: KiloSnapshotGate.Owner,
+    ) {
       const sessionID = input.sessionID
       // kilocode_change end
       // kilocode_change — cache environment details per turn (prompt caching)
@@ -1654,7 +1734,7 @@ export const layer = Layer.effect(
             sessionID,
             session,
             msgs,
-            snapshotInitialization: input.snapshotInitialization,
+            snapshot: owner, // kilocode_change - [fork]
           })
           // kilocode_change end
           continue
@@ -1757,14 +1837,14 @@ export const layer = Layer.effect(
             sessionID,
             model,
             telemetry, // kilocode_change
-            snapshotInitialization: input.snapshotInitialization, // kilocode_change
+            snapshotOwner: owner, // kilocode_change - [fork] share the root prompt gate
           })
           .pipe(Effect.onInterrupt(() => finalize))
 
         const outcome: "break" | "continue" = yield* Effect.gen(function* () {
           const lastUserMsg = msgs.findLast((m) => m.info.role === "user")
           const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
-          const promptOps = yield* ops(sessionID) // kilocode_change
+          const promptOps = yield* ops(sessionID, owner) // kilocode_change - [fork]
 
           // kilocode_change start
           const notify = BoardContext.allowed({ session, agent, user: lastUser })
@@ -2025,13 +2105,28 @@ export const layer = Layer.effect(
     const loop: (
       input: LoopInput,
       prior?: KiloSessionControl.Ticket,
+      inherited?: KiloSnapshotGate.Owner,
     ) => Effect.Effect<MessageV2.WithParts, NotFoundError> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
       prior?: KiloSessionControl.Ticket,
+      inherited?: KiloSnapshotGate.Owner,
     ) {
       const ticket = prior ?? (yield* control.begin(input.sessionID, true))
       if (!ticket.running()) return yield* lastAssistant(input.sessionID)
       const session = yield* sessions.get(input.sessionID)
+      const owner = session.parentID
+        ? undefined
+        : (inherited ?? snapshotGate(input.sessionID, input.snapshotInitialization))
+      if (!session.parentID && !inherited && input.resume && owner) {
+        yield* KiloSnapshotResume.restoreHistory({
+          sessionID: input.sessionID,
+          resumeID: input.resume,
+          owner,
+          sessions,
+          config,
+          shellPermission,
+        })
+      }
       if (!input.resume) {
         yield* KiloSessionPrompt.recoverDanglingAssistant({ sessionID: input.sessionID, status, sessions })
         yield* KiloSessionPrompt.recoverProviderFinishError({ sessionID: input.sessionID, status, sessions })
@@ -2050,10 +2145,12 @@ export const layer = Layer.effect(
             ),
             Effect.orDie,
           ),
-          runLoop(input).pipe(Effect.orDie),
+          runLoop(input, owner).pipe(Effect.orDie),
           ticket.running,
         ),
         Effect.fnUntraced(function* (exit) {
+          const messageID = Exit.isSuccess(exit) ? exit.value.info.id : undefined
+          if (owner) yield* owner.checkpoint({ messageID }).pipe(Effect.catchCause(() => Effect.void)) // kilocode_change - [fork] finalize one root response checkpoint on every exit
           yield* KiloSession.publishTurnClose({
             sessionID: input.sessionID,
             parentID: session.parentID,
@@ -2671,6 +2768,7 @@ export const node = LayerNode.make({
   deps: [
     SessionStatus.node,
     Session.node,
+    Snapshot.node, // kilocode_change - [fork] root prompt owns snapshot boundaries
     Agent.node,
     Provider.node,
     SessionProcessor.node,
