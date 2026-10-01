@@ -58,4 +58,5 @@
 - Remove the upstream `PLAN` badge from completed plan messages in VS Code chat.
 - Keep title-only reasoning blocks compact in VS Code chat instead of expanding an empty panel while the block is still streaming.
 - Cut snapshot latency on every mutating agent step by diffing the captured snapshot trees instead of re-staging the worktree, skipping the diff entirely when a step changed nothing, and resolving the repository exclude path once per session instead of on every snapshot.
+- Capture snapshots once per root response and when background tasks settle, instead of after every mutating tool or model step.
 - Stop the parent agent from idling inside its turn while a background subagent runs: prompts now state that ending the turn does not end the task and that the completion notification resumes the session.
