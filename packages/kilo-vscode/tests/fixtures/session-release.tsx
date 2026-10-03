@@ -403,11 +403,11 @@ try {
   })
 
   await check("unknown-permission-returns-false", () => {
-    assert.equal(session().respondToPermission("missing", "once", [], []), false, "unknown permission should fail")
+    assert.equal(session().respondToPermission("missing", "once", [], [], []), false, "unknown permission should fail")
   })
   await check("unknown-permission-posts-nothing", () => {
     const before = sent.length
-    session().respondToPermission("missing-again", "once", [], [])
+    session().respondToPermission("missing-again", "once", [], [], [])
     assert.equal(sent.length, before, "an unknown permission must not post a response")
   })
 
@@ -441,7 +441,7 @@ try {
       state: { status: "running", input: { command: "ls" } },
     },
   })
-  await emit({ type: "todoUpdated", sessionID: "other", items: [{ id: "t1", content: "step", status: "pending" }] })
+  await emit({ type: "todoUpdated", sessionID: "other", items: [{ content: "step", status: "pending" }] })
   await check("release-blocks-transcript-refill", () => {
     assert.deepEqual(
       session().allMessages()["other"] ?? [],
@@ -455,8 +455,8 @@ try {
     assert.deepEqual(
       session()
         .todos()
-        .map((item) => item.id),
-      ["t1"],
+        .map((item) => ({ content: item.content, status: item.status })),
+      [{ content: "step", status: "pending" }],
       "a released session must still receive its todo updates",
     )
   })

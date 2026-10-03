@@ -60,7 +60,7 @@ const settle = async () => {
 }
 
 const push = async (message: ExtensionMessage) => {
-  post(message, window)
+  post(message)
   await settle()
 }
 
