@@ -66,7 +66,16 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     plugins: info.plugin?.map((plugin) =>
       typeof plugin === "string" ? plugin : { package: plugin[0], options: plugin[1] },
     ),
-    experimental: policies(info), // kilocode_change - v1 provider lists become provider.use policy statements
+    // kilocode_change start - [fork] preserve advisor fields alongside migrated provider policies
+    experimental:
+      info.experimental?.advisor_model !== undefined || info.experimental?.advisor_variant !== undefined
+        ? {
+            ...policies(info),
+            advisor_model: info.experimental.advisor_model,
+            advisor_variant: info.experimental.advisor_variant,
+          }
+        : policies(info),
+    // kilocode_change end
     providers: providers(info.provider),
   }
 }
