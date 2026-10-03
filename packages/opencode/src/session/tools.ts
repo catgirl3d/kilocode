@@ -98,7 +98,8 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const finish = <T extends Output>(name: string, output: T, opts: ToolExecutionOptions) =>
     Effect.gen(function* () {
       const clean = BoardNotice.clean(output)
-      if (notify && !opts.abortSignal?.aborted) {
+      // [fork] advisor streams its terminal title
+      if (notify && name !== "consult_advisor" && !opts.abortSignal?.aborted) {
         yield* input.processor.metadata(opts.toolCallId, { metadata: { output: clean.output } })
       }
       const result = yield* (notify?.(name, clean, opts.abortSignal) ?? Effect.succeed(clean)).pipe(
@@ -135,6 +136,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       goalOps: input.goalOps, // kilocode_change
       sandboxed, // kilocode_change
       sandboxEscalation: false,
+      // kilocode_change start - expose the in-progress assistant to advisor tools
+      currentAssistant: input.processor.message,
+      // kilocode_change end
     }
     return {
       sessionID: input.session.id,
