@@ -52,6 +52,12 @@ export interface ThinkingSelectorBaseProps {
   blocked?: boolean
   /** Short title shown above the options, so the list explains itself. */
   heading?: string
+  // fork_change start
+  /** Visual variant for the selector trigger. */
+  triggerVariant?: "ghost" | "secondary"
+  /** Visual size for the selector trigger. */
+  triggerSize?: "small" | "normal"
+  // fork_change end
 }
 
 export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props) => {
@@ -206,7 +212,14 @@ export const ThinkingSelectorBase: Component<ThinkingSelectorBaseProps> = (props
           open={open()}
           onOpenChange={onOpen}
           triggerAs={Button}
-          triggerProps={{ variant: "ghost", size: "small", "aria-label": props.label, disabled: props.blocked }}
+          /* fork_change start */
+          triggerProps={{
+            variant: props.triggerVariant ?? "ghost",
+            size: props.triggerSize ?? "small",
+            "aria-label": props.label,
+            disabled: props.blocked,
+          }}
+          /* fork_change end */
           trigger={
             <>
               {/* Keyed so the label remounts on change and the prompt pill can animate it. */}
