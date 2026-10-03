@@ -23,6 +23,7 @@ const EXEMPT_SCOPES = [
   "packages/script/tests/check-opencode-annotations.test.ts",
   ".github/workflows/check-opencode-annotations.yml",
 ]
+const EXEMPT_DIRS = new Set(["test", "tests", "fixture", "fixtures", "__snapshots__"])
 
 function isChecked(file: string) {
   const norm = file.replaceAll("\\", "/")
@@ -32,6 +33,7 @@ function isChecked(file: string) {
 function isExempt(file: string) {
   const norm = file.replaceAll("\\", "/").toLowerCase()
   if (norm.split("/").some((part) => part.includes("kilocode") || part.startsWith("kilo-"))) return true
+  if (norm.split("/").some((part) => EXEMPT_DIRS.has(part))) return true
   return EXEMPT_SCOPES.some((scope) => norm === scope || norm.startsWith(`${scope}/`))
 }
 
@@ -269,6 +271,32 @@ describe("CLI worktree mode", () => {
 // ─── default mode (--base) ───────────────────────────────────────────────────
 
 describe("CLI default mode", () => {
+  test("prefers upstream/main over a stale origin/main rebase baseline", () => {
+    const root = repo()
+    try {
+      exec(root, ["checkout", "-B", "upstream"])
+      mkdirSync(path.join(root, "packages/extensions/zed"), { recursive: true })
+      writeFileSync(path.join(root, "packages/extensions/zed/extension.toml"), 'version = "2.0.0"\n')
+      exec(root, ["add", "."])
+      exec(root, ["-c", "user.name=Kilo", "-c", "user.email=kilo@example.com", "commit", "-m", "upstream zed bump"])
+      exec(root, ["update-ref", "refs/remotes/upstream/main", "HEAD"])
+      exec(root, ["checkout", "-B", "main", "upstream"])
+
+      writeFileSync(
+        path.join(root, "packages/opencode/src/shared.ts"),
+        "const fork = 1 // kilocode_change\nexport const value = 1\n",
+      )
+      exec(root, ["add", "."])
+      exec(root, ["-c", "user.name=Kilo", "-c", "user.email=kilo@example.com", "commit", "-m", "fork change"])
+
+      const result = check(root)
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain("All shared upstream changes are annotated")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("judges the committed revision, never a worktree dirty with the round's edits", () => {
     const root = repo()
     try {
@@ -412,6 +440,9 @@ describe("isExempt", () => {
     // exempt — case-insensitive
     ["packages/opencode/src/KiloCode/foo.ts", true],
     ["packages/opencode/src/KILOCODE/bar.ts", true],
+    // exempt — test and fixture directories
+    ["script/fixtures/fork-audit/example.ts", true],
+    ["packages/opencode/src/fixtures/example.ts", true],
     // NOT exempt
     ["packages/opencode/src/index.ts", false],
     ["packages/opencode/src/cli/cmd/tui/routes/home.tsx", false],
