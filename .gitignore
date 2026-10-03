@@ -78,3 +78,7 @@ packages/app/.artifacts/
 packages/opencode/.artifacts/
 /out/
 **/allure-results/
+
+#fork
+docs/internal/*
+.mcp-brain/*
