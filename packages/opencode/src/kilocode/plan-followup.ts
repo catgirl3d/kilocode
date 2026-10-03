@@ -6,6 +6,7 @@ import { Identifier } from "@/id/id"
 import { Instance } from "@/kilocode/instance"
 import { KilocodeModelState } from "@/kilocode/config/model-state"
 import { Provider } from "@/provider/provider"
+import { hasVariant } from "@/kilocode/provider/provider" // fork_change
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { Question } from "@/question"
@@ -35,13 +36,15 @@ export const PlanFollowupRuntime = {
   },
   async modelIfAvailable(providerID: ProviderV2.ID, modelID: ModelV2.ID): Promise<Provider.Model | undefined> {
     const { AppRuntime } = await import("@/effect/app-runtime")
+    // fork_change start
     return AppRuntime.runPromise(
       Provider.Service.use((svc) =>
-        svc.getModel(providerID, modelID).pipe(
-          Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)),
-        ),
+        svc
+          .getModel(providerID, modelID)
+          .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined))),
       ),
     )
+    // fork_change end
   },
   todo: {
     get(sessionID: SessionID) {
@@ -182,7 +185,7 @@ export namespace PlanFollowup {
 
   function resolveVariant(value: string | undefined, model: Provider.Model | undefined) {
     if (!value) return undefined
-    if (model && !model.variants?.[value]) return undefined
+    if (model && !hasVariant(model, value)) return undefined // fork_change
     return value
   }
 
@@ -205,13 +208,12 @@ export namespace PlanFollowup {
     }
   }
 
-  async function pick(
-    ref: { providerID: string; modelID: string } | undefined,
-    variant?: string,
-  ) {
+  // fork_change start
+  async function pick(ref: { providerID: string; modelID: string } | undefined, variant?: string) {
     if (!ref) return
     return stamp(ref, variant)
   }
+  // fork_change end
 
   async function resolveCodeModel(input: Pick<MessageV2.User, "model">) {
     const state = Flag.KILO_CLIENT === "cli" ? await KilocodeModelState.get().catch(() => undefined) : undefined
