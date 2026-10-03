@@ -29,6 +29,7 @@
 
 ### Fixes & Enhancements
 
+- Remove the dead chat-search auto-expand plumbing (`forceOpen*`) left in the chat message renderer after the upstream search rework; no behavior change.
 - Run background processes with the configured execution shell, preserving Bash variable expansion and Auto fallback.
 - Keep subagents out of Agent Manager by default: a subagent session no longer receives the `agent_manager` tool unless its own agent config explicitly allows it, and global permission rules or persisted "always allow" approvals cannot reopen that boundary. Nested subagents remain governed by `subagent_depth` as before.
 - Generate chat titles during the first agent turn, including short prompts, and keep an active title request running if the task is stopped.
