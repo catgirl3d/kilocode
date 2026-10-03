@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo } from "solid-js"
+import { Component, For, Show, createMemo } from "solid-js" // fork_change
 import { Card } from "@kilocode/kilo-ui/card"
 import { Switch } from "@kilocode/kilo-ui/switch"
 import { useConfig } from "../../context/config"
@@ -11,6 +11,7 @@ import { ThinkingSelectorBase } from "../shared/ThinkingSelector"
 import SettingsRow from "./SettingsRow"
 import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autocomplete-model-selector"
 import { preserveVariant } from "../../context/session-variant-store"
+import AdvisorSettingsSection from "./AdvisorSettingsSection" // fork_change
 import VoiceInputSettingsSection from "./VoiceInputSettingsSection" // fork_change
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting, features } = useConfig()
@@ -166,6 +167,9 @@ const ModelsTab: Component = () => {
             </Show>
           </div>
         </SettingsRow>
+        {/* fork_change start */}
+        <AdvisorSettingsSection />
+        {/* fork_change end */}
         <SettingsRow
           title={language.t("settings.context.compactionModel.title")}
           description={language.t("settings.context.compactionModel.description")}
