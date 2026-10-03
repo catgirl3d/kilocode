@@ -139,7 +139,6 @@ interface CloseState {
   eventID?: string
   seen?: boolean
 }
-
 export const SessionContext = createContext<SessionContextValue>()
 
 export const SessionProvider: ParentComponent = (props) => {
@@ -2362,9 +2361,10 @@ export const SessionProvider: ParentComponent = (props) => {
       return true
     }
 
-    if (command !== "goal") dismiss(sid)
-
-    if (scope) {
+    // fork_change start
+    const prepare = () => {
+      if (command !== "goal") dismiss(sid)
+      if (!scope) return
       if (command !== "goal") {
         clearClose(scope)
         addOptimistic(scope, messageID, `/${command} ${args}`.trim(), files)
@@ -2375,6 +2375,10 @@ export const SessionProvider: ParentComponent = (props) => {
         setDraftSessionID(scope)
       }
     }
+    // fork_change end
+    // fork_change start
+    prepare()
+    // fork_change end
     vscode.postMessage({
       type: "sendCommand",
       command,

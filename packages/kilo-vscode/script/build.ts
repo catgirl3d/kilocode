@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
 import { join } from "node:path"
-import { existsSync, mkdirSync, rmSync, chmodSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync, chmodSync, copyFileSync } from "node:fs" // fork_change
 import {
   copyKiloSandboxWorker,
   copySandboxResources,
@@ -9,6 +9,7 @@ import {
 } from "../src/services/cli-backend/cli-resources"
 import { ensureFfmpegForTarget } from "./ffmpeg-helper"
 import { evidence as sbom } from "./sbom"
+import { ensureMicForTarget } from "./mic-helper" // fork_change
 
 const packageJsonPath = join(import.meta.dir, "..", "package.json")
 const packageJson = await Bun.file(packageJsonPath).json()
@@ -80,7 +81,7 @@ for (const config of targets) {
   }
 
   console.log(`  📥 Copying binary from ${config.cliDir}/bin/${config.binary}...`)
-  await $`cp ${sourceBinary} ${targetBinary}`
+  copyFileSync(sourceBinary, targetBinary) // fork_change
   await copyTreeSitterResources(sourceBinary, targetBinary)
   await copySandboxResources(sourceBinary, targetBinary)
   await copyKiloSandboxWorker(sourceBinary, targetBinary)
@@ -94,6 +95,11 @@ for (const config of targets) {
   console.log("Adding bundled FFmpeg helper...")
   await ensureFfmpegForTarget(config.target, binDir)
 
+  // fork_change start
+  console.log("Adding WASAPI microphone helper...")
+  await ensureMicForTarget(config.target, binDir)
+
+  // fork_change end
   console.log(`  📦 Packaging .vsix for ${config.target}${prerelease ? " (pre-release)" : ""}...`)
   const vsixPath = join(outDir, `kilo-vscode-${config.target}.vsix`)
   const args = ["--no-dependencies", "--skip-license", "--target", config.target, "-o", vsixPath]
