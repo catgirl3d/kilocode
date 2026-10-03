@@ -15,7 +15,12 @@ import {
 export const TEXT_RENDER_THROTTLE_MS = 100
 export const STREAMING_TEXT_RENDER_THROTTLE_MS = 16
 
-export function createThrottledValue(getValue: () => string, getInterval: () => number = () => TEXT_RENDER_THROTTLE_MS) {
+// fork_change start - keep touched file compatible with the current formatter
+export function createThrottledValue(
+  getValue: () => string,
+  getInterval: () => number = () => TEXT_RENDER_THROTTLE_MS,
+) {
+  // fork_change end
   const [value, setValue] = createSignal(getValue())
   let timeout: ReturnType<typeof setTimeout> | undefined
   let pending: string | undefined
@@ -70,7 +75,6 @@ export function createThrottledValue(getValue: () => string, getInterval: () => 
 
   return value
 }
-// fork_change end
 
 export function busy(status: string | undefined) {
   return status === "pending" || status === "running"
