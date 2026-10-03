@@ -54,7 +54,7 @@ import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
-import { useSlashCommand, skill as isSkill } from "../../hooks/useSlashCommand"
+import { useSlashCommand, skill as isSkill, type SlashCommandEntry } from "../../hooks/useSlashCommand" // fork_change
 import { useGoalComposer } from "./goal/useGoalComposer"
 import { GoalHeader } from "./goal/GoalHeader"
 import { useGhostText } from "../../hooks/useGhostText"

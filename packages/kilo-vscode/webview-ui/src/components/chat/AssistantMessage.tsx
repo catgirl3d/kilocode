@@ -160,6 +160,15 @@ interface AssistantMessageProps {
    * action row once the turn settles. */
   timing?: TurnTiming
   feedback?: MessageFeedbackControls
+  // fork_change start
+  /** id of the part containing the current chat-search match, if any — forces
+   * that part's collapsed tool/reasoning content open so the user can see
+   * the highlighted match without manually expanding it first. */
+  forceOpenPartID?: string
+  /** For a multi-file apply_patch match, the specific file within that part —
+   * lets that one nested item open instead of every file in the patch. */
+  forceOpenFile?: string
+  // fork_change end
   /** Part behind the currently hovered/focused task-timeline bar, if any. */
   highlight?: () => TimelineHighlight | undefined
   readonly?: boolean
@@ -173,11 +182,12 @@ type ToolStateProps = {
   status?: string
 }
 
-function TodoToolCard(props: { part: ToolPart }) {
 // fork_change start
 type MemoryItem = MemoryMarkerMeta.Decoded
 
 // fork_change end
+// fork_change start
+function TodoToolCard(props: { part: ToolPart; forceOpen?: boolean }) {
   const render = ToolRegistry.render(props.part.tool)
   const state = () => props.part.state as ToolStateProps
   const language = useLanguage()
@@ -195,14 +205,17 @@ type MemoryItem = MemoryMarkerMeta.Decoded
             output={state()?.output}
             status={state()?.status}
             defaultOpen
+            forceOpen={props.forceOpen}
           />
         </ToolApprovalProvider>
       )}
     </Show>
   )
 }
+// fork_change end
 
-function BashToolCard(props: { part: ToolPart; defaultOpen: boolean }) {
+// fork_change start
+function BashToolCard(props: { part: ToolPart; defaultOpen: boolean; forceOpen?: boolean }) {
   const render = ToolRegistry.render(props.part.tool)
   const state = () => props.part.state as ToolStateProps
   const language = useLanguage()
@@ -221,6 +234,7 @@ function BashToolCard(props: { part: ToolPart; defaultOpen: boolean }) {
             output={state()?.output}
             status={state()?.status}
             defaultOpen={props.defaultOpen}
+            forceOpen={props.forceOpen}
             animate
           />
         </ToolApprovalProvider>
@@ -228,6 +242,7 @@ function BashToolCard(props: { part: ToolPart; defaultOpen: boolean }) {
     </Show>
   )
 }
+// fork_change end
 
 /** Plain-text generation-speed value shown beside the copy/feedback buttons
  * on an assistant message.
@@ -366,6 +381,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             if (!planExitInfo(part)) return
             return part as unknown as ToolPart
           })
+          const forceOpen = createMemo(() => !!props.forceOpenPartID && part.id === props.forceOpenPartID) // fork_change
           // Reasoning blocks are excluded: they animate their own height and
           // their header and body bleed 6px past this wrapper, so the grow-in
           // clip would trim their sides for the whole stream and then release
@@ -478,6 +494,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                         message={props.message as SDKMessage}
                                         showAssistantCopyPartID={props.showAssistantCopyPartID}
                                         defaultOpen={toolDefaultOpen(part, open(), edit(), mcp())}
+                                        forceOpen={forceOpen()}
                                         reasoningDisplay={display.reasoningDisplay()}
                                         settled={settled()}
                                         feedback={props.feedback}
@@ -487,11 +504,17 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                                       />
                                     }
                                   >
-                                    <TodoToolCard part={part as unknown as ToolPart} />
+                                    <TodoToolCard part={part as unknown as ToolPart} forceOpen={forceOpen()} />
                                   </Show>
                                 }
                               >
-                                {(tool) => <BashToolCard part={tool() as unknown as ToolPart} defaultOpen={open()} />}
+                                {(tool) => (
+                                  <BashToolCard
+                                    part={tool() as unknown as ToolPart}
+                                    defaultOpen={open()}
+                                    forceOpen={forceOpen()}
+                                  />
+                                )}
                               </Show>
                             }
                           >

@@ -461,9 +461,11 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
       // create_session test's module init. Run the helper's Effect on the
       // request Effect (yield*) so the request-scoped InstanceRef/WorkspaceRef
       // reach the persistence path instead of the AppRuntime default context.
-      const { CloudSessionImportInProcess } = yield* Effect.promise(() =>
-        import("@/kilocode/server/import-cloud-session-in-process"),
+      // fork_change start
+      const { CloudSessionImportInProcess } = yield* Effect.promise(
+        () => import("@/kilocode/server/import-cloud-session-in-process"),
       )
+      // fork_change end
       const outcome = yield* CloudSessionImportInProcess.importSession(ctx.payload.sessionId).pipe(
         Effect.provideService(Auth.Service, auth),
         Effect.provideService(EventV2Bridge.Service, events),
