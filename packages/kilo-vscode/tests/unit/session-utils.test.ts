@@ -128,6 +128,8 @@ describe("session part and snapshot helpers", () => {
       ],
     })
   })
+})
+
 describe("recentSessions", () => {
   const at = (day: number) => `2026-01-${String(day).padStart(2, "0")}T00:00:00.000Z`
   const info = (id: string, day: number, parentID?: string | null) => ({
