@@ -101,6 +101,11 @@ export function patchConfigModel(cfg: any, existing: any) {
 }
 
 const CUSTOM_PROVIDER_PACKAGES = new Set(["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic"])
+
+export function hasVariant(model: Pick<Provider.Model, "variants">, variant: string) {
+  return Object.hasOwn(model.variants ?? {}, variant)
+}
+
 const FALLBACK_EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"]
 type Variants = NonNullable<Provider.Model["variants"]>
 type Generate = (model: Provider.Model) => Variants
