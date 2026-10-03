@@ -215,6 +215,11 @@ html[data-theme="kilo-vscode"] [data-component="tool-part-wrapper"][data-part-ty
 
       > * {
         min-height: 0;
+        /* fork_change start - keep wide tool content (e.g. the consult_advisor
+           input JSON with a long question) from stretching the card past its
+           column: panels clip, code blocks scroll internally */
+        min-width: 0;
+        /* fork_change end */
       }
     }
 
@@ -378,6 +383,12 @@ html[data-theme="kilo-vscode"] [data-component="tool-part-wrapper"][data-part-ty
     padding: 6px 12px 0;
     font-size: var(--kilo-font-size-11);
     color: var(--text-weak, var(--vscode-descriptionForeground));
+    /* fork_change start - host the output copy action on the section header */
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    /* fork_change end */
   }
 
   [data-slot="mcp-tool-divider"] {
@@ -407,6 +418,11 @@ html[data-theme="kilo-vscode"] [data-component="tool-part-wrapper"][data-part-ty
       color: inherit;
       font-size: inherit;
       line-height: inherit;
+      /* fork_change start - marked emits pretty-printed HTML; inheriting the
+         tool output's pre-wrap rendered those source newlines and indentations
+         as phantom gaps and offsets in prose output (e.g. consult_advisor) */
+      white-space: normal;
+      /* fork_change end */
     }
 
     [data-component="markdown"] :is(a, code, span, [data-highlight="file"]) {

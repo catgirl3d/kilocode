@@ -1139,6 +1139,10 @@ export interface ToolProps {
   sessionID?: string
   output?: string
   status?: string
+  // fork_change start
+  /** Streamed tool-state title (e.g. consult_advisor progress). */
+  stateTitle?: string
+  // fork_change end
   attachments?: FilePart[]
   hideDetails?: boolean
   defaultOpen?: boolean
@@ -1262,6 +1266,7 @@ function McpTool(props: ToolProps) {
     }
     return ids
   })
+  const title = createMemo(() => props.stateTitle || props.tool) // fork_change
   const trigger = () => {
     if (props.tool === "board_post")
       return (
@@ -1279,7 +1284,7 @@ function McpTool(props: ToolProps) {
       const rows = messages()
       return { title: i18n.t("ui.messagePart.board.read"), subtitle: rows ? String(rows.length) : undefined }
     }
-    return { title: props.tool, subtitle: subtitle(), args: inputArgs() }
+    return { title: title(), subtitle: subtitle(), args: inputArgs() } // fork_change
   }
   const labelKeys = ["description", "query", "url", "filePath", "path", "pattern", "name"]
   const skipKeys = new Set(labelKeys)
@@ -1367,7 +1372,12 @@ function McpTool(props: ToolProps) {
               <Show when={formatted()}>
                 <div data-slot="mcp-tool-divider" />
               </Show>
-              <div data-slot="mcp-section-label">{i18n.t("ui.messagePart.mcp.output")}</div>
+              {/* fork_change start - copy action for the tool's answer (e.g. consult_advisor guidance) */}
+              <div data-slot="mcp-section-label">
+                {i18n.t("ui.messagePart.mcp.output")}
+                <CopyButton value={() => props.output ?? ""} label={i18n.t("ui.message.copy")} />
+              </div>
+              {/* fork_change end */}
               <div data-component="tool-output" data-scrollable>
                 <Markdown text={text()} />
               </div>
@@ -1515,6 +1525,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                 // @ts-expect-error
                 output={part.state.output}
                 status={part.state.status}
+                // fork_change start - streamed progress title; only present on some ToolState variants
+                // @ts-expect-error
+                stateTitle={part.state.title}
+                // fork_change end
                 // @ts-expect-error
                 attachments={part.state.attachments}
                 hideDetails={props.hideDetails}

@@ -1294,6 +1294,12 @@ export const dict = {
   "settings.providers.subagentModel.title": "Subagent Model",
   "settings.providers.subagentModel.description":
     "Default model and reasoning effort for task-tool subagents. Leave unset to inherit the calling agent's model.",
+  // fork_change start
+  "settings.providers.advisor.title": "Enable Advisor",
+  "settings.providers.advisor.description": "Enable the consult_advisor tool.",
+  "settings.providers.advisorModel.title": "Advisor Model",
+  "settings.providers.advisorModel.description": "Choose the model and reasoning effort for second opinions.",
+  // fork_change end
   "settings.models.hidePromptTraining.title": "Hide Prompt-Training Models",
   "settings.models.hidePromptTraining.description":
     "Hide Kilo Gateway models whose providers may use your prompts for training.",
