@@ -355,6 +355,19 @@ describe("partitionTurns", () => {
 })
 
 describe("messageTurns", () => {
+  it("uses message order instead of lexical IDs for a revert boundary", () => {
+    const old = user("msg_f0000000000000000000000000")
+    const oldAssistant = assistant("msg_f0000000000000000000000001", old.id)
+    const target = user("msg_0000000000000000000000000")
+    const targetAssistant = assistant("msg_0000000000000000000000001", target.id)
+
+    expect(
+      visibleMessages([old, oldAssistant, target, targetAssistant], { messageID: target.id }).map(
+        (message) => message.id,
+      ),
+    ).toEqual([old.id, oldAssistant.id])
+  })
+
   it("attaches assistant output to its parent turn when queued users are newer", () => {
     const messages = [
       user("message_1"),
@@ -464,15 +477,55 @@ describe("messageTurns", () => {
     expect(turns[0]?.assistant.map((msg) => msg.id)).toEqual(["message_2"])
   })
 
-  it("applies assistant boundaries by id when messages arrive out of order", () => {
+  it("uses lexical IDs to break equal timestamp ties when messages arrive out of order", () => {
+    const createdAt = "2026-01-01T00:00:00.000Z"
     const messages = [
       user("message_1"),
-      assistant("message_4", "message_1", { error: { name: "ProviderError" } }),
-      assistant("message_2", "message_1"),
+      assistant("message_4", "message_1", { createdAt, error: { name: "ProviderError" } }),
+      assistant("message_2", "message_1", { createdAt }),
     ]
     const turns = messageTurns(messages, { messageID: "message_2", partID: "part_2" })
 
     expect(turns[0]?.assistant.map((msg) => msg.id)).toEqual(["message_2"])
+  })
+
+  it("uses createdAt before lexical IDs for rollover-style part boundaries", () => {
+    const messages = [
+      user("message_1"),
+      assistant("msg_f0000000000000000000000001", "message_1", {
+        createdAt: "2026-01-01T00:00:01.000Z",
+      }),
+      assistant("msg_0000000000000000000000001", "message_1", {
+        createdAt: "2026-01-01T00:00:02.000Z",
+      }),
+    ]
+    const turns = messageTurns(messages, { messageID: "msg_0000000000000000000000001", partID: "part_2" })
+
+    expect(turns[0]?.assistant.map((msg) => msg.id)).toEqual([
+      "msg_f0000000000000000000000001",
+      "msg_0000000000000000000000001",
+    ])
+  })
+
+  it("hides a later message with a lexically smaller ID", () => {
+    const messages = [
+      user("message_1"),
+      assistant("msg_0000000000000000000000001", "message_1", {
+        createdAt: "2026-01-01T00:00:03.000Z",
+      }),
+      assistant("msg_f0000000000000000000000001", "message_1", {
+        createdAt: "2026-01-01T00:00:01.000Z",
+      }),
+      assistant("msg_1000000000000000000000001", "message_1", {
+        createdAt: "2026-01-01T00:00:02.000Z",
+      }),
+    ]
+    const turns = messageTurns(messages, { messageID: "msg_1000000000000000000000001", partID: "part_2" })
+
+    expect(turns[0]?.assistant.map((msg) => msg.id)).toEqual([
+      "msg_f0000000000000000000000001",
+      "msg_1000000000000000000000001",
+    ])
   })
 })
 
@@ -487,6 +540,12 @@ describe("visibleParts", () => {
     const parts = [part("part_1", "message_2")]
 
     expect(visibleParts("message_2", parts, { messageID: "message_2", partID: "part_missing" })).toEqual([])
+  })
+
+  it("keeps parts from messages outside the revert boundary", () => {
+    const parts = [part("part_1", "message_1")]
+
+    expect(visibleParts("message_1", parts, { messageID: "message_2", partID: "part_2" })).toBe(parts)
   })
 })
 

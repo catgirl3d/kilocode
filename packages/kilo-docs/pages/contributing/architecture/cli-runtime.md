@@ -227,11 +227,13 @@ Slow initial tracking has guarded behavior:
 | Condition | Behavior |
 |---|---|
 | Fast track | Returns snapshot hash normally |
-| Slow interactive track | After default 10 seconds, can prompt to keep waiting or disable snapshots for project |
+| Slow interactive track | After default 45 seconds, can prompt to keep waiting or disable snapshots for project |
+| Open slow-track prompt | Pauses this operation's 120-second active-time budget; concurrent operations keep their own budgets |
 | Managed Agent Manager turn | Sends `snapshotInitialization: "wait"`; waits without inline question so concurrent started sessions retain baselines |
 | Visible long track | Adds temporary progress part after short delay, updates spinner, and removes part when done |
+| Track or patch timeout | Interrupts and skips only the current operation; later operations can retry |
 | Disable choice | Writes `"snapshot": false` to project config without disposing active turn |
-| Dismissed or untargeted timeout | Interrupts or skips track and suppresses repeat prompt for active service scope |
+| Dismissed or untargeted timeout | Interrupts or skips only the current track and suppresses repeat prompt without disabling snapshots |
 
 ## SDK contract
 
