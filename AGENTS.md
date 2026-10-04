@@ -212,9 +212,11 @@ We regularly merge upstream changes from opencode. To minimize merge conflicts a
 
 The goal is to keep our diff from upstream as small as possible, making regular merges straightforward and reducing the risk of conflicts.
 
-### Git conflict style
+### Git repo-local settings & conflict style
 
-`bun install` sets `merge.conflictStyle=zdiff3` repo-locally via `script/setup-git.ts` (wired into `postinstall`). Conflicts include the common ancestor between `|||||||` and `=======`, which is what `script/upstream/` and `mergiraf` rely on for structural resolution and what makes manual resolution on shared opencode files tractable. If you've overridden it in your user config, the repo-local setting takes precedence — don't override it back.
+`bun install` configures repo-local Git settings via `script/setup-git.ts` (wired into `postinstall`):
+- `merge.conflictStyle=zdiff3`: makes conflict markers include the common ancestor between `|||||||` and `=======`, which is what `script/upstream/` and `mergiraf` rely on for structural resolution and what makes manual resolution on shared opencode files tractable. If you've overridden it in your user config, the repo-local setting takes precedence — don't override it back.
+- `core.editor=true`: disables interactive commit/rebase message editors so autonomous agent executions and subagents never deadlock on terminal editor prompts.
 
 ### Kilocode Change Markers
 
@@ -246,7 +248,7 @@ This repository is a personal fork of Kilo Code (`upstream/main`).
   - **Prettier Stability**: Use block markers (`// fork_change start` / `end` on standalone lines) for multi-line expressions, hooks, and JSX to prevent Prettier from moving trailing comments onto inner lines during formatting.
 
 - **Fork Rebase Protocol**:
-  - When rebasing on `upstream/main`, strictly follow `FORK_REBASE.md`. Reuse package-scoped executor sessions and classify each stop as Mechanical, Bounded, or Deep. Mechanical stops may continue autonomously; Bounded candidates and implemented Deep decisions require coordinator approval before continue. Fork marker auditing and coverage reconciliation are deferred strictly to the post-rebase finalization pass — do not run full `fork-audit` on intermediate rebase stops. After any Bounded or Deep resolution, run the two specified final reviewers only after deterministic validation; do not launch them for conflict-free or Mechanical-only rebases. Do not run a default i18n scan.
+  - When rebasing on `upstream/main`, strictly follow `FORK_REBASE.md`. Reuse package-scoped executor sessions and classify each stop as Mechanical, Bounded, or Deep. Mechanical stops may continue autonomously; Bounded candidates and implemented Deep decisions require coordinator approval before continue. All rebase continue steps MUST be strictly non-interactive (use `git -c core.editor=true rebase --continue`) to prevent agent deadlocks on editor prompts. Fork marker auditing and coverage reconciliation are deferred strictly to the post-rebase finalization pass — do not run full `fork-audit` on intermediate rebase stops. After any Bounded or Deep resolution, run the two specified final reviewers only after deterministic validation; do not launch them for conflict-free or Mechanical-only rebases. Do not run a default i18n scan.
 
 ### Agent Scope Discipline
 
