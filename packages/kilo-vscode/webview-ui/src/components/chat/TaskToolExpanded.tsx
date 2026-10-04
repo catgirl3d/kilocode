@@ -111,28 +111,21 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
   // background task from a foreground one, and a background card must never
   // open on its own.
   const auto = () => taskAutoOpen(props.status, backgroundTask())
-  // BasicTool's forceOpen effect only fires onOpenChange on a false->true
-  // transition — a virtualized remount that starts with forceOpen already
-  // true never transitions, so this local signal must also seed itself from
-  // forceOpen directly, or the child list/result below stays hidden even
-  // though the accordion itself renders open.
   const [open, setOpen] = createSignal(
     initialOpen({
       tool: props.tool,
       partID: props.partID,
       defaultOpen: auto(),
-      forceOpen: props.forceOpen,
     }),
   )
   // The open state is controlled so the card settles once the input arrives.
-  // A stored preference, a search match, or a manual toggle wins over it.
   // A stored open state means this card was mounted before while open
   // (virtualizer handoff, session switch). Mount its body synchronously then: a
   // deferred body paints one frame at header height, and the shorter transcript
   // pulls the pinned scroll position up before the body lands. A stored closed
   // state keeps the deferred mount so a collapsed body is not built.
   const stored = initialOpen({ tool: props.tool, partID: props.partID })
-  const [touched, setTouched] = createSignal(!!props.forceOpen || stored !== undefined)
+  const [touched, setTouched] = createSignal(stored !== undefined) // fork_change
   const change = (value: boolean) => {
     setTouched(true)
     setOpen(value)
@@ -360,7 +353,6 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
         trigger={trigger()}
         defaultOpen={auto()}
         open={open()}
-        forceOpen={props.forceOpen}
         defer={stored !== true}
         onOpenChange={change}
       >
