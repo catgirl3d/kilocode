@@ -10,6 +10,10 @@
  * merges (see script/upstream/merge.ts) and it makes manual resolution
  * dramatically easier than the default 2-way `merge` markers.
  *
+ * `core.editor=true` prevents Git from spawning interactive text editors
+ * (e.g. during `git rebase --continue` or merge commits), ensuring autonomous
+ * agent and subagent sessions never hang waiting on interactive terminal input.
+ *
  * Runs from `postinstall`. Safe to re-run — `git config` is idempotent.
  * Guarded so tarball / docker installs without a `.git` don't fail.
  */
@@ -20,3 +24,4 @@ const inside = await $`git rev-parse --is-inside-work-tree`.nothrow().quiet()
 if (inside.exitCode !== 0) process.exit(0)
 
 await $`git config --local merge.conflictStyle zdiff3`.quiet()
+await $`git config --local core.editor true`.quiet()
