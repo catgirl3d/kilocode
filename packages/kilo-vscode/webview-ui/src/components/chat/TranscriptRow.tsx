@@ -13,6 +13,7 @@ import { useFeedback } from "../../context/feedback"
 import { AssistantMessage } from "./AssistantMessage"
 import { ErrorDisplay, type ErrorDisplayProps } from "./ErrorDisplay"
 import { VscodeUserMessage } from "./VscodeUserMessage"
+import { SnapshotBadge } from "./SnapshotBadge" // fork_change
 
 interface TranscriptRowViewProps {
   row: TranscriptRow
@@ -38,7 +39,13 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
   const feedback = useFeedback()
   const i18n = useI18n()
 
-  createEffect(() => session.hydrateParts([props.row.message.id]))
+  // fork_change start
+  createEffect(() => {
+    const row = props.row
+    const ids = row.type === "diff" ? [row.message.id, ...(row.assistantIDs ?? [])] : [row.message.id]
+    session.hydrateParts([...new Set(ids)])
+  })
+  // fork_change end
 
   const open = () => vscode.postMessage({ type: "openChanges", turnId: props.row.message.id })
 
@@ -126,10 +133,11 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
         )}
       </Show>
 
+      {/* fork_change start */}
       <Show when={props.row.type === "diff" ? props.row : undefined}>
         {(row) => (
-          <Show when={server.gitInstalled()}>
-            <div class="vscode-session-turn-diffs" data-component="session-turn">
+          <div class="vscode-session-turn-footer" data-component="session-turn">
+            <Show when={server.gitInstalled() && row().diffs.length > 0}>
               <button
                 type="button"
                 class="vscode-session-turn-diffs-trigger"
@@ -148,10 +156,12 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
                   <Icon name="chevron-right" size="small" />
                 </span>
               </button>
-            </div>
-          </Show>
+            </Show>
+            <Show when={row().snapshot}>{(status) => <SnapshotBadge status={status()} />}</Show>
+          </div>
         )}
       </Show>
+      {/* fork_change end */}
 
       <Show when={props.row.type === "error" ? props.row : undefined}>
         {(row) => <ErrorDisplay error={row().error as ErrorDisplayProps["error"]} onLogin={server.goToLogin} />}

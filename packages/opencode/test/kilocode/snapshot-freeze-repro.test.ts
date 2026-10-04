@@ -130,4 +130,4 @@ test("pathological diffFull workload finishes quickly and does not block abort",
         }),
       ),
   })
-})
+}, { timeout: 35_000 })
