@@ -25,7 +25,6 @@ Object.assign(globalThis, {
   getComputedStyle: window.getComputedStyle.bind(window),
 })
 
-const { createSignal } = await import("solid-js")
 const { createStore } = await import("solid-js/store")
 const { render } = await import("solid-js/web")
 const { Part } = await import("@kilocode/kilo-ui/message-part")
@@ -34,7 +33,7 @@ const { BoardMessage, BoardRoute } = await import("@kilocode/kilo-ui/board-messa
 const { BoardNavigationProvider } = await import("@kilocode/kilo-ui/context/board-navigation")
 const { MarkedProvider, createMarkedParser } = await import("@kilocode/kilo-ui/context/marked")
 
-const labels = ["initial", "hidden", "latest", "reopened", "search", "search-updated"]
+const labels = ["initial", "hidden", "latest", "reopened"]
 const outputs = labels.map((label) =>
   JSON.stringify({
     messages: [
@@ -74,7 +73,6 @@ const [part, setPart] = createStore({
     time: { start: 1, end: 2 },
   },
 } satisfies ToolPart)
-const [search, setSearch] = createSignal(false)
 const parsed: string[] = []
 const decoded: string[] = []
 const parser = createMarkedParser({})
@@ -101,7 +99,7 @@ const dispose = render(
           return parser.parse(text)
         }}
       >
-        <Part part={part} message={message} forceOpen={search()} />
+        <Part part={part} message={message} />
       </MarkedProvider>
     </BoardNavigationProvider>
   ),
@@ -210,15 +208,6 @@ try {
   trigger().click()
   await settle()
   visible("reopened")
-
-  trigger().click()
-  await settle()
-  await update(4)
-  setSearch(true)
-  await settle()
-  visible("search")
-  await update(5)
-  visible("search-updated")
   assert.deepEqual(decoded, outputs)
 } finally {
   dispose()

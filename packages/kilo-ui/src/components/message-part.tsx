@@ -182,10 +182,6 @@ export interface MessagePartProps {
   message: MessageType
   hideDetails?: boolean
   defaultOpen?: boolean
-  /** True when this part contains the transcript search's current match —
-   * forces a collapsed tool/reasoning block open so the user can see the
-   * highlighted match without manually expanding it first. */
-  forceOpen?: boolean
   /** How reasoning blocks render: expanded (open body), preview (capped
    * scrolling viewport), or headline (header only until opened). */
   reasoningDisplay?: ReasoningDisplay
@@ -1112,7 +1108,6 @@ export function Part(props: MessagePartProps) {
         message={props.message}
         hideDetails={props.hideDetails}
         defaultOpen={props.defaultOpen}
-        forceOpen={props.forceOpen}
         reasoningDisplay={props.reasoningDisplay}
         settled={props.settled}
         showAssistantCopyPartID={props.showAssistantCopyPartID}
@@ -1146,7 +1141,6 @@ export interface ToolProps {
   attachments?: FilePart[]
   hideDetails?: boolean
   defaultOpen?: boolean
-  forceOpen?: boolean
   locked?: boolean
   animate?: boolean
   readonly?: boolean
@@ -1353,7 +1347,6 @@ function McpTool(props: ToolProps) {
         callID={props.callID}
         trigger={trigger()}
         defaultOpen={props.defaultOpen}
-        forceOpen={props.forceOpen}
         locked={props.locked}
       >
         <Show when={!messages() && formatted()}>
@@ -1452,7 +1445,6 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                     status={part.state.status}
                     hideDetails={props.hideDetails}
                     defaultOpen={props.defaultOpen}
-                    forceOpen={props.forceOpen}
                     animate
                     readonly={props.readonly}
                   />
@@ -1533,7 +1525,6 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                 attachments={part.state.attachments}
                 hideDetails={props.hideDetails}
                 defaultOpen={props.defaultOpen}
-                forceOpen={props.forceOpen}
                 animate
                 readonly={props.readonly}
               />
@@ -1944,7 +1935,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props: MessagePartProp
       userOpened: userOpened.has(id),
       userCollapsed: userCollapsed.has(id),
     })
-  const seed = () => derive() || !!props.forceOpen
+  const seed = () => derive() // fork_change
   const [open, setOpen] = createSignal(seed())
   // Mount-time value for the inline content styles and lazy body mount, before
   // the re-derive effect can run. useCollapsible owns later transitions.
@@ -1983,21 +1974,6 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props: MessagePartProp
     setOpen(value)
   }
 
-  // Reasoning has no built-in "force open" hook (unlike BasicTool's forceOpen
-  // ratchet) - mirror that one-way-open behavior here so jumping a chat
-  // search match to a collapsed reasoning block reveals it, the same as it
-  // does for tool calls. Recorded into userOpened/userCollapsed the same way
-  // a manual open would be, so it stays open across remounts/re-renders.
-  createEffect(() => {
-    if (!props.forceOpen) return
-    userCollapsed.delete(id)
-    if (trackable()) {
-      rememberReasoningState(userOpened, id)
-      setManual(true)
-    }
-    if (!open()) setOpen(true)
-  })
-
   // Auto-scroll the content container while streaming.
   // Use a plain mutable flag rather than checking dist inside the reactive
   // effect: by the time the effect runs the DOM has already grown, so reading
@@ -2012,7 +1988,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props: MessagePartProp
   let follow: number | undefined
 
   // fork_change start - the collapsible subtree can mount after the open state
-  // was resolved (a search-forced headline block whose body arrives late), so
+  // was resolved (a headline block whose body arrives late), so
   // seed the inline styles from the live state instead of the mount-time value
   // baked into the initial render. useCollapsible owns later transitions.
   const attach = (el: HTMLDivElement) => {
@@ -2904,15 +2880,8 @@ ToolRegistry.register({
     const [open, setOpen] = createSignal(readToolOpen(key(), props.defaultOpen ?? true) ?? true)
     const [mounted, setMounted] = createSignal(open())
 
-    // BasicTool's `initialOpen()` forces its own open state to true whenever
-    // forceOpen is set, but that's an initial value, not a transition — if
-    // it's already mounted open (e.g. after a virtualized remount), there's
-    // no open/close change for `onOpenChange={setOpen}` below to fire, so
-    // this local `open`/`mounted` pair (seeded independently from
-    // readToolOpen) can stay stale and out of sync, leaving the accordion
-    // visibly expanded with no output mounted inside it.
     createEffect(() => {
-      if (open() || pending() || props.forceOpen) setMounted(true)
+      if (open() || pending()) setMounted(true) // fork_change
     })
 
     // also apply processCarriageReturns for Windows CLI tools
@@ -2948,13 +2917,15 @@ ToolRegistry.register({
         }
       >
         <Show when={mounted()}>
+          {/* fork_change start */}
           <BashHighlightedOutput
             cmd={cmd()}
             output={out()}
             outputPath={props.metadata.outputPath}
-            active={open() || !!props.forceOpen}
+            active={open()}
             running={pending()}
           />
+          {/* fork_change end */}
         </Show>
       </BasicTool>
     )
@@ -3271,12 +3242,6 @@ ToolRegistry.register({
       if (seeded) return
       seeded = true
       setExpanded(list.filter((f) => f.type !== "delete").map((f) => f.filePath))
-    })
-    // Deleted files start collapsed above. A generic forceOpen (still part of
-    // this component's API) expands everything rather than nothing.
-    createEffect(() => {
-      if (!props.forceOpen) return
-      setExpanded(files().map((f) => f.filePath))
     })
     const subtitle = createMemo(() => {
       const count = files().length

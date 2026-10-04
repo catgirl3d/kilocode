@@ -64,7 +64,7 @@ export function BasicTool(props: BasicToolProps) {
   // the full diff height that moves the pinned transcript, shifts the
   // virtualizer's range and can remount the row again in a loop. Track cards
   // that already mounted open, separately from the user preference map so the
-  // display setting and search `forceOpen` are not turned into a preference,
+  // display setting and `forceOpen` are not turned into a preference, // fork_change
   // and mount the body in the same frame when such a card comes back open.
   const id = key()
   // Captured before the card is remembered so the first mount stays deferred.
