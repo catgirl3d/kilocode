@@ -206,6 +206,7 @@ function fake(
     },
     updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
     metadata: Effect.fn("TestSessionProcessor.metadata")(() => Effect.void), // kilocode_change
+    ensureSnapshot: () => Effect.succeed(undefined), // kilocode_change
     completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
     process: Effect.fn("TestSessionProcessor.process")(() => render(msg).pipe(Effect.as(result))), // kilocode_change
   } satisfies SessionProcessorModule.SessionProcessor.Handle
