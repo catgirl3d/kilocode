@@ -2,6 +2,12 @@
 set -e
 
 # fork_change start - commit-time verification guards (mirror of pre-push fast checks)
+git_dir="$(git rev-parse --git-dir 2>/dev/null)"
+if [ -d "$git_dir/rebase-merge" ] || [ -d "$git_dir/rebase-apply" ]; then
+  echo "[pre-commit] rebase in progress - skipping verification guards"
+  exit 0
+fi
+
 echo "[pre-commit] format (kilo-vscode)"
 bun run --cwd packages/kilo-vscode format
 git update-index --again
