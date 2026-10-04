@@ -299,6 +299,7 @@ type ProviderInternals = {
     opts?: { mode?: string; before?: string; limit?: number; focus?: boolean; preserveStream?: boolean },
   ) => Promise<void>
   handleSyncSession: (sid: string, parent?: string, scope?: "task" | "inspector") => Promise<void>
+  fetchChildSessionStatus: (sid: string, dir: string) => Promise<void>
   handleChildSyncMessage: (message: Record<string, unknown>) => boolean
   handleConnectionState: (state: State) => Promise<void>
   checkConfigWarnings: (from: string) => Promise<void>
@@ -1412,7 +1413,10 @@ describe("KiloProvider.handleSyncSession status hydration", () => {
     expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "child", status: "idle" })
   })
 
-  it("does not overwrite a newer SSE status with an older inspector snapshot", async () => {
+  it.each([
+    ["retry", { type: "retry", attempt: 2, message: "old", next: 1000 }, "retry"],
+    ["scheduled", { type: "scheduled", scheduledAt: "2026-10-04T20:00:00.000Z" }, "idle"],
+  ] as const)("keeps newer SSE status over stale %s inspector status", async (_, stale, visible) => {
     const initial = defer<{ data: Record<string, unknown> }>()
     const replay = defer<{ data: Record<string, unknown> }>()
     const client = createClient({
@@ -1421,9 +1425,11 @@ describe("KiloProvider.handleSyncSession status hydration", () => {
       statusDeferreds: [initial, replay],
     })
     const { internal, sent } = makeProvider(client)
+    const owner = { dir: "/repo", project: "project" }
     const initialSync = internal.handleSyncSession("child", undefined, "task")
     initial.resolve({ data: { child: { type: "busy" } } })
     await initialSync
+    internal.owners.set("child", owner)
     sent.length = 0
 
     internal.handleChildSyncMessage({ type: "syncSession", sessionID: "child", scope: "inspector" })
@@ -1432,11 +1438,40 @@ describe("KiloProvider.handleSyncSession status hydration", () => {
       type: "session.status",
       properties: { sessionID: "child", status: { type: "busy" } },
     })
-    replay.resolve({ data: { child: { type: "retry", attempt: 2, message: "old", next: 1000 } } })
+    replay.resolve({ data: { child: stale } })
     await Bun.sleep(0)
 
     expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "child", status: "busy" })
-    expect(sent).not.toContainEqual(expect.objectContaining({ type: "sessionStatus", status: "retry" }))
+    expect(sent).not.toContainEqual(expect.objectContaining({ type: "sessionStatus", status: visible }))
+    expect(internal.sessionStatusMap.get("child")).toBe("busy")
+    expect(internal.statusRevisions.get("child")).toBe(1)
+    expect(internal.owners.get("child")).toEqual(owner)
+    expect(internal.syncedChildSessions.has("child")).toBe(true)
+  })
+
+  it("normalizes a late scheduled child snapshot and releases its owner", async () => {
+    const status = defer<{ data: Record<string, SessionStatus> }>()
+    const client = createClient({ status: async () => status.promise })
+    const { internal, sent } = makeProvider(client)
+    internal.syncedChildSessions.add("child")
+    internal.trackedSessionIds.add("child")
+    internal.owners.set("child", { dir: "/repo", project: "project" })
+    internal.sessionStatusMap.set("child", "busy")
+
+    const snapshot = internal.fetchChildSessionStatus("child", "/repo")
+    internal.releaseChildSession("child")
+    status.resolve({
+      data: {
+        child: { type: "scheduled", scheduledAt: "2026-10-04T20:00:00.000Z" },
+      },
+    })
+    await snapshot
+
+    expect(internal.sessionStatusMap.get("child")).toBe("idle")
+    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "child", status: "idle" })
+    expect(internal.owners.has("child")).toBe(false)
+    expect(internal.syncedChildSessions.has("child")).toBe(false)
+    expect(internal.trackedSessionIds.has("child")).toBe(false)
   })
 
   it("delivers initial metadata and history before status is available", async () => {
@@ -1485,10 +1520,13 @@ describe("KiloProvider SSE reconnect recovery", () => {
     expect(internal.sessionStatusMap.get("s1")).toBe("idle")
   })
 
-  it("keeps a session busy when the backend confirms it remains active", async () => {
+  it.each([
+    ["busy", { type: "busy" }, "busy"],
+    ["scheduled", { type: "scheduled", scheduledAt: "2026-10-04T20:00:00.000Z" }, "idle"],
+  ] as const)("reconciles a %s reconnect snapshot", async (_, snapshot, expected) => {
     const client = createClient({
       messagesData: [mkMessage("m1", "user", 1)],
-      statusData: { s1: { type: "busy" } },
+      statusData: { s1: snapshot },
     })
     const { internal, sent } = makeProvider(client)
     internal.currentSession = mkSession()
@@ -1498,9 +1536,13 @@ describe("KiloProvider SSE reconnect recovery", () => {
 
     await internal.recoverCurrentSessionAfterReconnect()
 
-    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "s1", status: "busy" })
-    expect(sent).not.toContainEqual({ type: "sessionStatus", sessionID: "s1", status: "idle" })
-    expect(internal.sessionStatusMap.get("s1")).toBe("busy")
+    expect(sent).toContainEqual({ type: "sessionStatus", sessionID: "s1", status: expected })
+    expect(sent).not.toContainEqual({
+      type: "sessionStatus",
+      sessionID: "s1",
+      status: expected === "idle" ? "busy" : "idle",
+    })
+    expect(internal.sessionStatusMap.get("s1")).toBe(expected)
   })
 
   it("reconciles the context session while currentSession is still stale", async () => {

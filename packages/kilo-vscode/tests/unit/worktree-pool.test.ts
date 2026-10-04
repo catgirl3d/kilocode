@@ -5,6 +5,7 @@ import fs from "node:fs/promises"
 import { existsSync, readFileSync } from "node:fs"
 import simpleGit from "simple-git"
 import { WorktreeManager } from "../../src/agent-manager/WorktreeManager"
+import { normalizePath } from "../../src/agent-manager/git-import"
 
 const tempDirs: string[] = []
 const managers: WorktreeManager[] = []
@@ -151,7 +152,7 @@ describe("WorktreeManager pool warm-up", () => {
     const slot = await waitForPooledSlot(root)
 
     expect(await pooledSlots(root)).toEqual([slot])
-    expect(slot.startsWith(home + path.sep)).toBe(true)
+    expect(normalizePath(slot).startsWith(`${normalizePath(home)}/`)).toBe(true)
     expect(existsSync(path.join(root, ".kilo"))).toBe(false)
     expect(await clean(root)).toBe("")
     expect(await manager.discoverWorktrees()).toEqual([])
@@ -199,7 +200,7 @@ describe("WorktreeManager pool claim", () => {
     // A replacement slot is warmed in the pool home after the claim, off the click path.
     const next = await waitForPooledSlot(root)
     expect(next).not.toBe(slot)
-    expect(next.startsWith(home + path.sep)).toBe(true)
+    expect(normalizePath(next).startsWith(`${normalizePath(home)}/`)).toBe(true)
   })
 
   it("delays the replacement warm-up so it does not compete with the new session", async () => {
@@ -430,7 +431,7 @@ describe("WorktreeManager pool home", () => {
     expect(await pooledSlots(root)).toEqual([])
 
     manager.warmPool()
-    expect((await waitForPooledSlot(root)).startsWith(home + path.sep)).toBe(true)
+    expect(normalizePath(await waitForPooledSlot(root)).startsWith(`${normalizePath(home)}/`)).toBe(true)
     expect(existsSync(path.join(root, ".kilo"))).toBe(false)
   })
 

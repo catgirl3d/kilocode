@@ -468,7 +468,6 @@ describe("kilocode tool registry indexing", () => {
         "browser_open",
         "notify_user",
         "send_file",
-        "link_pr",
         "consult_advisor",
       ])
       expect(

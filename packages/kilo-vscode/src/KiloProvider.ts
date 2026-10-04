@@ -56,12 +56,9 @@ import { removeMcp } from "./kilo-provider/remove-config-item"
 import { MarketplaceService } from "./services/marketplace"
 import type { RemoteStatusService } from "./services/RemoteStatusService"
 import { resolveProjectDirectory } from "./project-directory"
-import {
-  reconcileSessionStatus,
-  seedSessionStatuses,
-  seedSessionWakeups,
-  clientSessionStatus,
-} from "./session-status" // fork_change
+// fork_change start
+import { reconcileSessionStatus, seedSessionStatuses, seedSessionWakeups, clientSessionStatus } from "./session-status"
+// fork_change end
 import { normalizeEnhancePromptErrorMessage } from "./enhance-prompt-error"
 import { retry } from "./services/cli-backend/retry"
 import { integratedBrowserUseSystemChrome } from "./services/browser-automation/chrome-setting"
@@ -2493,14 +2490,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       const result = await retry(() => this.client!.session.status({ directory }, { throwOnError: true }))
       if (this.removedSessionIds.has(sessionID)) return
       if ((this.statusRevisions.get(sessionID) ?? 0) !== revision) return
-      const status = result.data?.[sessionID]
-      const type = status?.type ?? "idle"
-      this.sessionStatusMap.set(sessionID, type)
+      const status = clientSessionStatus(result.data?.[sessionID] ?? { type: "idle" })
+      this.sessionStatusMap.set(sessionID, status.type)
+      if (status.type === "idle" && !this.syncedChildSessions.has(sessionID)) this.owners.delete(sessionID)
       this.postMessage({
         type: "sessionStatus",
         sessionID,
-        status: type,
-        ...(status?.type === "retry" ? { attempt: status.attempt, message: status.message, next: status.next } : {}),
+        status: status.type,
+        ...(status.type === "retry" ? { attempt: status.attempt, message: status.message, next: status.next } : {}),
       })
     } catch (err) {
       console.warn("[Kilo New] KiloProvider: Failed to fetch child session status:", err)
