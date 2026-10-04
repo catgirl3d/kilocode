@@ -99,14 +99,35 @@ async function run<T>(
 }
 
 describe("schedule_wakeup tool", () => {
-  test("registers as schedule_wakeup with when-not-to-use guidance", () =>
+  test("registers the Goal wait policy without relaxing other wakeup limits", () =>
     run((tool, _wake, _dir, info) =>
       Effect.gen(function* () {
         expect(info.id).toBe("schedule_wakeup")
         expect(tool.description).toContain(
-          "Do NOT use this tool for short waits that a blocking shell command covers",
+          "Outside Goals, use this tool only for a specific future check when no event or notification will report the result automatically.",
         )
+        expect(tool.description).toContain(
+          "For a Goal waiting on an already-running tracked process, use `background_process` with action `status` and its existing process ID.",
+        )
+        expect(tool.description).toContain("Do NOT schedule a wakeup for that process.")
+        expect(tool.description).toContain(
+          "For other non-subagent Goal waits on a build, deploy, CI job, or other time-based event, schedule a one-shot wakeup for an appropriate future check",
+        )
+        expect(tool.description).toContain(
+          "even if a generic external notification may also arrive; that notification is not a confirmed Goal resume path.",
+        )
+        expect(tool.description).toContain(
+          "Do NOT use it to wait for subagent results. This rule always applies, including Goals.",
+        )
+        expect(tool.description).toContain(
+          "Outside Goals, do NOT use it to wait for a running command or background process",
+        )
+        expect(tool.description).not.toContain("When the session goal is to wait for a deploy, build, CI job")
+        expect(tool.description).toContain("Do NOT use this tool for short waits that a blocking shell command covers")
+        expect(tool.description).toContain("periodic or repeating schedules")
         expect(tool.description).toContain("10 seconds")
+        expect(tool.description).toContain("7-day horizon")
+        expect(tool.description).toContain("at most 10 pending wakeups")
       }),
     ))
 
