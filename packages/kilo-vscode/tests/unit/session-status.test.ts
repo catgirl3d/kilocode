@@ -308,4 +308,19 @@ describe("reconcileSessionStatus", () => {
     expect(map.get("s1")).toBe("busy")
     expect(msgs).toEqual([])
   })
+
+  it("normalizes scheduled reconnect snapshots to idle", async () => {
+    const client = createClient({
+      data: {
+        s1: { type: "scheduled", scheduledAt: "2026-10-04T20:00:00.000Z" },
+      },
+    })
+    const map = new Map<string, SessionStatus["type"]>([["s1", "busy"]])
+    const { msgs, post } = collect()
+
+    await reconcileSessionStatus(client, "/repo", map, post, "s1", () => true)
+
+    expect(map.get("s1")).toBe("idle")
+    expect(msgs).toEqual([{ type: "sessionStatus", sessionID: "s1", status: "idle" }])
+  })
 })
