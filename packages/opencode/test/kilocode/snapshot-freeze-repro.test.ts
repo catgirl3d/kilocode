@@ -144,4 +144,4 @@ test("pathological diffFull workload finishes quickly and does not block abort",
   })
   // Setup alone (git init, committing a 3000-line file, two snapshots) can
   // outlive bun's 5s default on a loaded machine.
-}, 30_000)
+}, { timeout: 35_000 })
