@@ -118,14 +118,13 @@ export async function reconcileSessionStatus(
   try {
     const result = await client.session.status({ directory: dir })
     if (!result.data || !current()) return
-    const info = result.data[sessionID]
-    const status = info?.type ?? "idle"
-    map.set(sessionID, status)
+    const info = clientSessionStatus(result.data[sessionID] ?? { type: "idle" })
+    map.set(sessionID, info.type)
     post({
       type: "sessionStatus",
       sessionID,
-      status,
-      ...(info?.type === "retry" ? { attempt: info.attempt, message: info.message, next: info.next } : {}),
+      status: info.type,
+      ...(info.type === "retry" ? { attempt: info.attempt, message: info.message, next: info.next } : {}),
     })
   } catch (error) {
     console.error("[Kilo New] KiloProvider: Failed to reconcile session status:", error)
