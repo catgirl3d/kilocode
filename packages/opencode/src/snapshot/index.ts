@@ -214,11 +214,21 @@ export const layer: Layer.Layer<Service, never, Requirements> =
           const remove = (file: string) => fs.remove(file, { force: true }).pipe(Effect.orDie)
           // kilocode_change end
           // kilocode_change start - serialize snapshot repositories across CLI and extension processes
+          // While holding both the semaphore and the flock no other live process can own
+          // <gitdir>/index.lock, so a leftover file is an orphan from an interrupted or
+          // crashed git invocation and must be removed before it bricks every later op.
+          const recover = Effect.fnUntraced(function* () {
+            const orphan = path.join(state.gitdir, "index.lock")
+            if (!(yield* exists(orphan))) return
+            yield* Effect.logWarning("removing stale snapshot index.lock", { lockfile: orphan })
+            yield* fs.remove(orphan).pipe(Effect.ignore)
+          })
           const locked = <A, E, R>(fx: Effect.Effect<A, E, R>) =>
             lock(state.gitdir).withPermits(1)(
-              KiloSnapshotLock.dieOnLockError(flock.withLock(fx, `snapshot:${state.gitdir}`)),
+              KiloSnapshotLock.dieOnLockError(
+                flock.withLock(recover().pipe(Effect.andThen(fx)), `snapshot:${state.gitdir}`),
+              ),
             )
-
           // kilocode_change end
 
           const enabled = Effect.fnUntraced(function* () {
@@ -432,8 +442,12 @@ export const layer: Layer.Layer<Service, never, Requirements> =
                     staging: seed.staging,
                     seed: seed.hash,
                   }))
-                )
+                ) {
+                  yield* Effect.logWarning("snapshot object localization failed; skipping snapshot", {
+                    seed: seed.hash,
+                  })
                   return
+                }
                 const result = yield* git(args(["write-tree"]), { cwd: state.directory })
                 const hash = result.text.trim()
                 if (result.code !== 0 || !hash) {
@@ -449,8 +463,10 @@ export const layer: Layer.Layer<Service, never, Requirements> =
                     { gitdir: state.gitdir, git, fs, staging: seed.staging },
                     hash,
                   ))
-                )
+                ) {
+                  yield* Effect.logWarning("snapshot tree localization failed; skipping snapshot", { hash })
                   return
+                }
                 if (!(yield* KiloSnapshotMaterialize.pin({ gitdir: state.gitdir, git, fs }, hash))) return
                 const alt = path.join(state.gitdir, "objects", "info", "alternates")
                 if (yield* exists(alt)) yield* materialize(KiloSnapshotMaterialize.idle())
@@ -976,15 +992,18 @@ export const layer: Layer.Layer<Service, never, Requirements> =
           if ((yield* config.get()).snapshot === false) return undefined
           const ctx = yield* InstanceState.context
           const guard = trackState(ctx.worktree)
+          const attempt = KiloSnapshotTrack.makeOperation()
           return yield* KiloSnapshotTrack.protect({
             inner: KiloSnapshotTrack.wrap({
               inner: InstanceState.useEffect(state, (s) => s.track(opts)),
               state: guard,
+              attempt,
               snapshotInitialization: opts?.snapshotInitialization,
               sessionID: opts?.sessionID,
               messageID: opts?.messageID,
             }),
             state: guard,
+            attempt,
             fallback: undefined,
             operation: "track",
           })
