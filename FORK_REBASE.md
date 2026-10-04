@@ -5,14 +5,18 @@ It does not describe OpenCode merge automation.
 
 ## Responsibilities
 
-- The coordinator is the main agent and is read-only. It owns immutable baseline
-  SHAs, fork intent, cross-package decisions, approvals, and review findings.
+- The coordinator is the main agent and never edits files or resolves conflicts;
+  content changes belong to executors. It owns Git orchestration — backup branches,
+  `fetch`, starting the rebase, and continuing it except where the Mechanical
+  fast-path lets an executor continue autonomously — plus immutable baseline SHAs,
+  fork intent, cross-package decisions, approvals, and review findings.
 - Executors are package-scoped subagent sessions, with a root executor for root
   files. Create them lazily and reuse the same session ID throughout the rebase;
   do not start a fresh executor for each conflict.
-- Only one executor may mutate the worktree or index at a time. On every activation,
-  it re-reads `HEAD`, the replayed fork commit, unmerged paths, and staged paths
-  instead of trusting remembered Git state.
+- Only one agent may mutate the worktree or index at a time: coordinator Git
+  operations and executor edits are never concurrent. On every activation, the
+  executor re-reads `HEAD`, the replayed fork commit, unmerged paths, and staged
+  paths instead of trusting remembered Git state.
 - An executor may edit only its package. For a stop spanning packages, the relevant
   executors act sequentially; only coupled cross-package behavior or contracts make
   the stop Deep automatically.
@@ -30,14 +34,23 @@ fork commits over the fetched upstream history. Upstream may independently imple
 an overlapping user-facing feature.
 
 - Start with a clean working tree.
+- Before any history is rewritten, create a local backup branch pinned to the
+  current `main` tip, e.g. `git branch backup/pre-rebase-<short-sha> main`.
+  Create it once per rebase, not per stop; keep backup branches local and never
+  push them.
 - Before `git fetch`, record the full SHA values of old `main` and old
   `upstream/main`; use these immutable SHAs in the range-diff.
 - Fetch `upstream`, then rebase local `main` onto `upstream/main`.
 - Use the repository's `zdiff3` conflict style.
+- All rebase operations and continue steps must be strictly non-interactive: use
+  `git -c core.editor=true rebase --continue` (or have `core.editor=true` configured)
+  so agent subprocesses never hang waiting for an interactive text editor.
 - Do not push without an explicit request.
 
-Keep the commands simple. Do not create backup branches, use stash, or add
-platform-specific recipes to this process.
+Keep the commands simple. Do not use stash or add platform-specific recipes to
+this process; create backup branches only at the fixed recovery points
+(pre-rebase and pre-surgery), never for individual stops, and do not delete them
+automatically.
 
 ## Conflict Handling
 
@@ -87,7 +100,7 @@ Do not launch research merely to make a Mechanical classification pass.
 
 When every unit in the stop is Mechanical, the relevant package executors resolve
 their units sequentially. After the applicable stop-level audit, the last active
-executor confirms no unmerged paths remain and may run `git rebase --continue`
+executor confirms no unmerged paths remain and may run `git -c core.editor=true rebase --continue`
 without coordinator approval. Mechanical stops do not trigger conflict-specific
 behavioral review later.
 
@@ -119,7 +132,7 @@ change, or cross-package dependency. A fixture adapting to a locally obvious API
 change can be Bounded; a test changing expected product behavior cannot.
 
 The relevant package executors resolve their Bounded units sequentially. Once every
-unit is staged, the last active executor stops before `git rebase --continue`. Its
+unit is staged, the last active executor stops before `git -c core.editor=true rebase --continue`. Its
 compact approval packet contains the original commit, paths, both intents, staged
 diff, coupled regions, applicable post-rebase guard, and audit status. The
 coordinator verifies that packet and exact staged candidate without repeating the
@@ -242,6 +255,13 @@ pre-rebase fork history; with a consolidated history this takes a minute.
 - **Marker and formatting churn accumulates.** Do not commit annotation or
   prettier fixes per stop; fold them once at the end per Marker Discipline
   above.
+- **Intermediate commits and hooks.** `.husky/pre-commit` detects an active rebase
+  (`rebase-merge` / `rebase-apply`) and skips its verification guards, so standalone
+  fix or adaptation commits during intermediate stops can use `git commit -m "fix(rebase): ..."`.
+  Use `--no-verify` (or `HUSKY=0`) to bypass a guard outside a rebase; the guards would
+  falsely reject unfinished intermediate trees. Full fork audit still runs once at the
+  very end of the rebase per Marker Discipline.
+
 
 ### Fold Verification (history surgery)
 
@@ -249,9 +269,11 @@ Splitting or folding commits (e.g. dissolving a tail extract into its owner
 with `git-surgeon split` / `fold` / `amend`) rewrites replayed descendants.
 Every such operation ends with three checks before anything is pushed:
 
-- **Tree anchor.** Keep the pre-surgery HEAD SHA. Afterwards `git diff
-  <anchor> HEAD` must show exactly the intended delta (often empty). Any
-  other difference means the machinery dropped or duplicated a change.
+- **Tree anchor.** Before the first rewrite, pin the pre-surgery HEAD as a local
+  backup branch, e.g. `git branch backup/pre-surgery-<short-sha> HEAD`, and use
+  it as `<anchor>`. Afterwards `git diff <anchor> HEAD` must show exactly the
+  intended delta (often empty). Any other difference means the machinery dropped
+  or duplicated a change.
 - **Resurrection scan.** Governance replays can union-merge deleted code back
   to life (observed: extracted advisor memos resurrected by a marker-churn
   replay). After each fold, run per-file logs on the touched files and confirm
