@@ -21,6 +21,10 @@ function file(id: string): Part {
   return { id, messageID: "m1", type: "file", mime: "text/plain", url: "data:,file" }
 }
 
+function step(id: string, snapshot?: string): Part {
+  return { id, messageID: "m1", type: "step-start", time: { start: 1 }, ...(snapshot ? { snapshot } : {}) } as Part
+}
+
 function value(parts: Part[], id: string) {
   const part = parts.find((item) => item.id === id)
   if (!part || part.type !== "text") return
@@ -273,5 +277,9 @@ describe("sameParts", () => {
     expect(sameParts([text("p1", "done", { end: 2 })], [text("p2", "done", { end: 2 })])).toBe(false)
     expect(sameParts([text("p1", "live")], [text("p1", "server")])).toBe(false)
     expect(sameParts([text("p1", "done")], [text("p1", "done", { end: 2 })])).toBe(false)
+  })
+
+  it("rejects a snapshot hash added to an existing step", () => {
+    expect(sameParts([step("p1")], [step("p1", "baseline")])).toBe(false)
   })
 })
