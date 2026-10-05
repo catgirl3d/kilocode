@@ -90,6 +90,16 @@ const testAllow: Record<string, { count: number; reason: string }> = {
   "server/experimental-session-list.test.ts": { count: 2, reason: "Kilo session list integration test" },
   "kilocode/server/cloud-session-import.test.ts": { count: 5, reason: "full app cloud import transaction integration" },
   "kilocode/server/listener-runtime.test.ts": { count: 4, reason: "listener and AppRuntime integration test" },
+  // fork_change start
+  "kilocode/server/httpapi-experimental.test.ts": {
+    count: 2,
+    reason: "HTTP handler reads the shared AppRuntime job registry",
+  },
+  "kilocode/snapshot/snapshot-e2e-forgot-dialog.test.ts": {
+    count: 3,
+    reason: "real snapshot default hooks use shared AppRuntime Session and Question services",
+  },
+  // fork_change end
   "kilocode/wakeup/wakeup-cron.test.ts": {
     count: 13,
     reason:
