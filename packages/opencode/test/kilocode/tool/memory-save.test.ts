@@ -146,13 +146,13 @@ describe("kilo_memory_save", () => {
 
       expect(saved.title).toBe("Kilo memory saved: 1 op")
       expect(corrected.title).toBe("Kilo memory correction saved: 1 op")
-      expect(shown.sources.project).toContain("- kilo_cli_tui :: Kilo CLI is a TUI.")
+      expect(shown.sources.project).not.toContain("kilo_cli_tui")
       expect(shown.sources.corrections).toContain("- kilo_cli_tui :: Kilo CLI should be treated as a terminal UI.")
 
       const forgotten = await execute(dir.path, { action: "forget", query: "kilo_cli_tui" }, gate)
       const next = await KiloMemory.show({ ctx: memory })
 
-      expect(forgotten.title).toBe("Kilo memory updated: 2 removed")
+      expect(forgotten.title).toBe("Kilo memory updated: 1 removed")
       expect(next.sources.project).not.toContain("kilo_cli_tui")
       expect(next.sources.corrections).not.toContain("kilo_cli_tui")
       expect(asks.map((req) => req.permission)).toEqual(["kilo_memory_save", "kilo_memory_save", "kilo_memory_save"])
