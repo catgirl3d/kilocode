@@ -181,6 +181,62 @@ export namespace Memory {
     return state.enabled
   }
 
+  // fork_change start - Share apply result handling with planned correction replacements.
+  async function complete(input: {
+    // fork_change end
+    root: string
+    ops: MemoryOperations.Op[]
+    // fork_change start - Pass trigger and operation result into shared completion handling.
+    trigger: Trigger
+    result: MemoryOperations.Result
+    // fork_change end
+  }): Promise<Apply> {
+    const accepted = input.ops.filter((item) => item.action !== "add" || !MemoryOperations.secret(item)) // fork_change
+    // Auto-capture skips a secret-like op and applies the rest. An explicit save whose only effect
+    // was rejecting secret content must fail loudly rather than silently drop it; a mixed explicit
+    // batch that still applied something keeps the skip as a record.
+    // fork_change start - Preserve explicit secret rejection in shared completion handling.
+    if (
+      input.trigger === "explicit" &&
+      input.result.operationCount === 0 &&
+      input.result.skipped.some((item) => item.reason === "secret")
+    ) {
+      // fork_change end
+      throw new Error("memory operation rejected secret-like content")
+    }
+    const state = await MemoryFiles.readState(input.root)
+    const ok = MemoryNotice.saved({ added: input.result.added, removed: input.result.removed }) // fork_change
+    return {
+      root: input.root,
+      state,
+      result: input.result, // fork_change
+      ok,
+      ...(ok
+        ? {
+            detail: {
+              type: "saved" as const,
+              message: MemoryNotice.message({
+                ops: accepted,
+                // fork_change start - Use shared result fields when building saved notifications.
+                added: input.result.added,
+                removed: input.result.removed,
+                count: input.result.operationCount,
+                // fork_change end
+              }),
+              // fork_change start - Use shared result fields in the saved detail response.
+              operationCount: input.result.operationCount,
+              added: input.result.added,
+              removed: input.result.removed,
+              // fork_change end
+              sources: MemoryShared.refs(accepted),
+              files: MemoryShared.files(accepted),
+            },
+          }
+        : {}),
+    }
+  }
+
+  // fork_change start - Share apply result handling with planned correction replacements.
   export async function apply(input: {
     root: string
     ops: MemoryOperations.Op[]
@@ -189,46 +245,11 @@ export namespace Memory {
     tokens?: number
   }): Promise<Apply> {
     const trigger = input.trigger ?? "explicit"
-    const inputOps = trigger === "explicit" ? input.ops : input.ops.filter((item) => item.action !== "remove")
-    const accepted = inputOps.filter((item) => item.action !== "add" || !MemoryOperations.secret(item))
-    const result = await MemoryOperations.apply({ root: input.root, ops: inputOps })
-    // Auto-capture skips a secret-like op and applies the rest. An explicit save whose only effect
-    // was rejecting secret content must fail loudly rather than silently drop it; a mixed explicit
-    // batch that still applied something keeps the skip as a record.
-    if (
-      trigger === "explicit" &&
-      result.operationCount === 0 &&
-      result.skipped.some((item) => item.reason === "secret")
-    ) {
-      throw new Error("memory operation rejected secret-like content")
-    }
-    const state = await MemoryFiles.readState(input.root)
-    const ok = MemoryNotice.saved({ added: result.added, removed: result.removed })
-    return {
-      root: input.root,
-      state,
-      result,
-      ok,
-      ...(ok
-        ? {
-            detail: {
-              type: "saved" as const,
-              message: MemoryNotice.message({
-                ops: accepted,
-                added: result.added,
-                removed: result.removed,
-                count: result.operationCount,
-              }),
-              operationCount: result.operationCount,
-              added: result.added,
-              removed: result.removed,
-              sources: MemoryShared.refs(accepted),
-              files: MemoryShared.files(accepted),
-            },
-          }
-        : {}),
-    }
+    const ops = trigger === "explicit" ? input.ops : input.ops.filter((item) => item.action !== "remove")
+    const result = await MemoryOperations.apply({ root: input.root, ops })
+    return complete({ root: input.root, ops, trigger, result })
   }
+  // fork_change end
 
   export async function forget(input: { root: string; query: string; sessionID?: string }) {
     return apply({ ...input, ops: [{ action: "remove", query: input.query }] })
@@ -257,10 +278,23 @@ export namespace Memory {
   }
 
   export async function correct(input: { root: string; text: string; key?: string; sessionID?: string }) {
-    return remember({
-      ...input,
+    // fork_change start - Replace the uniquely matched record when saving a correction.
+    const query = input.key ?? key(input.text)
+    const add: MemoryOperations.Add = {
+      action: "add",
       file: "corrections.md",
       section: "Corrections",
+      key: query,
+      text: input.text,
+    }
+    const ops = [add]
+    const result = await MemoryOperations.correct({ root: input.root, query, add })
+    return complete({
+      root: input.root,
+      ops,
+      trigger: "explicit",
+      // fork_change end
+      result,
     })
   }
 
