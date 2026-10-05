@@ -90,6 +90,16 @@ const testAllow: Record<string, { count: number; reason: string }> = {
   "server/experimental-session-list.test.ts": { count: 2, reason: "Kilo session list integration test" },
   "kilocode/server/cloud-session-import.test.ts": { count: 5, reason: "full app cloud import transaction integration" },
   "kilocode/server/listener-runtime.test.ts": { count: 4, reason: "listener and AppRuntime integration test" },
+  // fork_change start
+  "kilocode/server/httpapi-experimental.test.ts": {
+    count: 2,
+    reason: "HTTP handler reads the shared AppRuntime job registry",
+  },
+  "kilocode/snapshot/snapshot-e2e-forgot-dialog.test.ts": {
+    count: 3,
+    reason: "real snapshot default hooks use shared AppRuntime Session and Question services",
+  },
+  // fork_change end
   "kilocode/wakeup/wakeup-cron.test.ts": {
     count: 13,
     reason:
@@ -127,7 +137,9 @@ const owned = (file: string) => file.startsWith("kilocode/") || file.startsWith(
 const hits: Array<{ file: string; line: number }> = []
 const glob = new Bun.Glob("**/*.ts")
 
-for (const file of glob.scanSync({ cwd: DIR, onlyFiles: true })) {
+// fork_change start
+for (const raw of glob.scanSync({ cwd: DIR, onlyFiles: true })) {
+  const file = raw.replaceAll("\\", "/")
   if (owned(file)) continue
   const text = await Bun.file(path.join(DIR, file)).text()
   for (const match of text.matchAll(PATTERN)) {
@@ -135,6 +147,7 @@ for (const file of glob.scanSync({ cwd: DIR, onlyFiles: true })) {
     hits.push({ file, line })
   }
 }
+// fork_change end
 
 const invalid = hits.filter((hit) => !allow[hit.file])
 const drift = Object.entries(allow).flatMap(([file, reason]) => {
@@ -144,13 +157,16 @@ const drift = Object.entries(allow).flatMap(([file, reason]) => {
 })
 
 const testHits: Array<{ file: string; line: number }> = []
-for (const file of glob.scanSync({ cwd: TEST_DIR, onlyFiles: true })) {
+// fork_change start
+for (const raw of glob.scanSync({ cwd: TEST_DIR, onlyFiles: true })) {
+  const file = raw.replaceAll("\\", "/")
   const text = await Bun.file(path.join(TEST_DIR, file)).text()
   for (const match of text.matchAll(TEST_PATTERN)) {
     const line = text.slice(0, match.index ?? 0).split("\n").length
     testHits.push({ file, line })
   }
 }
+// fork_change end
 
 const testInvalid = testHits.filter((hit) => !testAllow[hit.file])
 const testDrift = Object.entries(testAllow).flatMap(([file, entry]) => {
