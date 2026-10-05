@@ -22,6 +22,7 @@ export namespace MemoryOperations {
   export type Remove = {
     action: "remove"
     query: string
+    exact?: { file: MemorySchema.Source; section: string; key: string } // fork_change
   }
 
   export type Op = Add | Remove
@@ -102,26 +103,30 @@ export namespace MemoryOperations {
     return `${source(input)}:${heading(input)}:${key(input.key)}`
   }
 
+  // fork_change start
   type Target = {
     ids: Set<string>
-    items: { file: MemorySchema.Source; section: string; key: string }[]
+    items: { id: string; file: MemorySchema.Source; section: string; key: string; text: string }[]
     fallback?: string
   }
 
-  function target(input: { query: string; inventory: MemoryFiles.Inventory }): Target {
+  function target(input: { query: string; inventory: MemoryFiles.Inventory; preferExact?: boolean }): Target {
     const query = input.query.trim()
     const slug = key(query)
-    const ids = new Set<string>()
-    const items: Target["items"] = []
-    if (!query) return { ids, items }
+    const direct: Target["items"] = []
+    const normalized: Target["items"] = []
+    if (!query) return { ids: new Set(), items: [] }
     for (const [id, item] of Object.entries(input.inventory.items)) {
       const aliases = new Set([id, item.key, `${item.file}:${item.key}`, `${item.file}:${item.section}:${item.key}`])
-      if (!aliases.has(query) && (!slug || !aliases.has(slug))) continue
-      ids.add(id)
-      items.push({ file: item.file, section: item.section, key: item.key })
+      const found = { id, file: item.file, section: item.section, key: item.key, text: item.text }
+      if (aliases.has(query)) direct.push(found)
+      else if (slug && aliases.has(slug)) normalized.push(found)
     }
+    const items = input.preferExact && direct.length > 0 ? direct : [...direct, ...normalized]
+    const ids = new Set(items.map((item) => item.id))
     return { ids, items, ...(ids.size === 0 ? { fallback: slug || query } : {}) }
   }
+  // fork_change end
 
   // fork_change start - Keep storage preparation separate from the display preview limit.
   function prepare(input: { state: MemorySchema.State; ops: Op[] }) {
@@ -242,6 +247,23 @@ export namespace MemoryOperations {
 
   // Pure: delete matching lines from the in-memory documents and drop them from the working inventory.
   function planRemove(plan: Plan, op: Remove) {
+    // fork_change start
+    if (op.exact) {
+      const source = op.exact.file
+      const next = MemoryMarkdown.remove({
+        text: plan.docs.get(source) ?? "",
+        match: (item) => item.section === op.exact?.section && item.key === op.exact?.key,
+      })
+      if (next.count > 0) {
+        plan.docs.set(source, next.text)
+        plan.touched.add(source)
+        plan.removed += next.count
+      }
+      delete plan.inventory.items[MemoryFiles.inventoryKey(op.exact)]
+      plan.count++
+      return
+    }
+    // fork_change end
     const exact = target({ query: op.query, inventory: plan.inventory })
     for (const source of MemorySchema.Sources) {
       const next = MemoryMarkdown.remove({
@@ -264,9 +286,10 @@ export namespace MemoryOperations {
     plan.count++
   }
 
+  // fork_change start - Keep replacement keys stable instead of re-keying against similar corrections.
   // Pure: dedupe against the working inventory, edit the in-memory document, and record the inventory entry.
-  function planAdd(plan: Plan, item: Prepared, now: number) {
-    const found = duplicate({ item, inventory: plan.inventory })
+  function planAdd(plan: Plan, item: Prepared, now: number, dedupe: boolean) {
+    const found = dedupe ? duplicate({ item, inventory: plan.inventory }) : undefined
     const next = found ? rekey({ item, key: found.key }) : item
     const result = MemoryMarkdown.upsert({
       text: plan.docs.get(next.file) ?? "",
@@ -292,6 +315,7 @@ export namespace MemoryOperations {
     removes: Remove[]
     adds: Prepared[]
     now: number
+    dedupe: boolean
   }): Plan {
     const plan: Plan = {
       docs: input.docs,
@@ -302,9 +326,10 @@ export namespace MemoryOperations {
       count: 0,
     }
     for (const op of input.removes) planRemove(plan, op)
-    for (const item of input.adds) planAdd(plan, item, input.now)
+    for (const item of input.adds) planAdd(plan, item, input.now, input.dedupe)
     return plan
   }
+  // fork_change end
 
   async function readDocs(root: string): Promise<Docs> {
     const docs: Docs = new Map()
@@ -357,17 +382,46 @@ export namespace MemoryOperations {
     return { ops: adds, removes }
   }
 
-  export async function apply(input: { root: string; ops: Op[] }) {
+  // fork_change start - Resolve and apply corrections in the shared queued plan.
+  async function execute(input: { root: string; ops: Op[]; correction?: string }) {
     return MemoryFiles.queue(input.root, async () => {
       // Load (IO): state, working inventory, and every source document.
       const state = await MemoryFiles.readState(input.root)
       validate({ state, ops: input.ops })
       const inventory = await MemoryFiles.deriveInventory(input.root)
       const docs = await readDocs(input.root)
+      const match =
+        input.correction === undefined ? undefined : target({ query: input.correction, inventory, preferExact: true })
+      if (match && match.ids.size > 1) {
+        throw new Error(`memory correction key "${input.correction}" is ambiguous: ${[...match.ids].join(", ")}`)
+      }
       // Plan (pure): validate/normalize ops, then dedupe + edit documents + update inventory in memory.
-      const prepared = prepare({ state, ops: input.ops }) // fork_change
+      const prepared = prepare({ state, ops: input.ops })
       const removes = input.ops.filter((item): item is Remove => item.action === "remove")
-      const plan = planOps({ docs, inventory, removes, adds: prepared.adds, now: Date.now() })
+      const item = prepared.adds.at(0)
+      const found = match?.ids.size === 1 ? match.items.at(0) : undefined
+      const unchanged =
+        item &&
+        found?.file === "corrections.md" &&
+        found.section === "Corrections" &&
+        found.key === item.key &&
+        found.text === item.text
+      if (match?.ids.size === 1 && item && found && !unchanged) {
+        prepared.adds[0] = rekey({ item, key: found.key })
+        removes.push({
+          action: "remove",
+          query: found.id,
+          exact: { file: found.file, section: found.section, key: found.key },
+        })
+      }
+      const plan = planOps({
+        docs,
+        inventory,
+        removes: unchanged ? [] : removes,
+        adds: unchanged ? [] : prepared.adds,
+        now: Date.now(),
+        dedupe: match?.ids.size !== 1,
+      })
       // Commit (IO): write changed documents, then rebuild the index and persist state.
       await writeDocs({ root: input.root, plan })
       const index = await persist({ root: input.root, state, count: plan.count })
@@ -380,6 +434,15 @@ export namespace MemoryOperations {
       } satisfies Result
     })
   }
+
+  export function apply(input: { root: string; ops: Op[] }) {
+    return execute(input)
+  }
+
+  export function correct(input: { root: string; query: string; add: Add }) {
+    return execute({ root: input.root, ops: [input.add], correction: input.query })
+  }
+  // fork_change end
 
   export async function forget(input: { root: string; query: string }) {
     return apply({ root: input.root, ops: [{ action: "remove", query: input.query }] })

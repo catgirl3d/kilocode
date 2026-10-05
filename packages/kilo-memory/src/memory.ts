@@ -181,6 +181,52 @@ export namespace Memory {
     return state.enabled
   }
 
+  // fork_change start - Share apply result handling with planned correction replacements.
+  async function complete(input: {
+    root: string
+    ops: MemoryOperations.Op[]
+    trigger: Trigger
+    result: MemoryOperations.Result
+  }): Promise<Apply> {
+    const accepted = input.ops.filter((item) => item.action !== "add" || !MemoryOperations.secret(item))
+    // Auto-capture skips a secret-like op and applies the rest. An explicit save whose only effect
+    // was rejecting secret content must fail loudly rather than silently drop it; a mixed explicit
+    // batch that still applied something keeps the skip as a record.
+    if (
+      input.trigger === "explicit" &&
+      input.result.operationCount === 0 &&
+      input.result.skipped.some((item) => item.reason === "secret")
+    ) {
+      throw new Error("memory operation rejected secret-like content")
+    }
+    const state = await MemoryFiles.readState(input.root)
+    const ok = MemoryNotice.saved({ added: input.result.added, removed: input.result.removed })
+    return {
+      root: input.root,
+      state,
+      result: input.result,
+      ok,
+      ...(ok
+        ? {
+            detail: {
+              type: "saved" as const,
+              message: MemoryNotice.message({
+                ops: accepted,
+                added: input.result.added,
+                removed: input.result.removed,
+                count: input.result.operationCount,
+              }),
+              operationCount: input.result.operationCount,
+              added: input.result.added,
+              removed: input.result.removed,
+              sources: MemoryShared.refs(accepted),
+              files: MemoryShared.files(accepted),
+            },
+          }
+        : {}),
+    }
+  }
+
   export async function apply(input: {
     root: string
     ops: MemoryOperations.Op[]
@@ -189,46 +235,11 @@ export namespace Memory {
     tokens?: number
   }): Promise<Apply> {
     const trigger = input.trigger ?? "explicit"
-    const inputOps = trigger === "explicit" ? input.ops : input.ops.filter((item) => item.action !== "remove")
-    const accepted = inputOps.filter((item) => item.action !== "add" || !MemoryOperations.secret(item))
-    const result = await MemoryOperations.apply({ root: input.root, ops: inputOps })
-    // Auto-capture skips a secret-like op and applies the rest. An explicit save whose only effect
-    // was rejecting secret content must fail loudly rather than silently drop it; a mixed explicit
-    // batch that still applied something keeps the skip as a record.
-    if (
-      trigger === "explicit" &&
-      result.operationCount === 0 &&
-      result.skipped.some((item) => item.reason === "secret")
-    ) {
-      throw new Error("memory operation rejected secret-like content")
-    }
-    const state = await MemoryFiles.readState(input.root)
-    const ok = MemoryNotice.saved({ added: result.added, removed: result.removed })
-    return {
-      root: input.root,
-      state,
-      result,
-      ok,
-      ...(ok
-        ? {
-            detail: {
-              type: "saved" as const,
-              message: MemoryNotice.message({
-                ops: accepted,
-                added: result.added,
-                removed: result.removed,
-                count: result.operationCount,
-              }),
-              operationCount: result.operationCount,
-              added: result.added,
-              removed: result.removed,
-              sources: MemoryShared.refs(accepted),
-              files: MemoryShared.files(accepted),
-            },
-          }
-        : {}),
-    }
+    const ops = trigger === "explicit" ? input.ops : input.ops.filter((item) => item.action !== "remove")
+    const result = await MemoryOperations.apply({ root: input.root, ops })
+    return complete({ root: input.root, ops, trigger, result })
   }
+  // fork_change end
 
   export async function forget(input: { root: string; query: string; sessionID?: string }) {
     return apply({ ...input, ops: [{ action: "remove", query: input.query }] })
@@ -256,13 +267,26 @@ export namespace Memory {
     })
   }
 
+  // fork_change start - Replace the uniquely matched record when saving a correction.
   export async function correct(input: { root: string; text: string; key?: string; sessionID?: string }) {
-    return remember({
-      ...input,
+    const query = input.key ?? key(input.text)
+    const add: MemoryOperations.Add = {
+      action: "add",
       file: "corrections.md",
       section: "Corrections",
+      key: query,
+      text: input.text,
+    }
+    const ops = [add]
+    const result = await MemoryOperations.correct({ root: input.root, query, add })
+    return complete({
+      root: input.root,
+      ops,
+      trigger: "explicit",
+      result,
     })
   }
+  // fork_change end
 
   export async function purge(input: { root: string }) {
     if (!(await MemoryFiles.owned(input.root))) {

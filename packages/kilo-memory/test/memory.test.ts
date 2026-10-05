@@ -65,6 +65,184 @@ describe("memory facade", () => {
     }
   })
 
+  test("correct replaces its single matching record and recall returns only the replacement", async () => {
+    const t = await tmp()
+    try {
+      await Memory.enable({ root: t.root })
+      await Memory.remember({
+        root: t.root,
+        file: "environment.md",
+        section: "Commands",
+        key: "build_command",
+        text: "Run builds with the old command.",
+      })
+
+      const corrected = await Memory.correct({
+        root: t.root,
+        key: "Build Command",
+        text: "Run builds with the new command.",
+      })
+      const shown = await Memory.show({ root: t.root })
+      const recall = await Memory.recall({ root: t.root, query: "build_command" })
+
+      expect(corrected.result.added).toBe(1)
+      expect(corrected.result.removed).toBe(1)
+      expect(shown.sources.environment).not.toContain("build_command")
+      expect(shown.sources.corrections).toContain("- build_command :: Run builds with the new command.")
+      expect(recall.hits).toHaveLength(1)
+      expect(recall.hits[0]?.text).toContain("build_command :: Run builds with the new command.")
+    } finally {
+      await t.done()
+    }
+  })
+
+  test("correct preserves the matched key when given a qualified alias", async () => {
+    const t = await tmp()
+    try {
+      await Memory.enable({ root: t.root })
+      await Memory.remember({
+        root: t.root,
+        file: "environment.md",
+        section: "Commands",
+        key: "build_command",
+        text: "Run builds with the old command.",
+      })
+
+      await Memory.correct({
+        root: t.root,
+        key: "environment.md:Commands:build_command",
+        text: "Run builds with the corrected command.",
+      })
+      const shown = await Memory.show({ root: t.root })
+      const recall = await Memory.recall({ root: t.root, query: "build_command" })
+
+      expect(shown.sources.environment).not.toContain("Run builds with the old command.")
+      expect(shown.sources.corrections).toContain("- build_command :: Run builds with the corrected command.")
+      expect(recall.hits).toHaveLength(1)
+      expect(recall.hits[0]?.source).toBe("corrections.md")
+      expect(recall.hits[0]?.text).toBe("build_command :: Run builds with the corrected command.")
+    } finally {
+      await t.done()
+    }
+  })
+
+  test("correct removes only the qualified target when its slug matches another key", async () => {
+    const t = await tmp()
+    try {
+      await Memory.enable({ root: t.root })
+      await Memory.remember({
+        root: t.root,
+        file: "environment.md",
+        section: "Commands",
+        key: "build_command",
+        text: "Run builds with the old command.",
+      })
+      await Memory.remember({
+        root: t.root,
+        key: "environment.md_commands_build_command",
+        text: "Keep this unrelated project record.",
+      })
+
+      await Memory.correct({
+        root: t.root,
+        key: "environment.md:Commands:build_command",
+        text: "Run builds with the corrected command.",
+      })
+      const shown = await Memory.show({ root: t.root })
+      const recall = await Memory.recall({ root: t.root, query: "corrected build command" })
+
+      expect(shown.sources.project).toContain(
+        "- environment.md_commands_build_command :: Keep this unrelated project record.",
+      )
+      expect(shown.sources.environment).not.toContain("Run builds with the old command.")
+      expect(shown.sources.corrections).toContain("- build_command :: Run builds with the corrected command.")
+      expect(
+        recall.hits.some(
+          (hit) =>
+            hit.source === "corrections.md" && hit.text === "build_command :: Run builds with the corrected command.",
+        ),
+      ).toBe(true)
+    } finally {
+      await t.done()
+    }
+  })
+
+  test("repeating the same correction leaves sources unchanged", async () => {
+    const t = await tmp()
+    try {
+      await Memory.enable({ root: t.root })
+      await Memory.correct({ root: t.root, key: "stable_command", text: "Run the stable command." })
+      const before = await Memory.show({ root: t.root })
+
+      const repeated = await Memory.correct({ root: t.root, key: "stable_command", text: "Run the stable command." })
+
+      expect(repeated.result.added).toBe(0)
+      expect(repeated.result.removed).toBe(0)
+      expect(repeated.result.operationCount).toBe(0)
+      expect((await Memory.show({ root: t.root })).sources).toEqual(before.sources)
+    } finally {
+      await t.done()
+    }
+  })
+
+  test("rejects ambiguous corrections without changing any source", async () => {
+    const t = await tmp()
+    try {
+      await Memory.enable({ root: t.root })
+      await Memory.remember({ root: t.root, key: "shared_key", text: "Project version." })
+      await Memory.remember({
+        root: t.root,
+        file: "environment.md",
+        section: "Commands",
+        key: "shared_key",
+        text: "Environment version.",
+      })
+      const before = await Memory.show({ root: t.root })
+
+      await expect(Memory.correct({ root: t.root, key: "shared_key", text: "Corrected version." })).rejects.toThrow(
+        "project.md:Facts:shared_key, environment.md:Commands:shared_key",
+      )
+
+      expect(await Memory.show({ root: t.root })).toEqual(before)
+    } finally {
+      await t.done()
+    }
+  })
+
+  test("adds a correction normally when its key is unknown", async () => {
+    const t = await tmp()
+    try {
+      await Memory.enable({ root: t.root })
+
+      const corrected = await Memory.correct({ root: t.root, key: "new_correction", text: "Add this correction." })
+      const shown = await Memory.show({ root: t.root })
+
+      expect(corrected.result.added).toBe(1)
+      expect(corrected.result.removed).toBe(0)
+      expect(shown.sources.corrections).toContain("- new_correction :: Add this correction.")
+    } finally {
+      await t.done()
+    }
+  })
+
+  test("keeps the prior record when correction content is rejected", async () => {
+    const t = await tmp()
+    try {
+      await Memory.enable({ root: t.root })
+      await Memory.remember({ root: t.root, key: "stable_fact", text: "The project has a stable fact." })
+
+      const corrected = await Memory.correct({ root: t.root, key: "stable_fact", text: "I prefer concise answers." })
+      const shown = await Memory.show({ root: t.root })
+
+      expect(corrected.result.added).toBe(0)
+      expect(corrected.result.removed).toBe(0)
+      expect(shown.sources.project).toContain("- stable_fact :: The project has a stable fact.")
+      expect(shown.sources.corrections).not.toContain("stable_fact")
+    } finally {
+      await t.done()
+    }
+  })
+
   test("does not expose natural-language recall intent predicates", () => {
     const recall = MemoryRecall as unknown as Record<string, unknown>
 
