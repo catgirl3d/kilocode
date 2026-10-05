@@ -29,6 +29,7 @@
 
 ### Fixes & Enhancements
 
+- Fix memory corrections so a corrected record replaces the previous version instead of leaving both discoverable.
 - Skip pre-commit verification guards while a rebase is in progress, so intermediate rebase commits no longer fail on unfinished trees.
 - Remove the dead chat-search auto-expand plumbing (`forceOpen*`) left in the chat message renderer after the upstream search rework; no behavior change.
 - Finish that cleanup: drop the disconnected chat-search `forceOpen` adapter from the `kilo-ui` message parts and the task tool card (the generic `BasicTool.forceOpen` API stays); no behavior change.
