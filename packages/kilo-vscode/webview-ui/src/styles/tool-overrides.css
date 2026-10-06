@@ -146,6 +146,10 @@
     background-color: var(--vscode-testing-iconPassed, #4caf50);
   }
 
+  &[data-status="retry"] {
+    background-color: var(--icon-warning-base);
+  }
+
   &[data-status="completed"] {
     background-color: var(--vscode-disabledForeground, #888);
   }

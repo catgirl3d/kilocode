@@ -44,6 +44,7 @@ export interface SessionContextValue {
   status: Accessor<SessionStatus>
   statusInfo: Accessor<SessionStatusInfo>
   closeReason: Accessor<SessionCloseReason | undefined>
+  closeReasonFor: (id: string | undefined) => SessionCloseReason | undefined // fork_change
   statusText: Accessor<string | undefined>
   busyTiming: Accessor<Timing | undefined>
   submitting: Accessor<boolean>
