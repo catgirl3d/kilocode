@@ -20,6 +20,10 @@ import { active as activeTiming, running } from "../../context/session-timing"
 
 interface WorkingIndicatorProps {
   onScrollToBottom?: () => void
+  // fork_change start - [fork] allow status-only docks to hide the retry cancel action
+  /** Whether the retry row offers its cancel action. Defaults to true. */
+  canCancel?: boolean
+  // fork_change end
 }
 
 export const WorkingIndicator: Component<WorkingIndicatorProps> = (props) => {
@@ -122,7 +126,8 @@ export const WorkingIndicator: Component<WorkingIndicatorProps> = (props) => {
         </Show>
         <span class="sr-only">{language.t("session.messages.scrollToBottom")}</span>
       </Button>
-      <Show when={isRetrying()}>
+      {/* fork_change start - [fork] status-only docks hide the retry cancel action */}
+      <Show when={isRetrying() && props.canCancel !== false}>
         <Button
           variant="secondary"
           size="small"
@@ -133,6 +138,7 @@ export const WorkingIndicator: Component<WorkingIndicatorProps> = (props) => {
           {language.t("ui.sessionTurn.cancel") || "Cancel"}
         </Button>
       </Show>
+      {/* fork_change end */}
     </div>
   )
 }
