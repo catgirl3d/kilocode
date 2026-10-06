@@ -162,11 +162,12 @@ export function Icon(props: IconProps) {
           size={local.size}
           class={local.class}
           classList={local.classList}
+          data-name={local.name} /* fork_change */
         />
       }
     >
       {(entry) => (
-        <div data-component="icon" data-size={local.size || "normal"}>
+        <div data-component="icon" data-size={local.size || "normal"} data-name={local.name} /* fork_change */>
           <svg
             classList={{
               ...local.classList,
