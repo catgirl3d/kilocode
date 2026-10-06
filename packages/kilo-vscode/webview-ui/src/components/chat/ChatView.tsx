@@ -46,6 +46,10 @@ interface ChatViewProps {
   readonly?: boolean
   /** Whether this chat owns actionable prompt controls. Defaults to true. */
   interactivePrompts?: boolean
+  // fork_change start - [fork] status-only dock for read-only viewers
+  /** When true, the working/retry status row renders even without prompt ownership. Defaults to false. */
+  statusDock?: boolean
+  // fork_change end
   /** When true, show the "Continue in Worktree" button. Defaults to true in the sidebar. */
   continueInWorktree?: boolean
   worktree?: boolean
@@ -141,9 +145,15 @@ export const ChatView: Component<ChatViewProps> = (props) => {
   const suggesting = () => isSuggesting(blocked(), familySuggestions().length)
   // Session is busy only because a question tool call is pending — prompt should behave as idle
   const questioning = () => isQuestioning(blocked(), familyQuestions().length)
+  // fork_change start - [fork] status-only docks render without prompt ownership
   const dock = () =>
-    ownsPrompts() &&
-    (!props.readonly || !!goal() || !!permissionRequest() || session.submitting() || session.status() !== "idle")
+    (ownsPrompts() || props.statusDock === true) &&
+    (!props.readonly ||
+      !!goal() ||
+      session.submitting() ||
+      session.status() !== "idle" ||
+      (ownsPrompts() && !!permissionRequest()))
+  // fork_change end
   // The session dock stays empty while another surface owns the interaction:
   // a permission card, a pending question or suggestion, or agent requirements.
   // A spinner there would claim the agent is working while it waits on the user.
@@ -450,7 +460,8 @@ export const ChatView: Component<ChatViewProps> = (props) => {
               <Show when={server.connectionState() === "error" && server.errorMessage()}>
                 <StartupErrorBanner errorMessage={server.errorMessage()!} errorDetails={server.errorDetails()!} />
               </Show>
-              <Show when={permissionRequest()} keyed>
+              {/* fork_change start - [fork] keep permission prompts out of status-only docks */}
+              <Show when={ownsPrompts() && permissionRequest()} keyed>
                 {(perm) => (
                   <PermissionDock
                     request={perm}
@@ -459,14 +470,18 @@ export const ChatView: Component<ChatViewProps> = (props) => {
                   />
                 )}
               </Show>
+              {/* fork_change end */}
+              {/* fork_change start - [fork] status-only docks hide interactive retry actions */}
               <SessionDock
                 blocked={dockBlocked()}
+                statusOnly={!ownsPrompts()}
                 hasActions={() => !props.readonly && (hasActions(hasMessages()) || !!goal())}
                 actions={(control, agents, todos) => renderActions(hasMessages(), control, agents, todos)}
                 onScrollToBottom={scrollToBottom}
                 readonly={props.readonly}
                 projectId={props.projectId}
               />
+              {/* fork_change end */}
               <Show when={ownsPrompts() && !props.readonly}>
                 <PromptInput
                   blocked={blocked}

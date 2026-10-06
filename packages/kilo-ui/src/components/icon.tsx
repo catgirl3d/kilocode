@@ -153,6 +153,7 @@ export function Icon(props: IconProps) {
   // upstream icon after mount (for example PR badge status changes).
   const icon = () => icons[local.name as Name]
   return (
+    // fork_change start
     <Show
       when={icon()}
       fallback={
@@ -162,11 +163,12 @@ export function Icon(props: IconProps) {
           size={local.size}
           class={local.class}
           classList={local.classList}
+          data-name={local.name}
         />
       }
     >
       {(entry) => (
-        <div data-component="icon" data-size={local.size || "normal"}>
+        <div data-component="icon" data-size={local.size || "normal"} data-name={local.name}>
           <svg
             classList={{
               ...local.classList,
@@ -182,5 +184,6 @@ export function Icon(props: IconProps) {
         </div>
       )}
     </Show>
+    // fork_change end
   )
 }

@@ -11,10 +11,13 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { createEffect, createMemo, on, type Accessor, type Component } from "solid-js"
 import { DataBridge } from "../src/App"
 import { ChatView } from "../src/components/chat"
+// fork_change start - [fork] subagent activity icons
+import { ActivityIcon } from "../src/components/shared/ActivityIcon"
 import { taskChildren } from "../src/components/chat/background-agents"
 import { useLanguage } from "../src/context/language"
 import { SessionProvider, useSession, useSessionVisibility } from "../src/context/session"
-import { description, label, type Activity } from "../src/utils/session-activity"
+import { description, label, running, type Activity } from "../src/utils/session-activity"
+// fork_change end
 import { SortableClosableTab } from "./ClosableTab"
 import { InspectorTabStrip } from "./InspectorTabStrip"
 import type { SubagentTab } from "./subagent-tabs"
@@ -44,7 +47,9 @@ const SubagentChat: Component<{ active: Accessor<string | undefined> }> = (props
 
   return (
     <DataBridge>
-      <ChatView readonly interactivePrompts={false} promptBoxId="agent-manager:subagent" />
+      {/* fork_change start - [fork] status-only dock for the readonly inspector */}
+      <ChatView readonly interactivePrompts={false} statusDock promptBoxId="agent-manager:subagent" />
+      {/* fork_change end */}
     </DataBridge>
   )
 }
@@ -109,7 +114,13 @@ const SubagentContent: Component<ContentProps> = (props) => {
               tooltip={() => (state() === "idle" ? name : `${name}: ${language.t(description(state()))}`)}
               icon="task"
               iconNode={
-                <AgentAvatar id={id} status={state() === "busy" || state() === "retry" ? "running" : undefined} />
+                // fork_change start - [fork] explicit icons for non-running states
+                running(state()) ? (
+                  <AgentAvatar id={id} status="running" />
+                ) : (
+                  <ActivityIcon state={state()} idle={<AgentAvatar id={id} />} />
+                )
+                // fork_change end
               }
               state={state()}
               stateLabel={state() === "idle" ? undefined : language.t(label(state()))}
