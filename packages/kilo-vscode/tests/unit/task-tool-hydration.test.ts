@@ -28,9 +28,25 @@ describe("completed task hydration", () => {
     expect(taskMarkerStatus("completed")).toBe("completed")
     expect(taskMarkerStatus("error")).toBe("error")
     expect(taskMarkerStatus("unknown")).toBeUndefined()
-    expect(taskSessionStatus({ type: "busy" }, "completed")).toBe("running")
-    expect(taskSessionStatus({ type: "retry", attempt: 1, message: "retry", next: 1 }, "completed")).toBe("running")
-    expect(taskSessionStatus({ type: "idle" }, "completed")).toBe("completed")
+    expect(taskSessionStatus({ type: "busy" }, "completed", undefined)).toBe("running")
+    expect(taskSessionStatus({ type: "retry", attempt: 1, message: "retry", next: 1 }, "completed", undefined)).toBe(
+      "retry",
+    )
+    expect(taskSessionStatus({ type: "idle" }, "completed", undefined)).toBe("completed")
+    // A closed error is terminal and outranks a lagging live status.
+    expect(taskSessionStatus({ type: "busy" }, "completed", "error")).toBe("error")
+    expect(taskSessionStatus({ type: "retry", attempt: 1, message: "retry", next: 1 }, "running", "error")).toBe(
+      "error",
+    )
+    expect(taskSessionStatus(undefined, "completed", "error")).toBe("error")
+    // Non-error close reasons fall through to the tool part marker.
+    expect(taskSessionStatus({ type: "idle" }, "completed", "completed")).toBe("completed")
+    expect(taskSessionStatus({ type: "idle" }, "completed", "interrupted")).toBe("completed")
+    // Live child activity still outranks the parent tool part.
+    expect(taskSessionStatus({ type: "retry", attempt: 1, message: "retry", next: 1 }, "error", undefined)).toBe(
+      "retry",
+    )
+    expect(taskSessionStatus({ type: "busy" }, "error", undefined)).toBe("running")
     expect(readToolOpen(toolOpenKey({ tool: "task", partID: "part-new" }), taskRunning("completed"))).toBe(false)
   })
 
