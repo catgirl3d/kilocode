@@ -120,6 +120,27 @@ describe("Sub-agent session title contract", () => {
   })
 })
 
+describe("Sub-agent task card status contract (source)", () => {
+  const expanded = fs.readFileSync(TASK_RENDERER_FILE, "utf-8")
+  const css = fs.readFileSync(
+    path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/styles/tool-overrides.css"),
+    "utf-8",
+  )
+
+  it("wires the child close outcome and the retry label into the card dot", () => {
+    // The card must read the child's close reason by child ID; a merge that
+    // drops the argument silently reverts the dot to the old gray/green states.
+    expect(expanded).toContain("session.closeReasonFor(id)")
+    expect(expanded).toContain('if (status === "retry") return language.t("session.status.retry")')
+  })
+
+  it("colors the retry dot with the warning token instead of the completed gray", () => {
+    const rule = css.match(/&\[data-status="retry"\]\s*\{[^}]*\}/)?.[0] ?? ""
+    expect(rule).not.toBe("")
+    expect(rule).toContain("--icon-warning-base")
+  })
+})
+
 describe("getToolInfo() export contract (runtime)", () => {
   it("getToolInfo is an exported function", () => {
     // Note: getToolInfo() calls useI18n() internally, so we cannot invoke it
