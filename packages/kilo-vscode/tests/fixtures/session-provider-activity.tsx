@@ -66,6 +66,7 @@ const { useBaseUpdate } = await import("../../webview-ui/agent-manager/update-fr
 const { post } = await import("../../webview-ui/src/utils/webview-message")
 const { terminal } = await import("../../webview-ui/src/context/session-outcome")
 const { active: elapsed } = await import("../../webview-ui/src/context/session-timing")
+const { WorkingIndicator } = await import("../../webview-ui/src/components/shared/WorkingIndicator")
 const { PromptInput } = await import("../../webview-ui/src/components/chat/PromptInput")
 const { IndexingProvider } = await import("../../webview-ui/src/context/indexing")
 const { MemoryProvider } = await import("../../webview-ui/src/context/memory")
@@ -217,19 +218,24 @@ const Probe = () => {
         onCopyPath={() => {}}
         onOpen={() => {}}
       />
+      <div class="probe-working">
+        <WorkingIndicator />
+      </div>
       <Show when={inspector()}>
-        <SubagentPanel
-          tabs={() => inspected().map((id) => ({ id, title: id }))}
-          active={active}
-          visible={() => inspector() && inspected().length > 0}
-          nextKeybind=""
-          closeKeybind=""
-          onSelect={setActive}
-          onClose={() => {}}
-          onCloseOthers={() => {}}
-          onReorder={() => {}}
-          onClosePanel={() => setInspector(false)}
-        />
+        <DialogProvider>
+          <SubagentPanel
+            tabs={() => inspected().map((id) => ({ id, title: id }))}
+            active={active}
+            visible={() => inspector() && inspected().length > 0}
+            nextKeybind=""
+            closeKeybind=""
+            onSelect={setActive}
+            onClose={() => {}}
+            onCloseOthers={() => {}}
+            onReorder={() => {}}
+            onClosePanel={() => setInspector(false)}
+          />
+        </DialogProvider>
       </Show>
       <Show when={composer()}>
         <IndexingProvider>
@@ -329,6 +335,21 @@ const check = async (id: string, expected: string) => {
       tab.querySelector('[role="tab"]')?.getAttribute("aria-label"),
       expected === "idle" ? id : `${id}: session.activity.${expected}`,
     )
+    // Working states keep the avatar (with the shimmer); every other state
+    // swaps it for an explicit status glyph.
+    const iconRoot = tab.querySelector(".am-tab-icon")
+    const avatar = iconRoot?.querySelector('[data-component="agent-avatar"]')
+    const glyph = iconRoot?.querySelector('[data-component="icon"]')
+    const working = expected === "busy" || expected === "retry"
+    if (expected === "idle" || working) {
+      assert(avatar, `subagent tab keeps the avatar for ${expected}`)
+      assert.equal(!!glyph, false, `subagent tab shows no status glyph for ${expected}`)
+    } else {
+      assert(glyph, `subagent tab shows a status glyph for ${expected}`)
+      assert.equal(!!avatar, false, `subagent tab drops the avatar for ${expected}`)
+      const name = expected === "done" ? "circle-check" : expected === "scheduled" ? "clock" : "warning"
+      assert.equal(glyph.getAttribute("data-name") ?? glyph.querySelector("svg")?.getAttribute("data-name"), name)
+    }
   }
   if (tab && tab.getAttribute("data-activity") !== expected) {
     failures.push(
@@ -1593,6 +1614,12 @@ try {
   await emit({ type: "sessionStatus", sessionID: "task-child", status: "retry", attempt: 1, message: "retry", next: 1 })
   await check("root", "retry")
   await check("task-child", "retry")
+  await emit({ type: "sessionStatus", sessionID: "root", status: "retry", attempt: 1, message: "probe retry", next: 1 })
+  assert.equal(value.statusInfo().type, "retry")
+  assert(host.querySelector(".probe-working .working-cancel"), "default WorkingIndicator offers retry cancellation")
+  await emit({ type: "sessionStatus", sessionID: "root", status: "idle" })
+  assert.equal(value.statusInfo().type, "idle")
+  assert.equal(host.querySelector(".probe-working .working-cancel"), null)
   await emit({ type: "sessionStatus", sessionID: "task-child", status: "idle" })
   await emit({ type: "sessionStatus", sessionID: "task-grand", status: "busy" })
   await check("root", "busy")
@@ -1606,6 +1633,42 @@ try {
   await emit({ type: "sessionStatus", sessionID: "task-grand", status: "idle" })
   await check("root", "idle")
   assert.equal(value.inUseFor("root"), false)
+  await emit({ type: "sessionWakeup", sessionID: "task-child", pending: 1 })
+  await check("task-child", "scheduled")
+  await emit({ type: "sessionWakeup", sessionID: "task-child", pending: 0 })
+  await check("task-child", "idle")
+
+  // The subagent chat renders a status-only dock without owning prompts: a
+  // retrying child shows the working row, an idle child shows no dock at all.
+  setActive("task-child")
+  await settle()
+  assert.equal(!!host.querySelector(".am-subagent-chat .session-dock"), false, "idle subagent chat has no status dock")
+  await emit({ type: "sessionStatus", sessionID: "task-child", status: "retry", attempt: 1, message: "retry", next: 1 })
+  const subagentDock = host.querySelector(".am-subagent-chat .session-dock")
+  assert(subagentDock, "retry subagent chat shows the status dock")
+  assert.equal(subagentDock.getAttribute("data-active"), "", "retry status dock is the active state")
+  assert.equal(
+    !!host.querySelector(".am-subagent-chat .working-cancel"),
+    false,
+    "status-only dock has no cancel action",
+  )
+  await emit({
+    type: "permissionRequest",
+    permission: { id: "probe", sessionID: "task-grand", toolName: "bash", patterns: [], always: [], args: {} },
+  })
+  assert.equal(
+    !!host.querySelector(".am-subagent-chat .session-dock"),
+    true,
+    "dock stays while a child permission is pending",
+  )
+  assert.equal(
+    !!host.querySelector(".am-subagent-chat [data-component='permission-shortcuts']"),
+    false,
+    "status-only dock renders no permission prompt",
+  )
+  await emit({ type: "permissionResolved", permissionID: "probe", sessionID: "task-grand", response: "once" })
+  await emit({ type: "sessionStatus", sessionID: "task-child", status: "idle" })
+  assert.equal(!!host.querySelector(".am-subagent-chat .session-dock"), false, "dock clears when the child goes idle")
 
   await emit({
     type: "permissionRequest",

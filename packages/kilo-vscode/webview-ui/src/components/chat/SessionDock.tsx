@@ -41,6 +41,10 @@ interface SessionDockProps {
   hasActions?: () => boolean
   /** True while a permission, question, suggestion, or requirement owns the row. */
   blocked?: boolean
+  // fork_change start - [fork] status-only docks hide interactive retry actions
+  /** True when the dock only mirrors status without owning prompts: hides interactive retry actions. */
+  statusOnly?: boolean
+  // fork_change end
   onScrollToBottom?: () => void
   readonly?: boolean
   projectId?: string
@@ -310,7 +314,9 @@ export const SessionDock: Component<SessionDockProps> = (props) => {
               <SwarmBoardButton state={board} rule active={working()} />
             </div>
           </Show>
-          <WorkingIndicator onScrollToBottom={props.onScrollToBottom} />
+          {/* fork_change start - [fork] status-only docks hide interactive retry actions */}
+          <WorkingIndicator onScrollToBottom={props.onScrollToBottom} canCancel={!props.statusOnly} />
+          {/* fork_change end */}
           <div class="session-working-trail" ref={setTrail}>
             {chip(true)}
             {goal.status()}
