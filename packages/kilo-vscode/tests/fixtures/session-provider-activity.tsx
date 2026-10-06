@@ -448,10 +448,12 @@ try {
       await emit({ type: "sessionError", sessionID: sid, error, phase: "execution" })
       assert.equal(value.busyTiming(), undefined, "Execution errors stop the goal clock")
       assert.equal(value.closeReason(), "error")
+      assert.equal(value.closeReasonFor(sid), "error")
       await emit({ type: "sessionStatus", sessionID: sid, status: "idle" })
       assert.equal(value.busyTiming(), undefined, "Idle does not restart an errored goal")
       await emit({ type: "sessionUpdated", session: { id: sid, goal: null } })
       await emit({ type: "sessionStatus", sessionID: sid, status: "busy" })
+      assert.equal(value.closeReasonFor(sid), undefined, "Busy clears the child close outcome")
       assert.deepEqual(unwrap(value.busyTiming()), { active: 0, since: 40_000 })
       await emit({ type: "sessionStatus", sessionID: sid, status: "idle" })
       assert.equal(value.busyTiming(), undefined, "Ordinary idle still clears turn timing")
@@ -1637,6 +1639,17 @@ try {
   await check("task-child", "scheduled")
   await emit({ type: "sessionWakeup", sessionID: "task-child", pending: 0 })
   await check("task-child", "idle")
+
+  // The task card queries the child, never the current session: a child close
+  // error must reach closeReasonFor while root stays current. durable-child is
+  // used because a message in task-child would rebuild its tool index from the
+  // fixture-only part list and drop the task-grand link.
+  assert.equal(value.currentSessionID(), "root")
+  await emit({ type: "sessionError", sessionID: "durable-child", error: { name: "UnknownError" }, phase: "execution" })
+  assert.equal(value.closeReasonFor("durable-child"), "error")
+  await emit({ type: "sessionStatus", sessionID: "durable-child", status: "busy" })
+  assert.equal(value.closeReasonFor("durable-child"), undefined, "Busy clears the child close outcome")
+  await emit({ type: "sessionStatus", sessionID: "durable-child", status: "idle" })
 
   // The subagent chat renders a status-only dock without owning prompts: a
   // retrying child shows the working row, an idle child shows no dock at all.
