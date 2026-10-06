@@ -1,4 +1,4 @@
-import type { Message, Part, ReasoningPart, SessionStatusInfo } from "../../types/messages" // fork_change
+import type { Message, Part, ReasoningPart, SessionCloseReason, SessionStatusInfo } from "../../types/messages" // fork_change
 // fork_change start
 export function taskMarkerStatus(status: string | undefined) {
   if (status === "pending" || status === "running") return "running" as const
@@ -6,8 +6,14 @@ export function taskMarkerStatus(status: string | undefined) {
   return undefined
 }
 
-export function taskSessionStatus(status: SessionStatusInfo | undefined, parent: string | undefined) {
-  if (status?.type === "busy" || status?.type === "retry") return "running" as const
+export function taskSessionStatus(
+  status: SessionStatusInfo | undefined,
+  parent: string | undefined,
+  close: SessionCloseReason | undefined,
+) {
+  if (close === "error") return "error" as const
+  if (status?.type === "retry") return "retry" as const
+  if (status?.type === "busy") return "running" as const
   return taskMarkerStatus(parent)
 }
 
