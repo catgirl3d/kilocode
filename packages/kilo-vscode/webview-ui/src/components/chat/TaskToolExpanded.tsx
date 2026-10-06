@@ -75,11 +75,13 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
   // fork_change start
   const taskStatus = createMemo(() => {
     const id = childSessionId()
-    return taskSessionStatus(id ? session.allStatusMap()[id] : undefined, props.status)
+    return taskSessionStatus(id ? session.allStatusMap()[id] : undefined, props.status, session.closeReasonFor(id))
   })
   const jobLabel = createMemo(() => {
     const status = taskStatus()
-    return status ? language.t(`task.backgroundAgents.status.${status}`) : undefined
+    if (!status) return undefined
+    if (status === "retry") return language.t("session.status.retry")
+    return language.t(`task.backgroundAgents.status.${status}`)
   })
 
   // fork_change end

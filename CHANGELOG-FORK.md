@@ -29,6 +29,7 @@
 
 ### Fixes & Enhancements
 
+- Mark subagent task cards with an amber dot while the child retries after a provider limit and a red dot when a background child ends in error, instead of showing green running or gray completed.
 - Show live activity in the Agent Manager subagent inspector: a busy or retrying child keeps a working row with the retry message and countdown, and its tab marks error or waiting states with a warning icon instead of an unmarked avatar.
 - Fix memory corrections so a corrected record replaces the previous version instead of leaving both discoverable.
 - Skip pre-commit verification guards while a rebase is in progress, so intermediate rebase commits no longer fail on unfinished trees.
