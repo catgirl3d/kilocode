@@ -220,6 +220,7 @@ export const SessionProvider: ParentComponent = (props) => {
     const id = currentSessionID()
     return id ? closeMap[id]?.reason : undefined
   }
+  const closeReasonFor = (id: string | undefined) => (id ? closeMap[id]?.reason : undefined) // fork_change
   const clearClose = (id: string) => {
     recoveries.delete(id)
     if (!closeMap[id]) return
@@ -2974,6 +2975,7 @@ export const SessionProvider: ParentComponent = (props) => {
     status,
     statusInfo,
     closeReason,
+    closeReasonFor, // fork_change
     statusText,
     busyTiming,
     submitting,
