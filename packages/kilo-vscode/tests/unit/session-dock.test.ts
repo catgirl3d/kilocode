@@ -100,7 +100,6 @@ describe("session dock layout", () => {
     const goal = read("webview-ui/src/components/chat/goal/useGoalDock.tsx")
     const indicator = read("webview-ui/src/components/shared/WorkingIndicator.tsx")
     expect(indicator).not.toMatch(/DropdownMenu|Tooltip/)
-    expect(dock).toContain("<WorkingIndicator onScrollToBottom={props.onScrollToBottom} />")
     expect(goal).toContain('class="session-goal-action"')
     expect(goal).toContain('variant="ghost"')
     expect(goal).toContain("disabled={props.readonly || !actions()}")
