@@ -41,6 +41,7 @@ Object.assign(window, { KILO_AGENT_MANAGER_INTRO_DISMISSED: true })
 const { createSignal } = await import("solid-js")
 const { render } = await import("solid-js/web")
 const { VSCodeProvider } = await import("../../webview-ui/src/context/vscode")
+const { SessionTagsProvider } = await import("../../webview-ui/src/context/session-tags")
 const { LanguageContext } = await import("../../webview-ui/src/context/language")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
 const { createIntro } = await import("../../webview-ui/agent-manager/intro/AgentManagerIntro")
@@ -123,9 +124,11 @@ const dispose = render(
   () => (
     <VSCodeProvider>
       <LanguageContext.Provider value={language}>
-        <SessionContext.Provider value={session}>
-          <Probe />
-        </SessionContext.Provider>
+        <SessionTagsProvider>
+          <SessionContext.Provider value={session}>
+            <Probe />
+          </SessionContext.Provider>
+        </SessionTagsProvider>
       </LanguageContext.Provider>
     </VSCodeProvider>
   ),
