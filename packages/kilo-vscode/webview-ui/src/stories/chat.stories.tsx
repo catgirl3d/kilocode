@@ -48,6 +48,7 @@ import type {
   SuggestionRequest,
   TodoItem,
   ToolPart,
+  SessionTagsState,
 } from "../types/messages"
 import { formatReviewCommentsMarkdown } from "../utils/review-comment-markdown"
 import { feedbackMetadata, formatBrowserFeedback } from "../../../src/shared/browser-feedback"
@@ -1448,33 +1449,72 @@ const headerParts: Record<string, Part[]> = {
   ],
 }
 
+const two: SessionTagsState = {
+  tags: [
+    { id: "tag-priority", name: "Priority", color: "Red" },
+    { id: "tag-review", name: "Needs review", color: "Blue" },
+  ],
+  sessions: { [SESSION_ID]: ["tag-priority", "tag-review"] },
+}
+const overflow: SessionTagsState = {
+  tags: [
+    { id: "tag-priority", name: "Priority", color: "Red" },
+    { id: "tag-review", name: "Needs review", color: "Blue" },
+    { id: "tag-release", name: "Release candidate", color: "Green" },
+    { id: "tag-russian", name: "Очень длинное русское название очереди", color: "Purple" },
+  ],
+  sessions: { [SESSION_ID]: ["tag-priority", "tag-review", "tag-release", "tag-russian"] },
+}
+const empty: SessionTagsState = { tags: [], sessions: {} }
+
+const session = (title = "Task: Can you use the update_todo_list tool to create a CLI interface implementation?") => ({
+  ...mockSessionValue({ id: SESSION_ID, status: "busy" }),
+  messages: () => headerMessages,
+  visibleMessages: () => headerMessages,
+  currentSession: () => ({
+    id: SESSION_ID,
+    title,
+    createdAt: new Date(headerNow - 12000).toISOString(),
+    updatedAt: new Date(headerNow).toISOString(),
+  }),
+  getParts: (id: string) => headerParts[id] ?? [],
+  contextUsage: () => ({ tokens: 34300, percentage: 17 }),
+  costBreakdown: () => [{ label: "Session", cost: 0.64 }],
+})
+
+const TaskHeaderTagsDemo = (props: { width?: number; state: SessionTagsState }) => (
+  <StoryProviders sessionID={SESSION_ID} sessionTags={props.state} failTags status="busy" noPadding>
+    <SessionContext.Provider value={session() as any}>
+      <div style={{ width: props.width == null ? "100%" : `${props.width}px` }}>
+        <TaskHeader />
+      </div>
+    </SessionContext.Provider>
+  </StoryProviders>
+)
+
 export const TaskHeaderBusy: Story = {
   name: "TaskHeader — busy session",
-  render: () => {
-    const session = {
-      ...mockSessionValue({ id: SESSION_ID, status: "busy" }),
-      messages: () => headerMessages,
-      visibleMessages: () => headerMessages,
-      currentSession: () => ({
-        id: SESSION_ID,
-        title: "Task: Can you use the update_todo_list tool to create a CLI interface implementation?",
-        createdAt: new Date(headerNow - 12000).toISOString(),
-        updatedAt: new Date(headerNow).toISOString(),
-      }),
-      getParts: (id: string) => headerParts[id] ?? [],
-      contextUsage: () => ({ tokens: 34300, percentage: 17 }),
-      costBreakdown: () => [{ label: "Session", cost: 0.64 }],
-    }
-    return (
-      <StoryProviders sessionID={SESSION_ID} status="busy" noPadding>
-        <SessionContext.Provider value={session as any}>
-          <div style={{ width: "100%" }}>
-            <TaskHeader />
-          </div>
-        </SessionContext.Provider>
-      </StoryProviders>
-    )
-  },
+  render: () => <TaskHeaderTagsDemo state={two} />,
+}
+
+export const TaskHeaderSessionTags320: Story = {
+  name: "TaskHeader — overflowing tags at 320px",
+  render: () => <TaskHeaderTagsDemo width={320} state={overflow} />,
+}
+
+export const TaskHeaderSessionTags380: Story = {
+  name: "TaskHeader — two tags at 380px",
+  render: () => <TaskHeaderTagsDemo width={380} state={two} />,
+}
+
+export const TaskHeaderSessionTags900: Story = {
+  name: "TaskHeader — two tags at 900px",
+  render: () => <TaskHeaderTagsDemo width={900} state={two} />,
+}
+
+export const TaskHeaderSessionTagsEmpty: Story = {
+  name: "TaskHeader — empty tag catalog",
+  render: () => <TaskHeaderTagsDemo width={380} state={empty} />,
 }
 
 export const TaskHeaderSkeleton: Story = {

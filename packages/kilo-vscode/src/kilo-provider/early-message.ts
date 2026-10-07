@@ -8,6 +8,7 @@ import { buildChatSettingsMessage } from "./chat-settings"
 import { buildThroughputSettingMessage } from "./throughput-settings"
 import { buildAutoApprovalReasonSettingMessage } from "./auto-approval-reason-settings"
 import type { ModelUsageMessage } from "./model-usage"
+import { handleSessionTagsMessage } from "../session-tags" // fork_change
 
 type Ctx = {
   question: SuggestionContext
@@ -82,6 +83,7 @@ async function routeSessionMessage(
   message: { type: string; sessionID?: unknown; messageID?: unknown; requestID?: unknown },
   ctx: Ctx,
 ): Promise<boolean | undefined> {
+  if (await handleSessionTagsMessage(message, ctx.post)) return true
   if (message.type === "resumeSession") {
     if (isResume(message)) await ctx.resume(message.sessionID, message.messageID, message.requestID)
     return true

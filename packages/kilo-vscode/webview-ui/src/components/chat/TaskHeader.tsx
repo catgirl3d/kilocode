@@ -32,6 +32,8 @@ import { SessionRenameEditor } from "../shared/SessionRenameEditor"
 import type { ExtensionMessage } from "../../types/messages"
 // fork_change start
 import { DeferredPopover } from "../shared/DeferredPopover"
+import { SessionTags, SessionTagsButton } from "../shared/SessionTags"
+import { isPendingTab } from "../../utils/local-tabs"
 import type { MemoryActivity } from "../../utils/memory-activity"
 // fork_change end
 
@@ -47,6 +49,13 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
 
   const title = createMemo(() => session.currentSession()?.title ?? language.t("command.session.new"))
   const canRename = createMemo(() => !props.readonly && !!session.currentSession())
+  // fork_change start - tags belong only to an existing local session
+  const sid = createMemo(() => {
+    const id = session.currentSession()?.id
+    if (!id || id.startsWith("cloud:") || isPendingTab(id)) return undefined
+    return id
+  })
+  // fork_change end
   const hasMessages = createMemo(() => session.messages().length > 0)
   const busy = createMemo(() => session.status() === "busy")
   const canCompact = createMemo(() => !busy() && session.visibleMessages().length > 0 && !!session.selected())
@@ -263,37 +272,51 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   return (
     <Show when={hasMessages()}>
       <div data-component="task-header">
+        {/* fork_change start - keep tag controls outside the rename target */}
         <div data-slot="task-header-title">
-          <Show
-            when={!renaming()}
-            fallback={
-              <SessionRenameEditor
-                title={renaming()?.title ?? ""}
-                autosize
-                onSave={commitRename}
-                onCancel={cancelRename}
-              />
-            }
-          >
-            <span
-              data-slot="task-header-title-trigger"
-              data-renamable={canRename() ? "" : undefined}
-              title={canRename() ? language.t("agentManager.worktree.doubleClickRename") : title()}
-              tabIndex={canRename() ? 0 : undefined}
-              role={canRename() ? "button" : undefined}
-              onDblClick={startRename}
-              onKeyDown={(e) => {
-                if (!canRename() || (e.key !== "Enter" && e.key !== " ")) return
-                e.preventDefault()
-                startRename()
-              }}
+          <div data-slot="task-header-name">
+            <Show
+              when={!renaming()}
+              fallback={
+                <SessionRenameEditor
+                  title={renaming()?.title ?? ""}
+                  autosize
+                  onSave={commitRename}
+                  onCancel={cancelRename}
+                />
+              }
             >
-              <span data-slot="task-header-title-label" dir="auto">
-                {title()}
+              <span
+                data-slot="task-header-title-trigger"
+                data-renamable={canRename() ? "" : undefined}
+                title={canRename() ? language.t("agentManager.worktree.doubleClickRename") : title()}
+                tabIndex={canRename() ? 0 : undefined}
+                role={canRename() ? "button" : undefined}
+                onDblClick={startRename}
+                onKeyDown={(e) => {
+                  if (!canRename() || (e.key !== "Enter" && e.key !== " ")) return
+                  e.preventDefault()
+                  startRename()
+                }}
+              >
+                <span data-slot="task-header-title-label" dir="auto">
+                  {title()}
+                </span>
               </span>
-            </span>
+            </Show>
+          </div>
+          <Show when={sid()}>
+            {(id) => (
+              <>
+                <SessionTags sessionID={id()} compact />
+                <Show when={!props.readonly}>
+                  <SessionTagsButton sessionID={id()} />
+                </Show>
+              </>
+            )}
           </Show>
         </div>
+        {/* fork_change end */}
         <Show when={model()}>
           {(m) => (
             <Tooltip
