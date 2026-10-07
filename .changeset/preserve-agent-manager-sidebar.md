@@ -2,4 +2,4 @@
 "kilo-code": patch
 ---
 
-Keep the Agent Manager sidebar collapsed when creating a new session.
+Keep the Agent Manager sidebar collapsed when creating a new session or opening an existing session locally.

@@ -114,13 +114,17 @@ import {
   updateSetup,
   type SetupState,
 } from "./project/progress"
+// fork_change start - route local session opens through the selection action
 import {
+  createChatSessionSelector,
   createSessionRestore,
   createTabMemory,
+  openLocalSession as openLocalSessionAction,
   rememberSelectionTab,
   selectLocalAction,
   selectWorktreeAction,
 } from "./selection-actions"
+// fork_change end
 import { DataBridge } from "../src/App"
 import { LanguageBridge } from "../src/context/language-bridge"
 import { useLanguage } from "../src/context/language"
@@ -1729,18 +1733,18 @@ const AgentManagerContent: Component = () => {
     ))
   }
 
-  const openLocally = (sid: string) => {
-    if (!canOpenRootSession(sid, session.sessions())) return
-    saveTabMemory()
-    expandSidebar()
-    const pending = activePendingId()
-    placeLocal(sid, pending, pending ?? session.currentSessionID())
-    setSelection(LOCAL)
-    setReviewActive(false)
-    session.selectSession(sid)
-    requestChatFocus()
-    vscode.postMessage({ type: "agentManager.openLocally", sessionId: sid })
-  }
+  // fork_change start - opening a local session must preserve sidebar state
+  const openLocally = (sid: string) =>
+    openLocalSessionAction({
+      id: sid,
+      sessions: session.sessions(),
+      ...selectionDeps,
+      activePendingId,
+      currentSessionID: session.currentSessionID,
+      placeLocal,
+      requestChatFocus,
+    })
+  // fork_change end
 
   /** History row menu: start a session in a new worktree or back in the project's local tabs. */
   const historyRowActions = historyRowActionsFactory({
@@ -1762,7 +1766,6 @@ const AgentManagerContent: Component = () => {
     const sel = selection()
     // Setup is still provisioning this worktree; the Setup tab shows progress.
     if (settingUpSelection()) return
-    expandSidebar()
     if (sel === LOCAL) return addPendingTab()
     if (sel) {
       // Deactivate any focused terminal so the new session is visible.
@@ -1770,22 +1773,19 @@ const AgentManagerContent: Component = () => {
       vscode.postMessage({ type: "agentManager.addSessionToWorktree", worktreeId: sel })
     }
   }
-  const selectChatSession = (id: string) => {
-    if (addSessionToCurrentWorktree(id)) return
-    if (localSessionIDs().includes(id)) {
-      session.selectSession(id)
-      if (selection() === null) setSelection(LOCAL)
-      requestChatFocus()
-      return
-    }
-    if (!worktreeSessionIds().has(id)) return openLocally(id)
-    const worktree = managedSessions().find((s) => s.id === id)?.worktreeId
-    if (!worktree) return openLocally(id)
-    selectWorktree(worktree)
-    session.selectSession(id)
-    setReviewActive(false)
-    requestChatFocus()
-  }
+  // fork_change start - use the tested session-list routing for welcome selection
+  const selectChatSession = createChatSessionSelector({
+    ...selectionDeps,
+    addSessionToCurrentWorktree,
+    localSessionIDs,
+    selection,
+    requestChatFocus,
+    worktreeSessionIds,
+    managedSessions,
+    selectWorktree,
+    openLocally,
+  })
+  // fork_change end
 
   const hints = createShortcutHints({
     kb,

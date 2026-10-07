@@ -4,8 +4,12 @@ import { needsLocalDraft } from "../../webview-ui/agent-manager/project/local-ta
 import { createTerminalState } from "../../webview-ui/agent-manager/terminal/state"
 import { createSidePanel } from "../../webview-ui/agent-manager/side-panel-state"
 import { SidePanel } from "../../webview-ui/agent-manager/side-panel-layout"
+import { createSidebarCollapse } from "../../webview-ui/agent-manager/sidebar-collapse"
+import type { WebviewMessage } from "../../webview-ui/src/types/messages"
 import {
+  createChatSessionSelector,
   createTabMemory,
+  openLocalSession,
   rememberSelectionTab,
   selectLocalAction,
   selectWorktreeAction,
@@ -58,6 +62,74 @@ describe("selectWorktreeAction", () => {
     selectWorktreeAction(result.value, "wt-b", [])
 
     expect(result.calls).toEqual(["reset"])
+  })
+})
+
+describe("createChatSessionSelector", () => {
+  it("uses the current selection when selecting an already-open local session", () => {
+    createRoot((dispose) => {
+      const [selection, setSelection] = createSignal<string | null>(null)
+      const calls: string[] = []
+      const select = createChatSessionSelector({
+        addSessionToCurrentWorktree: () => false,
+        localSessionIDs: () => ["ses-local"],
+        selection,
+        setSelection: (id) => calls.push(`selection:${id}`),
+        selectSession: (id) => calls.push(`session:${id}`),
+        requestChatFocus: () => calls.push("focus"),
+        worktreeSessionIds: () => new Set(),
+        managedSessions: () => [],
+        selectWorktree: (id) => calls.push(`worktree:${id}`),
+        setReviewActive: (active) => calls.push(`review:${active}`),
+        openLocally: (id) => calls.push(`local:${id}`),
+      })
+
+      setSelection("local")
+      select("ses-local")
+
+      expect(calls).toEqual(["session:ses-local", "focus"])
+      dispose()
+    })
+  })
+})
+
+describe("openLocalSession", () => {
+  it.each([true, false])("preserves sidebar state %s while opening a root session locally", (initial) => {
+    createRoot((dispose) => {
+      const msgs: WebviewMessage[] = []
+      const calls: string[] = []
+      const side = createSidebarCollapse({ postMessage: (msg) => msgs.push(msg) }, { initial })
+
+      openLocalSession({
+        id: "ses-root",
+        sessions: [{ id: "ses-root", parentID: null }],
+        saveTabMemory: () => calls.push("save"),
+        activePendingId: () => "pending:1",
+        currentSessionID: () => "ses-old",
+        placeLocal: (id, pending, active) => calls.push(`place:${id}:${pending}:${active}`),
+        setSelection: (id) => calls.push(`selection:${id}`),
+        setReviewActive: (active) => calls.push(`review:${active}`),
+        selectSession: (id) => calls.push(`session:${id}`),
+        requestChatFocus: () => calls.push("focus"),
+        post: (msg) => {
+          calls.push(`post:${msg.type}`)
+          msgs.push(msg)
+        },
+      })
+
+      expect(side.collapsed()).toBe(initial)
+      expect(calls).toEqual([
+        "save",
+        "place:ses-root:pending:1:pending:1",
+        "selection:local",
+        "review:false",
+        "session:ses-root",
+        "focus",
+        "post:agentManager.openLocally",
+      ])
+      expect(msgs).toEqual([{ type: "agentManager.openLocally", sessionId: "ses-root" }])
+      dispose()
+    })
   })
 })
 

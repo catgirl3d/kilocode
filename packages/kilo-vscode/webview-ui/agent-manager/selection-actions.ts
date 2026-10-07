@@ -7,7 +7,10 @@
  */
 
 import { batch } from "solid-js"
-import { LOCAL } from "./navigate"
+// fork_change start - local session routing does not control sidebar visibility
+import type { WebviewMessage } from "../src/types/messages"
+import { canOpenRootSession, LOCAL } from "./navigate"
+// fork_change end
 
 interface TermState {
   forSelection: (sel: string) => { id: string }[]
@@ -130,6 +133,65 @@ function terminal(
   if (!known && (!empty || deps.isReviewTab(remembered, selection))) return
   return known ? remembered : deps.terms.forSelection(key).at(0)?.id
 }
+
+// fork_change start - preserve the session-list routing used by the Agent Manager
+export function createChatSessionSelector(deps: {
+  addSessionToCurrentWorktree: (id: string) => boolean
+  localSessionIDs: () => string[]
+  selection: () => string | null
+  setSelection: (id: string) => void
+  selectSession: (id: string) => void
+  requestChatFocus: () => void
+  worktreeSessionIds: () => Set<string>
+  managedSessions: () => { id: string; worktreeId?: string | null }[]
+  selectWorktree: (id: string) => void
+  setReviewActive: (active: boolean) => void
+  openLocally: (id: string) => void
+}) {
+  return (id: string) => {
+    if (deps.addSessionToCurrentWorktree(id)) return
+    if (deps.localSessionIDs().includes(id)) {
+      deps.selectSession(id)
+      if (deps.selection() === null) deps.setSelection(LOCAL)
+      deps.requestChatFocus()
+      return
+    }
+    if (!deps.worktreeSessionIds().has(id)) return deps.openLocally(id)
+    const worktree = deps.managedSessions().find((item) => item.id === id)?.worktreeId
+    if (!worktree) return deps.openLocally(id)
+    deps.selectWorktree(worktree)
+    deps.selectSession(id)
+    deps.setReviewActive(false)
+    deps.requestChatFocus()
+  }
+}
+// fork_change end
+
+// fork_change start - open a root session locally without expanding the sidebar
+export function openLocalSession(input: {
+  id: string
+  sessions: Parameters<typeof canOpenRootSession>[1]
+  saveTabMemory: () => void
+  activePendingId: () => string | undefined
+  currentSessionID: () => string | undefined
+  placeLocal: (id: string, pending: string | undefined, active: string | undefined) => void
+  setSelection: (id: typeof LOCAL) => void
+  setReviewActive: (active: boolean) => void
+  selectSession: (id: string) => void
+  requestChatFocus: () => void
+  post: (msg: WebviewMessage) => void
+}): void {
+  if (!canOpenRootSession(input.id, input.sessions)) return
+  input.saveTabMemory()
+  const pending = input.activePendingId()
+  input.placeLocal(input.id, pending, pending ?? input.currentSessionID())
+  input.setSelection(LOCAL)
+  input.setReviewActive(false)
+  input.selectSession(input.id)
+  input.requestChatFocus()
+  input.post({ type: "agentManager.openLocally", sessionId: input.id })
+}
+// fork_change end
 
 /** Select the Local context: restore its remembered tab or fall back to the first session/draft. */
 export function selectLocalAction<T extends SessionLike>(
