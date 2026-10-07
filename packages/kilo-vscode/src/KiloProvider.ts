@@ -88,6 +88,9 @@ import {
   type NotificationsMessage,
 } from "./kilo-provider/notifications"
 import { childID } from "./kilo-provider/task-session"
+// fork_change start
+import { onSessionTagsChanged, removeSessionTags } from "./session-tags"
+// fork_change end
 import { VisibleTaskStreams } from "./kilo-provider/visible-task-streams"
 import { handleNetworkEvent, clearNetworkWaits } from "./kilo-provider/network"
 import { SessionAbort } from "./kilo-provider/abort"
@@ -578,6 +581,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private unsubscribeClearPendingPrompts: (() => void) | null = null
   private unsubscribeDirectoryProvider: (() => void) | null = null
   private unsubscribeSandboxPreference: (() => void) | null = null
+  private unsubscribeSessionTags: (() => void) | null = null // fork_change
   private initConnectionPromise: Promise<void> | null = null
   private webviewMessageDisposable: vscode.Disposable | null = null
   private autocompleteConfigDisposable: vscode.Disposable | null = null
@@ -668,6 +672,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const telemetry = TelemetryProxy.getInstance()
     telemetry.setProvider(this)
     this.telemetryDisposable = telemetry.onChange(() => void this.syncTelemetryState())
+    // fork_change start
+    this.unsubscribeSessionTags = onSessionTagsChanged((state) => {
+      this.postMessage({ type: "sessionTagsLoaded", state })
+    })
+    // fork_change end
     this.latch = watchRestore({
       focused: () => vscode.window.state.focused,
       onChange: (listener) => vscode.window.onDidChangeWindowState(listener),
@@ -2804,6 +2813,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
    */
   private pruneDeletedSession(sessionID: string): void {
     this.removedSessionIds.add(sessionID)
+    void removeSessionTags(sessionID) // fork_change
     this.trackedSessionIds.delete(sessionID)
     this.openSessionIds.delete(sessionID)
     for (const [key, session] of this.draftSessions) {
@@ -6757,6 +6767,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.unsubscribeClearPendingPrompts?.()
     this.unsubscribeDirectoryProvider?.()
     this.unsubscribeSandboxPreference?.()
+    this.unsubscribeSessionTags?.() // fork_change
     this.unsubscribeAcknowledged?.()
     this.viewStateDisposable?.dispose()
     this.visibilityDisposable?.dispose()
