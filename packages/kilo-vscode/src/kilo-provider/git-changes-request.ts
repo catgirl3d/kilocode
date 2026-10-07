@@ -1,5 +1,6 @@
 import { captureGitChangesContext } from "./git-changes-context"
 import { resolveGitChangesTarget } from "./git-changes-target"
+import { captureStagedDiff } from "./staged-diff" // fork_change
 
 type Interceptor = (msg: Record<string, unknown>) => Promise<Record<string, unknown> | null>
 
@@ -25,6 +26,18 @@ export async function interceptMessage(
     }
     return null
   }
+  // fork_change start
+  if (next.type === "requestStagedDiff") {
+    const sid = typeof next.sessionID === "string" ? next.sessionID : undefined
+    await captureStagedDiff({
+      requestId: typeof next.requestId === "string" ? next.requestId : "",
+      dir: ctx.workspaceDir(sid),
+      post: ctx.post,
+      error: ctx.error,
+    }).catch((e) => console.error("[Kilo New] staged diff error:", e))
+    return null
+  }
+  // fork_change end
   if (next.type !== "requestGitChangesContext") return next
   const sid = typeof next.sessionID === "string" ? next.sessionID : undefined
   const dir = ctx.workspaceDir(sid)
