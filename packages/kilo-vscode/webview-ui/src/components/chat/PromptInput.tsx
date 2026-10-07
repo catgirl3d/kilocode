@@ -60,6 +60,7 @@ import type { MentionResult, WorktreeReference } from "../../hooks/file-mention-
 import { isMentionEntry } from "../../hooks/file-mention-utils"
 import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
+import { useStagedDiff } from "../../hooks/useStagedDiff" // fork_change
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
 import { useSlashCommand, skill as isSkill, type SlashCommandEntry } from "../../hooks/useSlashCommand" // fork_change
@@ -300,6 +301,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const terminal = useTerminalContext(props.resolveEmbeddedTerminal)
   const git = useGitChangesContext(vscode, ctx, hasGit)
+  const staged = useStagedDiff(vscode) // fork_change
   const imageAttach = useImageAttachments()
   imageAttach.setFilePathDropHandler((paths) => {
     if (readonly()) return
@@ -1589,6 +1591,33 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     vscode.postMessage({ type: "enhancePrompt", text: draft, requestId: `enhance-${draftKey()}-${enhanceCounter}` })
   }
 
+  // fork_change start
+  const attachStagedDiff = async () => {
+    if (readonly() || staged.pending()) return
+    const result = await staged.write(sid()).catch((err: Error) => {
+      showToast({ variant: "error", title: language.t("prompt.stagedDiff.failed"), description: err.message })
+      return undefined
+    })
+    if (!result) return
+    if ("empty" in result) {
+      showToast({ title: language.t("prompt.stagedDiff.empty") })
+      return
+    }
+    const ref = textareaRef
+    if (!ref) return
+    const cwd = server.workspaceDirectory()
+    if (!text().includes(`@${result.path}`)) {
+      const inserted = insertPathMentions(ref.value, ref.selectionStart ?? ref.value.length, [result.path])
+      ref.value = inserted.text
+      setText(inserted.text)
+      ref.setSelectionRange(inserted.pos, inserted.pos)
+    }
+    mention.addPaths([result.path], cwd)
+    ref.focus()
+    adjustHeight()
+  }
+  // fork_change end
+
   const insertSpeechText = (value: string) => {
     const ref = textareaRef
     const current = text()
@@ -2475,6 +2504,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             </Tooltip>
           </div>
           <div class="prompt-input-hint-pinned" ref={pinnedRef}>
+            {/* fork_change start */}
+            <Show when={hasGit()}>
+              <Tooltip value={language.t("prompt.action.stagedDiff")} placement="top" openDelay={0}>
+                <IconButton
+                  icon="git-commit"
+                  variant="ghost"
+                  size="small"
+                  onClick={() => void attachStagedDiff()}
+                  disabled={!server.isConnected() || readonly() || staged.pending()}
+                  loading={staged.pending()}
+                  aria-label={language.t("prompt.action.stagedDiff")}
+                />
+              </Tooltip>
+            </Show>
+            {/* fork_change end */}
             <Show when={canUseSpeech()}>
               <SpeechToTextButton speech={speech} disabled={isDisabled()} start={startSpeech} label={language.t} />
             </Show>
