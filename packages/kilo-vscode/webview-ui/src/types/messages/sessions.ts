@@ -87,3 +87,20 @@ export interface CloudSessionInfo {
 }
 
 export type MessageLoadMode = "replace" | "prepend" | "focus" | "reconcile"
+
+// fork_change start - local session tags
+export type SessionTag = { id: string; name: string; color: string }
+
+export type SessionTagsState = {
+  tags: SessionTag[]
+  sessions: Record<string, string[]>
+}
+
+export type SessionTagAction =
+  | { type: "create"; sessionID: string; name: string; color: string }
+  | { type: "update"; id: string; patch: Partial<Pick<SessionTag, "name" | "color">> }
+  | { type: "assign"; sessionID: string; id: string; assigned: boolean }
+  | { type: "delete"; id: string }
+
+export type SessionTagError = "name" | "duplicate" | "missing" | "invalid" | "storage"
+// fork_change end
