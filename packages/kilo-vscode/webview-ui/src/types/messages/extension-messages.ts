@@ -721,6 +721,22 @@ export interface GitChangesContextErrorMessage {
   error: string
 }
 
+// fork_change start
+/** Result of writing `git diff --staged` to a file for attachment. `empty` means nothing was written. */
+export interface StagedDiffResultMessage {
+  type: "stagedDiffResult"
+  requestId: string
+  path?: string
+  empty?: boolean
+}
+
+export interface StagedDiffErrorMessage {
+  type: "stagedDiffError"
+  requestId: string
+  error: string
+}
+// fork_change end
+
 export interface QuestionRequestMessage {
   type: "questionRequest"
   question: QuestionRequest
@@ -1909,6 +1925,8 @@ export type ExtensionMessage =
   | TerminalContextErrorMessage
   | GitChangesContextResultMessage
   | GitChangesContextErrorMessage
+  | StagedDiffResultMessage // fork_change
+  | StagedDiffErrorMessage // fork_change
   | QuestionRequestMessage
   | QuestionResolvedMessage
   | QuestionErrorMessage
