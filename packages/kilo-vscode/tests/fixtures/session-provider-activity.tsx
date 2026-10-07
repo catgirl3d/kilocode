@@ -53,6 +53,7 @@ const { DragDropProvider, SortableProvider } = await import("@thisbeyond/solid-d
 const { renderTab } = await import("../../webview-ui/agent-manager/tab-rendering")
 type TerminalStateControls = import("../../webview-ui/agent-manager/terminal/state").TerminalStateControls
 const { VSCodeProvider } = await import("../../webview-ui/src/context/vscode")
+const { SessionTagsProvider } = await import("../../webview-ui/src/context/session-tags")
 const { ServerProvider } = await import("../../webview-ui/src/context/server")
 const { ConfigContext } = await import("../../webview-ui/src/context/config")
 const { LanguageContext } = await import("../../webview-ui/src/context/language")
@@ -261,14 +262,16 @@ const dispose = render(
         <ProviderProvider>
           <ConfigContext.Provider value={config as never}>
             <LanguageContext.Provider value={language as never}>
-              <NotificationsProvider>
-                <SessionProvider>
-                  {/* TaskHeader (renderTab) consumes useMemory, mirroring ProviderShell.Chat */}
-                  <MemoryProvider>
-                    <Probe />
-                  </MemoryProvider>
-                </SessionProvider>
-              </NotificationsProvider>
+              <SessionTagsProvider>
+                <NotificationsProvider>
+                  <SessionProvider>
+                    {/* TaskHeader (renderTab) consumes useMemory, mirroring ProviderShell.Chat */}
+                    <MemoryProvider>
+                      <Probe />
+                    </MemoryProvider>
+                  </SessionProvider>
+                </NotificationsProvider>
+              </SessionTagsProvider>
             </LanguageContext.Provider>
           </ConfigContext.Provider>
         </ProviderProvider>

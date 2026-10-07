@@ -7,6 +7,7 @@ import { useLanguage } from "../../context/language"
 import { recentSessions } from "../../context/session-utils"
 import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../utils/date"
 import type { SessionInfo } from "../../types/messages"
+import { SessionTags } from "../shared/SessionTags"
 // fork_change end
 
 interface WelcomeEmptyStateProps {
@@ -88,6 +89,7 @@ export const WelcomeEmptyState: Component<WelcomeEmptyStateProps> = (props) => {
                       <span class="recent-session-title" dir="auto">
                         {item.title || language.t("session.untitled")}
                       </span>
+                      <SessionTags sessionID={item.id} />
                       <span class="recent-session-date">{formatRelativeDate(item.updatedAt)}</span>
                     </button>
                   )}
