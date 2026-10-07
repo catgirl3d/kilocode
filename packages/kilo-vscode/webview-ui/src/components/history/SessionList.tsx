@@ -14,10 +14,12 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
+import { useSessionTags } from "../../context/session-tags" // fork_change
 import { formatRelativeDate } from "../../utils/date"
 import { DATE_GROUP_KEYS, dateGroupKey } from "../../utils/date" // fork_change
 import type { SessionInfo } from "../../types/messages"
 import { SessionRenameEditor } from "../shared/SessionRenameEditor"
+import { SessionTags, useSessionTagsDialog } from "../shared/SessionTags" // fork_change
 
 interface SessionListProps {
   onSelectSession: (id: string) => void
@@ -30,27 +32,43 @@ const SessionList: Component<SessionListProps> = (props) => {
   const session = useSession()
   const language = useLanguage()
   const dialog = useDialog()
+  // fork_change start
+  const tags = useSessionTags()
+  const openTags = useSessionTagsDialog()
+  // fork_change end
 
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [pendingRenameId, setPendingRenameId] = createSignal<string | null>(null)
   const [notice, setNotice] = createSignal("")
   let seq = 0
 
+  // fork_change start - derive tag search values without mutating SessionInfo
+  const tagged = createMemo(() =>
+    session.sessions().map((item) => ({
+      ...item,
+      tags: tags
+        .forSession(item.id)
+        .map((tag) => tag.name)
+        .join(" "),
+    })),
+  )
   const items = createMemo(() => {
     const ids = props.sessionIds?.()
-    if (!ids) return session.sessions()
-    return session.sessions().filter((item) => ids.has(item.id))
+    return ids ? tagged().filter((item) => ids.has(item.id)) : tagged()
   })
+  // fork_change end
 
   onMount(() => {
     console.log("[Kilo New] SessionList mounted, loading sessions")
     session.loadSessions()
   })
 
-  const currentSession = (): SessionInfo | undefined => {
+  // fork_change start - current selection must use the derived List item
+  const currentSession = (): (SessionInfo & { tags: string }) | undefined => {
     const id = session.currentSessionID()
     return items().find((s) => s.id === id)
   }
+  // fork_change end
 
   function startRename(s: SessionInfo) {
     setRenamingId(s.id)
@@ -120,6 +138,7 @@ const SessionList: Component<SessionListProps> = (props) => {
   }
 
   function wrapItem(item: SessionInfo, node: JSX.Element): JSX.Element {
+    let trigger: HTMLButtonElement | undefined // fork_change
     return (
       <ContextMenu>
         <ContextMenu.Trigger as="div" class="session-row">
@@ -136,6 +155,22 @@ const SessionList: Component<SessionListProps> = (props) => {
                   aria-label={label(language.t("common.rename"), item)}
                   onClick={() => startRename(item)}
                 />
+                {/* fork_change start - keep the tag action outside the List button */}
+                <IconButton
+                  ref={(el) => {
+                    trigger = el
+                  }}
+                  data-slot="session-row-action"
+                  class="session-tags-button"
+                  icon="bullet-list"
+                  size="small"
+                  variant="ghost"
+                  disabled={!tags.ready()}
+                  aria-label={label(language.t("session.tags.manage"), item)}
+                  title={language.t("session.tags.manage")}
+                  onClick={(event) => openTags(item.id, event.currentTarget)}
+                />
+                {/* fork_change end */}
                 <IconButton
                   data-slot="session-row-action"
                   icon="trash"
@@ -169,6 +204,11 @@ const SessionList: Component<SessionListProps> = (props) => {
             <ContextMenu.Item onSelect={() => session.exportSessionTranscript(item.id)}>
               <ContextMenu.ItemLabel>{language.t("command.session.export")}</ContextMenu.ItemLabel>
             </ContextMenu.Item>
+            {/* fork_change start - open the shared tag editor from the menu */}
+            <ContextMenu.Item disabled={!tags.ready()} onSelect={() => openTags(item.id, trigger)}>
+              <ContextMenu.ItemLabel>{language.t("session.tags.manage")}</ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            {/* fork_change end */}
             <ContextMenu.Separator />
             <ContextMenu.Item onSelect={() => confirmDelete(item)}>
               <ContextMenu.ItemLabel>{language.t("common.delete")}</ContextMenu.ItemLabel>
@@ -181,10 +221,11 @@ const SessionList: Component<SessionListProps> = (props) => {
 
   return (
     <div class="session-list">
-      <List<SessionInfo>
+      {/* fork_change start - include session tags in local search and rows */}
+      <List<SessionInfo & { tags: string }>
         items={items()}
         key={(s) => s.id}
-        filterKeys={["title"]}
+        filterKeys={["title", "tags"]}
         current={currentSession()}
         onMove={announce}
         onSelect={(s) => {
@@ -206,6 +247,7 @@ const SessionList: Component<SessionListProps> = (props) => {
             <span data-slot="list-item-title" dir="auto">
               {name(s)}
             </span>
+            <SessionTags sessionID={s.id} />
             <span data-slot="list-item-description">{formatRelativeDate(s.updatedAt)}</span>
             <Show when={session.currentSessionID() === s.id}>
               <span class="sr-only">{language.t("session.current")}</span>
@@ -213,6 +255,7 @@ const SessionList: Component<SessionListProps> = (props) => {
           </>
         )}
       </List>
+      {/* fork_change end */}
       <Show when={props.sessionIds?.() === undefined && session.sessionsHasMore()}>
         <div class="session-list-load-more">
           <Button

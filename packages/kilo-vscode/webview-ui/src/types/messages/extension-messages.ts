@@ -5,6 +5,7 @@ import type { PartBatch, PartRemove, PartUpdate } from "../../../../src/shared/s
 import type { MarketplaceItem, MarketplaceInstalledMetadata, MarketplaceRelevanceMetadata } from "../marketplace"
 import type { ConnectionState, ServerInfo, SessionStatus } from "./connection"
 import type { FileAttachment, Part } from "./parts"
+// fork_change start - local session tag contracts
 import type {
   CloudSessionInfo,
   Message,
@@ -13,8 +14,11 @@ import type {
   SessionCloseReason,
   SessionInfo,
   SessionModelUsage,
+  SessionTagError,
+  SessionTagsState,
   SessionUpdate,
 } from "./sessions"
+// fork_change end
 import type { AgentManagerSidebarTarget } from "./webview-messages"
 import type { PermissionRequest } from "./permissions"
 import type { AnacondaDesktopExtensionMessage } from "../../../../src/shared/anaconda-desktop-messages"
@@ -1255,6 +1259,19 @@ export interface FavoritesLoadedMessage {
   favorites: ModelSelection[]
 }
 
+// fork_change start
+export interface SessionTagsLoadedMessage {
+  type: "sessionTagsLoaded"
+  state: SessionTagsState
+}
+
+export interface SessionTagResultMessage {
+  type: "sessionTagResult"
+  requestID: string
+  ok: boolean
+  error?: SessionTagError
+}
+// fork_change end
 export interface AgentManagerBranchesMessage {
   type: "agentManager.branches"
   projectId?: string
@@ -2053,6 +2070,10 @@ export type ExtensionMessage =
   | RecentsLoadedMessage
   | ModelSelectorExpandedLoadedMessage
   | FavoritesLoadedMessage
+  // fork_change start - local session metadata
+  | SessionTagsLoadedMessage
+  | SessionTagResultMessage
+  // fork_change end
   | LanguageChangedMessage
   | ContinueInWorktreeProgressMessage
   | WorktreeStatsLoadedMessage

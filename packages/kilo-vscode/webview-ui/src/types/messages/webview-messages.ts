@@ -1,6 +1,6 @@
 import type { InstallMarketplaceItemOptions, MarketplaceItem } from "../marketplace"
 import type { FileAttachment } from "./parts"
-import type { MessageLoadMode } from "./sessions"
+import type { MessageLoadMode, SessionTagAction } from "./sessions" // fork_change
 import type { PermissionFileDiff } from "./permissions"
 import type { ModelSelection, ProviderConfig } from "./providers"
 import type { Config } from "./config"
@@ -1684,6 +1684,17 @@ export interface RequestFavoritesMessage {
   type: "requestFavorites"
 }
 
+// fork_change start
+export interface RequestSessionTagsMessage {
+  type: "requestSessionTags"
+}
+
+export interface SessionTagActionMessage {
+  type: "sessionTagAction"
+  requestID: string
+  action: SessionTagAction
+}
+// fork_change end
 // Continue in Worktree: transfer sidebar session + git state to an isolated worktree
 export interface ContinueInWorktreeRequest {
   type: "continueInWorktree"
@@ -2026,6 +2037,10 @@ export type WebviewMessage =
   | ToggleFavoriteRequest
   | MoveFavoriteRequest // fork_change
   | RequestFavoritesMessage
+  // fork_change start - local session metadata
+  | RequestSessionTagsMessage
+  | SessionTagActionMessage
+  // fork_change end
   | ToggleRemoteMessage
   | ToggleCaffeinationMessage
   | SetRemoteEnabledMessage

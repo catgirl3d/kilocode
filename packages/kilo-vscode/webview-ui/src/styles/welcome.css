@@ -399,13 +399,15 @@
   background: var(--vscode-list-hoverBackground);
 }
 
+/* fork_change start - reserve room for the title beside passive tags */
 .recent-session-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+  flex: 1 1 88px;
   min-width: 0;
 }
+/* fork_change end */
 
 /* fork_change start - date groups on the welcome screen */
 .recent-session-group {

@@ -1,9 +1,11 @@
 import { describe, it, expect, spyOn } from "bun:test"
 import * as vscode from "vscode"
+import type { Memento } from "vscode"
 import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
 import { ProjectRouteService } from "../../src/agent-manager/project/route"
+import { handleSessionTagsMessage, initSessionTags, sessionTags } from "../../src/session-tags"
 import type { DiffViewerProvider } from "../../src/diff/DiffViewerProvider"
 import type { PRReviewCommentData } from "../../src/shared/review-comments"
 
@@ -81,6 +83,9 @@ function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs
       onEventFiltered: () => () => undefined,
       onStateChange: () => () => undefined,
       onNotificationDismissed: () => () => undefined,
+      onSessionAcknowledged: () => () => undefined,
+      clearPermissionSession: () => undefined,
+      pruneSession: () => undefined,
       onLanguageChanged: () => () => undefined,
       onProfileChanged: () => () => undefined,
       onFavoritesChanged: () => () => undefined,
@@ -884,5 +889,196 @@ describe("KiloProvider route integration", () => {
         directory: "/repo/project",
       }),
     )
+  })
+})
+
+function tagMemory(): Memento {
+  const data = new Map<string, unknown>()
+  return {
+    get: <T>(key: string) => data.get(key) as T | undefined,
+    update: async (key: string, value: unknown) => {
+      data.set(key, value)
+    },
+    keys: () => [...data.keys()],
+    setKeysForSync: () => {},
+  } as unknown as Memento
+}
+
+function tagRoute(provider: KiloProvider, sent: unknown[]) {
+  let receive: ((message: Record<string, unknown>) => Promise<void>) | undefined
+  const webview = {
+    onDidReceiveMessage: (listener: (message: Record<string, unknown>) => Promise<void>) => {
+      receive = listener
+      return { dispose: () => {} }
+    },
+    postMessage: async (message: unknown) => {
+      sent.push(message)
+      return true
+    },
+  } as unknown as vscode.Webview
+  const internal = provider as unknown as {
+    webview: vscode.Webview | null
+    setupWebviewMessageHandler: (webview: vscode.Webview) => void
+  }
+  internal.webview = webview
+  internal.setupWebviewMessageHandler(webview)
+  return async (message: Record<string, unknown>) => {
+    if (!receive) throw new Error("Expected a webview message route")
+    await receive(message)
+  }
+}
+
+function typeList(messages: unknown[]): unknown[] {
+  return messages.flatMap((message) => {
+    const type = typeof message === "object" && message !== null ? (message as { type?: unknown }).type : undefined
+    return type === "sessionTagsLoaded" || type === "sessionTagResult" ? [type] : []
+  })
+}
+
+describe("session tags", () => {
+  it("routes without a ready CLI, broadcasts changes, and stops after provider disposal", async () => {
+    initSessionTags(tagMemory())
+    const { connection } = mockConnection()
+    connection.getClient = () => {
+      throw new Error("CLI is not ready")
+    }
+    const first = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const second = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const a: unknown[] = []
+    const b: unknown[] = []
+    const send = tagRoute(first, a)
+    tagRoute(second, b)
+    let disposed = false
+
+    try {
+      const state = first as unknown as { client: unknown; connectionState: string }
+      expect(state.client).toBeNull()
+      expect(state.connectionState).toBe("connecting")
+
+      await send({ type: "requestSessionTags" })
+      expect(a).toContainEqual({ type: "sessionTagsLoaded", state: { tags: [], sessions: {} } })
+      expect(b).toEqual([])
+
+      a.length = 0
+      await send({
+        type: "sessionTagAction",
+        requestID: "create",
+        action: { type: "create", sessionID: "ses-a", name: "Alpha", color: "Blue" },
+      })
+      expect(typeList(a)).toEqual(["sessionTagsLoaded", "sessionTagResult"])
+      expect(typeList(b)).toEqual(["sessionTagsLoaded"])
+
+      second.dispose()
+      disposed = true
+      const tag = sessionTags().tags.at(0)
+      if (!tag) throw new Error("Expected the host to save the new tag")
+      await send({
+        type: "sessionTagAction",
+        requestID: "rename",
+        action: { type: "update", id: tag.id, patch: { name: "Renamed" } },
+      })
+      expect(typeList(a)).toEqual(["sessionTagsLoaded", "sessionTagResult", "sessionTagsLoaded", "sessionTagResult"])
+      expect(typeList(b)).toEqual(["sessionTagsLoaded"])
+    } finally {
+      first.dispose()
+      if (!disposed) second.dispose()
+    }
+  })
+
+  it("cleans assignments only after a confirmed session deletion", async () => {
+    initSessionTags(tagMemory())
+    await handleSessionTagsMessage(
+      {
+        type: "sessionTagAction",
+        requestID: "create",
+        action: { type: "create", sessionID: "ses-a", name: "Alpha", color: "Blue" },
+      },
+      () => {},
+    )
+    const tag = sessionTags().tags.at(0)
+    if (!tag) throw new Error("Expected the host to save the new tag")
+    await handleSessionTagsMessage(
+      {
+        type: "sessionTagAction",
+        requestID: "assign",
+        action: { type: "assign", sessionID: "ses-b", id: tag.id, assigned: true },
+      },
+      () => {},
+    )
+
+    const { connection } = mockConnection()
+    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const internal = provider as unknown as {
+      webview: vscode.Webview | null
+      handleDeleteSession: (sessionID: string) => Promise<void>
+    }
+    const client = connection.getClient() as unknown as {
+      backgroundProcess: { stopSession: (input: unknown) => Promise<void> }
+      session: { delete: (input: unknown, options: unknown) => Promise<unknown> }
+    }
+    client.backgroundProcess = { stopSession: async () => {} }
+    client.session.delete = async () => ({ data: {} })
+    const sent: unknown[] = []
+    internal.webview = {
+      postMessage: async (message: unknown) => sent.push(message),
+    } as unknown as vscode.Webview
+
+    try {
+      await internal.handleDeleteSession("ses-a")
+      await handleSessionTagsMessage(
+        {
+          type: "sessionTagAction",
+          requestID: "flush",
+          action: { type: "assign", sessionID: "ses-b", id: tag.id, assigned: true },
+        },
+        () => {},
+      )
+
+      expect(sessionTags()).toEqual({ tags: [tag], sessions: { "ses-b": [tag.id] } })
+      expect(sent).toContainEqual({ type: "sessionDeleted", sessionID: "ses-a" })
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("preserves assignments when the backend rejects session deletion", async () => {
+    initSessionTags(tagMemory())
+    await handleSessionTagsMessage(
+      {
+        type: "sessionTagAction",
+        requestID: "create",
+        action: { type: "create", sessionID: "ses-a", name: "Alpha", color: "Blue" },
+      },
+      () => {},
+    )
+    const tag = sessionTags().tags.at(0)
+    if (!tag) throw new Error("Expected the host to save the new tag")
+
+    const { connection } = mockConnection()
+    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const internal = provider as unknown as {
+      webview: vscode.Webview | null
+      handleDeleteSession: (sessionID: string) => Promise<void>
+    }
+    const client = connection.getClient() as unknown as {
+      backgroundProcess: { stopSession: (input: unknown) => Promise<void> }
+      session: { delete: (input: unknown, options: unknown) => Promise<unknown> }
+    }
+    client.backgroundProcess = { stopSession: async () => {} }
+    client.session.delete = async () => {
+      throw new Error("delete failed")
+    }
+    const sent: unknown[] = []
+    internal.webview = {
+      postMessage: async (message: unknown) => sent.push(message),
+    } as unknown as vscode.Webview
+
+    try {
+      await internal.handleDeleteSession("ses-a")
+      expect(sessionTags()).toEqual({ tags: [tag], sessions: { "ses-a": [tag.id] } })
+      expect(sent).toContainEqual(expect.objectContaining({ type: "error" }))
+    } finally {
+      provider.dispose()
+    }
   })
 })

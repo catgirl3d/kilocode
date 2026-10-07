@@ -10,8 +10,10 @@
  * don't throw.
  */
 
-import { createSignal, createMemo, type ParentComponent } from "solid-js"
-import { VSCodeProvider } from "../context/vscode"
+import { createSignal, createMemo, onCleanup, onMount, type Component, type ParentComponent } from "solid-js"
+import { getVSCodeAPI, VSCodeProvider } from "../context/vscode"
+import { SessionTagsProvider } from "../context/session-tags"
+import { post } from "../utils/webview-message"
 import { ServerProvider } from "../context/server"
 import { FeedbackProvider } from "../context/feedback"
 import { ProviderContext } from "../context/provider"
@@ -52,9 +54,11 @@ import type {
   SessionCloseReason,
   QuestionRequest,
   SuggestionRequest,
+  SessionTagsState,
 } from "../types/messages"
 
 type PluginSpec = string | [string, Record<string, unknown>]
+const empty: SessionTagsState = { tags: [], sessions: {} }
 
 // Merged English dictionary (same merge order as the real LanguageProvider)
 const dict: Record<string, string> = { ...appEn, ...amEn, ...uiEn, ...kiloEn }
@@ -147,6 +151,28 @@ export const defaultMockData = {
 // ---------------------------------------------------------------------------
 
 function noop() {}
+
+export const StorySessionTags: Component<{ state: SessionTagsState; fail?: boolean }> = (props) => {
+  onMount(() => {
+    if (props.fail) {
+      const api = getVSCodeAPI()
+      const original = api.postMessage.bind(api)
+      const fail = (message: Parameters<typeof api.postMessage>[0]) => {
+        original(message)
+        if (message.type !== "sessionTagAction") return
+        queueMicrotask(() =>
+          post({ type: "sessionTagResult", requestID: message.requestID, ok: false, error: "storage" }),
+        )
+      }
+      api.postMessage = fail
+      onCleanup(() => {
+        if (api.postMessage === fail) api.postMessage = original
+      })
+    }
+    queueMicrotask(() => post({ type: "sessionTagsLoaded", state: props.state }))
+  })
+  return null
+}
 
 function mockNotificationsValue(items: KilocodeNotification[] = []) {
   return {
@@ -337,6 +363,8 @@ interface StoryProvidersProps {
   notifications?: KilocodeNotification[]
   status?: string
   sessionID?: string
+  sessionTags?: SessionTagsState | null
+  failTags?: boolean
   /** When provided, injects a mock ConfigContext with this config instead of the real ConfigProvider. */
   config?: Config
   features?: Partial<FeatureFlags>
@@ -482,40 +510,45 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
                       t,
                     }}
                   >
-                    <I18nProvider value={{ locale: () => "en", t, plural }}>
-                      <NotificationsContext.Provider value={notifications}>
-                        <SessionContext.Provider value={session as any}>
-                          <MemoryProvider>
-                            <IndexingProvider>
-                              <KiloEmbeddingModelsProvider>
-                                <DataProvider
-                                  data={data()}
-                                  directory="/project/"
-                                  onOpenDiff={props.onOpenDiff}
-                                  onOpenFile={props.onOpenFile}
-                                >
-                                  <DiffComponentProvider component={Diff}>
-                                    <CodeComponentProvider component={Code}>
-                                      <FileComponentProvider component={File}>
-                                        <MarkedProvider>
-                                          <TranscriptSearchProvider>
-                                            {props.noPadding ? (
-                                              props.children
-                                            ) : (
-                                              <div style={{ padding: "12px" }}>{props.children}</div>
-                                            )}
-                                          </TranscriptSearchProvider>
-                                        </MarkedProvider>
-                                      </FileComponentProvider>
-                                    </CodeComponentProvider>
-                                  </DiffComponentProvider>
-                                </DataProvider>
-                              </KiloEmbeddingModelsProvider>
-                            </IndexingProvider>
-                          </MemoryProvider>
-                        </SessionContext.Provider>
-                      </NotificationsContext.Provider>
-                    </I18nProvider>
+                    <SessionTagsProvider>
+                      {props.sessionTags === null ? null : (
+                        <StorySessionTags state={props.sessionTags ?? empty} fail={props.failTags ?? true} />
+                      )}
+                      <I18nProvider value={{ locale: () => "en", t, plural }}>
+                        <NotificationsContext.Provider value={notifications}>
+                          <SessionContext.Provider value={session as any}>
+                            <MemoryProvider>
+                              <IndexingProvider>
+                                <KiloEmbeddingModelsProvider>
+                                  <DataProvider
+                                    data={data()}
+                                    directory="/project/"
+                                    onOpenDiff={props.onOpenDiff}
+                                    onOpenFile={props.onOpenFile}
+                                  >
+                                    <DiffComponentProvider component={Diff}>
+                                      <CodeComponentProvider component={Code}>
+                                        <FileComponentProvider component={File}>
+                                          <MarkedProvider>
+                                            <TranscriptSearchProvider>
+                                              {props.noPadding ? (
+                                                props.children
+                                              ) : (
+                                                <div style={{ padding: "12px" }}>{props.children}</div>
+                                              )}
+                                            </TranscriptSearchProvider>
+                                          </MarkedProvider>
+                                        </FileComponentProvider>
+                                      </CodeComponentProvider>
+                                    </DiffComponentProvider>
+                                  </DataProvider>
+                                </KiloEmbeddingModelsProvider>
+                              </IndexingProvider>
+                            </MemoryProvider>
+                          </SessionContext.Provider>
+                        </NotificationsContext.Provider>
+                      </I18nProvider>
+                    </SessionTagsProvider>
                   </LanguageContext.Provider>
                 </DialogProvider>
               </MockProviderProvider>
