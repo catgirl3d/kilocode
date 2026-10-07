@@ -543,6 +543,14 @@ export interface RequestTerminalContextMessage {
   agentManagerContext?: string
 }
 
+// fork_change start
+export interface RequestStagedDiffMessage {
+  type: "requestStagedDiff"
+  requestId: string
+  sessionID?: string
+}
+// fork_change end
+
 export interface RequestGitChangesContextMessage {
   type: "requestGitChangesContext"
   requestId: string
@@ -1853,6 +1861,7 @@ export type WebviewMessage =
   | ValidateInstructionPathRequest // fork_change
   | RequestTerminalContextMessage
   | RequestGitChangesContextMessage
+  | RequestStagedDiffMessage // fork_change
   | ChatCompletionAcceptedMessage
   | UpdateSettingRequest
   | RequestTimelineSettingMessage

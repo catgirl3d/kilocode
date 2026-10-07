@@ -223,6 +223,11 @@ export const dict = {
   "prompt.agents.show": "Show background agents",
   "prompt.action.enhance": "Enhance prompt",
   "prompt.action.more": "More actions",
+  // fork_change start
+  "prompt.action.stagedDiff": "Attach staged diff",
+  "prompt.stagedDiff.empty": "No staged changes to attach",
+  "prompt.stagedDiff.failed": "Could not attach staged diff",
+  // fork_change end
   "prompt.paste.expand": "Click to expand pasted text",
   "prompt.issues.title": "Session issues",
   "prompt.mcp.provider": "{{name}} MCP",
