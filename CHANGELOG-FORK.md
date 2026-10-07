@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Organize local sessions with reusable colored tags in recent sessions, local history/search, and the active session header; keep session tabs uncluttered.
 - Preserve complete typed memory records, deliver them in full during recall when they fit within the response budget, and support exact lookup by `memory_id`.
 - Scope fork annotation audits to locally edited or branch-changed files without misclassifying committed fork markers.
 - Restore opt-in SWE-Pruner for task-focused `read`, `grep`, and `bash` output pruning, with explicit model selection, bounded no-retry requests, and fail-open safeguards.
