@@ -2,14 +2,24 @@
    Task Header Rename
    ============================================ */
 
+/* fork_change start - reserve a shrinkable title region for session tags */
 [data-slot="task-header-title"] {
   display: flex;
   align-items: center;
+  flex: 1 1 0;
+  gap: 6px;
   min-width: 0;
+}
+
+[data-slot="task-header-name"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 
 [data-slot="task-header-title-trigger"] {
   display: inline-flex;
+  flex: 1 1 auto;
   max-width: 100%;
   min-width: 0;
   border-radius: var(--radius-md);
@@ -17,6 +27,7 @@
     color 0.15s ease,
     background-color 0.15s ease;
 }
+/* fork_change end */
 
 [data-slot="task-header-title-trigger"][data-renamable] {
   margin: -4px -6px;

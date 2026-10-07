@@ -13,6 +13,10 @@ import type {
   SessionCloseReason,
   SessionInfo,
   SessionModelUsage,
+  // fork_change start - local session tag contracts
+  SessionTagError,
+  SessionTagsState,
+  // fork_change end
   SessionUpdate,
 } from "./sessions"
 import type { AgentManagerSidebarTarget } from "./webview-messages"
@@ -1262,6 +1266,19 @@ export interface FavoritesLoadedMessage {
   favorites: ModelSelection[]
 }
 
+// fork_change start
+export interface SessionTagsLoadedMessage {
+  type: "sessionTagsLoaded"
+  state: SessionTagsState
+}
+
+export interface SessionTagResultMessage {
+  type: "sessionTagResult"
+  requestID: string
+  ok: boolean
+  error?: SessionTagError
+}
+// fork_change end
 export interface AgentManagerBranchesMessage {
   type: "agentManager.branches"
   projectId?: string
@@ -2061,6 +2078,10 @@ export type ExtensionMessage =
   | RecentsLoadedMessage
   | ModelSelectorExpandedLoadedMessage
   | FavoritesLoadedMessage
+  // fork_change start - local session metadata
+  | SessionTagsLoadedMessage
+  | SessionTagResultMessage
+  // fork_change end
   | LanguageChangedMessage
   | ContinueInWorktreeProgressMessage
   | WorktreeStatsLoadedMessage
