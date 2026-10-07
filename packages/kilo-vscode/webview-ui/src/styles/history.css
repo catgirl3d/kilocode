@@ -17,6 +17,12 @@
   text-align: left;
 }
 
+/* fork_change start - preserve local titles while tags shrink */
+.session-list [data-slot="list-item-title"] {
+  flex: 1 1 88px;
+}
+/* fork_change end */
+
 .session-list [data-slot="list-item-description"],
 .cloud-session-list [data-slot="list-item-description"] {
   flex-shrink: 0;
