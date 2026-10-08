@@ -430,6 +430,31 @@ describe("PromptInput send origin contract", () => {
     expect(source).toMatch(/await git\.resolveAttachment\(message, id, context\)/)
   })
 
+  it("resolves commit mentions before send and includes their show attachments", () => {
+    const start = source.indexOf("const handleSend = async () =>")
+    const end = source.indexOf("\n  return (", start)
+    const body = source.slice(start, end)
+    const resolve = body.indexOf("await resolveCommits(message, id)")
+    const send = body.indexOf("session.sendMessage(")
+
+    expect(resolve).toBeGreaterThan(-1)
+    expect(resolve).toBeLessThan(send)
+    expect(source).toContain("commits.resolveAttachments(message, id)")
+    expect(body).toContain("...(commitFiles ?? [])")
+  })
+
+  it("routes the Git commits mention entry into its dedicated picker", () => {
+    expect(source).toContain("<CommitMentionPicker")
+    expect(source).toContain("when={!mention.commitPicker()}")
+    expect(source).toContain("mention.selectCommit(picked")
+  })
+
+  it("gates send readiness on commit resolution and keeps hash mentions out of file links", () => {
+    const ready = source.slice(source.indexOf("const sendReady"), source.indexOf("const canContinue"))
+    expect(ready).toContain("!commits.pending()")
+    expect(source).toContain('if (isCommitHash(seg().text.replace(/^@/, ""))) return')
+  })
+
   it("passes the captured origin to message and command sends", () => {
     expect(source).toMatch(/session\.sendMessage\([\s\S]*origin \?\? null[\s\S]*browserData[\s\S]*\)/)
     const command = source.slice(source.indexOf("session.sendCommand("))
