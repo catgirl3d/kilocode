@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { createKiloClient } from "@kilocode/sdk/v2/client"
+import path from "node:path"
 import * as vscode from "vscode"
 import { marketplaceBundles } from "../../src/services/marketplace/bundles"
 
@@ -13,13 +14,14 @@ const fs = vscode.workspace.fs as unknown as {
 const original = { readFile: fs.readFile, stat: fs.stat }
 
 function setup(files: Map<string, string>) {
+  const normalized = new Map([...files].map(([key, value]) => [path.normalize(key), value] as const))
   fs.stat = async (uri) => {
-    const body = files.get(uri.fsPath)
+    const body = normalized.get(path.normalize(uri.fsPath))
     if (body === undefined) throw new Error("ENOENT")
     return { type: vscode.FileType.File, size: Buffer.byteLength(body, "utf8"), ctime: 0, mtime: 0 }
   }
   fs.readFile = async (uri) => {
-    const body = files.get(uri.fsPath)
+    const body = normalized.get(path.normalize(uri.fsPath))
     if (body === undefined) throw new Error("ENOENT")
     return Buffer.from(body)
   }
