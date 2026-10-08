@@ -1027,7 +1027,7 @@ const layer = Layer.effect(
               ),
             )
 
-          const discard = Effect.fn("SessionProcessor.discardIncomplete")(function* (baseline: Set<string>, opaque = false) { // kilocode_change - [fork] retain closed opaque reasoning during provider retries
+          const discard = Effect.fn("SessionProcessor.discardIncomplete")(function* (baseline: Set<string>, opaque = false) {
             yield* Effect.forEach(
               Object.values(ctx.toolcalls),
               (call) => Deferred.succeed(call.done, undefined).pipe(Effect.ignore),
@@ -1041,7 +1041,13 @@ const layer = Layer.effect(
               parts.filter(
                 (part) =>
                   !baseline.has(part.id) &&
-                  !(opaque && part.type === "reasoning" && part.text === "" && part.metadata != null && part.time.end != null),
+                  !(
+                    opaque &&
+                    part.type === "reasoning" &&
+                    part.text === "" &&
+                    part.metadata != null &&
+                    part.time.end != null
+                  ),
               ),
               // kilocode_change end
               (part) =>

@@ -27,7 +27,7 @@ export function createSessionModelActions(deps: Deps) {
       const agent = deps.agentForScope(id)
       const value = deps.variantSelections()[variantKey(model, agent, id)] ?? deps.variantForAgent(agent, model)
       const list = Object.keys(deps.findModel(model)?.variants ?? {})
-      const variant = value === DEFAULT_VARIANT ? DEFAULT_VARIANT : preserveVariant(value, list) ?? DEFAULT_VARIANT
+      const variant = value === DEFAULT_VARIANT ? DEFAULT_VARIANT : (preserveVariant(value, list) ?? DEFAULT_VARIANT)
       deps.rememberEffort(agent, model, variant)
     })
   }
