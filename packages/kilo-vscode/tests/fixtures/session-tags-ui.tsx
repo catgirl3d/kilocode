@@ -22,6 +22,10 @@ const dispatch = (data: ExtensionMessage) => post(data)
 const api = {
   postMessage: (message: WebviewMessage) => {
     sent.push(message)
+    if (message.type === "requestSessionColors") {
+      dispatch({ type: "sessionColorsLoaded", colors: { "ses-home": "Red", "ses-tagged": "Green" } })
+      return
+    }
     if (message.type !== "requestSessionTags") return
     requests++
     if (requests === 1) dispatch({ type: "sessionTagsLoaded", state: empty })
@@ -83,6 +87,8 @@ const [secondary, setSecondary] = createSignal(false)
 const [sessions] = createSignal(items)
 const selected: string[] = []
 const renamed: string[] = []
+const [amColors, setAmColors] = createSignal<Record<string, string>>({ "ses-home": "Purple", "ses-plain": "Blue" })
+const amSets: { id: string; color: string | null }[] = []
 const base = mockSessionValue({ id: "ses-home" })
 const session = {
   ...base,
@@ -136,17 +142,32 @@ const dispose = render(
             <UnloadedProbe />
           </SessionTagsProvider>
         </Show>
-        <section data-testid="history">
-          <SessionList onSelectSession={(id) => selected.push(id)} />
-        </section>
-        <section data-testid="welcome">
-          <WelcomeEmptyState onSelectSession={(id) => selected.push(id)} />
-        </section>
-        <div data-testid="tabs">
-          <LocalTabsProvider>
+        <LocalTabsProvider>
+          <section data-testid="history">
+            <SessionList onSelectSession={(id) => selected.push(id)} />
+          </section>
+          <section data-testid="welcome">
+            <WelcomeEmptyState onSelectSession={(id) => selected.push(id)} />
+          </section>
+          <div data-testid="tabs">
             <SessionTabStrip />
-          </LocalTabsProvider>
-        </div>
+          </div>
+        </LocalTabsProvider>
+        <section data-testid="am-history">
+          <SessionList
+            onSelectSession={(id) => selected.push(id)}
+            sessionColor={(id) => amColors()[id]}
+            setSessionColor={(id, color) => {
+              amSets.push({ id, color })
+              setAmColors((prev) => {
+                if (color) return { ...prev, [id]: color }
+                const next = { ...prev }
+                delete next[id]
+                return next
+              })
+            }}
+          />
+        </section>
         <div data-testid="header">
           <TaskHeader />
         </div>
@@ -283,6 +304,106 @@ const plain = [...welcome.querySelectorAll<HTMLElement>(".recent-session-item")]
 )
 assert(plain)
 assert.equal(plain.querySelector('[data-slot="session-tags"]'), null, "an untagged session has no empty chip root")
+
+const welcomeStripe = home.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')
+assert(welcomeStripe, "a colored session shows the color stripe on the welcome screen")
+assert.equal(welcomeStripe.style.background, "var(--vscode-terminal-ansiRed)")
+assert.equal(plain.querySelector('[data-slot="session-color-stripe"]'), null, "a session without a color has no stripe")
+
+const historyStripe = item("ses-home")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')
+assert(historyStripe, "the local history row shows the session color stripe")
+assert.equal(historyStripe.style.background, "var(--vscode-terminal-ansiRed)")
+assert.equal(
+  item("ses-plain")?.querySelector('[data-slot="session-color-stripe"]'),
+  null,
+  "a history row without a color has no stripe",
+)
+
+dispatch({ type: "sessionColorsLoaded", colors: { "ses-plain": "Blue" } })
+await settle()
+assert.equal(
+  item("ses-home")?.querySelector('[data-slot="session-color-stripe"]'),
+  null,
+  "clearing a color removes its history stripe",
+)
+assert.equal(
+  item("ses-plain")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
+  "var(--vscode-charts-blue)",
+  "the shared store updates history stripes reactively",
+)
+
+function rowTrigger(id: string, scope: string) {
+  const row = root.querySelector<HTMLElement>(`[data-testid="${scope}"] [data-slot="list-item"][data-key="${id}"]`)
+  assert(row, `${scope} row ${id} is mounted`)
+  const trigger = row.parentElement
+  assert(trigger, `${scope} row ${id} exposes a context-menu trigger`)
+  return trigger
+}
+
+function openRowMenu(id: string, scope: string) {
+  const before = new Set(document.querySelectorAll<HTMLElement>(".session-list-menu"))
+  rowTrigger(id, scope).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+  return () => [...document.querySelectorAll<HTMLElement>(".session-list-menu")].find((menu) => !before.has(menu))
+}
+
+function purpleSwatch(menu: HTMLElement) {
+  return [...menu.querySelectorAll<HTMLElement>(".am-color-grid-item")].find(
+    (entry) => entry.querySelector<HTMLElement>(".am-color-swatch")?.style.background === "var(--vscode-charts-purple)",
+  )
+}
+
+const findHistoryMenu = openRowMenu("ses-plain", "history")
+await settle()
+const historyMenu = findHistoryMenu()
+assert(historyMenu, "the history row menu opens")
+assert.equal(
+  historyMenu.querySelectorAll(".am-color-grid-item").length,
+  9,
+  "the menu exposes the full palette plus the clear entry",
+)
+assert(purpleSwatch(historyMenu), "the menu offers the shared color palette")
+purpleSwatch(historyMenu)!.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
+await settle()
+const colorWrites = sent.filter((message) => message.type === "setSessionColor")
+assert.deepEqual(colorWrites.at(-1), { type: "setSessionColor", sessionId: "ses-plain", color: "Purple" })
+assert.equal(colorWrites.length, 1, "the menu assignment writes a single color message")
+assert.equal(
+  item("ses-plain")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
+  "var(--vscode-charts-purple)",
+  "the sidebar menu assignment updates the history stripe",
+)
+
+const amRow = (id: string) =>
+  root.querySelector<HTMLElement>(`[data-testid="am-history"] [data-slot="list-item"][data-key="${id}"]`)
+assert.equal(
+  amRow("ses-home")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
+  "var(--vscode-charts-purple)",
+  "a host-provided color source shows stripes without local tabs",
+)
+assert.equal(
+  amRow("ses-tagged")?.querySelector('[data-slot="session-color-stripe"]'),
+  null,
+  "a session outside the host color map has no stripe",
+)
+assert.equal(
+  amRow("ses-plain")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
+  "var(--vscode-charts-blue)",
+  "the host color map drives its own rows",
+)
+
+const findAmMenu = openRowMenu("ses-tagged", "am-history")
+await settle()
+const amMenu = findAmMenu()
+assert(amMenu, "the host-backed row menu opens")
+assert(purpleSwatch(amMenu), "the host-backed row menu offers the palette")
+purpleSwatch(amMenu)!.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
+await settle()
+assert.deepEqual(amSets.at(-1), { id: "ses-tagged", color: "Purple" })
+assert.equal(
+  amRow("ses-tagged")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
+  "var(--vscode-charts-purple)",
+  "the host-backed menu assignment updates the stripe",
+)
 
 const tabs = root.querySelector<HTMLElement>('[data-testid="tabs"] [data-component="session-tabs"]')
 assert(tabs, "the real local session tab strip is mounted")
