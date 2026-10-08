@@ -46,7 +46,23 @@ export namespace KiloCompactionChunks {
     session: Pick<Session.Interface, "removePart" | "updateMessage">
   }) {
     return Effect.gen(function* () {
-      if (input.message.finish !== "length") return input.result
+      // kilocode_change start - [fork] a summary attempt retried by the error policy leaves the parts of
+      // the failed earlier step behind; only the final completed step is a real summary.
+      if (input.message.finish !== "length") {
+        if (input.message.summary) {
+          const parts = yield* MessageV2.parts(input.message.id)
+          const start = parts.findLastIndex((part) => part.type === "step-start")
+          if (start > 0)
+            for (const part of parts.slice(0, start))
+              yield* input.session.removePart({
+                sessionID: input.message.sessionID,
+                messageID: input.message.id,
+                partID: part.id,
+              })
+        }
+        return input.result
+      }
+      // kilocode_change end
       const parts = yield* MessageV2.parts(input.message.id)
       for (const part of parts)
         yield* input.session.removePart({
@@ -310,7 +326,12 @@ export namespace KiloCompactionChunks {
           messages: [...input.data, { role: "user", content: [{ type: "text", text: input.text }] }],
           model: input.model,
         })
-        const parts = yield* MessageV2.parts(worker.message.id)
+        // kilocode_change start - [fork] a retried worker attempt leaves the truncated earlier step behind;
+        // only the final completed step carries the chunk summary.
+        const all = yield* MessageV2.parts(worker.message.id)
+        const start = all.findLastIndex((part) => part.type === "step-start")
+        const parts = start > 0 ? all.slice(start) : all
+        // kilocode_change end
         return {
           result,
           output: text(worker.message, parts),

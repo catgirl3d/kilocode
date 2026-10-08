@@ -63,7 +63,7 @@ const McpEditView: Component<Props> = (props) => {
         ? projectDraft?.().mcp?.[props.name]
         : scope === "global"
           ? globalDraft().mcp?.[props.name]
-        : undefined
+          : undefined
     return mcpDisplayEntry(config().mcp?.[props.name], scoped, draft) ?? {}
     // fork_change end
   })

@@ -55,20 +55,11 @@ export function createSessionVariants(options: Options) {
     const variants = list(sid)
     if (variants.length === 0) return undefined
     const name = options.agent(sid)
-    return getVariant(
-      options.selections(),
-      selection,
-      variants,
-      name,
-      sid,
-      configured(name, selection),
-      presetFirst,
-    )
+    return getVariant(options.selections(), selection, variants, name, sid, configured(name, selection), presetFirst)
   }
 
   const request = (sessionID?: string, presetFirst = false) =>
     current(sessionID, presetFirst) ?? (list(sessionID).length > 0 ? DEFAULT_VARIANT : undefined)
-  // fork_change end
 
   // The raw choice behind current(), with the same normal priority.
   const saved = (selection: ModelSelection, name: string, sessionID?: string) => {
@@ -87,7 +78,6 @@ export function createSessionVariants(options: Options) {
     return model ? saved(model, options.agent(id), id) : undefined
   }
 
-  // fork_change start - Persist explicit picker choices for future tasks.
   const select = (value: string | undefined, sessionID?: string, remember = true) => {
     const sid = sessionID ?? options.session()
     const selection = options.selected(sid)
