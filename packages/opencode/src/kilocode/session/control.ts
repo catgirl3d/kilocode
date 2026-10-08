@@ -19,6 +19,24 @@ export namespace KiloSessionControl {
     return parts.some((part) => part.type === "text" && part.synthetic && part.metadata?.background === true)
   }
 
+  // fork_change start
+  /**
+   * True when the parts carry a background task settlement — the synthetic
+   * resume injected when a background subagent finishes. Settlements wait
+   * behind interactive prompts instead of dismissing them. Scheduled wakeups
+   * and cron fires share the `background` marker but must still wake the
+   * session on their own, so they are excluded.
+   */
+  export function settlement(
+    parts: ReadonlyArray<{ type: string; synthetic?: boolean; metadata?: Record<string, unknown> }>,
+  ) {
+    return parts.some(
+      (part) =>
+        part.type === "text" && part.synthetic && part.metadata?.background === true && part.metadata?.wakeup !== true,
+    )
+  }
+  // fork_change end
+
   export const make = Effect.gen(function* () {
     const state = yield* InstanceState.make(() => Effect.succeed(new Map<SessionID, State>()))
     const get = Effect.fn("KiloSessionControl.get")(function* (id: SessionID) {
