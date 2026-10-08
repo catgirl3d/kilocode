@@ -50,7 +50,7 @@ describe("model selector", () => {
 
   it("passes temporary model overrides without remembering them", () => {
     const selected = { providerID: "kilo", modelID: "old" }
-    const applied: typeof selected[] = []
+    const applied: (typeof selected)[] = []
     const set: Array<{ id: string; agent: string; selection: typeof selected }> = []
     const variants: Array<{ selection: typeof selected; value: string | undefined }> = []
     const hidden: string[] = []
