@@ -3,7 +3,9 @@ import { Window } from "happy-dom"
 
 const window = new Window({ url: "https://kilo.test" })
 const errors: unknown[] = []
-window.addEventListener("error", (event) => errors.push(event.error))
+window.addEventListener("error", (event) => {
+  if (event instanceof window.ErrorEvent) errors.push(event.error)
+})
 Object.defineProperty(window, "origin", { value: window.location.origin })
 Object.assign(globalThis, {
   window,
@@ -86,7 +88,12 @@ try {
   // items, and a separator between issues. Submenus are deliberately absent.
   // Kobalte opens menus from `pointerdown`, so a bare click() would not.
   trigger.dispatchEvent(
-    new window.PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" }),
+    new window.PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      pointerType: "mouse",
+    }) as unknown as Event,
   )
   await window.happyDOM.waitUntilComplete()
   assert.equal(trigger.getAttribute("aria-expanded"), "true", "trigger opens the issues menu")
