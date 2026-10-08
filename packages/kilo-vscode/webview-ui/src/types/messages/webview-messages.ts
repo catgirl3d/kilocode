@@ -1158,6 +1158,15 @@ export interface SetPinnedTabsRequest {
   ids: string[]
 }
 
+// fork_change start
+// Persist a color label for one session (null clears it)
+export interface SetSessionColorRequest {
+  type: "agentManager.setSessionColor"
+  sessionId: string
+  color: string | null
+}
+// fork_change end
+
 // Persist sidebar worktree order
 export interface SetWorktreeOrderRequest {
   type: "agentManager.setWorktreeOrder"
@@ -1701,6 +1710,10 @@ export interface RequestFavoritesMessage {
 }
 
 // fork_change start
+export interface RequestSessionColorsMessage {
+  type: "requestSessionColors"
+}
+
 export interface RequestSessionTagsMessage {
   type: "requestSessionTags"
 }
@@ -1709,6 +1722,12 @@ export interface SessionTagActionMessage {
   type: "sessionTagAction"
   requestID: string
   action: SessionTagAction
+}
+
+export interface SetSessionColorMessage {
+  type: "setSessionColor"
+  sessionId: string
+  color: string | null
 }
 // fork_change end
 // Continue in Worktree: transfer sidebar session + git state to an isolated worktree
@@ -1972,6 +1991,7 @@ export type WebviewMessage =
   | CreateMultiVersionRequest
   | SetTabOrderRequest
   | SetPinnedTabsRequest
+  | SetSessionColorRequest // fork_change
   | SetWorktreeOrderRequest
   | SetSessionsCollapsedRequest
   | SetSidebarCollapsedRequest
@@ -2055,6 +2075,8 @@ export type WebviewMessage =
   | ToggleFavoriteRequest
   | MoveFavoriteRequest // fork_change
   | RequestFavoritesMessage
+  | RequestSessionColorsMessage // fork_change
+  | SetSessionColorMessage // fork_change
   // fork_change start - local session metadata
   | RequestSessionTagsMessage
   | SessionTagActionMessage
