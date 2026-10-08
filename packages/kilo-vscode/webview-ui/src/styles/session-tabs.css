@@ -381,3 +381,39 @@
   font-size: var(--kilo-font-size-10);
   white-space: nowrap;
 }
+
+/* Structured tab hover: title with its keybind on top, activity below, and the
+   Shift+click gesture on its own row behind a separator instead of running
+   into the title string. */
+.am-tab-tooltip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.am-tab-tooltip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.am-tab-tooltip-title {
+  overflow-wrap: anywhere;
+}
+
+.am-tab-tooltip-keybind {
+  color: var(--text-invert-weak);
+  white-space: nowrap;
+}
+
+.am-tab-tooltip-state {
+  color: var(--text-invert-weak);
+}
+
+.am-tab-tooltip-hint {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-weak-base);
+  color: var(--text-invert-weak);
+  font-size: var(--kilo-font-size-11);
+}
