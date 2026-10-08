@@ -4,7 +4,7 @@
  */
 
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
-import { createSignal, type ParentComponent } from "solid-js"
+import { createSignal, onCleanup, onMount, type ParentComponent } from "solid-js"
 import { DialogProvider } from "@kilocode/kilo-ui/context/dialog"
 import { DataProvider } from "@kilocode/kilo-ui/context/data"
 import { DiffComponentProvider } from "@kilocode/kilo-ui/context/diff"
@@ -207,6 +207,69 @@ const SessionListDemo = (props: { state: SessionTagsState; fail?: boolean }) => 
 export const WithItems: Story = {
   name: "With sessions",
   render: () => <SessionListDemo state={empty} fail />,
+}
+
+// Enters select mode and chooses two sessions so the visual baseline captures the
+// checkbox toolbar state. The observer applies the state in the same task that
+// inserts the rows, so the screenshot cannot catch a half-applied story; failures
+// throw instead of silently screenshotting the default list.
+const SelectionModeDemo = () => {
+  let host: HTMLDivElement | undefined
+  const [selected, setSelected] = createSignal("")
+
+  onMount(() => {
+    let done = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let observer: MutationObserver | undefined
+
+    const apply = () => {
+      if (done || !host) return
+      if (!host.querySelector(".session-select-bar")) {
+        const toggle = host.querySelector<HTMLButtonElement>(".session-select-toggle")
+        if (!toggle) return
+        toggle.click()
+      }
+      const boxes = [...host.querySelectorAll<HTMLElement>(".session-select-check")]
+      if (boxes.length < 2) return
+      for (const box of boxes.slice(0, 2)) {
+        box.querySelector<HTMLElement>('[data-slot="checkbox-checkbox-label"]')?.click()
+      }
+      const action = host.querySelector<HTMLButtonElement>(".session-select-bar button:last-child")
+      if (!action || action.disabled) {
+        throw new Error("[Kilo New] selection story: the chosen sessions were not applied")
+      }
+      done = true
+      observer?.disconnect()
+      clearTimeout(timer)
+    }
+
+    observer = new MutationObserver(apply)
+    observer.observe(host!, { childList: true, subtree: true })
+    timer = setTimeout(() => {
+      if (!done) throw new Error("[Kilo New] selection story: the selection state never applied")
+    }, 5_000)
+    apply()
+    onCleanup(() => {
+      observer?.disconnect()
+      clearTimeout(timer)
+    })
+  })
+
+  return (
+    <WithSessions sessions={mockSessions as any} sessionTags={empty}>
+      <div style={{ height: "500px" }} ref={(el) => (host = el)}>
+        <SessionList onSelectSession={setSelected} />
+        <output class="sr-only" data-slot="selected-session">
+          {selected()}
+        </output>
+      </div>
+    </WithSessions>
+  )
+}
+
+export const SelectionMode: Story = {
+  name: "Selection mode — two sessions chosen",
+  render: () => <SelectionModeDemo />,
 }
 
 export const SessionTagsTwo: Story = {

@@ -11,6 +11,7 @@ import { ContextMenu } from "@kilocode/kilo-ui/context-menu"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
+import { Checkbox } from "@kilocode/kilo-ui/checkbox" // fork_change
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
@@ -96,6 +97,53 @@ const SessionList: Component<SessionListProps> = (props) => {
     setRenamingId(null)
   }
 
+  // fork_change start - bulk selection mode for deleting several sessions at once
+  const [selecting, setSelecting] = createSignal(false)
+  const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set())
+  const chosen = createMemo(() => items().filter((s) => selected().has(s.id)))
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function stopSelect() {
+    setSelecting(false)
+    setSelected(new Set<string>())
+  }
+
+  function confirmBulkDelete() {
+    if (chosen().length === 0) return
+    dialog.show(() => (
+      <Dialog title={language.t("session.select.title")} fit>
+        <div class="dialog-confirm-body">
+          <span>{language.t("session.select.confirm", { count: chosen().length })}</span>
+          <div class="dialog-confirm-actions">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              size="large"
+              onClick={() => {
+                for (const item of chosen()) session.deleteSession(item.id)
+                dialog.close()
+                stopSelect()
+              }}
+            >
+              {language.t("common.delete")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    ))
+  }
+  // fork_change end
+
   function name(s: SessionInfo) {
     return s.title || language.t("session.untitled")
   }
@@ -157,6 +205,15 @@ const SessionList: Component<SessionListProps> = (props) => {
             fallback={
               <>
                 {node}
+                {/* fork_change start - bulk selection checkbox stays outside the List button */}
+                <Show when={selecting()}>
+                  <div class="session-select-check">
+                    <Checkbox checked={selected().has(item.id)} onChange={() => toggle(item.id)} hideLabel>
+                      {name(item)}
+                    </Checkbox>
+                  </div>
+                </Show>
+                {/* fork_change end */}
                 <IconButton
                   data-slot="session-row-action"
                   icon="edit"
@@ -249,11 +306,41 @@ const SessionList: Component<SessionListProps> = (props) => {
         current={currentSession()}
         onMove={announce}
         onSelect={(s) => {
-          if (s && renamingId() !== s.id) {
+          if (!s) return
+          if (selecting()) {
+            toggle(s.id)
+            return
+          }
+          if (renamingId() !== s.id) {
             props.onSelectSession(s.id)
           }
         }}
-        search={{ placeholder: language.t("session.search.placeholder"), autofocus: true }}
+        search={{
+          placeholder: language.t("session.search.placeholder"),
+          autofocus: true,
+          action: (
+            <Show
+              when={selecting()}
+              fallback={
+                <Button class="session-select-toggle" variant="ghost" size="small" onClick={() => setSelecting(true)}>
+                  {language.t("session.select.enter")}
+                </Button>
+              }
+            >
+              <div class="session-select-bar">
+                <span class="session-select-count">
+                  {language.t("session.select.count", { count: chosen().length })}
+                </span>
+                <Button variant="ghost" size="small" onClick={stopSelect}>
+                  {language.t("common.cancel")}
+                </Button>
+                <Button variant="primary" size="small" disabled={chosen().length === 0} onClick={confirmBulkDelete}>
+                  {language.t("common.delete")}
+                </Button>
+              </div>
+            </Show>
+          ),
+        }}
         emptyMessage={language.t("session.empty")}
         groupBy={(s) => language.t(dateGroupKey(s.updatedAt))}
         sortGroupsBy={(a, b) => {

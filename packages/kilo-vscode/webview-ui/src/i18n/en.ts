@@ -582,6 +582,12 @@ export const dict = {
   "session.tab.worktree": "Worktree",
   "session.cloud.repoOnly": "Only this repository",
   "session.cloud.import": "Import session",
+  // fork_change start - bulk session selection
+  "session.select.enter": "Select",
+  "session.select.count": "Selected: {{count}}",
+  "session.select.title": "Delete sessions",
+  "session.select.confirm": "Delete selected sessions ({{count}})?",
+  // fork_change end
   "feedback.button": "Feedback & Support",
   "feedback.dialog.message": "We'd love to hear your feedback or help with any issues you're experiencing.",
   "feedback.dialog.github": "Report an issue on GitHub",
