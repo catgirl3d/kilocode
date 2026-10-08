@@ -11,7 +11,7 @@
 import { Component, For, Show, createMemo, createSignal, createEffect, on, onMount, onCleanup } from "solid-js"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
-import { Icon } from "@kilocode/kilo-ui/icon"
+import { Icon } from "@kilocode/kilo-ui/icon" // fork_change
 // fork_change start
 import { Switch } from "@kilocode/kilo-ui/switch"
 import { useSession } from "../../context/session"

@@ -122,7 +122,9 @@ describe("per-session variant selection", () => {
     const store = { [variantKey(model, "code")]: "" }
     expect(Object.hasOwn(store, variantKey(model, "code"))).toBe(true)
     expect(getVariant(store, model, variants, "code")).toBeUndefined()
-    expect(getAgentVariant(store, model, { variants: { low: {}, medium: {}, high: {}, max: {} } }, "code")).toBeUndefined()
+    expect(
+      getAgentVariant(store, model, { variants: { low: {}, medium: {}, high: {}, max: {} } }, "code"),
+    ).toBeUndefined()
   })
 
   it("preserves a provider variant named default", () => {
