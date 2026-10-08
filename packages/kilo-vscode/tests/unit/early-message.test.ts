@@ -69,6 +69,45 @@ describe("routeEarlyMessage resume", () => {
   })
 })
 
+describe("routeEarlyMessage session colors", () => {
+  it("forwards a sidebar color change using the sessionId field from the webview contract", async () => {
+    const calls: Array<[string, string | null]> = []
+    const ctx = {
+      setSessionColor: async (sessionID: string, color: string | null) => {
+        calls.push([sessionID, color])
+      },
+    } as Ctx
+
+    expect(await routeEarlyMessage({ type: "setSessionColor", sessionId: "ses_1", color: "Red" }, ctx)).toBe(true)
+    expect(await routeEarlyMessage({ type: "setSessionColor", sessionId: "ses_1", color: null }, ctx)).toBe(true)
+
+    expect(calls).toEqual([
+      ["ses_1", "Red"],
+      ["ses_1", null],
+    ])
+  })
+
+  it("ignores malformed color changes", async () => {
+    const calls: unknown[] = []
+    const ctx = { setSessionColor: async (...args: unknown[]) => calls.push(args) } as unknown as Ctx
+
+    expect(await routeEarlyMessage({ type: "setSessionColor", color: "Red" }, ctx)).toBe(true)
+    expect(await routeEarlyMessage({ type: "setSessionColor", sessionId: 42, color: "Red" }, ctx)).toBe(true)
+    expect(await routeEarlyMessage({ type: "setSessionColor", sessionId: "ses_1" }, ctx)).toBe(true)
+
+    expect(calls).toEqual([])
+  })
+
+  it("answers session color requests with the shared store", async () => {
+    const calls: string[] = []
+    const ctx = { sessionColors: () => calls.push("requested") } as Ctx
+
+    expect(await routeEarlyMessage({ type: "requestSessionColors" }, ctx)).toBe(true)
+
+    expect(calls).toEqual(["requested"])
+  })
+})
+
 describe("routeEarlyMessage activity", () => {
   it("forwards authoritative webview presentation state without interpreting session events", async () => {
     const calls: unknown[] = []
