@@ -1,6 +1,6 @@
 import path from "path"
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test"
-import { Effect } from "effect"
+import { Cause, Effect, Exit, Fiber } from "effect"
 import fs from "fs/promises"
 import os from "os"
 import { Bus } from "../../src/bus"
@@ -11,6 +11,7 @@ import { KiloSessionCompaction } from "@/kilocode/session/compaction"
 import { KiloSessionPromptQueue } from "@/kilocode/session/prompt-queue"
 import { KiloSession } from "@/kilocode/session"
 import { Suggestion } from "../../src/kilocode/suggestion"
+import { Question } from "../../src/question"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -34,7 +35,7 @@ setDefaultTimeout(15_000)
 const previous = Flag.KILO_DB
 const dbfile = path.join(os.tmpdir(), `kilo-prompt-queue-${process.pid}-${crypto.randomUUID()}.db`)
 const layer = LayerNode.compile(LayerNode.group([Session.node, SessionProjector.node]))
-const prompt = LayerNode.compile(LayerNode.group([SessionPrompt.node, SessionProjector.node]))
+const prompt = LayerNode.compile(LayerNode.group([SessionPrompt.node, Question.node, SessionProjector.node]))
 const runtime = makeRuntime(Session.Service, layer)
 
 beforeAll(async () => {
@@ -439,6 +440,185 @@ describe("session prompt queue", () => {
     const events = observed.map((item) => `${item.where}=${item.value}`)
     expect(events).toEqual(["first:start=false", "first:end=true", "second:start=false", "third:start=false"])
   })
+
+  test("hasBlockingFollowup ignores waiting background settlements", async () => {
+    const sessionID = SessionID.make("session_blocking_followup")
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+
+    const first = Effect.runPromise(
+      KiloSessionPromptQueue.enqueue(
+        sessionID,
+        MessageID.make("msg_blocking_1"),
+        Effect.gen(function* () {
+          started.resolve()
+          yield* Effect.promise(() => release.promise)
+          return "first"
+        }),
+        Effect.succeed("first-cancelled"),
+      ),
+    )
+    await started.promise
+
+    const settlement = Effect.runPromise(
+      KiloSessionPromptQueue.enqueue(
+        sessionID,
+        MessageID.make("msg_blocking_2"),
+        Effect.succeed("settlement"),
+        Effect.succeed("settlement-cancelled"),
+        Effect.void,
+        true,
+      ),
+    )
+    await Bun.sleep(10)
+
+    // A settlement is a followup for the loop, but it must not supersede an
+    // interactive prompt: only real prompts are blocking.
+    expect(KiloSessionPromptQueue.hasFollowup(sessionID)).toBe(true)
+    expect(KiloSessionPromptQueue.hasBlockingFollowup(sessionID)).toBe(false)
+
+    const human = Effect.runPromise(
+      KiloSessionPromptQueue.enqueue(
+        sessionID,
+        MessageID.make("msg_blocking_3"),
+        Effect.succeed("human"),
+        Effect.succeed("human-cancelled"),
+      ),
+    )
+    await Bun.sleep(10)
+    expect(KiloSessionPromptQueue.hasBlockingFollowup(sessionID)).toBe(true)
+
+    release.resolve()
+    expect(await first).toBe("first")
+    expect(await settlement).toBe("settlement")
+    expect(await human).toBe("human")
+    expect(KiloSessionPromptQueue.hasBlockingFollowup(sessionID)).toBe(false)
+  })
+
+  test("background settlements wait behind a pending question while real prompts dismiss it", async () => {
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url)
+        if (!url.pathname.endsWith("/chat/completions")) return new Response("not found", { status: 404 })
+        return new Response(reply({ text: "reply after settlement" }), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })
+      },
+    })
+
+    try {
+      await using tmp = await tmpdir({
+        git: true,
+        init: async (dir) => {
+          await Bun.write(path.join(dir, "opencode.json"), JSON.stringify(providerCfg(server.url.origin)))
+        },
+      })
+
+      const questions = [
+        {
+          header: "Continue?",
+          question: "Should I continue?",
+          options: [
+            { label: "Yes", description: "Go" },
+            { label: "No", description: "Stop" },
+          ],
+        },
+      ]
+
+      await provideTestInstance({
+        directory: tmp.path,
+        fn: async () =>
+          Effect.runPromise(
+            Effect.gen(function* () {
+              const prompt = yield* SessionPrompt.Service
+              const question = yield* Question.Service
+              const session = yield* Effect.promise(() => sessions.create({ title: "Settlement vs question" }))
+
+              // Occupy the session tail so the settlement prompt joins the queue
+              // as a waiting follow-up, mirroring a parent turn parked on a question.
+              const held = Promise.withResolvers<void>()
+              const release = Promise.withResolvers<void>()
+              const hold = yield* KiloSessionPromptQueue.enqueue(
+                session.id,
+                MessageID.make("msg_hold_settlement"),
+                Effect.gen(function* () {
+                  held.resolve()
+                  yield* Effect.promise(() => release.promise)
+                  return "held" as const
+                }),
+                Effect.succeed("held-cancelled" as const),
+              ).pipe(Effect.forkScoped)
+              yield* Effect.promise(() => held.promise)
+
+              const asked = yield* question.ask({ sessionID: session.id, questions }).pipe(Effect.forkScoped)
+              yield* pollWithTimeout(
+                Effect.map(question.list(), (list) => (list.length > 0 ? list : undefined)),
+                "question never became pending",
+              )
+
+              const settlement = yield* prompt
+                .prompt({
+                  sessionID: session.id,
+                  agent: "code",
+                  parts: [
+                    {
+                      type: "text",
+                      text: "<task id='ses_child' state='completed'>done</task>",
+                      synthetic: true,
+                      metadata: { background: true, sourceMessageID: "msg_parent" },
+                    },
+                  ],
+                })
+                .pipe(Effect.forkScoped)
+
+              yield* pollWithTimeout(
+                Effect.sync(() => (KiloSessionPromptQueue.hasFollowup(session.id) ? true : undefined)),
+                "settlement prompt never queued",
+              )
+              // Give the queued fiber a beat to run its reservation (the dismiss step).
+              yield* Effect.sleep("20 millis")
+
+              expect(KiloSessionPromptQueue.hasBlockingFollowup(session.id)).toBe(false)
+              expect(yield* question.list()).toHaveLength(1)
+
+              const [pending] = yield* question.list()
+              yield* question.reply({ requestID: pending!.id, answers: [["Yes"]] })
+              expect(yield* Fiber.join(asked)).toEqual([["Yes"]])
+
+              // Release the tail: the settlement turn runs after the answer.
+              release.resolve()
+              expect(yield* Fiber.join(hold)).toBe("held")
+              const settlementResult = yield* Fiber.join(settlement)
+              expect(settlementResult.info.role).toBe("assistant")
+
+              // A real prompt still dismisses a pending question.
+              const askedAgain = yield* question.ask({ sessionID: session.id, questions }).pipe(Effect.forkScoped)
+              yield* pollWithTimeout(
+                Effect.map(question.list(), (list) => (list.length > 0 ? list : undefined)),
+                "second question never became pending",
+              )
+              const human = yield* prompt
+                .prompt({ sessionID: session.id, agent: "code", parts: [{ type: "text", text: "real prompt" }] })
+                .pipe(Effect.forkScoped)
+              const exit = yield* Fiber.await(askedAgain)
+              expect(Exit.isFailure(exit)).toBe(true)
+              if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
+              const humanResult = yield* Fiber.join(human)
+              expect(humanResult.info.role).toBe("assistant")
+            }).pipe(
+              Effect.provide(prompt),
+              provideInstance(tmp.path),
+              Effect.provide(testInstanceStoreLayer),
+              Effect.scoped,
+            ),
+          ),
+      })
+    } finally {
+      server.stop(true)
+    }
+  }, 30_000)
 
   test("processes queued prompts without aborting the in-flight stream", async () => {
     const ready = Promise.withResolvers<void>()
