@@ -62,6 +62,9 @@ const { ProviderProvider } = await import("../../webview-ui/src/context/provider
 const { SessionProvider, useSession, useSessionVisibility } = await import("../../webview-ui/src/context/session")
 const { LocalTabsProvider, useLocalTabs } = await import("../../webview-ui/src/context/local-tabs")
 const { createProjectRegistry } = await import("../../webview-ui/agent-manager/project/registry")
+const { DialogProvider } = await import("@kilocode/kilo-ui/context/dialog")
+const { ProjectList } = await import("../../webview-ui/agent-manager/ProjectList")
+const { createModeRouter } = await import("../../webview-ui/agent-manager/mode-router")
 const { initialMessage } = await import("../../webview-ui/agent-manager/initial-message")
 const { useBaseUpdate } = await import("../../webview-ui/agent-manager/update-from-base")
 const { post } = await import("../../webview-ui/src/utils/webview-message")
@@ -122,6 +125,30 @@ const [review, setReview] = createSignal(false)
 const [sharing, setSharing] = createSignal(false)
 const peer = { value: undefined as ReturnType<typeof useSession> | undefined }
 const [tabbed, setTabbed] = createSignal(false)
+const [list, setList] = createSignal(false)
+const searchRef = { value: undefined as { open: () => void } | undefined }
+const targets: unknown[] = []
+const sidA = "color-project-a-session"
+const sidB = "color-project-b-session"
+const colors = createProjectRegistry({ persisted: {}, activeId: () => "color-a" })
+const a = colors.ensure("color-a")
+const b = colors.ensure("color-b")
+a.setSessionColors({ [sidA]: "Green", [sidB]: "Blue" })
+b.setSessionColors({ [sidB]: "Red" })
+const stateA = {
+  type: "agentManager.state" as const,
+  worktrees: [],
+  sessions: [],
+  sections: [],
+  sessionColors: { [sidA]: "Green" },
+}
+const stateB = {
+  type: "agentManager.state" as const,
+  worktrees: [],
+  sessions: [],
+  sections: [],
+  sessionColors: { [sidB]: "Red" },
+}
 const tabs = { value: undefined as ReturnType<typeof useLocalTabs> | undefined }
 const Tabs = () => {
   tabs.value = useLocalTabs()
@@ -133,6 +160,7 @@ const Peer = () => {
 }
 const Probe = () => {
   const session = useSession()
+  const mode = createModeRouter()
   useSessionVisibility(() => (review() ? undefined : session.currentSessionID()))
   ref.value = session
   update.value = useBaseUpdate(session)
@@ -151,6 +179,8 @@ const Probe = () => {
     isPending: () => false,
     isPinned: () => false,
     togglePinned: () => {},
+    sessionColor: () => undefined,
+    setSessionColor: () => {},
     activityFor: session.activityFor,
     stateLabel: (state: string) => state,
     tabLookup: () => new Map(ids.map((id) => [id, { id, title: id, createdAt: "", updatedAt: "" }])),
@@ -246,6 +276,74 @@ const Probe = () => {
             </SpeechToTextModelsProvider>
           </MemoryProvider>
         </IndexingProvider>
+      </Show>
+      <Show when={list()}>
+        <DialogProvider>
+          <ProjectList
+            projects={[
+              {
+                id: "color-a",
+                root: "/repo/a",
+                label: "Project A",
+                pinned: false,
+                active: true,
+                expanded: false,
+                initialized: true,
+                missing: false,
+              },
+              {
+                id: "color-b",
+                root: "/repo/b",
+                label: "Project B",
+                pinned: false,
+                active: false,
+                expanded: false,
+                initialized: true,
+                missing: false,
+              },
+            ]}
+            states={{ "color-a": stateA, "color-b": stateB }}
+            store={(id) => colors.ensure(id)}
+            stats={{}}
+            local={{}}
+            prs={{}}
+            sessions={{
+              "color-a": [
+                {
+                  id: sidA,
+                  title: "Project A session",
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                  worktreeId: null,
+                },
+              ],
+              "color-b": [
+                {
+                  id: sidB,
+                  title: "Project B session",
+                  createdAt: "2026-01-02T00:00:00.000Z",
+                  updatedAt: "2026-01-02T00:00:00.000Z",
+                  worktreeId: null,
+                },
+              ],
+            }}
+            selectedProject="color-a"
+            selection="local"
+            currentSessionID={session.currentSessionID}
+            mode={mode}
+            busy={() => false}
+            blocked={() => false}
+            activityFor={() => "idle"}
+            sessionActivity={() => "idle"}
+            bindings={{}}
+            t={language.t}
+            onSearchRef={(ref) => (searchRef.value = ref)}
+            onSelect={(target) => targets.push(target)}
+            onShortcuts={() => {}}
+            onHistory={() => {}}
+            color={(id) => colors.active().sessionColors()[id]}
+          />
+        </DialogProvider>
       </Show>
     </DragDropProvider>
   )
@@ -2514,6 +2612,86 @@ try {
     choice(value.selected("promoted-closed-draft"), first)
     assert.equal(value.currentVariant("promoted-closed-draft"), "high")
     await emit({ type: "sessionCommandCompleted", messageID: request.messageID })
+  }
+  // Session colors: mount request, shared-store hydration, optimistic update, pending guard.
+  {
+    assert(sent.some((message) => message.type === "requestSessionColors"))
+    await emit({ type: "sessionColorsLoaded", colors: { "color-session": "Red" } })
+    await settle()
+    assert.equal(sidebar.sessionColor("color-session"), "Red")
+    sidebar.setSessionColor("color-session", "Blue")
+    assert.equal(sidebar.sessionColor("color-session"), "Blue")
+    assert.deepEqual(
+      sent.findLast((message) => message.type === "setSessionColor"),
+      {
+        type: "setSessionColor",
+        sessionId: "color-session",
+        color: "Blue",
+      },
+    )
+    sidebar.setSessionColor("color-session", null)
+    assert.equal(sidebar.sessionColor("color-session"), undefined)
+    assert.deepEqual(
+      sent.findLast((message) => message.type === "setSessionColor"),
+      {
+        type: "setSessionColor",
+        sessionId: "color-session",
+        color: null,
+      },
+    )
+    const draft = sidebar.add()
+    const before = sent.filter((message) => message.type === "setSessionColor").length
+    sidebar.setSessionColor(draft, "Green")
+    assert.equal(sidebar.sessionColor(draft), undefined)
+    assert.equal(sent.filter((message) => message.type === "setSessionColor").length, before)
+    sidebar.close(draft)
+    await settle()
+  }
+  {
+    const current = value.currentSessionID()
+    value.setCurrentSessionID(sidA)
+    setList(true)
+    await settle()
+    assert(searchRef.value)
+    searchRef.value.open()
+    await settle()
+
+    const root = window.document.body as unknown as HTMLElement
+    const find = () => root.querySelector<HTMLElement>(`[data-slot="sidebar-search-result"][data-session-id="${sidB}"]`)
+    const row = find()
+    assert(row)
+    const swatch = () => row.querySelector<HTMLElement>(".am-sidebar-search-swatch")
+    assert(swatch())
+    assert.equal(swatch()?.style.background, "var(--vscode-charts-blue)")
+    const menu = root.querySelector(".am-sidebar-search")
+    assert(menu)
+
+    a.setSessionColors({ [sidA]: "Green", [sidB]: "Purple" })
+    await settle()
+    const changed = find()
+    assert(changed)
+    assert.strictEqual(root.querySelector(".am-sidebar-search"), menu)
+    assert.equal(
+      changed.querySelector<HTMLElement>(".am-sidebar-search-swatch")?.style.background,
+      "var(--vscode-charts-purple)",
+    )
+
+    a.setSessionColors({ [sidA]: "Green" })
+    await settle()
+    const cleared = find()
+    assert(cleared)
+    assert.strictEqual(root.querySelector(".am-sidebar-search"), menu)
+    assert.equal(cleared.querySelector(".am-sidebar-search-swatch"), null)
+    assert.equal(stateB.sessionColors[sidB], "Red")
+    assert.equal(b.sessionColors()[sidB], "Red")
+
+    cleared.click()
+    await settle()
+    assert.deepEqual(targets.at(-1), { projectId: "color-b", kind: "session", sessionId: sidB })
+    assert.equal(value.currentSessionID(), sidA)
+    setList(false)
+    value.setCurrentSessionID(current)
+    await settle()
   }
   setTabbed(false)
   await settle()

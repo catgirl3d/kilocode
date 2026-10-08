@@ -14,6 +14,7 @@ type SearchItem = {
   busy?: boolean
   visible: boolean
   section?: SectionState
+  sessionColor?: string // fork_change
 }
 
 export type SidebarSearchItem =

@@ -11,6 +11,7 @@ export const SessionTab: Component<{
   active: boolean
   pinned?: boolean
   pinnedLabel?: string
+  accent?: string // fork_change
   state: Activity
   stateLabel: string
   closeTitle: string
@@ -48,6 +49,11 @@ export const SessionTab: Component<{
       data-activity={props.state}
       data-pinned={props.pinned ? "true" : undefined}
     >
+      {/* fork_change start - session color accent */}
+      <Show when={props.accent}>
+        <span class="am-tab-accent" style={{ background: props.accent }} aria-hidden="true" />
+      </Show>
+      {/* fork_change end */}
       <div
         class="am-tab-target"
         role={props.role}

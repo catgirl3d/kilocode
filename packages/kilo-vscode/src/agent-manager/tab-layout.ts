@@ -1,5 +1,6 @@
 import type { AgentManagerInMessage } from "./types"
 import type { WorktreeStateManager } from "./WorktreeStateManager"
+import { setSessionColor } from "../session-colors" // fork_change
 
 /**
  * Persist tab-bar layout for one sidebar context ("local" or a worktree id).
@@ -17,5 +18,11 @@ export function handleTabLayoutMessage(state: WorktreeStateManager | undefined, 
     state?.setPinnedTabs(msg.key, msg.ids)
     return true
   }
+  // fork_change start
+  if (msg.type === "agentManager.setSessionColor") {
+    void setSessionColor(msg.sessionId, msg.color)
+    return true
+  }
+  // fork_change end
   return false
 }

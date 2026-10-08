@@ -2117,6 +2117,7 @@ const AgentManagerContent: Component = () => {
           projects={projectList()}
           states={projectStates()}
           store={(id) => registry.ensure(id)}
+          color={(id) => registry.active().sessionColors()[id]} // fork_change
           busy={(projectId, id) => registry.ensure(projectId).busy().has(id)}
           blocked={(projectId, id) => activity.blocked(id, projectId)}
           stats={projectLive.stats()}
@@ -2261,6 +2262,8 @@ const AgentManagerContent: Component = () => {
             worktreeSessionIds={historyProject() ? undefined : activeWorktreeSessionIds}
             sessionIds={historySessionIds}
             rowActions={historyRowActions}
+            sessionColor={tabState.tab.sessionColor} // fork_change
+            setSessionColor={tabState.tab.setSessionColor} // fork_change
           />
         </Show>
         <Show when={!restricted() && showDetailStack()}>

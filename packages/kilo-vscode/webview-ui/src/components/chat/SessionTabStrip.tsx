@@ -16,6 +16,10 @@ import { SessionTabMenu } from "./SessionTabMenu"
 import { SessionTabSwitcher } from "./SessionTabSwitcher"
 import { ConstrainDragYAxis, SortableTabContainer, outsideTabBar } from "./TabDnd"
 import { beginPromptMentionDrop, endPromptMentionDrop, sessionDrop } from "../../utils/prompt-mention-drop"
+// fork_change start
+import { ColorMenuItems } from "../../../agent-manager/color-menu"
+import { colorCss } from "../../../agent-manager/section-colors"
+// fork_change end
 
 export const SessionTabStrip: Component = () => {
   const tabs = useLocalTabs()
@@ -34,6 +38,16 @@ export const SessionTabStrip: Component = () => {
   }
   const state = (id: string) => (isPendingTab(id) ? "idle" : session.activityFor(id))
   const working = (id: string) => running(state(id))
+  // fork_change start
+  const colorMenu = (id: string) =>
+    isPendingTab(id) ? undefined : (
+      <ColorMenuItems
+        label={language.t("agentManager.section.setColor")}
+        color={tabs.sessionColor(id)}
+        onSet={(color) => tabs.setSessionColor(id, color)}
+      />
+    )
+  // fork_change end
   const middle = (id: string, event: MouseEvent) => {
     if (event.button !== 1) return
     event.preventDefault()
@@ -156,12 +170,14 @@ export const SessionTabStrip: Component = () => {
                         onCloseToRight={tabs.closableRight(id).length ? () => closeRight(id) : undefined}
                         pinned={tabs.isPinned(id)}
                         onTogglePin={isPendingTab(id) ? undefined : () => tabs.togglePinned(id)}
+                        colorMenu={colorMenu(id)} // fork_change
                       >
                         <SessionTab
                           title={title(id)}
                           active={tabs.active() === id}
                           pinned={tabs.isPinned(id)}
                           pinnedLabel={language.t("agentManager.tab.pinned")}
+                          accent={colorCss(tabs.sessionColor(id) ?? null)} // fork_change
                           state={state(id)}
                           stateLabel={language.t(label(state(id)))}
                           keybind={adjacentTabHint(tabs.display(), tabs.active(), id, config.shortcuts().bindings)}

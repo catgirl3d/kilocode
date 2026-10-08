@@ -45,6 +45,7 @@ import { sameDirectory } from "./kilo-provider-utils"
 import { mcpAuth } from "./services/mcp-auth"
 import { showAuthUrl } from "./kilo-provider/mcp-oauth"
 // fork_change start
+import { initSessionColors } from "./session-colors"
 import { initSessionTags } from "./session-tags"
 // fork_change end
 
@@ -69,6 +70,7 @@ const panelTitleHandler = (panel: vscode.WebviewPanel) => (title: string) => {
 export async function activate(context: vscode.ExtensionContext) {
   console.log("Kilo Code extension is now active")
   shuttingDown = false
+  initSessionColors(context.globalState) // fork_change
   initSessionTags(context.globalState) // fork_change
 
   // Drives the "!kilo-code.new.isCursor" guards on the native view/title and

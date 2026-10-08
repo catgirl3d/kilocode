@@ -143,14 +143,23 @@ export const SidebarSearchMenu: Component<SidebarSearchMenuProps> = (props) => {
                   <span class="search-menu-copy">
                     <span class="search-menu-title">{item.title}</span>
                     <span class="search-menu-meta am-sidebar-search-meta">
-                      <Show when={item.section}>
-                        {(section) => (
-                          <span
-                            class="am-sidebar-search-swatch"
-                            style={{ background: colorCss(section().color) ?? "var(--border-weak-base)" }}
-                          />
-                        )}
+                      {/* fork_change start */}
+                      <Show
+                        when={item.kind === "session" ? colorCss(item.sessionColor ?? null) : undefined}
+                        fallback={
+                          <Show when={item.section}>
+                            {(section) => (
+                              <span
+                                class="am-sidebar-search-swatch"
+                                style={{ background: colorCss(section().color) ?? "var(--border-weak-base)" }}
+                              />
+                            )}
+                          </Show>
+                        }
+                      >
+                        {(css) => <span class="am-sidebar-search-swatch" style={{ background: css() }} />}
                       </Show>
+                      {/* fork_change end */}
                       <span>{item.meta.join(" · ")}</span>
                     </span>
                   </span>

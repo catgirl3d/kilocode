@@ -158,6 +158,7 @@ interface StateMessage {
   orphanDirectories?: OrphanDirectory[]
   tabOrder?: Record<string, string[]>
   pinnedTabs?: Record<string, string[]>
+  sessionColors?: Record<string, string> // fork_change
   worktreeOrder?: string[]
   sessionsCollapsed?: boolean
   sidebarCollapsed?: boolean
@@ -859,6 +860,14 @@ interface SetPinnedTabsIn {
   ids: string[]
 }
 
+// fork_change start
+interface SetSessionColorIn {
+  type: "agentManager.setSessionColor"
+  sessionId: string
+  color: string | null
+}
+// fork_change end
+
 interface SetWorktreeOrderIn {
   type: "agentManager.setWorktreeOrder"
   projectId?: string
@@ -1339,6 +1348,7 @@ export type AgentManagerInMessage =
   | RequestBranchesIn
   | SetTabOrderIn
   | SetPinnedTabsIn
+  | SetSessionColorIn // fork_change
   | SetWorktreeOrderIn
   | SetSessionsCollapsedIn
   | SetSidebarCollapsedIn

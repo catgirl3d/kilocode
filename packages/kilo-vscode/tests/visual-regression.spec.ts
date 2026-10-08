@@ -104,6 +104,9 @@ const SKIP = new Set<string>([
   "settings--display-preview",
   // Interactive fixture for the Skills search Playwright test.
   "settings--agent-behaviour-skills-search",
+  // Session color accent story: baseline must be captured on Linux CI via
+  // `bun run test:visual:update`; skipped until that baseline is committed.
+  "session-tabs--colored-tabs",
 ])
 
 const DOCS = new Map<string, string[]>([
