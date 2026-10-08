@@ -13,8 +13,9 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 - **Dev**: `bun run dev` (runs from root) or `bun run --cwd packages/opencode --conditions=browser src/index.ts`
 - **Dev with params**: `bun dev -- help`
 - **Extension**: `bun run extension` (build + launch VS Code with the extension in dev mode). Pass `--no-build` to skip the build. When asked to run an isolated VS Code/Kilo environment, use the CLI scripts instead of interactive launch configs: `bun run extension:isolated` reuses `.kilo-dev/`, and `bun run extension:isolated:clean` clears `.kilo-dev/` first. Pass an optional workspace path after `--`, for example `bun run extension:isolated -- ../sample-project`.
-- **Typecheck**: `bun turbo typecheck` (uses `tsgo`, not `tsc`). Includes the JetBrains plugin and requires Java 21; do not run `java -version` as a routine preflight. Only check Java when a Gradle/Java command fails with a Java-version or missing-Java error. If missing, install via SDKMAN: `sdk install java 21-tem && sdk use java 21-tem`. If SDKMAN is not installed, see https://sdkman.io/install.
-- **Test**: `bun run test` from `packages/opencode/` (NOT from root -- root blocks tests). This is the isolated per-file runner (`script/test-runner.ts`); plain `bun test` runs every file in one shared process and cross-contaminates state, producing mass failures.
+- **Typecheck**: `bun run typecheck` (Turbo uses `tsgo`, not `tsc`). The root script excludes `@kilocode/kilo-jetbrains`; use this filtered command instead of unfiltered `bun turbo typecheck`. It does not require Java.
+- **JetBrains checks**: Gradle/Java typechecks and tests are disabled in this fork. The package's `typecheck`, `test`, and `test:ci` scripts are removed. Do not bypass that removal with direct `gradlew`, CI scripts, Java probes, or JDK installation for validation. Build scripts and wrappers remain for explicitly requested JetBrains builds, not automatic checks. Report JetBrains changes as unverified rather than claiming a skipped check passed.
+- **CLI tests**: Use targeted tests for changed contracts and their direct consumers. The complete CLI suite is forbidden unless the user explicitly requests it; this applies to the coordinator and all subagents, including during rebases. For an explicitly requested full run, use `bun run test` from `packages/opencode/` (NOT from root -- root blocks tests). This is the isolated per-file runner (`script/test-runner.ts`); unfiltered `bun test` runs every file in one shared process and cross-contaminates state. Generic requests to implement, rebase, or verify changes do not authorize a full CLI run. Splitting the full suite into batches or using a wrapper does not bypass this restriction; permission for one run does not authorize automatic reruns.
 - **Single test**: `bun test ./test/tool/tool-define.test.ts` from `packages/opencode/`
 - **CLI build artifact size check**: after `bun run script/build.ts --single --skip-install` in `packages/opencode/`, use `du -h dist/*/*/bin/kilo` (scoped package output lives under `dist/@kilocode/`)
 - **SDK regen**: After changing server endpoints in `packages/opencode/src/server/`, run `./script/generate.ts` from root to regenerate `packages/sdk/js/`
@@ -31,16 +32,20 @@ Kilo CLI is an open source AI coding agent that generates code from natural lang
 
 Before saying an implementation is ready, run the smallest relevant checks that can catch lint, typecheck, and test failures for the touched package. Do not rely on manual extension launch to discover build problems. Fix failures you introduced before the final response, or state exactly which check is still failing or could not be run.
 
+During fork rebases, follow `FORK_REBASE.md`: start with known risks and update the check plan at actual stops. Executors may run assigned local checks with a concrete scope, working directory, and budget; heavy checks stay with the coordinator or one designated validator, one process at a time. Do not default to full aggregates or run tests just to measure duration. `docs/REBASE_LESSONS_08_10_26.md` records the incidents behind these rules.
+
 | Area | Checks |
 |---|---|
 | Root / cross-package | `bun run lint`, `bun run typecheck` |
-| CLI | From `packages/opencode/`: `bun run typecheck`, `bun run test` (full suite) or targeted `bun test ./path/to/file.test.ts` (single file is safe in its own process) |
+| CLI | From `packages/opencode/`: `bun run typecheck` and targeted `bun test ./path/to/file.test.ts` (single file is safe in its own process). Full `bun run test` only on the user's explicit request. |
 | VS Code extension | From `packages/kilo-vscode/`: `bun run typecheck`, `bun run lint`, `bun run test:unit` or `bun run test` |
 | Extension build/package | From `packages/kilo-vscode/`: `bun run compile` or `bun run package` when touching build, packaging, SDK, or webview integration paths |
-| JetBrains plugin | From `packages/kilo-jetbrains/`: `./gradlew typecheck`, `./gradlew test`. Requires Java 21; do not run `java -version` as a routine preflight. Check Java only after a Java-version or missing-Java failure. |
+| JetBrains plugin | Validation disabled in this fork. Do not run Gradle/Java checks; report the verification gap if this package changes. |
 | CI/local guards | Run affected guards documented above, such as `bun run knip`, `bun run check-kilocode-change`, `bun run script/check-opencode-annotations.ts --worktree`, or source link extraction |
 
-The `pre-commit` hook runs the fast guards automatically (`format:check`, forbidden-marker check, opencode annotations, markdown table padding, fork audit); the `pre-push` hook repeats them and adds typechecks. Fix failures before committing instead of bypassing hooks.
+The `pre-push` hook checks formatting, forbidden markers, the committed fork diff, and types. It does not replace other required local guards.
+
+**Fork rebase intermediate commits:** Defer final verification during replay, commit folding, or history surgery as specified in `FORK_REBASE.md`. Run the required final guards on the assembled tree before freezing it for review or pushing. Ordinary completed feature and documentation changes still require the relevant checks.
 
 Never run root `bun test`; the root script prints `do not run tests from root` and exits with code 1. Use package-level tests instead.
 
@@ -260,7 +265,7 @@ This repository is a personal fork of Kilo Code (`upstream/main`).
 - Do not attempt exhaustive full-file reading to prove the absence of unrelated regressions; rely on targeted diffs and package tests.
 
 - **Finding Fork Changes & Verification**:
-  - **Worktree audit (pre-commit / local verification)**: `bun run script/fork-audit.ts --worktree [path/to/file.ts]` audits working tree changes directly from disk against `merge-base(HEAD, upstream/main)` (or `--base=<ref>`), including untracked files and uncommitted edits. To audit only files changed locally relative to `HEAD` (including untracked files) while retaining upstream-based marker ownership, use `--worktree --select=agent-local`.
+  - **Worktree audit (local verification)**: `bun run script/fork-audit.ts --worktree [path/to/file.ts]` audits working tree changes directly from disk against `merge-base(HEAD, upstream/main)` (or `--base=<ref>`), including untracked files and uncommitted edits. To audit only files changed locally relative to `HEAD` (including untracked files) while retaining upstream-based marker ownership, use `--worktree --select=agent-local`.
   - **Branch file selection**: use `--select=branch` to audit files changed on the `HEAD` side of `origin/main...HEAD` while retaining upstream-based marker ownership. Add `--worktree` to read the working-tree content of those branch-selected files; local-only and untracked files are not selected.
   - **Committed history audit (pre-push / after rebase)**: `bun run script/fork-audit.ts [path/to/file.ts]` without `--worktree` checks committed net fork diff `merge-base(HEAD, upstream/main)...HEAD` via `git show`.
   - An explicit `--base=<ref>` overrides the ownership comparison base (which defaults to `upstream/main`); it does not only select changed files. Do not use `--base=HEAD` or `--base=origin/main` to select local or branch files: committed fork markers can then appear redundant. Keep the `upstream` remote for rebase and deliberate upstream comparisons; do not remove it to silence local audit output.
