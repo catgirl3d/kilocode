@@ -10,6 +10,7 @@ Object.assign(globalThis, {
   Node: window.Node,
   Element: window.Element,
   HTMLElement: window.HTMLElement,
+  HTMLHeadElement: window.HTMLHeadElement,
   HTMLInputElement: window.HTMLInputElement,
   HTMLTextAreaElement: window.HTMLTextAreaElement,
   SVGElement: window.SVGElement,
@@ -90,5 +91,29 @@ assert.deepEqual(calls, ["pin"], "shift click should toggle the pin")
 calls.length = 0
 click(targets[1]!, true)
 assert.deepEqual(calls, ["select"], "shift click without a pin action should select")
+
+const triggers = root.querySelectorAll<HTMLElement>(".am-tab-tooltip")
+assert.equal(triggers.length, 2, "expected two tab tooltips")
+
+triggers[0]!.dispatchEvent(new PointerEvent("pointerenter"))
+const body = document.body.querySelector<HTMLElement>(".am-tab-tooltip-body")
+assert.ok(body, "hovering the tab should open the structured tooltip")
+
+const title = body!.querySelector<HTMLElement>(".am-tab-tooltip-title")
+assert.equal(title?.textContent, "Alpha", "title should render in its own tooltip row")
+
+const hint = body!.querySelector<HTMLElement>(".am-tab-tooltip-hint")
+assert.equal(hint?.textContent, "session.tabs.pinHint", "pin hint should be a separate tooltip row")
+assert.ok(!title!.textContent!.includes("session.tabs.pinHint"), "title must not absorb the pin hint")
+assert.equal(body!.querySelector(".am-tab-tooltip-state"), null, "idle tabs should not render an activity row")
+
+triggers[1]!.dispatchEvent(new PointerEvent("pointerenter"))
+const hintless = document.body.querySelector<HTMLElement>(".am-tab-tooltip-body")
+assert.ok(hintless, "second tab tooltip should open")
+assert.equal(
+  hintless!.querySelector(".am-tab-tooltip-hint"),
+  null,
+  "tabs without a pin action should not show the pin hint",
+)
 
 dispose()
