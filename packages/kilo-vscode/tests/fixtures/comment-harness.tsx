@@ -36,8 +36,8 @@ export async function harness<T extends { type: string }>() {
     window,
     CSSStyleSheet: class extends window.CSSStyleSheet {
       replaceSync() {}
-      replace() {
-        return Promise.resolve(this)
+      replace(_text: string) {
+        return Promise.resolve()
       }
     },
     IntersectionObserver: class extends window.IntersectionObserver {

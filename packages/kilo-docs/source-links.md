@@ -4,6 +4,8 @@
 
 - <https://accounts.x.ai>
   <!-- packages/opencode/src/plugin/xai.ts -->
+- <https://amr-link.open-design.ai/v1>
+  <!-- packages/opencode/src/kilocode/provider/opendesign.ts -->
 - <https://api.apertis.ai/v1>
   <!-- packages/opencode/src/provider/model-cache.ts -->
   <!-- packages/opencode/src/provider/models.ts -->
