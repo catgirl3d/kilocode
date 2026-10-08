@@ -1,5 +1,5 @@
 import fuzzysort from "fuzzysort"
-import type { FileAttachment, FileSearchItem, SessionSearchItem } from "../types/messages"
+import type { FileAttachment, FileSearchItem, GitCommitSearchItem, SessionSearchItem } from "../types/messages" // fork_change
 import { GIT_CHANGES_MENTION } from "./git-changes-context-utils"
 import { TERMINAL_MENTION } from "./terminal-context-utils"
 import { escapeRegExp } from "../utils/escape-regexp"
@@ -70,6 +70,19 @@ const changes = {
   gate: "git",
 } as const
 
+// fork_change start
+const commits = {
+  result: {
+    type: "git-commits",
+    value: "git-commits",
+    label: "Git commits",
+    description: "Search repository history",
+  },
+  aliases: ["commits", "commit"],
+  gate: "git",
+} as const
+// fork_change end
+
 const chats = {
   result: {
     type: "past-chats",
@@ -98,7 +111,7 @@ const picker = {
   gate: null,
 } as const
 
-const entries = [model, terminal, changes, chats, worktrees, picker] as const
+const entries = [model, terminal, changes, commits, chats, worktrees, picker] as const // fork_change
 type MentionEntry = (typeof entries)[number]["result"]
 
 export type MentionResult =
@@ -107,6 +120,7 @@ export type MentionResult =
   | { type: "opened-file"; value: string; root?: string; relative?: string }
   | { type: "folder"; value: string; root?: string; relative?: string }
   | { type: "session"; value: string; session: SessionSearchItem }
+  | { type: "commit"; value: string; commit: GitCommitSearchItem } // fork_change
 
 /**
  * Compare mention labels and queries on equal footing: case-insensitive, with
@@ -123,6 +137,7 @@ function normalize(value: string): string {
 
 export const TERMINAL_RESULT = terminal.result
 export const GIT_CHANGES_RESULT = changes.result
+export const GIT_COMMITS_RESULT = commits.result // fork_change
 export const FILE_PICKER_RESULT = picker.result
 export const PAST_CHATS_RESULT = chats.result
 export const WORKTREES_RESULT = worktrees.result
