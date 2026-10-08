@@ -3,8 +3,10 @@ import { createRoot, createSignal } from "solid-js"
 import { useFileMention } from "../../webview-ui/src/hooks/useFileMention"
 import {
   FILE_PICKER_RESULT,
+  GIT_COMMITS_RESULT,
   MODEL_RESULT,
   TERMINAL_RESULT,
+  type MentionResult,
   type WorktreeReference,
 } from "../../webview-ui/src/hooks/file-mention-utils"
 import type { ExtensionMessage, WebviewMessage } from "../../webview-ui/src/types/messages"
@@ -386,6 +388,286 @@ describe("useFileMention", () => {
     expect(mention.mentionedPaths().has("anthropic/claude-sonnet-4")).toBe(false)
     expect(mention.parseFileAttachments(input.value)).toEqual([])
 
+    dispose.fn?.()
+  })
+
+  it("opens the Git commits sub-picker and requests recent history", async () => {
+    const posted: WebviewMessage[] = []
+    const handlers = new Set<(message: ExtensionMessage) => void>()
+    const ctx = {
+      postMessage: (message: WebviewMessage) => posted.push(message),
+      onMessage: (handler: (message: ExtensionMessage) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    }
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(
+        ctx,
+        () => "session-commits",
+        () => true,
+      )
+    })
+    const input = editor("@git")
+    const state = mention as unknown as { commitPicker?: () => boolean }
+    mockDocument(input)
+
+    try {
+      mention.selectMention(GIT_COMMITS_RESULT, input, () => {})
+      expect(state.commitPicker?.()).toBe(true)
+      await wait(180)
+      const request = posted.findLast((message) => message.type === "requestGitCommits")
+      expect(request).toMatchObject({ type: "requestGitCommits", query: "", sessionID: "session-commits" })
+    } finally {
+      restoreDocument()
+      dispose.fn?.()
+    }
+  })
+
+  it("ignores late commit search results after a new query or picker close", async () => {
+    const posted: WebviewMessage[] = []
+    const handlers = new Set<(message: ExtensionMessage) => void>()
+    const ctx = {
+      postMessage: (message: WebviewMessage) => posted.push(message),
+      onMessage: (handler: (message: ExtensionMessage) => void) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    }
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(
+        ctx,
+        () => "session-1",
+        () => true,
+      )
+    })
+    const input = editor("@git")
+    mockDocument(input)
+
+    try {
+      mention.selectMention(GIT_COMMITS_RESULT, input, () => {})
+      await wait(170)
+      const first = posted.findLast((message) => message.type === "requestGitCommits")
+      if (first?.type !== "requestGitCommits") throw new Error("Expected the initial commit search")
+
+      mention.requestCommits("newer")
+      await wait(170)
+      const second = posted.findLast((message) => message.type === "requestGitCommits")
+      if (second?.type !== "requestGitCommits") throw new Error("Expected the updated commit search")
+
+      const stale = {
+        hash: "1".repeat(40),
+        shortHash: "1111111",
+        subject: "stale result",
+        author: "Kilo",
+        date: "2026-10-08",
+      }
+      const current = { ...stale, hash: "2".repeat(40), shortHash: "2222222", subject: "current result" }
+      for (const handler of handlers) {
+        handler({ type: "gitCommitsResult", requestId: first.requestId, commits: [stale] })
+      }
+      expect(mention.commitCandidates()).toEqual([])
+
+      for (const handler of handlers) {
+        handler({ type: "gitCommitsResult", requestId: second.requestId, commits: [current] })
+      }
+      expect(mention.commitCandidates()).toEqual([current])
+
+      mention.requestCommits("closing")
+      await wait(170)
+      const closing = posted.findLast((message) => message.type === "requestGitCommits")
+      if (closing?.type !== "requestGitCommits") throw new Error("Expected the closing commit search")
+      mention.closeMention()
+      for (const handler of handlers) {
+        handler({ type: "gitCommitsResult", requestId: closing.requestId, commits: [stale] })
+      }
+      expect(mention.commitPicker()).toBe(false)
+      expect(mention.commitCandidates()).toEqual([current])
+    } finally {
+      restoreDocument()
+      dispose.fn?.()
+    }
+  })
+
+  it("removes a picked commit hash atomically when the caret is before existing whitespace", () => {
+    const ctx = { postMessage: () => {}, onMessage: () => () => {} }
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx)
+    })
+    const hash = "a".repeat(40)
+    const input = editor("Review @git fix")
+    const cursor = "Review @git".length
+    input.setSelectionRange(cursor)
+    const picked = {
+      type: "commit",
+      value: hash,
+      commit: { hash, shortHash: hash.slice(0, 7), subject: "selected", author: "Kilo", date: "2026-10-08" },
+    } as unknown as MentionResult
+    const event = { key: "Backspace", isComposing: false, preventDefault: () => {} } as unknown as KeyboardEvent
+    mockDocument(input)
+
+    try {
+      mention.selectMention(picked, input, () => {})
+      expect(input.value).toBe(`Review @${hash} fix`)
+      expect(input.selectionStart).toBe(`Review @${hash}`.length)
+      expect(mention.mentionedCommits().has(hash)).toBe(true)
+
+      const handled = mention.handleBackspace(event, input, () => {})
+      if (!handled) {
+        const pos = input.selectionStart ?? 0
+        input.setSelectionRange(pos - 1, pos)
+        input.insert("")
+      }
+      mention.onInput(input.value, input.selectionStart ?? input.value.length)
+    } finally {
+      restoreDocument()
+      dispose.fn?.()
+    }
+
+    expect(input.value).toBe("Review  fix")
+    expect(mention.mentionedCommits().has(hash)).toBe(false)
+  })
+
+  it("removes a picked file mention without consuming existing whitespace", () => {
+    const ctx = { postMessage: () => {}, onMessage: () => () => {} }
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx)
+    })
+    const path = "src/app.ts"
+    const input = editor("Review @app fix")
+    const cursor = "Review @app".length
+    input.setSelectionRange(cursor)
+    const event = { key: "Backspace", isComposing: false, preventDefault: () => {} } as unknown as KeyboardEvent
+    mockDocument(input)
+
+    try {
+      mention.selectMention({ type: "file", value: path }, input, () => {})
+      expect(input.value).toBe(`Review @${path} fix`)
+      expect(input.selectionStart).toBe(`Review @${path}`.length)
+      expect(mention.mentionedPaths().has(path)).toBe(true)
+
+      const handled = mention.handleBackspace(event, input, () => {})
+      if (!handled) {
+        const pos = input.selectionStart ?? 0
+        input.setSelectionRange(pos - 1, pos)
+        input.insert("")
+      }
+      mention.onInput(input.value, input.selectionStart ?? input.value.length)
+    } finally {
+      restoreDocument()
+      dispose.fn?.()
+    }
+
+    expect(input.value).toBe("Review  fix")
+    expect(mention.mentionedPaths().has(path)).toBe(false)
+  })
+
+  it("inserts a full commit hash as an atomic mention, not a file path", () => {
+    const ctx = { postMessage: () => {}, onMessage: () => () => {} }
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx)
+    })
+    const hash = "a".repeat(40)
+    const picked = {
+      type: "commit",
+      value: hash,
+      commit: { hash, shortHash: hash.slice(0, 7), subject: "selected", author: "Kilo", date: "2026-10-08" },
+    } as unknown as MentionResult
+    const input = editor("@git")
+    const eventState = { prevented: 0 }
+    const event = {
+      key: "Backspace",
+      isComposing: false,
+      preventDefault: () => eventState.prevented++,
+    } as unknown as KeyboardEvent
+    mockDocument(input)
+
+    try {
+      mention.selectMention(picked, input, () => {})
+      expect(input.value).toBe(`@${hash} `)
+      expect(input.selectionStart).toBe(input.value.length)
+      expect(mention.handleBackspace(event, input, () => {})).toBe(true)
+    } finally {
+      restoreDocument()
+      dispose.fn?.()
+    }
+
+    expect(input.value).toBe("")
+    expect(eventState.prevented).toBe(1)
+    expect(mention.parseFileAttachments(`@${hash}`)).toEqual([])
+  })
+
+  it("attaches file mentions but not commit hashes in the same message", () => {
+    const ctx = { postMessage: () => {}, onMessage: () => () => {} }
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx)
+    })
+    const hash = "c".repeat(40)
+    const input = editor("Review @app and @git")
+    mention.addPaths(["src/app.ts"], "/repo")
+    mockDocument(input)
+
+    try {
+      input.setSelectionRange("Review @app".length)
+      mention.selectMention({ type: "file", value: "src/app.ts" }, input, () => {})
+      input.setSelectionRange(input.value.length)
+      mention.selectCommit(
+        { hash, shortHash: hash.slice(0, 7), subject: "selected", author: "Kilo", date: "2026-10-08" },
+        input,
+        () => {},
+      )
+    } finally {
+      restoreDocument()
+    }
+
+    const attachments = mention.parseFileAttachments(input.value)
+    expect(attachments.map((attachment) => attachment.source?.path)).toEqual(["src/app.ts"])
+    dispose.fn?.()
+  })
+
+  it("restores full commit hash mentions without classifying them as files", () => {
+    const ctx = { postMessage: () => {}, onMessage: () => () => {} }
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx)
+    })
+    const hash = "f".repeat(40)
+    const state = mention as unknown as { mentionedCommits?: () => Set<string> }
+
+    mention.seedFromText(`Inspect @${hash}`)
+
+    expect(state.mentionedCommits?.().has(hash)).toBe(true)
+    expect(mention.parseFileAttachments(`Inspect @${hash}`)).toEqual([])
+    dispose.fn?.()
+  })
+
+  it("restores commit mentions from reverted message parts without seeding them as files", () => {
+    const ctx = { postMessage: () => {}, onMessage: () => () => {} }
+    const dispose: { fn?: () => void } = {}
+    const mention = createRoot((root) => {
+      dispose.fn = root
+      return useFileMention(ctx)
+    })
+    const hash = "A".repeat(40)
+    const state = mention as unknown as { mentionedCommits?: () => Set<string> }
+
+    mention.seedFromParts([], `Inspect @${hash}`)
+
+    expect(state.mentionedCommits?.().has(hash)).toBe(true)
+    expect(mention.parseFileAttachments(`Inspect @${hash}`)).toEqual([])
     dispose.fn?.()
   })
 

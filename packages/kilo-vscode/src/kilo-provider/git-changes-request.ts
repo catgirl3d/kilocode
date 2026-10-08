@@ -1,4 +1,5 @@
 import { captureGitChangesContext } from "./git-changes-context"
+import { captureGitCommitContext, captureGitCommits } from "./git-commits" // fork_change
 import { resolveGitChangesTarget } from "./git-changes-target"
 import { captureStagedDiff } from "./staged-diff" // fork_change
 
@@ -10,6 +11,32 @@ type Context = {
   error: (error: unknown) => string
   before?: Interceptor | null
 }
+
+// fork_change start
+async function interceptGitCommitRequest(next: Record<string, unknown>, ctx: Context): Promise<boolean> {
+  if (next.type === "requestGitCommits") {
+    const sid = typeof next.sessionID === "string" ? next.sessionID : undefined
+    await captureGitCommits({
+      requestId: typeof next.requestId === "string" ? next.requestId : "",
+      dir: ctx.workspaceDir(sid),
+      query: typeof next.query === "string" ? next.query : "",
+      post: ctx.post,
+    }).catch((error) => console.error("[Kilo New] Git commit search failed:", error))
+    return true
+  }
+
+  if (next.type !== "requestGitCommitContext") return false
+  const sid = typeof next.sessionID === "string" ? next.sessionID : undefined
+  await captureGitCommitContext({
+    requestId: typeof next.requestId === "string" ? next.requestId : "",
+    dir: ctx.workspaceDir(sid),
+    hash: typeof next.hash === "string" ? next.hash : "",
+    post: ctx.post,
+    error: ctx.error,
+  }).catch((error) => console.error("[Kilo New] Git commit context failed:", error))
+  return true
+}
+// fork_change end
 
 export async function interceptMessage(
   msg: Record<string, unknown>,
@@ -38,6 +65,7 @@ export async function interceptMessage(
     return null
   }
   // fork_change end
+  if (await interceptGitCommitRequest(next, ctx)) return null // fork_change
   if (next.type !== "requestGitChangesContext") return next
   const sid = typeof next.sessionID === "string" ? next.sessionID : undefined
   const dir = ctx.workspaceDir(sid)
