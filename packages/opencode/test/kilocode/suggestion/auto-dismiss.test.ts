@@ -62,4 +62,65 @@ describe("Suggestion.show auto-dismiss on queued followup", () => {
       },
     })
   })
+
+  test("show stays pending while only a background settlement is queued", async () => {
+    await using tmp = await tmpdir({ git: true })
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const sessionID = SessionID.make("ses_show_settlement")
+        const started = Promise.withResolvers<void>()
+        const release = Promise.withResolvers<void>()
+
+        const first = Effect.runPromise(
+          KiloSessionPromptQueue.enqueue(
+            sessionID,
+            MessageID.make("msg_show_settle_1"),
+            Effect.gen(function* () {
+              started.resolve()
+              yield* Effect.promise(() => release.promise)
+              return "first" as const
+            }),
+            Effect.succeed("first-cancelled" as const),
+          ),
+        )
+        await started.promise
+
+        const settlement = Effect.runPromise(
+          KiloSessionPromptQueue.enqueue(
+            sessionID,
+            MessageID.make("msg_show_settle_2"),
+            Effect.succeed("settlement" as const),
+            Effect.succeed("settlement-cancelled" as const),
+            Effect.void,
+            true,
+          ),
+        )
+        await Bun.sleep(10)
+        expect(KiloSessionPromptQueue.hasBlockingFollowup(sessionID)).toBe(false)
+
+        // A settlement must not suppress the suggestion: it stays pending and
+        // the settlement waits behind the user's choice.
+        const shown = Suggestion.show({
+          sessionID,
+          text: "Continue with the task?",
+          actions: [{ label: "Continue", prompt: "Continue with the task" }],
+        })
+
+        let pending = (await Suggestion.list()).at(0)
+        for (let i = 0; pending === undefined && i < 100; i++) {
+          await Bun.sleep(5)
+          pending = (await Suggestion.list()).at(0)
+        }
+        expect(pending?.sessionID).toBe(sessionID)
+
+        expect(await Suggestion.dismiss(pending!.id)).toBe(true)
+        await expect(shown).rejects.toBeInstanceOf(Suggestion.DismissedError)
+
+        release.resolve()
+        expect(await first).toBe("first")
+        expect(await settlement).toBe("settlement")
+      },
+    })
+  })
 })
