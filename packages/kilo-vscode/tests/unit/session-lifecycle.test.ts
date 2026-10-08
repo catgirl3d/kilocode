@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
+import type { Memento } from "vscode"
 import { handleSessionLifecycle } from "../../src/agent-manager/session-lifecycle"
 import { AgentManagerProvider } from "../../src/agent-manager/AgentManagerProvider"
 import type { Host } from "../../src/agent-manager/host"
 import type { ProjectContexts } from "../../src/agent-manager/project/contexts"
 import type { AgentManagerOutMessage } from "../../src/agent-manager/types"
 import type { Session } from "@kilocode/sdk/v2/client"
+import { initSessionColors, sessionColors, setSessionColor } from "../../src/session-colors"
 
 const info: Session = {
   id: "session",
@@ -211,5 +213,30 @@ describe("session lifecycle merge integration", () => {
     } finally {
       provider.dispose()
     }
+  })
+
+  test("removes the persisted session color when the backend deletes the session", async () => {
+    const data = new Map<string, unknown>()
+    initSessionColors({
+      get: <T>(key: string) => data.get(key) as T | undefined,
+      update: async (key: string, value: unknown) => {
+        data.set(key, value)
+      },
+      keys: () => [...data.keys()],
+      setKeysForSync: () => {},
+    } as unknown as Memento)
+    await setSessionColor(info.id, "Red")
+
+    const deps = {
+      busy: new Set<string>(),
+      removed: new Set<string>(),
+      contexts: { byDirectory: () => undefined, byLiveSession: () => undefined } as unknown as ProjectContexts,
+      closeBrowser: () => {},
+      post: () => {},
+    }
+    handleSessionLifecycle({ type: "session.deleted", properties: { sessionID: info.id } }, deps)
+    await Bun.sleep(0)
+
+    expect(sessionColors()).toEqual({})
   })
 })

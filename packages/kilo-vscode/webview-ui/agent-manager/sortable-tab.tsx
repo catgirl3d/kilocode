@@ -14,6 +14,10 @@ import { SessionTabMenu } from "../src/components/chat/SessionTabMenu"
 import { SortableTabContainer } from "../src/components/chat/TabDnd"
 import type { Activity } from "../src/utils/session-activity"
 import { parseBindingTokens } from "../src/utils/keybind-tokens"
+// fork_change start
+import { ColorMenuItems } from "./color-menu"
+import { colorCss } from "./section-colors"
+// fork_change end
 
 /** Individual sortable tab wrapper using the `use:sortable` directive. */
 export const SortableTab: Component<{
@@ -31,12 +35,20 @@ export const SortableTab: Component<{
   onFork?: () => void
   pinned?: boolean
   onTogglePin?: () => void
+  color?: string | null // fork_change
+  onSetColor?: (color: string | null) => void // fork_change
   role?: "tab"
   selected?: boolean
   tabIndex?: number
   onKeyDown?: JSX.EventHandlerUnion<HTMLDivElement, KeyboardEvent>
 }> = (props) => {
   const { t } = useLanguage()
+  // fork_change start
+  const colorMenu = () =>
+    props.onSetColor ? (
+      <ColorMenuItems label={t("agentManager.section.setColor")} color={props.color} onSet={props.onSetColor} />
+    ) : undefined
+  // fork_change end
   return (
     <SortableTabContainer id={props.tab().id}>
       <SessionTabMenu
@@ -47,6 +59,7 @@ export const SortableTab: Component<{
         onCloseToRight={props.onCloseToRight}
         pinned={props.pinned}
         onTogglePin={props.onTogglePin}
+        colorMenu={colorMenu()} // fork_change
         closeShortcut={
           props.closeKeybind ? (
             <span class="am-menu-shortcut">
@@ -62,6 +75,7 @@ export const SortableTab: Component<{
           active={props.active}
           pinned={props.pinned}
           pinnedLabel={t("agentManager.tab.pinned")}
+          accent={colorCss(props.color ?? null)} // fork_change
           state={props.state}
           stateLabel={props.stateLabel}
           keybind={props.keybind}

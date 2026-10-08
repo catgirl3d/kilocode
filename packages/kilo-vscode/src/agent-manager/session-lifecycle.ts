@@ -1,5 +1,6 @@
 import type { Session } from "@kilocode/sdk/v2/client"
 import { sessionToWebview } from "../kilo-provider-utils"
+import { removeSessionColor } from "../session-colors" // fork_change
 import { canonicalizePath, samePath } from "./project/paths"
 import type { ProjectContexts } from "./project/contexts"
 import type { AgentManagerOutMessage } from "./types"
@@ -20,6 +21,7 @@ function remove(id: string, deps: Deps): void {
   deps.busy.delete(id)
   deps.busyDirs?.delete(id)
   deps.closeBrowser(id)
+  void removeSessionColor(id) // fork_change
   const ctx = deps.contexts.byLiveSession(id)
   if (!ctx) return
   ctx.removeLiveSession(id)
