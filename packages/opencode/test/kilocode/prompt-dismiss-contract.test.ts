@@ -42,6 +42,17 @@ describe("prompt.ts Kilo-specific invariants", () => {
     expect(content).not.toMatch(/state\.cancel\(input\.sessionID\)/)
   })
 
+  test("background settlements wait behind interactive blockers instead of dismissing them", () => {
+    const content = fs.readFileSync(PROMPT_FILE, "utf-8")
+    // A background task settlement must not clear a pending question or
+    // suggestion; it reserves the queue as a non-blocking follow-up so the
+    // guards in kilocode/question and kilocode/suggestion let the prompt show
+    // and the settlement waits behind the user's answer.
+    expect(content).toContain("KiloSessionControl.settlement(input.parts)")
+    expect(content).toMatch(/const dismiss = settlement[\s\S]{0,80}Effect\.void/)
+    expect(content).toMatch(/dismiss,\s*settlement,/)
+  })
+
   test("runLoop breaks out between LLM steps when a newer prompt was enqueued", () => {
     const content = fs.readFileSync(PROMPT_FILE, "utf-8")
     // hasFollowup has to be checked inside runLoop so the current handle.process
