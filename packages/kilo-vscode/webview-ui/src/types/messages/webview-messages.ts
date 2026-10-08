@@ -562,6 +562,22 @@ export interface RequestGitChangesContextMessage {
   agentManagerContext?: string
 }
 
+// fork_change start
+export interface RequestGitCommitsMessage {
+  type: "requestGitCommits"
+  requestId: string
+  query: string
+  sessionID?: string
+}
+
+export interface RequestGitCommitContextMessage {
+  type: "requestGitCommitContext"
+  requestId: string
+  hash: string
+  sessionID?: string
+}
+// fork_change end
+
 export interface ChatCompletionAcceptedMessage {
   type: "chatCompletionAccepted"
   suggestionLength?: number
@@ -1902,6 +1918,8 @@ export type WebviewMessage =
   | RequestTerminalContextMessage
   | RequestGitChangesContextMessage
   | RequestStagedDiffMessage // fork_change
+  | RequestGitCommitsMessage // fork_change
+  | RequestGitCommitContextMessage // fork_change
   | ChatCompletionAcceptedMessage
   | UpdateSettingRequest
   | RequestTimelineSettingMessage
