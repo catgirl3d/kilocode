@@ -1,5 +1,6 @@
 import type { ModelSelection } from "../types/messages"
 
+// fork_change start - model selection state is scoped per session
 type Deps = {
   current: () => string
   agent: (sessionID?: string) => string
@@ -36,3 +37,4 @@ export function createModelSelector(deps: Deps) {
 
   return { select, session }
 }
+// fork_change end

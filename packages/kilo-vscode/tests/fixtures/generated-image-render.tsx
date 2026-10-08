@@ -59,7 +59,7 @@ const file: FilePart = {
 }
 
 // Image returned by the generate_image tool, which has no dedicated card.
-const tool: ToolPart = {
+const tool = {
   id: "tool",
   sessionID: message.sessionID,
   messageID: message.id,
@@ -79,7 +79,7 @@ const tool: ToolPart = {
       { ...file, id: "legacy", url: "file:///test/old.png", filename: "old.png" },
     ],
   },
-}
+} satisfies ToolPart
 
 // send_file deliveries are unnormalized mobile payloads and stay out of the transcript.
 const delivery: ToolPart = {

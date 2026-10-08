@@ -35,7 +35,7 @@ const mount = (view: () => JSX.Element) => {
   const root = win.document.createElement("div")
   win.document.body.append(root)
   const dispose = render(view, root as unknown as Parameters<typeof render>[1])
-  return { root, dispose }
+  return { root: root as unknown as HTMLElement, dispose }
 }
 
 try {
