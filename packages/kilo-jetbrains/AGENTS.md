@@ -26,13 +26,13 @@ This file is always loaded for work in this package. Detailed guidance lives in 
 
 ## Hard Restrictions
 
+- **Validation is disabled in this fork.** The `typecheck`, `test`, and `test:ci` package scripts have been removed. Do not run Gradle/Java checks, invoke wrappers or CI scripts as a workaround, probe Java, or install a JDK for validation. Root typecheck excludes this package. Build scripts and wrappers remain for explicitly requested builds; do not use a build as an automatic verification fallback. Report changes as unverified by JetBrains checks.
 - **No Kotlin UI DSL v2** (`com.intellij.ui.dsl.builder`), **no Kotlin Compose** (`intellij.platform.compose`), **no JCEF** (`JBCefBrowser`). Standard Swing with IntelliJ Platform components only — JCEF and Compose don't work reliably in split-mode remote dev. Details: `jetbrains-ui` skill.
 - Do not use IntelliJ Platform APIs marked internal in the IntelliJ source repository. Find a public alternative or a supported extension point. Experimental APIs are acceptable but warn the user. Lookup priority ($INTELLIJ_REPO first): `jetbrains-arch` skill.
 - **Bundle all third-party libraries** as `implementation` in `build.gradle.kts` — never rely on IntelliJ-bundled copies (OkHttp, Gson, Guava, kotlinx-serialization-json). `kotlinx.coroutines` is the one exception (platform-provided, never bundle it). Pin versions in `gradle/libs.versions.toml`.
 - **Never call a shared DTO's kotlinx serializer from `frontend` or `backend`** (`Json.decodeFromString<SharedDto>()`, `SharedDto.serializer()`, etc.) — `shared/` and each module load serialization from different classloaders, causing a `LinkageError` at runtime that Gradle tests cannot catch. Full pattern and workaround: `jetbrains-arch` skill.
 - **All Swing creation, mutation, and access must happen on the EDT.** Never call RPC from the EDT. Annotate methods touching Swing or `SessionModel` with `@RequiresEdt`. Full annotation set and services/coroutine rules: `jetbrains-arch` skill.
 - Do not hardcode colors, fonts, sizes, insets, or borders — use theme-derived platform APIs. Do not use raw Swing where a JB component exists (`JLabel` → `JBLabel`, etc.). User-visible strings go in `*.properties` files. Full tables: `jetbrains-ui` skill.
-- Do not run `java -version` as a routine preflight — Gradle already fails clearly when Java is missing or incompatible.
 - Do not move, delete, or recreate JetBrains release tags (`jetbrains/v*`) casually. Release process: `/release-jetbrains` command.
 
 ## Reuse First — Common Code Index
@@ -66,10 +66,11 @@ Full lifecycle rules, anti-patterns, and required stress/leak tests for streamin
 
 ## Key Commands
 
+The commands below are retained for explicitly requested JetBrains development or
+build work, not routine validation. Gradle typechecks and tests are disabled.
+
 | Task | Command (from `packages/kilo-jetbrains/`) |
 |---|---|
-| Typecheck | `bun run typecheck` or `./gradlew typecheck` |
-| Test | `./gradlew test` |
 | Full build | `bun run build` (`./gradlew buildPlugin`) |
 | Run split-mode sandbox | `./gradlew --no-configuration-cache runIdeSplitMode` |
 | Marketplace build | `script/build-version.sh <version>` |
