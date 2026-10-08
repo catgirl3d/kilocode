@@ -21,6 +21,7 @@ import {
   PAST_CHATS_RESULT,
   TERMINAL_RESULT,
   GIT_CHANGES_RESULT,
+  GIT_COMMITS_RESULT,
   WORKTREES_RESULT,
   MODEL_RESULT,
   modelReferenceToken,
@@ -113,6 +114,16 @@ describe("buildMentionResults", () => {
     expect(result.map((item) => item.type)).toEqual(["git-changes", "file", "file-picker"])
   })
 
+  it("offers both git changes and repository history, gated by git availability", () => {
+    const available = buildMentionResults("git", [], true).map((item) => item.type as string)
+    expect(available).toContain("git-changes")
+    expect(available).toContain("git-commits")
+
+    const unavailable = buildMentionResults("git", [], false).map((item) => item.type as string)
+    expect(unavailable).not.toContain("git-changes")
+    expect(unavailable).not.toContain("git-commits")
+  })
+
   it("omits special mentions for unrelated query", () => {
     const result = buildMentionResults("src", ["src/index.ts"])
     expect(result.map((item) => item.type)).toEqual(["file", "file-picker"])
@@ -139,6 +150,7 @@ describe("buildMentionResults", () => {
       MODEL_RESULT,
       TERMINAL_RESULT,
       GIT_CHANGES_RESULT,
+      GIT_COMMITS_RESULT,
       PAST_CHATS_RESULT,
       FILE_PICKER_RESULT,
       { type: "file", value: "src/index.ts" },
