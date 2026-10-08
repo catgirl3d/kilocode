@@ -84,12 +84,9 @@ bun .kilo/skills/release-jetbrains/script/set-pin.ts --version 7.4.1
 bun .kilo/skills/release-jetbrains/script/set-pin.ts --version 7.4.2-rc.1
 ```
 
-Then test from `packages/kilo-jetbrains/`:
-
-```bash
-./gradlew typecheck
-./gradlew test
-```
+Then verify the pin edit with the pin script's own validation and the CI checks on
+the release PR; Gradle/Java checks are disabled locally in this fork, so report that
+verification gap instead of running `gradlew` yourself.
 
 If the user confirms the tested pin should be released, open or update a pin bump PR to `main`:
 
