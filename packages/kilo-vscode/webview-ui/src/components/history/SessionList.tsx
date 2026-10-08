@@ -15,26 +15,36 @@ import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { useSessionTags } from "../../context/session-tags" // fork_change
+import { useLocalTabs } from "../../context/local-tabs" // fork_change
+import { ColorMenuItems } from "../../../agent-manager/color-menu" // fork_change
 import { formatRelativeDate } from "../../utils/date"
 import { DATE_GROUP_KEYS, dateGroupKey } from "../../utils/date" // fork_change
 import type { SessionInfo } from "../../types/messages"
 import { SessionRenameEditor } from "../shared/SessionRenameEditor"
 import { SessionTags, useSessionTagsDialog } from "../shared/SessionTags" // fork_change
+import { SessionColorStripe } from "../shared/SessionColorStripe" // fork_change
 
 interface SessionListProps {
   onSelectSession: (id: string) => void
   sessionIds?: Accessor<ReadonlySet<string> | undefined>
   /** Extra per-row actions rendered after rename/delete (e.g. Agent Manager menus). */
   rowActions?: (session: SessionInfo) => JSX.Element
+  // fork_change start - session colors owned by the host view; falls back to local tabs
+  sessionColor?: (id: string) => string | undefined
+  setSessionColor?: (id: string, color: string | null) => void
+  // fork_change end
 }
 
 const SessionList: Component<SessionListProps> = (props) => {
   const session = useSession()
   const language = useLanguage()
   const dialog = useDialog()
-  // fork_change start
+  // fork_change start - wire session tags and colors into the history view
+  const tabs = useLocalTabs()
   const tags = useSessionTags()
   const openTags = useSessionTagsDialog()
+  const colorOf = (id: string) => props.sessionColor?.(id) ?? tabs?.sessionColor(id)
+  const setColor = (id: string, color: string | null) => (props.setSessionColor ?? tabs?.setSessionColor)?.(id, color)
   // fork_change end
 
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
@@ -209,6 +219,16 @@ const SessionList: Component<SessionListProps> = (props) => {
               <ContextMenu.ItemLabel>{language.t("session.tags.manage")}</ContextMenu.ItemLabel>
             </ContextMenu.Item>
             {/* fork_change end */}
+            {/* fork_change start - assign a session color from the row menu (local sessions only) */}
+            <Show when={(props.setSessionColor ?? tabs?.setSessionColor) && !item.id.startsWith("cloud:")}>
+              <ContextMenu.Separator />
+              <ColorMenuItems
+                label={language.t("agentManager.section.setColor")}
+                color={colorOf(item.id)}
+                onSet={(color) => setColor(item.id, color)}
+              />
+            </Show>
+            {/* fork_change end */}
             <ContextMenu.Separator />
             <ContextMenu.Item onSelect={() => confirmDelete(item)}>
               <ContextMenu.ItemLabel>{language.t("common.delete")}</ContextMenu.ItemLabel>
@@ -244,10 +264,15 @@ const SessionList: Component<SessionListProps> = (props) => {
       >
         {(s) => (
           <>
+            {/* fork_change start - display session colors in each list row */}
+            <SessionColorStripe sessionID={s.id} color={colorOf(s.id)} />
+            {/* fork_change end */}
             <span data-slot="list-item-title" dir="auto">
               {name(s)}
             </span>
+            {/* fork_change start - display session tags in each list row */}
             <SessionTags sessionID={s.id} />
+            {/* fork_change end */}
             <span data-slot="list-item-description">{formatRelativeDate(s.updatedAt)}</span>
             <Show when={session.currentSessionID() === s.id}>
               <span class="sr-only">{language.t("session.current")}</span>
