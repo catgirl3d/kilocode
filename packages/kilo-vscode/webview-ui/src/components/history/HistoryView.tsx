@@ -23,6 +23,10 @@ interface HistoryViewProps {
   sessionIds?: Accessor<ReadonlySet<string> | undefined>
   /** Extra per-row actions rendered in the Local tab. */
   rowActions?: (session: SessionInfo) => JSX.Element
+  // fork_change start - session colors owned by the host view (Agent Manager); rows fall back to local tabs
+  sessionColor?: (id: string) => string | undefined
+  setSessionColor?: (id: string, color: string | null) => void
+  // fork_change end
 }
 
 type Source = "local" | "cloud" | "worktree"
@@ -169,6 +173,8 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
             onSelectSession={props.onSelectSession}
             sessionIds={props.sessionIds}
             rowActions={props.rowActions}
+            sessionColor={props.sessionColor} // fork_change
+            setSessionColor={props.setSessionColor} // fork_change
           />
         )}
       </div>
@@ -195,6 +201,8 @@ const HistoryView: Component<HistoryViewProps> = (props) => {
             <SessionList
               onSelectSession={props.onSelectSession}
               sessionIds={() => worktreeIds() ?? EMPTY_SESSION_IDS}
+              sessionColor={props.sessionColor} // fork_change
+              setSessionColor={props.setSessionColor} // fork_change
             />
           )}
         </div>
