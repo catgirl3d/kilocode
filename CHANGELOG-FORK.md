@@ -29,6 +29,7 @@
 - Group recent sessions by date on the welcome screen and show 7 recent sessions instead of 3.
 - Mark session tabs with a color from the tab context menu in both the sidebar and Agent Manager; the color shows as a tab accent and a matching dot in Agent Manager session search, and persists across VS Code restarts.
 - Add an "Attach staged diff" button to the chat prompt: it writes `git diff --staged` to `staged_diff_output.txt` in the session directory and inserts the file as a mention for the next message, with a notice when there is nothing staged.
+- Restore the git commits picker in the VS Code chat `@` menu: search repository history, insert a full commit hash, and attach the commit's `git show` details to the next message.
 
 ### Fixes & Enhancements
 

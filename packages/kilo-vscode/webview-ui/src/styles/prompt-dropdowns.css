@@ -192,6 +192,12 @@
   text-align: start;
 }
 
+/* fork_change start - commit history rows left-align like worktree rows */
+.commit-mention-picker [data-slot="list-item"] {
+  text-align: start;
+}
+/* fork_change end */
+
 /* ============================================
    Slash Command Dropdown
    ============================================ */

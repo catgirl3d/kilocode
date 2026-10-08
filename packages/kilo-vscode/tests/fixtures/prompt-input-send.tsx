@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { Window } from "happy-dom"
 
 const window = new Window({ url: "http://localhost" })
+Object.defineProperty(window, "origin", { value: window.location.origin })
 class CSSStyleSheetStub {
   replaceSync() {}
   replace() {
@@ -19,6 +20,7 @@ Object.assign(globalThis, {
   Node: window.Node,
   Element: window.Element,
   HTMLElement: window.HTMLElement,
+  HTMLHeadElement: window.HTMLHeadElement,
   HTMLDivElement: window.HTMLDivElement,
   HTMLButtonElement: window.HTMLButtonElement,
   HTMLTextAreaElement: window.HTMLTextAreaElement,
@@ -38,8 +40,10 @@ Object.assign(globalThis, {
   cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
 })
 
+const posts: Array<Record<string, unknown>> = []
+
 globalThis.acquireVsCodeApi = () => ({
-  postMessage: () => {},
+  postMessage: (message: unknown) => posts.push(message as Record<string, unknown>),
   getState: () => undefined,
   setState: () => {},
 })
@@ -49,6 +53,8 @@ const { StoryProviders, mockSessionValue } = await import("../../webview-ui/src/
 const { SessionContext } = await import("../../webview-ui/src/context/session")
 const { ServerContext } = await import("../../webview-ui/src/context/server")
 const { PromptInput } = await import("../../webview-ui/src/components/chat/PromptInput")
+const { Toast } = await import("@kilocode/kilo-ui/toast")
+const { post } = await import("../../webview-ui/src/utils/webview-message")
 const { browserDrafts: references, imageDrafts, reviewDrafts } = await import("../../webview-ui/src/utils/draft-store")
 
 async function settle() {
@@ -57,17 +63,33 @@ async function settle() {
   await window.happyDOM.waitUntilComplete()
 }
 
+async function flush() {
+  const tick = Promise.withResolvers<void>()
+  setTimeout(tick.resolve, 0)
+  await tick.promise
+}
+
 type AttachmentCase = "review" | "image" | "browser"
 
-async function run(resumable: boolean, attachment?: AttachmentCase) {
+async function run(resumable: boolean, attachment?: AttachmentCase, commits = false) {
+  posts.length = 0
   const calls: Array<string | { message: string; files?: unknown[]; review?: unknown; browser?: unknown }> = []
+  let sent: (() => void) | undefined
   const base = mockSessionValue({ id: "session", status: "idle" })
   const session = {
     ...base,
     canResume: () => resumable,
     resume: () => calls.push("resume"),
-    sendMessage: (...args: unknown[]) =>
-      calls.push({ message: args[0] as string, files: args[3] as unknown[], review: args[6], browser: args[8] }),
+    sendMessage: (...args: unknown[]) => {
+      const count = calls.push({
+        message: args[0] as string,
+        files: args[3] as unknown[],
+        review: args[6],
+        browser: args[8],
+      })
+      sent?.()
+      return count
+    },
   }
   const key = "prompt:default:session:session"
   if (attachment === "review") {
@@ -108,13 +130,14 @@ async function run(resumable: boolean, attachment?: AttachmentCase) {
             {
               connectionState: () => "connected",
               isConnected: () => true,
-              gitInstalled: () => false,
+              gitInstalled: () => commits,
               workspaceDirectory: () => "/repo",
             } as never
           }
         >
           <SessionContext.Provider value={session as never}>
-            <PromptInput />
+            <PromptInput pendingSessionID={commits ? "pending-session" : undefined} />
+            {commits ? <Toast.Region /> : null}
           </SessionContext.Provider>
         </ServerContext.Provider>
       </StoryProviders>
@@ -128,6 +151,71 @@ async function run(resumable: boolean, attachment?: AttachmentCase) {
     const button = root.querySelector<HTMLButtonElement>(".prompt-input-hint-actions button[data-icon='send']")
     assert.ok(button, "send button did not render")
     assert.equal(button.getAttribute("aria-disabled"), "false")
+
+    if (commits) {
+      const hash = "0123456789abcdef".repeat(2) + "01234567"
+      const draft = `Inspect commit @${hash}`
+      const input = root.querySelector<HTMLTextAreaElement>("textarea.prompt-input")
+      assert.ok(input, "prompt input did not render")
+      input.value = draft
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, data: draft, inputType: "insertText" }))
+      button.click()
+      await flush()
+
+      const request = posts.find((message) => message.type === "requestGitCommitContext")
+      assert.ok(request, "send did not request git commit context")
+      assert.equal(request.hash, hash)
+      assert.equal(typeof request.requestId, "string", "commit context request should have a response correlation id")
+      assert.equal(
+        button.getAttribute("aria-disabled"),
+        "true",
+        "send should be disabled while commit context is pending",
+      )
+
+      post({
+        type: "gitCommitContextError",
+        requestId: request.requestId as string,
+        hash,
+        error: "git show failed",
+      })
+      await flush()
+
+      assert.deepEqual(calls, [], "a failed commit read must not dispatch the chat message")
+      assert.equal(
+        button.getAttribute("aria-disabled"),
+        "false",
+        "send should be re-enabled after commit context fails",
+      )
+      const toast = document.querySelector<HTMLElement>('[data-component="toast"][data-variant="error"]')
+      assert.ok(toast, `commit context failure did not show an error toast: ${document.body.textContent}`)
+      assert.equal(toast.querySelector("[data-slot='toast-title']")?.textContent, "Git commit context unavailable")
+      assert.equal(toast.querySelector("[data-slot='toast-description']")?.textContent, "git show failed")
+      assert.equal(input.value, draft, "failed commit lookup should preserve the prompt for retry")
+
+      const retry = Promise.withResolvers<void>()
+      sent = retry.resolve
+      button.click()
+      await flush()
+
+      const requests = posts.filter((message) => message.type === "requestGitCommitContext")
+      assert.equal(requests.length, 2, "retry should request commit context again")
+      const again = requests.at(-1)
+      assert.ok(again)
+      assert.equal(typeof again.requestId, "string")
+      post({
+        type: "gitCommitContextResult",
+        requestId: again.requestId as string,
+        hash,
+        content: "commit context",
+      })
+      await retry.promise
+      await flush()
+
+      assert.equal(calls.length, 1, "retry should dispatch one chat message after commit context succeeds")
+      assert.ok((calls[0] as { message: string }).message.includes(hash))
+      return calls
+    }
+
     button.click()
     await settle()
     return calls
@@ -189,3 +277,5 @@ assert.deepEqual((browser[0] as { browser: unknown }).browser, {
     },
   ],
 })
+
+if (process.env.PROMPT_INPUT_COMMIT_ABORT === "1") await run(false, undefined, true)

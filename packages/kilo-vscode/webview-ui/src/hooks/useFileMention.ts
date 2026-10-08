@@ -3,6 +3,7 @@ import type { Accessor } from "solid-js"
 import type {
   FileAttachment,
   FileSearchItem,
+  GitCommitSearchItem, // fork_change
   SessionSearchItem,
   WebviewMessage,
   ExtensionMessage,
@@ -32,10 +33,12 @@ import {
   type WorktreeReference,
 } from "./file-mention-utils"
 import { GIT_CHANGES_MENTION } from "./git-changes-context-utils"
+import { findCommitMentions, isCommitHash } from "./git-commits-context-utils" // fork_change
 import { TERMINAL_MENTION } from "./terminal-context-utils"
 import { convertToMentionPath } from "../utils/path-mentions"
 
 const FILE_SEARCH_DEBOUNCE_MS = 150
+const COMMIT_SEARCH_DEBOUNCE_MS = 150 // fork_change
 /** Past chats offered to the ranking, bounded so chats cannot flood the list. */
 const SESSION_RESULT_LIMIT = 3
 /** How long a spaced query waits for past chats before it counts as prose. */
@@ -67,6 +70,18 @@ export interface FileMention {
   mentionedSessions: Accessor<Map<string, SessionSearchItem>>
   /** Mentioned model references, keyed by their `@providerID/modelID` token. */
   mentionedModels: Accessor<Set<string>>
+  // fork_change start
+  mentionedCommits: Accessor<Set<string>>
+  commitPicker: Accessor<boolean>
+  commitCandidates: Accessor<GitCommitSearchItem[]>
+  requestCommits: (query: string) => void
+  selectCommit: (
+    commit: GitCommitSearchItem,
+    textarea: HTMLTextAreaElement,
+    setText: (text: string) => void,
+    onSelect?: () => void,
+  ) => void
+  // fork_change end
   /** Whether the past-chat session picker (AM-style search) is open. */
   sessionPicker: Accessor<boolean>
   /** Directory-scoped past chats shown in the session picker. */
@@ -169,11 +184,14 @@ export function useFileMention(
   const [mentionedPaths, setMentionedPaths] = createSignal<Set<string>>(new Set())
   const [mentionedSessions, setMentionedSessions] = createSignal<Map<string, SessionSearchItem>>(new Map())
   const [mentionedModels, setMentionedModels] = createSignal<Set<string>>(new Set())
+  const [mentionedCommits, setMentionedCommits] = createSignal<Set<string>>(new Set()) // fork_change
   const [mentionQuery, setMentionQuery] = createSignal<string | null>(null)
   const [mentionResults, setMentionResults] = createSignal<MentionResult[]>([])
   const [mentionIndex, setMentionIndex] = createSignal(0)
   const [sessionPicker, setSessionPicker] = createSignal(false)
   const [sessionCandidates, setSessionCandidates] = createSignal<SessionSearchItem[]>([])
+  const [commitPicker, setCommitPicker] = createSignal(false) // fork_change
+  const [commitCandidates, setCommitCandidates] = createSignal<GitCommitSearchItem[]>([]) // fork_change
   const [modelPicker, setModelPicker] = createSignal(false)
   const [worktreePicker, setWorktreePicker] = createSignal(false)
   const worktreeCandidates = () => worktrees?.().filter((worktree) => !worktree.disabled) ?? []
@@ -190,6 +208,7 @@ export function useFileMention(
   // tokens, not files, so they must never turn into file attachments.
   const knownModels = new Set<string>()
   const knownWorktrees = new Map<string, WorktreeReference>()
+  const knownCommits = new Set<string>() // fork_change
   const references = () => {
     for (const worktree of worktrees?.() ?? []) {
       knownWorktrees.set(worktree.path, worktree)
@@ -226,6 +245,10 @@ export function useFileMention(
   let prewarmRequest: FileSearchRequest | undefined
   let filePickerCounter = 0
   let sessionSearchCounter = 0
+  // fork_change start
+  let commitSearchCounter = 0
+  let commitSearchTimer: ReturnType<typeof setTimeout> | undefined
+  // fork_change end
   // Scope whose past chats have been fetched, so opening "@" loads the list
   // once per session instead of on every keystroke, plus the fetch state a
   // spaced query consults before deciding it is prose rather than a title.
@@ -265,6 +288,14 @@ export function useFileMention(
   const showMention = () => mentionQuery() !== null
   const scope = () => sessionID?.() ?? ""
   let activeScope = scope()
+  // fork_change start
+  const stopCommitSearch = () => {
+    if (commitSearchTimer) clearTimeout(commitSearchTimer)
+    commitSearchTimer = undefined
+    commitSearchCounter++
+    setCommitPicker(false)
+  }
+  // fork_change end
 
   const syncScope = () => {
     const value = scope()
@@ -283,6 +314,10 @@ export function useFileMention(
     if (sessionTimer) clearTimeout(sessionTimer)
     sessionTimer = undefined
     setSessionCandidates([])
+    // fork_change start
+    stopCommitSearch()
+    setCommitCandidates([])
+    // fork_change end
     setWorktreePicker(false)
     setModelPicker(false)
     modelPickerState = null
@@ -497,11 +532,24 @@ export function useFileMention(
     if (open) replaceResults(results(open, files(mentionResults())))
   }
 
+  // fork_change start
+  const receiveCommits = (message: { requestId: string; commits: GitCommitSearchItem[] }) => {
+    if (!commitPicker() || message.requestId !== `git-commits-${commitSearchCounter}`) return
+    setCommitCandidates(message.commits)
+  }
+  // fork_change end
+
   const unsubscribe = vscode.onMessage((message) => {
     if (message.type === "sessionSearchResult") {
       if (message.requestId === `session-search-${sessionSearchCounter}`) applySessions(message.sessions)
       return
     }
+    // fork_change start
+    if (message.type === "gitCommitsResult") {
+      receiveCommits(message)
+      return
+    }
+    // fork_change end
     if (message.type !== "fileSearchResult") return
     const request =
       message.requestId === fileSearchRequest?.id
@@ -528,6 +576,7 @@ export function useFileMention(
     unsubscribe()
     if (fileSearchTimer) clearTimeout(fileSearchTimer)
     if (sessionTimer) clearTimeout(sessionTimer)
+    if (commitSearchTimer) clearTimeout(commitSearchTimer) // fork_change
     if (pendingArrowSnap) clearTimeout(pendingArrowSnap.timer)
   })
 
@@ -563,6 +612,7 @@ export function useFileMention(
     setMentionQuery(null)
     setMentionResults([])
     setSessionPicker(false)
+    stopCommitSearch() // fork_change
     setWorktreePicker(false)
     setModelPicker(false)
   }
@@ -576,6 +626,7 @@ export function useFileMention(
       setMentionedPaths((prev) => (prev.size ? new Set<string>() : prev))
       setMentionedSessions((prev) => (prev.size ? new Map<string, SessionSearchItem>() : prev))
       setMentionedModels((prev) => (prev.size ? new Set<string>() : prev))
+      setMentionedCommits((prev) => (prev.size ? new Set<string>() : prev)) // fork_change
       return
     }
     references()
@@ -583,6 +634,7 @@ export function useFileMention(
     setMentionedPaths(() => _syncMentionedPaths(knownPaths, text))
     setMentionedSessions(() => _syncMentionedSessions(knownSessions, text))
     setMentionedModels(() => _syncMentionedPaths(knownModels, text))
+    setMentionedCommits(() => _syncMentionedPaths(knownCommits, text)) // fork_change
   }
 
   // A restored draft can be seeded before the model catalog has loaded, so the
@@ -635,6 +687,24 @@ export function useFileMention(
     requestSessions()
   }
 
+  // fork_change start
+  const requestCommits = (query: string) => {
+    if (git?.() === false || !commitPicker()) return
+    if (commitSearchTimer) clearTimeout(commitSearchTimer)
+    const id = ++commitSearchCounter
+    commitSearchTimer = setTimeout(() => {
+      commitSearchTimer = undefined
+      const session = sessionID?.()
+      vscode.postMessage({
+        type: "requestGitCommits",
+        requestId: `git-commits-${id}`,
+        query,
+        ...(session ? { sessionID: session } : {}),
+      })
+    }, COMMIT_SEARCH_DEBOUNCE_MS)
+  }
+  // fork_change end
+
   // Replace a textarea range through execCommand so the change lands on the
   // browser's native undo stack. Restore focus first: pickers and drags can
   // leave the textarea unfocused, which makes execCommand silently no-op.
@@ -648,6 +718,22 @@ export function useFileMention(
       suppress = false
     }
   }
+
+  // fork_change start
+  const register = (result: MentionResult, token: string) => {
+    if (result.type === "file" || result.type === "folder" || result.type === "opened-file") knownPaths.add(token)
+    if (result.type === "session") knownSessions.set(token, result.session)
+    if (result.type === "commit") knownCommits.add(token)
+  }
+
+  const mark = (result: MentionResult, token: string) => {
+    if (result.type === "file" || result.type === "folder" || result.type === "opened-file") {
+      setMentionedPaths((prev) => new Set([...prev, token]))
+    }
+    if (result.type === "session") setMentionedSessions((prev) => new Map(prev).set(token, result.session))
+    if (result.type === "commit") setMentionedCommits((prev) => new Set([...prev, token]))
+  }
+  // fork_change end
 
   const selectMention = (
     result: MentionResult,
@@ -678,6 +764,15 @@ export function useFileMention(
       return
     }
 
+    // fork_change start
+    if (result.type === "git-commits") {
+      setCommitCandidates([])
+      setCommitPicker(true)
+      requestCommits("")
+      return
+    }
+    // fork_change end
+
     if (result.type === "past-chats") {
       // Switch the dropdown into the AM-style session search; the actual
       // insertion happens when a session is picked there.
@@ -702,10 +797,10 @@ export function useFileMention(
     // insert the same token and overwrite each other in knownSessions.
     const token = result.type === "session" ? sessionMentionToken(result.session, knownSessions) : result.value
 
-    // Add to knownPaths BEFORE execCommand so syncMentionedPaths (triggered
-    // by the input event) can discover the new path.
-    if (result.type === "file" || result.type === "folder" || result.type === "opened-file") knownPaths.add(token)
-    if (result.type === "session") knownSessions.set(token, result.session)
+    // fork_change start
+    // Register before execCommand so input sync discovers the new token.
+    register(result, token)
+    // fork_change end
 
     // Replace the @query with the selected @path via execCommand so the
     // change lands on the browser's native undo stack. AT_PATTERN is
@@ -719,9 +814,7 @@ export function useFileMention(
 
     textarea.focus()
 
-    if (result.type === "file" || result.type === "folder" || result.type === "opened-file")
-      setMentionedPaths((prev) => new Set([...prev, token]))
-    if (result.type === "session") setMentionedSessions((prev) => new Map(prev).set(token, result.session))
+    mark(result, token) // fork_change
     closeMention()
     onSelect?.()
   }
@@ -736,6 +829,15 @@ export function useFileMention(
     knownWorktrees.set(worktree.path, worktree)
     selectMention({ type: "file", value: worktree.path }, textarea, setText, onSelect)
   }
+
+  // fork_change start
+  const selectCommit = (
+    commit: GitCommitSearchItem,
+    textarea: HTMLTextAreaElement,
+    setText: (text: string) => void,
+    onSelect?: () => void,
+  ) => selectMention({ type: "commit", value: commit.hash, commit }, textarea, setText, onSelect)
+  // fork_change end
 
   const selectSession = (
     session: SessionSearchItem,
@@ -846,6 +948,7 @@ export function useFileMention(
     if (suppress) return
     pruneInserted()
     closeSessionPicker()
+    stopCommitSearch() // fork_change
     setWorktreePicker(false)
     setModelPicker(false)
     const before = val.substring(0, cursor)
@@ -954,16 +1057,23 @@ export function useFileMention(
   // Mention tokens that count as atomic units for cursor movement, deletion
   // and selection snapping: file paths, past-chat title tokens and model
   // references.
-  const mentionTokens = () => new Set([...mentionedPaths(), ...mentionedSessions().keys(), ...mentionedModels()])
+  // fork_change start
+  const mentionTokens = () =>
+    new Set([...mentionedPaths(), ...mentionedSessions().keys(), ...mentionedModels(), ...mentionedCommits()])
+  // fork_change end
 
   const parseFileAttachments = (text: string): FileAttachment[] => {
     if (!text) return []
     const worktrees = references()
     reclassifyModels()
     const keys = modelKeys?.()
+    // fork_change start
     const paths = new Set(
-      [..._syncMentionedPaths(knownPaths, text)].filter((path) => !knownWorktrees.has(path) && !keys?.has(path)),
+      [..._syncMentionedPaths(knownPaths, text)].filter(
+        (path) => !knownWorktrees.has(path) && !keys?.has(path) && !isCommitHash(path),
+      ),
     )
+    // fork_change end
     return [
       ...buildFileAttachments(text, paths, workspaceDir),
       ...buildSessionAttachments(text, mentionedSessions()),
@@ -984,23 +1094,25 @@ export function useFileMention(
     if (textarea.selectionStart !== textarea.selectionEnd) return false
 
     const charBefore = val[cursor - 1]
-    if (charBefore !== " " && charBefore !== "\n") return false
-    if (!isCursorAtMentionEnd(val, cursor - 1, mentionTokens())) return false
-
-    // Cursor is on the space right after a mention — remove the entire
-    // mention + trailing space in one step via execCommand so the change
-    // lands on the browser's native undo stack.
-    const range = getMentionRemovalRange(val, cursor - 1, mentionTokens())
+    // fork_change start
+    const spaced = charBefore === " " || charBefore === "\n"
+    const tokens = mentionTokens()
+    const position = spaced ? cursor - 1 : cursor
+    if (!isCursorAtMentionEnd(val, position, tokens)) return false
+    const range = getMentionRemovalRange(val, position, tokens)
     if (!range) return false
+    // Keep existing whitespace when the caret is directly after the token.
+    const end = spaced ? range.end : cursor
 
     e.preventDefault()
     suppress = true
     try {
-      textarea.setSelectionRange(range.start, range.end)
+      textarea.setSelectionRange(range.start, end)
       document.execCommand("insertText", false, "")
     } finally {
       suppress = false
     }
+    // fork_change end
     return true
   }
 
@@ -1086,7 +1198,14 @@ export function useFileMention(
     last = { start: snapped, end: snappedEnd }
   }
 
+  // fork_change start
+  const seedCommits = (text: string) => {
+    for (const mention of findCommitMentions(text)) knownCommits.add(text.slice(mention.start + 1, mention.end))
+  }
+  // fork_change end
+
   const seedFromText = (text: string) => {
+    seedCommits(text) // fork_change
     // The optional drive-letter prefix is scoped to a single letter directly after
     // @ (e.g. "C:") so a colon elsewhere in the match (as in "@https://example.com")
     // doesn't get mistaken for a Windows path.
@@ -1151,6 +1270,7 @@ export function useFileMention(
   // check too, since a real space genuinely follows "my" in the full name).
   const seedFromParts = (paths: string[], text: string) => {
     for (const p of paths) knownPaths.add(p)
+    seedCommits(text) // fork_change
     syncMentionedPaths(text)
   }
 
@@ -1166,6 +1286,11 @@ export function useFileMention(
     mentionedPaths,
     mentionedSessions,
     mentionedModels,
+    mentionedCommits, // fork_change
+    commitPicker, // fork_change
+    commitCandidates, // fork_change
+    requestCommits, // fork_change
+    selectCommit, // fork_change
     sessionPicker,
     sessionCandidates,
     modelPicker,

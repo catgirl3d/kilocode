@@ -61,8 +61,10 @@ import { isMentionEntry } from "../../hooks/file-mention-utils"
 import { useTerminalContext } from "../../hooks/useTerminalContext"
 import { useGitChangesContext } from "../../hooks/useGitChangesContext"
 import { useStagedDiff } from "../../hooks/useStagedDiff" // fork_change
+import { useGitCommitsContext } from "../../hooks/useGitCommitsContext" // fork_change
 import { hasTerminalMention } from "../../hooks/terminal-context-utils"
 import { hasGitChangesMention } from "../../hooks/git-changes-context-utils"
+import { hasCommitMentions, isCommitHash } from "../../hooks/git-commits-context-utils" // fork_change
 import { useSlashCommand, skill as isSkill, type SlashCommandEntry } from "../../hooks/useSlashCommand" // fork_change
 import { useGoalComposer } from "./goal/useGoalComposer"
 import { GoalHeader } from "./goal/GoalHeader"
@@ -76,6 +78,7 @@ import { promptMentionOver, registerPromptMentionDrop } from "../../utils/prompt
 import { SessionMentionPicker } from "./SessionMentionPicker"
 import { formatRelativeDate } from "../../utils/date"
 import { WorktreeMentionPicker } from "./WorktreeMentionPicker"
+import { CommitMentionPicker } from "./CommitMentionPicker" // fork_change
 import { usePromptHistory } from "../../hooks/usePromptHistory"
 import { cycleVariant } from "../../context/session-variant-store"
 import {
@@ -218,6 +221,16 @@ function MentionItemContent(props: { item: MentionResult }) {
         </span>
       </>
     )
+  // fork_change start
+  if (item.type === "git-commits")
+    return (
+      <>
+        <Icon name="git-commit" class="file-mention-icon" />
+        <span class="file-mention-name">{item.label}</span>
+        <span class="file-mention-dir">{item.description}</span>
+      </>
+    )
+  // fork_change end
   if (item.type === "past-chats")
     return (
       <>
@@ -244,6 +257,16 @@ function MentionItemContent(props: { item: MentionResult }) {
         </span>
       </>
     )
+  // fork_change start
+  if (item.type === "commit")
+    return (
+      <>
+        <Icon name="git-commit" class="file-mention-icon" />
+        <span class="file-mention-name">{item.commit.subject}</span>
+        <span class="file-mention-dir">{item.commit.shortHash}</span>
+      </>
+    )
+  // fork_change end
   if (item.type === "file-picker")
     return (
       <>
@@ -301,6 +324,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const terminal = useTerminalContext(props.resolveEmbeddedTerminal)
   const git = useGitChangesContext(vscode, ctx, hasGit)
+  const commits = useGitCommitsContext(vscode, hasGit) // fork_change
   const staged = useStagedDiff(vscode) // fork_change
   const imageAttach = useImageAttachments()
   imageAttach.setFilePathDropHandler((paths) => {
@@ -852,7 +876,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // the server slash-command branch, which sends the raw args only.
   const hasStructuredInput = (data: unknown, browser: unknown) =>
     data != null || browser != null || contexts().length > 0
-  const sendReady = () => !isDisabled() && goalReady() && !terminal.pending() && !git.pending() && !props.blocked?.()
+  // fork_change start
+  const sendReady = () =>
+    !isDisabled() && goalReady() && !terminal.pending() && !git.pending() && !commits.pending() && !props.blocked?.()
+  // fork_change end
   const canContinue = () => !goal.active() && speech.state() === "idle" && !hasInput() && session.canResume()
   const goalReady = () => !goal.pending() && (!goal.active() || (!enhancing() && !imageAttach.pending()))
   // fork_change start
@@ -881,6 +908,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const paths = new Set(mention.mentionedPaths())
     for (const token of mention.mentionedSessions().keys()) paths.add(token)
     for (const token of mention.mentionedModels()) paths.add(token)
+    for (const token of mention.mentionedCommits()) paths.add(token) // fork_change
     if (hasTerminalMention(text())) paths.add("terminal")
     if (hasGit() && hasGitChangesMention(text())) paths.add("git-changes")
     return paths
@@ -924,8 +952,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     { equals: (a, b) => a?.before === b?.before && a?.after === b?.after && a?.binding === b?.binding },
   )
 
+  // fork_change start
   const canEdit = () =>
-    server.isConnected() && !hasInput() && !enhancing() && !speech.active() && !terminal.pending() && !git.pending()
+    server.isConnected() &&
+    !hasInput() &&
+    !enhancing() &&
+    !speech.active() &&
+    !terminal.pending() &&
+    !git.pending() &&
+    !commits.pending()
+  // fork_change end
   createEffect(() => props.onEditReady?.(canEdit()))
 
   const edit = async (request: NonNullable<PromptInputProps["edit"]>) => {
@@ -1786,6 +1822,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   // fork_change end
+  // fork_change start
+  const resolveCommits = async (message: string, id?: string) => {
+    const files = await commits.resolveAttachments(message, id).catch((err: Error) => {
+      showToast({ variant: "error", title: "Git commit context unavailable", description: err.message })
+      return undefined
+    })
+    if (files === undefined) return undefined
+    if (hasGit() && hasCommitMentions(message) && !files.length) return undefined
+    return files
+  }
+  // fork_change end
+
   const handleSend = async () => {
     // Collapsed pastes are expanded to their full content before anything reads
     // the draft: sending, attachments, slash detection, and history all see the
@@ -1886,6 +1934,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       finishPending(pendingId)
       return
     }
+    // fork_change start
+    const commitFiles = await resolveCommits(message, id)
+    if (commitFiles === undefined) {
+      finishPending(pendingId)
+      return
+    }
+    // fork_change end
     if (isDisabled()) {
       finishPending(pendingId)
       return
@@ -1897,6 +1952,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       ...imgFiles,
       ...(terminalFile ? [terminalFile] : []),
       ...(gitFile ? [gitFile] : []),
+      ...(commitFiles ?? []), // fork_change
     ]
     const attachments = allFiles.length > 0 ? allFiles : undefined
 
@@ -2161,60 +2217,79 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               />
             }
           >
+            {/* fork_change start */}
             <Show
-              when={!mention.worktreePicker() && mention.mentionResults().length > 0}
+              when={!mention.commitPicker()}
               fallback={
-                <Show
-                  when={mention.worktreePicker()}
-                  fallback={<div class="file-mention-empty">No files or folders found</div>}
-                >
-                  <WorktreeMentionPicker
-                    worktrees={mention.worktreeCandidates()}
-                    onSelect={(picked) => {
-                      if (textareaRef) mention.selectWorktree(picked, textareaRef, setText, adjustHeight)
-                    }}
-                    onClose={() => {
-                      mention.closeMention()
-                      textareaRef?.focus()
-                    }}
-                  />
-                </Show>
+                <CommitMentionPicker
+                  commits={mention.commitCandidates()}
+                  onSearch={(query) => mention.requestCommits(query)}
+                  onSelect={(picked) => {
+                    if (textareaRef) mention.selectCommit(picked, textareaRef, setText, adjustHeight)
+                  }}
+                  onClose={() => {
+                    mention.closeMention()
+                    textareaRef?.focus()
+                  }}
+                />
               }
             >
-              <For each={mention.mentionResults()}>
-                {(item, index) => (
-                  <>
-                    {/* Rendered in the webview rather than as a native `title`, which
+              <Show
+                when={!mention.worktreePicker() && mention.mentionResults().length > 0}
+                fallback={
+                  <Show
+                    when={mention.worktreePicker()}
+                    fallback={<div class="file-mention-empty">No files or folders found</div>}
+                  >
+                    <WorktreeMentionPicker
+                      worktrees={mention.worktreeCandidates()}
+                      onSelect={(picked) => {
+                        if (textareaRef) mention.selectWorktree(picked, textareaRef, setText, adjustHeight)
+                      }}
+                      onClose={() => {
+                        mention.closeMention()
+                        textareaRef?.focus()
+                      }}
+                    />
+                  </Show>
+                }
+              >
+                <For each={mention.mentionResults()}>
+                  {(item, index) => (
+                    <>
+                      {/* Rendered in the webview rather than as a native `title`, which
                         macOS does not reliably show inside VS Code webviews. */}
-                    <Tooltip
-                      value={
-                        item.type === "file" || item.type === "folder" || item.type === "opened-file"
-                          ? item.value
-                          : undefined
-                      }
-                      placement="top-start"
-                      contentClass="file-mention-tooltip"
-                    >
-                      <div
-                        class="file-mention-item"
-                        data-type={item.type}
-                        classList={{ "file-mention-item--active": index() === mention.mentionIndex() }}
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          if (textareaRef) mention.selectMention(item, textareaRef, setText, adjustHeight)
-                        }}
-                        onMouseEnter={() => mention.setMentionIndex(index())}
+                      <Tooltip
+                        value={
+                          item.type === "file" || item.type === "folder" || item.type === "opened-file"
+                            ? item.value
+                            : undefined
+                        }
+                        placement="top-start"
+                        contentClass="file-mention-tooltip"
                       >
-                        <MentionItemContent item={item} />
-                      </div>
-                    </Tooltip>
-                    <Show when={divides(index())}>
-                      <div class="file-mention-separator" />
-                    </Show>
-                  </>
-                )}
-              </For>
+                        <div
+                          class="file-mention-item"
+                          data-type={item.type}
+                          classList={{ "file-mention-item--active": index() === mention.mentionIndex() }}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            if (textareaRef) mention.selectMention(item, textareaRef, setText, adjustHeight)
+                          }}
+                          onMouseEnter={() => mention.setMentionIndex(index())}
+                        >
+                          <MentionItemContent item={item} />
+                        </div>
+                      </Tooltip>
+                      <Show when={divides(index())}>
+                        <div class="file-mention-separator" />
+                      </Show>
+                    </>
+                  )}
+                </For>
+              </Show>
             </Show>
+            {/* fork_change end */}
           </Show>
         </div>
       </Show>
@@ -2337,11 +2412,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     <span
                       class="prompt-input-file-mention"
                       classList={{
-                        "prompt-input-file-mention--file": isPathMention(seg().text) && !isModelMention(seg().text),
+                        // fork_change start
+                        "prompt-input-file-mention--file":
+                          isPathMention(seg().text) &&
+                          !isModelMention(seg().text) &&
+                          !isCommitHash(seg().text.replace(/^@/, "")),
+                        // fork_change end
                       }}
                       onClick={(e) => {
                         if (!isPathMention(seg().text)) return
                         if (isModelMention(seg().text)) return
+                        if (isCommitHash(seg().text.replace(/^@/, ""))) return // fork_change
                         if (mention.mentionedSessions().has(seg().text.replace(/^@/, ""))) return
                         e.preventDefault()
                         e.stopPropagation()

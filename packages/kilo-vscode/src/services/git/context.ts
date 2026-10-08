@@ -6,7 +6,8 @@ const LIMIT = 400_000
 const SMALL = 80_000
 const TIMEOUT = 15_000
 
-type Result = {
+// fork_change start
+export type Result = {
   out: string
   err: string
   code: number | null
@@ -14,6 +15,7 @@ type Result = {
   truncated: boolean
   error?: string
 }
+// fork_change end
 
 export async function getGitChangesContext(
   dir: string,
@@ -171,7 +173,8 @@ function output(result: Result) {
   return `${result.err.trim()}${result.err.trim() && result.out.trim() ? "\n" : ""}${result.out.trim()}`
 }
 
-function run(args: string[], cwd: string, limit: number): Promise<Result> {
+// fork_change start
+export function run(args: string[], cwd: string, limit: number): Promise<Result> {
   return new Promise((resolve) => {
     const state = { out: "", err: "", done: false, truncated: false }
     const child = spawn("git", args, { cwd })
@@ -211,3 +214,4 @@ function run(args: string[], cwd: string, limit: number): Promise<Result> {
     child.on("close", (code, signal) => finish({ code, signal }))
   })
 }
+// fork_change end

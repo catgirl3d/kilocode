@@ -726,6 +726,37 @@ export interface GitChangesContextErrorMessage {
 }
 
 // fork_change start
+/** One repository history entry offered by the `@` commits picker. */
+export interface GitCommitSearchItem {
+  hash: string
+  shortHash: string
+  subject: string
+  author: string
+  date: string
+}
+
+export interface GitCommitsResultMessage {
+  type: "gitCommitsResult"
+  requestId: string
+  commits: GitCommitSearchItem[]
+}
+
+export interface GitCommitContextResultMessage {
+  type: "gitCommitContextResult"
+  requestId: string
+  hash: string
+  content: string
+}
+
+export interface GitCommitContextErrorMessage {
+  type: "gitCommitContextError"
+  requestId: string
+  hash: string
+  error: string
+}
+// fork_change end
+
+// fork_change start
 /** Result of writing `git diff --staged` to a file for attachment. `empty` means nothing was written. */
 export interface StagedDiffResultMessage {
   type: "stagedDiffResult"
@@ -1942,6 +1973,9 @@ export type ExtensionMessage =
   | TerminalContextErrorMessage
   | GitChangesContextResultMessage
   | GitChangesContextErrorMessage
+  | GitCommitsResultMessage // fork_change
+  | GitCommitContextResultMessage // fork_change
+  | GitCommitContextErrorMessage // fork_change
   | StagedDiffResultMessage // fork_change
   | StagedDiffErrorMessage // fork_change
   | QuestionRequestMessage
