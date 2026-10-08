@@ -117,4 +117,56 @@ describe("Question.dismissAll", () => {
       }),
     { git: true },
   )
+
+  it.instance(
+    "ask stays pending while only a background settlement is queued",
+    () =>
+      Effect.gen(function* () {
+        const question = yield* Question.Service
+        const sessionID = SessionID.make("ses_settlement_ask")
+        const started = Promise.withResolvers<void>()
+        const release = Promise.withResolvers<void>()
+
+        const first = yield* KiloSessionPromptQueue.enqueue(
+          sessionID,
+          MessageID.make("msg_settle_ask_1"),
+          Effect.gen(function* () {
+            started.resolve()
+            yield* Effect.promise(() => release.promise)
+            return "first" as const
+          }),
+          Effect.succeed("first-cancelled" as const),
+        ).pipe(Effect.forkScoped)
+        yield* Effect.promise(() => started.promise)
+
+        const settlement = yield* KiloSessionPromptQueue.enqueue(
+          sessionID,
+          MessageID.make("msg_settle_ask_2"),
+          Effect.succeed("settlement" as const),
+          Effect.succeed("settlement-cancelled" as const),
+          Effect.void,
+          true,
+        ).pipe(Effect.forkScoped)
+        yield* Effect.sleep("10 millis")
+
+        // The settlement is a followup but not a blocking one: the question
+        // must be shown instead of being auto-dismissed.
+        expect(KiloSessionPromptQueue.hasFollowup(sessionID)).toBe(true)
+        expect(KiloSessionPromptQueue.hasBlockingFollowup(sessionID)).toBe(false)
+
+        const ask = yield* question.ask({ sessionID, questions: prompt }).pipe(Effect.forkScoped)
+        const [pending] = yield* waitFor(question, 1)
+        expect(pending?.sessionID).toBe(sessionID)
+
+        yield* question.reject(pending!.id)
+        const exit = yield* Fiber.await(ask)
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
+
+        release.resolve()
+        expect(yield* Fiber.join(first)).toBe("first")
+        expect(yield* Fiber.join(settlement)).toBe("settlement")
+      }),
+    { git: true },
+  )
 })

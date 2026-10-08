@@ -1572,10 +1572,15 @@ export const layer = Layer.effect(
         // Otherwise the old turn can resume from a dismissed question and start another
         // LLM step before hasFollowup observes the replacement prompt.
         if (!ticket.running()) return message
-        const dismiss = Effect.gen(function* () {
-          yield* Effect.promise(() => Suggestion.dismissAll(input.sessionID)).pipe(Effect.orDie)
-          yield* question.dismissAll(input.sessionID)
-        })
+        // [fork] a background task settlement waits behind interactive
+        // blockers instead of dismissing them; only real prompts clear question/suggestion.
+        const settlement = KiloSessionControl.settlement(input.parts)
+        const dismiss = settlement
+          ? Effect.void
+          : Effect.gen(function* () {
+              yield* Effect.promise(() => Suggestion.dismissAll(input.sessionID)).pipe(Effect.orDie)
+              yield* question.dismissAll(input.sessionID)
+            })
         if (input.noReply === true) {
           yield* dismiss
           return message
@@ -1598,6 +1603,7 @@ export const layer = Layer.effect(
           ), // kilocode_change
           bridge.run(lastAssistant(input.sessionID)),
           dismiss,
+          settlement, // [fork] background settlements never supersede interactive prompts
         )
         // kilocode_change end
       },

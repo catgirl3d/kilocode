@@ -76,15 +76,19 @@ export namespace KiloQuestion {
       yield* input.publishRejected()
     })
 
+  // fork_change start
   /**
-   * Auto-dismiss when a newer prompt is already queued on this session — a
-   * tool that calls `Question.ask` after the queue event would otherwise block
-   * the run while the user waits for their queued prompt to take over.
+   * Auto-dismiss when a newer blocking prompt is already queued on this
+   * session — a tool that calls `Question.ask` after the queue event would
+   * otherwise block the run while the user waits for their queued prompt to
+   * take over. Background task settlements are not blocking: the question
+   * stays and the settlement waits behind the user's answer.
    */
   export const guardFollowup = <E>(sessionID: SessionID, makeError: () => E) =>
     Effect.gen(function* () {
-      if (!KiloSessionPromptQueue.hasFollowup(sessionID)) return
+      if (!KiloSessionPromptQueue.hasBlockingFollowup(sessionID)) return
       log.info("auto-dismissed — followup queued", { sessionID })
       return yield* Effect.fail(makeError())
     })
+  // fork_change end
 }

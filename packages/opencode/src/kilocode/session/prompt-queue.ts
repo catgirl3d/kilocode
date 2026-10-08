@@ -17,6 +17,15 @@ type Target = {
   readonly extras: ReadonlySet<MessageID>
 }
 
+// fork_change start
+type Queued = {
+  readonly id: MessageID
+  // A blocking slot supersedes interactive prompts (question, suggestion);
+  // a background task settlement waits behind them instead.
+  readonly blocking: boolean
+}
+// fork_change end
+
 export namespace KiloSessionPromptQueue {
   const tails = new Map<SessionID, Promise<void>>()
   const versions = new Map<SessionID, number>()
@@ -29,11 +38,14 @@ export namespace KiloSessionPromptQueue {
   // a newer slot was enqueued after the active one began running.
   const latest = new Map<SessionID, number>()
   const activeSince = new Map<SessionID, number>()
-  // FIFO waiting list of user message IDs that have been
-  // enqueued but have not yet started running. The currently-running slot's
-  // own message is never in this list. Published via session.queue.changed so
-  // remote clients can reconcile "Queued" badges.
-  const waiting = new Map<SessionID, MessageID[]>()
+  // fork_change start
+  // FIFO waiting list of user messages that have been enqueued but have not yet
+  // started running. The currently-running slot's own message is never in this
+  // list. Published via session.queue.changed so remote clients can reconcile
+  // "Queued" badges. `blocking` distinguishes real prompts from background task
+  // settlements, which wait behind interactive blockers instead of replacing them.
+  const waiting = new Map<SessionID, Queued[]>()
+  // fork_change end
   // Message IDs whose turn handed off to a queued follow-up. The goal runner
   // reads this to keep an active goal running after a user prompt preempts its
   // continuation turn instead of settling the goal to paused.
@@ -68,20 +80,22 @@ export namespace KiloSessionPromptQueue {
   // list. Used by replay-on-subscribe in remote-sender.ts to always emit the
   // current queue state (including empty) to a resubscribing client.
   export function snapshot(sessionID: SessionID): MessageID[] {
-    return [...(waiting.get(sessionID) ?? [])]
+    return (waiting.get(sessionID) ?? []).map((item) => item.id) // fork_change
   }
 
   // Emit session.queue.changed when the waiting set
   // actually changes; suppress the redundant empty→empty transition to keep
   // the bus quiet. Replay uses snapshot() directly so it is never affected.
-  const publishIfChanged = (sessionID: SessionID, next: MessageID[]) => {
+  // fork_change start
+  const publishIfChanged = (sessionID: SessionID, next: Queued[]) => {
     const prev = waiting.get(sessionID) ?? []
     if (prev.length === 0 && next.length === 0) return
-    if (prev.length === next.length && prev.every((id, i) => id === next[i])) return
+    if (prev.length === next.length && prev.every((item, i) => item.id === next[i]?.id)) return
     if (next.length === 0) waiting.delete(sessionID)
     else waiting.set(sessionID, next)
     KiloSession.publishQueueChangedAsync({ sessionID, queued: snapshot(sessionID) })
   }
+  // fork_change end
 
   export function cancel(sessionID: SessionID) {
     return Effect.sync(() => {
@@ -109,7 +123,7 @@ export namespace KiloSessionPromptQueue {
   export function drop(sessionID: SessionID, messageID: MessageID) {
     return Effect.sync(() => {
       const list = waiting.get(sessionID) ?? []
-      const index = list.indexOf(messageID)
+      const index = list.findIndex((item) => item.id === messageID) // fork_change
       if (index === -1) return false
       publishIfChanged(sessionID, [...list.slice(0, index), ...list.slice(index + 1)])
       const cancelled = dropped.get(sessionID) ?? new Set<MessageID>()
@@ -173,6 +187,21 @@ export namespace KiloSessionPromptQueue {
     return l > a && (waiting.get(sessionID)?.length ?? 0) > 0
   }
 
+  // fork_change start
+  /**
+   * True when a newer blocking prompt was enqueued after the currently running
+   * slot began. Interactive guards (question, suggestion) use this instead of
+   * hasFollowup: a waiting background task settlement must not suppress a
+   * prompt to the user, only a real follow-up prompt does.
+   */
+  export function hasBlockingFollowup(sessionID: SessionID): boolean {
+    const l = latest.get(sessionID) ?? 0
+    const a = activeSince.get(sessionID) ?? 0
+    if (!(l > a)) return false
+    return (waiting.get(sessionID) ?? []).some((item) => item.blocking)
+  }
+  // fork_change end
+
   export function scope(sessionID: SessionID, messages: MessageV2.WithParts[]) {
     const target = targets.get(sessionID)
     if (!target) return messages
@@ -216,6 +245,11 @@ export namespace KiloSessionPromptQueue {
     work: Effect.Effect<A, E>,
     cancelled: Effect.Effect<A, E>,
     reserved: Effect.Effect<void> = Effect.void,
+    // fork_change start
+    // Background task settlements join the waiting FIFO as non-blocking so
+    // they never supersede an interactive prompt the user is answering.
+    nonBlocking = false,
+    // fork_change end
   ): Effect.Effect<A, E> {
     return Effect.acquireUseRelease(
       Effect.sync(() => {
@@ -233,7 +267,7 @@ export namespace KiloSessionPromptQueue {
         if (!startsImmediately) {
           // Another slot is still running; this prompt joins the waiting FIFO.
           const list = waiting.get(sessionID) ?? []
-          publishIfChanged(sessionID, [...list, target])
+          publishIfChanged(sessionID, [...list, { id: target, blocking: !nonBlocking }]) // fork_change
         }
         return { seq: mine, version: version(sessionID), target, previous, done, tail } satisfies Slot
       }),
@@ -253,9 +287,11 @@ export namespace KiloSessionPromptQueue {
             const list = waiting.get(sessionID)
             if (list && list.length > 0) {
               const head = list[0]
-              if (head === target) {
+              // fork_change start
+              if (head?.id === target) {
                 publishIfChanged(sessionID, list.slice(1))
               }
+              // fork_change end
             }
             return Effect.acquireUseRelease(
               Effect.sync(() => {
