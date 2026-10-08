@@ -198,7 +198,7 @@ for (const background of [true, false]) {
           }),
           Effect.void,
           Deferred.succeed(reserved, undefined).pipe(Effect.asVoid),
-          !background,
+          background, // fork_change - queue flag is nonBlocking, not foreground
         ).pipe(Effect.forkScoped)
         yield* Deferred.await(reserved)
         const ask = yield* question.ask({ sessionID, questions }).pipe(Effect.forkScoped)
@@ -286,7 +286,7 @@ it.instance("background arrival does not revive an older queued human follow-up'
       }),
       Effect.void,
       Deferred.succeed(reserved, undefined).pipe(Effect.asVoid),
-      false,
+      true, // fork_change - background notification is non-blocking
     ).pipe(Effect.forkScoped)
     yield* Deferred.await(reserved)
     const ask = yield* question.ask({ sessionID, questions }).pipe(Effect.forkScoped)
