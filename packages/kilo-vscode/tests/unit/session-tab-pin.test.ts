@@ -9,7 +9,7 @@ const WEBVIEW = path.join(ROOT, "webview-ui")
 const FIXTURE = path.join(ROOT, "tests/fixtures/session-tab-pin.tsx")
 
 describe("SessionTab shift-click pinning", () => {
-  it("toggles the pin on shift-click and selects on a plain click", async () => {
+  it("toggles the pin on shift-click and keeps the pin hint as a separate tooltip row", async () => {
     const solid = path.dirname(Bun.resolveSync("solid-js/package.json", WEBVIEW))
     const aliases: Record<string, string> = {
       "solid-js": path.join(solid, "dist/solid.js"),
