@@ -76,6 +76,7 @@ export function createProjectStore(id: string, opts: { tabs?: string[] } = {}) {
   const [orphanDirectories, setOrphanDirectories] = field<OrphanDirectory[]>([])
   const [tabOrder, setTabOrder] = field<Record<string, string[]>>({})
   const [pinnedTabs, setPinnedTabs] = field<Record<string, string[]>>({})
+  const [sessionColors, setSessionColors] = field<Record<string, string>>({}) // fork_change
   const [worktreeOrder, setWorktreeOrder] = field<string[]>([])
   const [sessionsCollapsed, setSessionsCollapsed] = field<boolean | undefined>(undefined)
   const [defaultBaseBranch, setDefaultBaseBranch] = field<string | undefined>(undefined)
@@ -111,6 +112,7 @@ export function createProjectStore(id: string, opts: { tabs?: string[] } = {}) {
       }))
     }
     if (state.pinnedTabs) setPinnedTabs(state.pinnedTabs)
+    if (state.sessionColors) setSessionColors(state.sessionColors) // fork_change
     if (state.worktreeOrder) setWorktreeOrder(state.worktreeOrder)
     if ("defaultBaseBranch" in state) setDefaultBaseBranch(state.defaultBaseBranch || undefined)
     setRunScriptConfigured(state.runScriptConfigured === true)
@@ -150,6 +152,8 @@ export function createProjectStore(id: string, opts: { tabs?: string[] } = {}) {
     setTabOrder,
     pinnedTabs,
     setPinnedTabs,
+    sessionColors, // fork_change
+    setSessionColors, // fork_change
     worktreeOrder,
     setWorktreeOrder,
     sessionsCollapsed,
