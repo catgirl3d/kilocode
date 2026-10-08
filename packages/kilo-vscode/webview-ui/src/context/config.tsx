@@ -258,6 +258,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     if (message.type !== "shortcutContext") return
     setShortcuts({ bindings: message.bindings, selection: message.selection })
   })
+  // fork_change start
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type === "configLoaded") {
       load(message)
@@ -275,8 +276,8 @@ export const ConfigProvider: ParentComponent = (props) => {
       update(message)
       return
     }
-    // fork_change end
   })
+  // fork_change end
   const unsubscribeExpired = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "configBindingExpired") return
     setBindings({})
