@@ -52,6 +52,71 @@ this process; create backup branches only at the fixed recovery points
 (pre-rebase and pre-surgery), never for individual stops, and do not delete them
 automatically.
 
+### Rebase Preflight
+
+Start with known risks and available evidence. The check plan is provisional and
+changes as the replay reveals actual interactions. Do not delay the first rebase
+command for exhaustive recon, a complete contract catalogue, baseline runs, or
+timing runs. Keep the plan in the session, not in a repository ledger.
+
+- **Decision batch.** Collect the predictable product and contract choices from the
+  recon notes (see below) and
+  resolve them with the user before starting. Decisions that only become provable at
+  their stop stay with that stop; routine resolutions are not user decisions.
+- **Working check plan.** Name checks for the known affected contracts, including
+  risks in auto-merged code, and update their scope at actual stops. Record why a
+  broader check is needed before expanding. The full CLI suite still requires the
+  user's explicit request; planning or measurement cannot authorize it.
+- **Baseline when useful.** Reuse existing evidence, or run a specific test on the
+  old tree when it helps classify an unexpected failure or an already known risk.
+  This is optional, not a prerequisite for starting. Compare old and new trees in
+  a comparable environment; running the new tree under the old Bun version is not
+  an old-tree baseline. If a failure's origin remains unknown, report that instead
+  of declaring it pre-existing. Passing checks do not need a baseline by default.
+- **Budgets, not timing runs.** Use existing logs or CI timings when available.
+  Without history, the coordinator assigns a finite wall-clock budget based on
+  acceptable cost. When a duration is known, set the budget to at least twice it.
+  Record duration during the necessary check itself; never launch
+  a separate measurement run. Reuse successful results for unchanged inputs in a
+  comparable environment, but do not count an old-tree pass as a new-tree pass.
+- **History-tool readiness.** Rehearse a representative operation in a scratch
+  clone before surgery only when the tool version or relevant Git settings are
+  unverified or changed. Reuse a previously verified configuration. This does not
+  block starting the rebase or replace the per-operation checks in Fold Verification.
+- **Environment stability.** Record the toolchain and relevant environment when
+  running checks (`bun --version`, `SHELL`, `COMSPEC`, `KILO_PLATFORM`). Keep it
+  comparable when reusing results or checking old versus new behavior.
+
+Recon notes are any pre-rebase notes listing the changed paths on both sides, the
+fork features at risk, and known overlap candidates — for example, `git diff
+--name-only <merge-base>..<old-main>` for fork paths, the same diff against the
+upstream range, and the fork changelog.
+They do not need to predict every stop.
+
+### Phase Gates
+
+- Before starting: resolve known decisions and set the initial check scope.
+  Unknown interactions and missing baseline or timing data do not block the replay.
+- After the last `rebase --continue`: no unapproved scope expansion; the remaining
+  work is the closed list of verification findings and owner folds. A skipped commit,
+  range-diff anomaly, or reproduced regression is not "new scope" - classify it and
+  reopen the gate it belongs to.
+- Before freezing the candidate for regression review: final formatting, required
+  generation, and the planned final guards have already run explicitly on the
+  assembled tree.
+- After behavior validation: complete the planned final guards and history
+  finalization, not unrelated audits. Reuse check results when only commit SHAs
+  changed and the checked inputs and environment remain the same.
+- Freeze order: owner folds and history surgery happen before freezing the
+  candidate for regression review; any mutation after freeze invalidates reviewer
+  approvals.
+- Finalization order that avoids rework: required generation -> formatting ->
+  structural guards -> package typecheck/lint -> behavior checks -> owner folds ->
+  freeze -> committed fork-audit (Marker Discipline step 4). Later steps must not
+  change the inputs of already-passed checks.
+- After regression review: newly found unrelated defects are follow-ups, not rebase
+  work, unless the user explicitly expands scope.
+
 ## Conflict Handling
 
 Classify each conflict unit: the conflicted hunk, its entire enclosing function,
@@ -59,6 +124,11 @@ declaration, fixture case, or registry entry, and the directly coupled code defi
 below. A rebase stop takes the highest route among all its units:
 `Mechanical -> Bounded -> Deep`. Record one concise route line per stop; do not
 create a separate ledger file or investigation report.
+
+**Stop Checks** are the Git-only checks run at every stop: no unmerged paths
+remain, staged paths stay within the assignment scope, `git diff --cached --check`
+passes, and the staged files contain no conflict markers. They never include
+package typechecks, suites, or audits.
 
 ```text
 ROUTE stop=<commit> packages=<packages> mechanical=<units> bounded=<units> deep=<units> -> <highest-route>
@@ -81,8 +151,9 @@ All four conditions must pass:
 1. **Scope**: The conflict and coupled side deltas contain only named `import type`
    specifiers, recognized fork ownership annotations, or additions to a non-exported
    flat module-level object map documented as order-independent and containing only
-   static unique keys and literal values. Removing annotation-only changes leaves
-   identical code tokens on all three sides.
+   static unique keys and literal values. For a pure ownership-annotation conflict,
+   removing the annotations must leave identical code tokens on all three sides.
+   Type-import and map additions instead satisfy the conditions below.
 2. **Additive**: Each non-annotation delta is the base plus additions only. Neither
    side modifies, deletes, renames, moves, or semantically reorders an existing
    element. The result is the exact union, with every element once. Compare syntax
@@ -99,7 +170,7 @@ exclusion routes them to Bounded or Deep; it does not make them Deep automatical
 Do not launch research merely to make a Mechanical classification pass.
 
 When every unit in the stop is Mechanical, the relevant package executors resolve
-their units sequentially. After the applicable stop-level audit, the last active
+their units sequentially. After Stop Checks, the last active
 executor confirms no unmerged paths remain and may run `git -c core.editor=true rebase --continue`
 without coordinator approval. Mechanical stops do not trigger conflict-specific
 behavioral review later.
@@ -134,9 +205,11 @@ change can be Bounded; a test changing expected product behavior cannot.
 The relevant package executors resolve their Bounded units sequentially. Once every
 unit is staged, the last active executor stops before `git -c core.editor=true rebase --continue`. Its
 compact approval packet contains the original commit, paths, both intents, staged
-diff, coupled regions, applicable post-rebase guard, and audit status. The
-coordinator verifies that packet and exact staged candidate without repeating the
-investigation. Any later index or worktree change invalidates the approval and
+diff, coupled regions, local check results, applicable post-rebase guard, and Stop
+Checks status. The coordinator verifies that packet and exact staged candidate without
+repeating the investigation or successful checks unless their inputs changed or
+the evidence is insufficient. Local test permission does not authorize Bounded or
+Deep continuation. Any later index or worktree change invalidates the approval and
 requires resubmission.
 
 ### Deep Resolution
@@ -157,7 +230,7 @@ remove stale annotations as described below.
 
 ### Marker Discipline & Audit Checkpoints
 
-- **Do NOT run full fork-audit on intermediate rebase stops**: During stops 1..N of a rebase, focus exclusively on code logic, compilation, and package test passes. Do not attempt 100% fork marker coverage or full `fork-audit` runs on intermediate replayed commits — prior fork commits do not yet contain later annotation updates, and running `fork-audit` against `upstream/main` prematurely produces mass false failures.
+- **Do NOT run full fork-audit on intermediate rebase stops**: During stops 1..N of a rebase, focus on code logic and the local checks named in the assignment (see Stop Checks); package typechecks and suites run once on the assembled tree. Do not attempt 100% fork marker coverage or full `fork-audit` runs on intermediate replayed commits — prior fork commits do not yet contain later annotation updates, and running `fork-audit` against `upstream/main` prematurely produces mass false failures.
 - **Preserve existing markers during conflict resolution**: When resolving code conflicts, keep existing upstream Kilo markers (`kilocode_change`) and surrounding fork marker wrappers intact. Do not strip markers unless the underlying fork change was completely superseded by upstream.
 - **Audit & reconcile annotations strictly at the end**: After all rebase commits are replayed and code builds cleanly, perform the fork annotation audit in one dedicated final pass:
   1. Run `bun run script/fork-audit.ts --worktree` to audit the entire rebased tree against `upstream/main`.
@@ -191,16 +264,21 @@ Two mechanical rules prevent audit failures when restoring or adjusting markers:
   block, and `start` before leading ones. fork-audit treats a block as a run of
   consecutive added lines; a single uncovered blank line marks the whole block
   as missing even though the code itself is wrapped.
-- Include every changed marker path in the stop-level audit above and run prettier
+- Include every changed marker path in the final worktree audit (Marker Discipline
+  step 1) and run prettier
   before folding fixes into the annotation commit; the committed audit reads HEAD
   and silently ignores uncommitted edits.
 
 For `bun.lock` conflicts, never resolve manually; use:
 
 ```bash
-git checkout --theirs bun.lock
+git checkout --ours bun.lock
 bun install
 ```
+
+During a rebase, `--ours` is the upstream side and `--theirs` is the fork's old
+lockfile; the goal is upstream's dependency set, then `bun install` reconciles it
+with the replayed `package.json` changes.
 
 **If upstream independently implements the same or an overlapping feature, stop before
 choosing a resolution.** The coordinator must compare the resulting user-facing
@@ -255,12 +333,10 @@ pre-rebase fork history; with a consolidated history this takes a minute.
 - **Marker and formatting churn accumulates.** Do not commit annotation or
   prettier fixes per stop; fold them once at the end per Marker Discipline
   above.
-- **Intermediate commits and hooks.** `.husky/pre-commit` detects an active rebase
-  (`rebase-merge` / `rebase-apply`) and skips its verification guards, so standalone
-  fix or adaptation commits during intermediate stops can use `git commit -m "fix(rebase): ..."`.
-  Use `--no-verify` (or `HUSKY=0`) to bypass a guard outside a rebase; the guards would
-  falsely reject unfinished intermediate trees. Full fork audit still runs once at the
-  very end of the rebase per Marker Discipline.
+- **Intermediate commits and final checks.** Commit replay and folding steps
+  normally. Do not run final guards on every temporary or incomplete tree. Run
+  the planned checks and final fork audit on the assembled result before freezing
+  it for review or pushing.
 
 
 ### Fold Verification (history surgery)
@@ -282,20 +358,49 @@ Every such operation ends with three checks before anything is pushed:
   contain an accidental deletion or addition, rebuild it with `reset --soft`
   plus selective re-commit rather than replaying it through another rebase.
   Replaying a known-poisoned commit spreads the poison to every descendant.
+- **Tool safety (`git-surgeon` 0.1.17).** `split` truncates its target to seven
+  characters when editing the rebase todo, and `fold` matches todo entries by
+  seven-character prefixes; a longer todo hash makes `split` run past its target.
+  Before a surgery run: confirm no rebase is in progress, verify each target prefix
+  is unambiguous with `git rev-parse --disambiguate=<short>`, and ensure Git uses
+  `core.abbrev=7` for that operation so its todo hashes match. This is per-operation
+  Git configuration, not an option passed to `git-surgeon`. The `fold` success
+  line prints the target's parent; verify the real target from history, not the
+  label.
+- **One operation at a time.** After each split or fold, confirm the tree equality
+  and the expected history before the next operation; stop on any mismatch instead
+  of stacking recovery steps.
 
 ## Validation
 
+- **Full CLI suite: user-request only.** Do not run the complete CLI manifest unless
+  the user explicitly requests it. This includes unfiltered `bun run test` from
+  `packages/opencode/`, invoking the isolated runner for the entire manifest,
+  package-wide `bun test`, and equivalent wrappers or batches. A rebase, shared
+  runtime change, baseline, timeout, failed targeted test, or broader validation
+  gate is not authorization. No coordinator or subagent may grant the exception.
+  Use targeted checks of affected CLI contracts and direct consumers instead.
+  Authorization applies to the requested run, not automatic full-suite reruns.
+- **JetBrains validation is disabled.** Exclude `@kilocode/kilo-jetbrains` from
+  automatic checks; the root `bun run typecheck` already applies this exclusion.
+  Do not run Gradle/Java typechecks or tests, invoke wrappers or CI scripts as a
+  workaround, or install/probe Java for validation. This restriction also applies
+  to direct-consumer and full-repository gates. If this package changes, record
+  its verification gap rather than claiming it was checked.
 - After every rebase, including a conflict-free rebase, validate the packages and
   contracts containing replayed fork changes, manual resolutions, post-rebase fixes,
   or direct consumers of a changed contract. Do not validate every package touched
   only by the upstream range.
 - If dependency inputs changed, synchronize dependencies before any typecheck. Do
   not investigate dependency type errors against stale `node_modules`.
-- Run deterministic checks before review agents: structural and annotation guards,
-  required generation, fixture and contract typechecks, package typecheck and lint,
-  then one aggregate behavior suite per affected package or validation domain. A
-  single repository-wide suite may replace them only when it demonstrably covers
-  every affected scope; shared or root fixes include all direct consumer packages.
+- Run the deterministic checks in the Phase Gates finalize order (finalization ->
+  formatting -> guards -> typecheck/lint -> behavior checks -> folds -> freeze),
+  which already places required generation and formatting before the guards. Add
+  the committed fork-audit run as the last step after owner folds (Marker
+  Discipline step 4). These must cover affected
+  contracts and their direct consumers, not just files with textual conflicts.
+  A broader aggregate requires the plan's recorded escalation condition; shared or
+  root fixes include all direct consumer packages.
 - For VS Code changes with Bounded or Deep resolutions, run sequentially from
   `packages/kilo-vscode/`:
 
@@ -307,16 +412,22 @@ Every such operation ends with three checks before anything is pushed:
   bun run test:unit
   ```
 
-  Use targeted tests to diagnose a failure or when no aggregate suite exists; do not
-  duplicate them routinely before an aggregate suite. Do not run unrelated CLI,
-  JetBrains, docs, gateway, or repository-wide suites for a VS Code-only change.
+  Executors may use targeted tests at a stop to verify the resolved contract, as
+  specified in their assignment. They need not wait for a final aggregate failure
+  to obtain local feedback. Do not run every nearby test routinely or duplicate
+  successful checks without a changed candidate or a concrete coverage gap. Do not
+  run unrelated CLI, JetBrains, docs, gateway, or repository-wide suites for a
+  VS Code-only change.
   For conflict-free or Mechanical-only VS Code changes, run the relevant checks from
   `AGENTS.md` without requiring `test:unit` unless executable behavior is affected.
 - For CLI, server, or shared changes, use the package-specific checks and affected
-  suite policy in `AGENTS.md`; do not run unrelated package suites.
+  suite policy in `AGENTS.md`; do not run unrelated package suites. The full CLI
+  restriction above still applies, even when the coordinator expands the check plan.
 - Run a full-repository gate only when the user explicitly requests it or when the
   resolution changes a cross-package contract, build, or lockfile that cannot be
-  validated at package scope.
+  validated at package scope. The gate is the root `bun run typecheck` and
+  `bun run lint`; it does not include the full CLI suite (still user-request only)
+  or any JetBrains check (disabled).
 
 - Never run root `bun test`; it intentionally fails.
 - Keep `AGENTS.md` as the source of truth for additional affected guards.
@@ -329,6 +440,50 @@ Every such operation ends with three checks before anything is pushed:
 - If rebased changes affect server endpoints in `packages/opencode/src/server/`, run `./script/generate.ts` from the repository root and verify the generated SDK changes.
 - Check every fork feature affected by the rebase (referenced in `CHANGELOG-FORK.md`).
 - For CI, inspect `trigger -> conditions -> needs -> runner -> required status`.
+
+### Check Execution Rules
+
+- Run at most one heavy process at a time across all agents. Aggregate test suites,
+  package or repository-wide typechecks, builds, and generation use that slot.
+  Parallel heavy processes on one workstation skew timings and obscure results.
+- **Concrete local assignments.** Each executor assignment names a command or
+  unambiguous test/file scope, working directory, and finite wall-clock budget.
+  The coordinator supplies these; do not ask the executor to research a check's
+  cost before running it. If they are missing, correct the assignment once rather
+  than requesting approval for every invocation.
+- **Local feedback is allowed.** Executors may run assigned isolated test files
+  or selected cases, lint on changed files, and genuinely file-scoped type
+  diagnostics when supported. Assigned checks are authorized within their scope
+  and budget, without a separate permission or performance probe. For example,
+  `bun test ./test/tool/tool-define.test.ts` runs from `packages/opencode/`, never
+  the repository root. Include the commands, exit codes, results, and any gaps in
+  the approval packet alongside Stop Checks.
+- **Heavy checks stay centralized.** Executors must not independently launch
+  package or repository suites, full typechecks, builds, or broad guard scans.
+  The coordinator or one designated validator runs those checks sequentially and
+  owns their logs. The coordinator owns the check plan and verifies executor
+  results; it need not rerun every successful local check without new evidence.
+- **Stay within the assigned budget.** An isolated integration test is not
+  forbidden merely because its fixture starts a server. If the check launches
+  unplanned heavy work or exceeds its budget, stop it, report the evidence, and
+  hand it to the coordinator. Do not silently expand to a suite or raise the
+  timeout. Never leave a timed-out process running before starting another check.
+- A required generation step (for example SDK regeneration) is an explicitly
+  assigned mutation by one executor and occupies the same heavy slot. Its normal
+  pipeline may include a build or typecheck; that is not permission to launch
+  additional verification suites. The coordinator verifies the generated delta.
+- Every heavy run records its command, working directory, candidate SHA and tree, environment
+  (`bun --version`, `SHELL`, `COMSPEC`, `KILO_PLATFORM`), full stdout and stderr log,
+  numeric exit code, duration, and an explicit PASS / FAIL / TIMEOUT / INCOMPLETE
+  status.
+- Decide from the process outcome, not from red lines inside the log: a handled
+  formatter or retry error is not a failure. Individual assertion failures in a
+  partial log are evidence, but a killed run has no final aggregate verdict or
+  complete failure list. Treat its timeout as INCONCLUSIVE. Diagnose before a
+  targeted retry, confirm the old process tree has exited, and stay within the
+  assignment's budget; only the coordinator may approve a larger budget. An
+  aggregate suite is not retried automatically. Diagnose the failed case or timeout
+  and reassess scope and budget before another run.
 
 ### Regression Review
 
@@ -371,8 +526,9 @@ preservation. Review the range-diff against both the pre-rebase fork HEAD and th
   do not treat the remaining green checks as full coverage.
 
 Finish only when the working tree is clean, `git diff --check upstream/main..main`
-passes, the range-diff has been reviewed, affected package unit tests pass, and this tracked-file conflict-marker
-scan has empty output and exits 1 as expected:
+passes, the range-diff has been reviewed, the planned behavior checks pass or their
+failures have been classified as above or reported to the user as origin unknown, and this tracked-file conflict-marker scan
+has empty output and exits 1 as expected:
 
 ```bash
 git grep -nE '^(<{7}|\|{7}|={7}|>{7})( |$)'
@@ -382,8 +538,12 @@ git grep -nE '^(<{7}|\|{7}|={7}|>{7})( |$)'
 
 Before finalizing or pushing, audit for subtle merge artifacts that bypass TypeScript compilation:
 
-1. **Unit test pass on affected packages**:
-   Always run package-level unit tests for packages containing replayed or resolved commits (e.g. `bun --cwd packages/kilo-vscode/tests test unit/` in `packages/kilo-vscode/`, and `bun run test` in `packages/opencode/`). Typechecks do not catch dual assertions or runtime order shifts.
+1. **Behavior checks from the preflight plan**:
+   Run the named tests covering replayed or resolved contracts and their direct
+   consumers. Use a full package suite only when the plan requires it, including
+   the VS Code requirement above. The complete CLI suite still requires the user's
+   explicit request; a plan, broader gate, or change in `packages/opencode/` does
+   not authorize it. Typechecks do not prove runtime ordering or behavior.
 2. **Dual-inclusion & duplicate assertion audit**:
    Inspect the fork diff against merge-base (`git diff $(git merge-base HEAD upstream/main)..HEAD`) for conflicting or duplicate assertions in tests where both the pre-migration and post-migration expectations were inadvertently retained (such as conflicting `expect()` calls).
 3. **Semantic reordering & contract drift**:
