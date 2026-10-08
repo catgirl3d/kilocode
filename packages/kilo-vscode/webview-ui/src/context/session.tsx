@@ -95,7 +95,7 @@ import { mergeMessages, sameReconcileShape } from "./session-merge"
 import { createFrameQueue, streamMessage } from "./frame-queue"
 import { handleWakeupMessage, wakeups } from "./session-wakeup"
 import { state as todoState } from "./todo-revert"
-import { sessionVariantKeys, transferVariants, variantKey } from "./session-variant-store"
+import { sessionVariantKeys, transferVariants, variantKey } from "./session-variant-store" // fork_change
 import { createSessionVariants } from "./session-variants"
 import { KILO_AUTO, KILO_PROVIDER_ID, parseModelString } from "../../../src/shared/provider-model"
 import { type ReviewMessageData } from "../../../src/shared/review-comments"
@@ -2126,6 +2126,7 @@ export const SessionProvider: ParentComponent = (props) => {
 
   // Switch the agent first so a mode-only command resolves the target agent's
   // config model and effort instead of carrying the outgoing one.
+  // fork_change start
   function applyOverrides(
     overrides: { agent?: string; model?: string; variant?: string } | undefined,
     scope: string | undefined,
@@ -2142,6 +2143,7 @@ export const SessionProvider: ParentComponent = (props) => {
     }
     recordModelUsage(selection.providerID, selection.modelID)
   }
+  // fork_change end
 
   /** Create an optimistic user message + parts in the store so the UI updates instantly. */
   function addOptimistic(
@@ -2321,9 +2323,8 @@ export const SessionProvider: ParentComponent = (props) => {
     const scope = effectiveDraftID ?? sid
 
     if (effectiveSelection) applyOverrides(overrides, scope, effectiveSelection)
-    const preset = overrides?.agent !== undefined || overrides?.model !== undefined
-
     // fork_change start
+    const preset = overrides?.agent !== undefined || overrides?.model !== undefined
     const settings = (() => {
       if (!effectiveSelection) return
       return {

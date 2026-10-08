@@ -33,6 +33,7 @@ export function variantKey(sel: ModelSelection, agent: string, session?: string)
   return `agent/${agent}/${base}`
 }
 
+// fork_change start - resolve remembered and configured session effort
 export function getVariant(
   store: Record<string, string>,
   sel: ModelSelection,
@@ -47,12 +48,11 @@ export function getVariant(
   const remembered = store[variantKey(sel, agent)]
   const legacy = store[legacyVariantKey(sel)]
   const preset = configured && variants.includes(configured) ? configured : undefined
-  const stored = presetFirst
-    ? (scoped ?? preset ?? remembered ?? legacy)
-    : (scoped ?? remembered ?? preset ?? legacy)
+  const stored = presetFirst ? (scoped ?? preset ?? remembered ?? legacy) : (scoped ?? remembered ?? preset ?? legacy)
   if (stored === undefined || stored === DEFAULT_VARIANT) return undefined
   return preserveVariant(stored, variants)
 }
+// fork_change end
 
 export function getAgentVariant(
   store: Record<string, string>,

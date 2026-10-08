@@ -23,7 +23,7 @@ Object.assign(globalThis, {
   KeyboardEvent: window.KeyboardEvent,
   MouseEvent: window.MouseEvent,
   PointerEvent: window.PointerEvent,
-  getComputedStyle: (node: Element) => {
+  getComputedStyle: (node: Parameters<typeof style>[0]) => {
     const value = style(node)
     Object.defineProperty(value, "animationName", { configurable: true, value: "none" })
     return value

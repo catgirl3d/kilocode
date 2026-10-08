@@ -81,7 +81,6 @@ function AgentManagerEmptyState(props: EmptyProps) {
           onSelectSession={props.onSelectSession}
           onShowHistory={props.onShowHistory}
         />
-        // fork_change
       }
     >
       <Introduction {...props} onDismiss={props.intro.dismiss} />
