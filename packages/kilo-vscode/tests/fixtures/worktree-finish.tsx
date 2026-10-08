@@ -39,7 +39,7 @@ const { createProjectStore } = await import("../../webview-ui/agent-manager/proj
 const { post: message } = await import("../../webview-ui/src/utils/webview-message")
 const root = document.createElement("div")
 document.body.append(root)
-let deletion: WorktreeDelete
+let deletion!: WorktreeDelete
 const pending = () => deletion.pending()?.projectId === project() && deletion.pending()?.worktreeId === worktree.id
 const [busy, setBusy] = createSignal(false)
 const worktree: WorktreeState = {
@@ -61,7 +61,7 @@ const removed: string[] = []
 const stores = new Map(["legacy", "project-two", "project-three"].map((id) => [id, createProjectStore(id)]))
 for (const store of stores.values()) {
   store.setWorktrees([worktree, sibling])
-  store.setManagedSessions([{ id: "ses-sibling", worktreeId: sibling.id }])
+  store.setManagedSessions([{ id: "ses-sibling", worktreeId: sibling.id, createdAt: worktree.createdAt }])
 }
 const [selection, setSelection] = createSignal(worktree.id)
 const noop = () => {}
@@ -155,16 +155,16 @@ assert.equal(pending(), true)
 setCatalog((prev) => ({ ...prev, expanded: true }))
 assert.equal(pending(), true, "revealing a collapsed project preserves its selected target's confirmation")
 assert.ok(button("Delete?"), "the remounted worktree renders keyboard confirmation")
-document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event)
 assert.equal(pending(), false, "Escape cancels confirmation after the row remounts")
 setProject("legacy")
 deletion.confirm(project(), worktree.id)
 assert.ok(button("Delete?"), "keyboard close renders inline confirmation")
-document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event)
 assert.equal(pending(), false)
 deletion.confirm(project(), worktree.id)
 assert.equal(deletes, 0, "Escape requires a fresh confirmation")
-document.body.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }))
+document.body.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }) as unknown as Event)
 assert.equal(pending(), false, "outside click cancels keyboard confirmation")
 deletion.confirm(project(), worktree.id)
 setSelection(sibling.id)

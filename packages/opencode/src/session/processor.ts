@@ -1085,7 +1085,13 @@ const layer = Layer.effect(
               // kilocode_change start - [fork] only provider retries retain closed opaque reasoning
               (part) =>
                 !baseline.has(part.id) &&
-                !(opaque && part.type === "reasoning" && part.text === "" && part.metadata != null && part.time.end != null),
+                !(
+                  opaque &&
+                  part.type === "reasoning" &&
+                  part.text === "" &&
+                  part.metadata != null &&
+                  part.time.end != null
+                ),
               // kilocode_change end
             ) // kilocode_change - [fork] finish the exact retry removal set
             // kilocode_change start - [fork] capture detached meaningful output from removed live parts

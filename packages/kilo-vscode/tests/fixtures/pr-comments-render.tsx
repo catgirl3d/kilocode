@@ -15,8 +15,8 @@ const window = new Window({ url: "http://localhost" })
 Object.defineProperty(window, "origin", { value: window.location.origin })
 class CSSStyleSheetStub extends window.CSSStyleSheet {
   replaceSync() {}
-  replace() {
-    return Promise.resolve(this)
+  replace(_text: string) {
+    return Promise.resolve()
   }
 }
 class IntersectionObserverStub {

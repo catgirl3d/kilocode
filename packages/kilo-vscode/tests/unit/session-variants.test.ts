@@ -195,9 +195,7 @@ describe("session variants", () => {
     expect(state.variants.current(id)).toBeUndefined()
     expect(state.variants.request(id)).toBe("")
     expect(state.remembered).toEqual([{ agent: "code", model, variant: "" }])
-    expect(state.messages).toEqual([
-      { type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "" },
-    ])
+    expect(state.messages).toEqual([{ type: "persistVariant", key: "agent/code/anthropic/claude-sonnet-4", value: "" }])
     expect(state.variants.current("another-draft")).toBeUndefined()
   })
 

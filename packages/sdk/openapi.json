@@ -12253,7 +12253,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.cloudAgent.systemEvents({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.cloudAgent.systemEvents({\n  ...\n})"
           }
         ]
       }
@@ -20472,7 +20472,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.sessionHost.listWorkspaces({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.sessionHost.listWorkspaces({\n  ...\n})"
           }
         ]
       },
@@ -20573,7 +20573,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.sessionHost.createWorkspace({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.sessionHost.createWorkspace({\n  ...\n})"
           }
         ]
       }
@@ -20676,7 +20676,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.sessionHost.listWorkspaceProfiles({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.sessionHost.listWorkspaceProfiles({\n  ...\n})"
           }
         ]
       }
@@ -20811,7 +20811,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.sessionHost.getWorkspace({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.sessionHost.getWorkspace({\n  ...\n})"
           }
         ]
       },
@@ -20928,7 +20928,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.sessionHost.deleteWorkspace({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.sessionHost.deleteWorkspace({\n  ...\n})"
           }
         ]
       }
@@ -21047,7 +21047,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.sessionHost.getWorkspaceStatus({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.sessionHost.getWorkspaceStatus({\n  ...\n})"
           }
         ]
       }
@@ -21182,7 +21182,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.sessionHost.listWorkspaceSessions({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.sessionHost.listWorkspaceSessions({\n  ...\n})"
           }
         ]
       },
@@ -21300,7 +21300,7 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createKiloClient } from \"@kilocode/sdk\"\n\nconst client = createKiloClient()\nawait client.sessionHost.startWorkspaceSession({\n  ...\n})"
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.sessionHost.startWorkspaceSession({\n  ...\n})"
           }
         ]
       }

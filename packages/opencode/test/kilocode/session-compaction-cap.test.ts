@@ -262,7 +262,7 @@ const overflowBody = { type: "error", error: { code: "context_length_exceeded" }
 
 describe("session compaction cap", () => {
   testEffect(makeHttp(undefined, true)).live(
-    "preserves the provider error after a single-pass length finish",
+    "retries the provider error after a single-pass length finish",
     () =>
       provideTmpdirServer(
         Effect.fnUntraced(function* ({ llm }) {
@@ -295,7 +295,9 @@ describe("session compaction cap", () => {
             messages,
             auto: false,
           })
-          expect(yield* llm.calls).toBe(2)
+          // fork: KiloErrorPolicy intentionally waits through a bare 400 (gateways report
+          // overload that way), so the provider-error path makes one retry beyond upstream.
+          expect(yield* llm.calls).toBe(3)
           const requests = yield* llm.inputs
           expect(JSON.stringify(requests.at(0))).toContain("Create a new anchored summary")
           expect(JSON.stringify(requests.at(0))).not.toContain("Summarize conversation chunk")
@@ -308,17 +310,14 @@ describe("session compaction cap", () => {
           expect(summary.parts.some((part) => part.type === "text" && part.text.includes("unfinished sentence"))).toBe(
             false,
           )
-          expect(result).toBe("stop")
-          expect(summary.info.finish).toBe("error")
-          expect(errors).toEqual([{ sessionID: chat.id, error: summary.info.error }])
+          expect(result).toBe("continue")
+          // fork: the bare 400 is waited through, so the retried attempt completes the summary.
+          expect(summary.info.finish).toBe("stop")
+          expect(summary.info.error).toBeUndefined()
+          expect(errors).toEqual([])
           expect(
-            MessageV2.filterCompacted(yield* MessageV2.stream(chat.id)).some((msg) => msg.info.id === user.info.id),
+            MessageV2.filterCompacted(yield* MessageV2.stream(chat.id)).some((msg) => msg.info.id === summary.info.id),
           ).toBe(true)
-          expect(summary.info.error?.name).toBe("APIError")
-          if (summary.info.error?.name !== "APIError") return
-          expect(summary.info.error.data.message).toBe("provider failure after length")
-          expect(summary.info.error.data.statusCode).toBe(400)
-          expect(summary.info.error.data.isRetryable).toBe(false)
           expect(
             summary.parts.some((part) => part.type === "text" && part.text === KiloCompactionChunks.TRUNCATED_SUMMARY),
           ).toBe(false)
@@ -328,7 +327,7 @@ describe("session compaction cap", () => {
     120_000,
   )
   testEffect(makeHttp(undefined, true)).live(
-    "preserves the provider error after a chunk worker length finish",
+    "retries the provider error after a chunk worker length finish",
     () =>
       provideTmpdirServer(
         Effect.fnUntraced(function* ({ llm }) {
@@ -361,7 +360,8 @@ describe("session compaction cap", () => {
             messages,
             auto: false,
           })
-          expect(yield* llm.calls).toBe(2)
+          // fork: same policy retry as the single-pass scenario above.
+          expect(yield* llm.calls).toBe(3)
           expect(JSON.stringify((yield* llm.inputs).at(0))).toContain("Summarize conversation chunk")
           const history = yield* sessions.messages({ sessionID: chat.id })
           expect(history.some((msg) => msg.info.id === user.info.id)).toBe(true)
@@ -369,16 +369,14 @@ describe("session compaction cap", () => {
           expect(summaries).toHaveLength(1)
           const summary = summaries.at(0)!
           if (summary.info.role !== "assistant") throw new Error("expected assistant summary")
-          expect(result).toBe("stop")
-          expect(summary.info).toMatchObject({
-            finish: "error",
-            error: {
-              name: "APIError",
-              data: { message: "provider failure after length", statusCode: 400, isRetryable: false },
-            },
-          })
-          expect(errors).toEqual([{ sessionID: chat.id, error: summary.info.error }])
-          expect(summary.parts.filter((part) => part.type === "text")).toEqual([])
+          expect(result).toBe("continue")
+          // fork: the bare 400 is waited through, so the retried attempt completes the summary.
+          expect(summary.info.finish).toBe("stop")
+          expect(summary.info.error).toBeUndefined()
+          expect(errors).toEqual([])
+          expect(summary.parts.some((part) => part.type === "text" && part.text.includes("unfinished sentence"))).toBe(
+            false,
+          )
           expect(JSON.stringify(history)).not.toContain("unfinished sentence")
           expect(JSON.stringify(history)).not.toContain(KiloCompactionChunks.TRUNCATED_SUMMARY)
           expect(JSON.stringify(errors)).not.toContain(KiloCompactionChunks.TRUNCATED_SUMMARY)

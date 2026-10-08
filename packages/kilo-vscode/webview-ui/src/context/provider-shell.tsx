@@ -6,13 +6,13 @@ import { MemoryProvider } from "./memory"
 import { SessionTagsProvider } from "./session-tags" // fork_change
 import { FeedbackProvider } from "./feedback"
 
+// fork_change start - preserve the shared webview session tag provider lifetime
 const Root: ParentComponent = (props) => (
   <Base content={RichProvider}>
-    {/* fork_change start - keep local session tags inside the shared webview provider lifetime */}
     <SessionTagsProvider>{props.children}</SessionTagsProvider>
-    {/* fork_change end */}
   </Base>
 )
+// fork_change end
 
 const Chat: ParentComponent = (props) => (
   <MemoryProvider>
