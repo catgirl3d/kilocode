@@ -18,6 +18,7 @@ async function fixture() {
     mkdirSync(dir, { recursive: true })
     symlinkSync(join(source, path, "node_modules"), join(dir, "node_modules"), "junction")
   }
+  symlinkSync(join(source, "packages/core"), join(repo, "packages/core"), "junction")
   const root = join(repo, "packages/kilo-vscode")
   mkdirSync(join(root, "script"))
   cpSync(join(source, "packages/kilo-vscode/script/launch.ts"), join(root, "script/launch.ts"))
