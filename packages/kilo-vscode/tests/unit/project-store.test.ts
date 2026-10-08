@@ -71,4 +71,14 @@ describe("project stores", () => {
     expect(first.busy().has("same")).toBe(true)
     expect(second.busy().has("same")).toBe(false)
   })
+
+  it("hydrates and clears session colors from pushed state", () => {
+    const store = createProjectStore("a")
+
+    store.applyState({ ...state("a", []), sessionColors: { ses: "Red" } })
+    expect(store.sessionColors()).toEqual({ ses: "Red" })
+
+    store.applyState({ ...state("a", []), sessionColors: {} })
+    expect(store.sessionColors()).toEqual({})
+  })
 })

@@ -6,6 +6,7 @@ import { getErrorMessage } from "../kilo-provider-utils"
 import { resolveLocalDiffTarget } from "../diff/shared/target"
 import { DiffSourceCatalog } from "../diff/sources/catalog"
 import { getDiffMarkdownRender, setDiffMarkdownRender } from "../review-settings"
+import { onSessionColorsChanged, sessionColors } from "../session-colors" // fork_change
 import { WorktreeManager, type CreateWorktreeResult } from "./WorktreeManager"
 import { remoteRef, WorktreeStateManager, type Worktree } from "./WorktreeStateManager"
 import { composeDiffId, normalizeScope } from "./diff-scope"
@@ -137,6 +138,7 @@ export class AgentManagerProvider implements Disposable {
     if (this.contexts.active()?.id === ctx.id) this.pushState(ctx)
   })
   private unsubDestination: (() => void) | undefined
+  private unsubColors = onSessionColorsChanged(() => this.pushState()) // fork_change
   private destination = new DestinationState()
   private closing: Promise<void> | undefined
   private onVisibilityChange: ((visible: boolean) => void) | undefined
@@ -809,7 +811,11 @@ export class AgentManagerProvider implements Disposable {
       this.state?.setSidebarCollapsed(m.collapsed)
       return null
     }
-    if (this.handleSection(m)) return null
+    // fork_change start
+    const push = () => this.pushState()
+    const log = (...args: unknown[]) => this.log(...args)
+    if (handleSection(this.state, m, push, log)) return null
+    // fork_change end
     if (m.type === "agentManager.setReviewDiffStyle") {
       this.state?.setReviewDiffStyle(m.style)
       return null
@@ -1414,6 +1420,7 @@ export class AgentManagerProvider implements Disposable {
       ...healthPayload(target.report, worktrees),
       tabOrder: state.getTabOrder(),
       pinnedTabs: state.getPinnedTabs(),
+      sessionColors: sessionColors(), // fork_change
       worktreeOrder: state.getWorktreeOrder(),
       sessionsCollapsed: state.getSessionsCollapsed(),
       sidebarCollapsed: state.getSidebarCollapsed(),
@@ -1828,14 +1835,6 @@ export class AgentManagerProvider implements Disposable {
     queueMicrotask(() => this.postToWebview({ type: "action", action: "advancedWorktree" }))
   }
 
-  private handleSection(m: AgentManagerInMessage): boolean {
-    return handleSection(
-      this.state,
-      m,
-      () => this.pushState(),
-      (...args) => this.log(...args),
-    )
-  }
   /** Show the worktree-health diagnostics report for the active project. */
   public diagnose(): Promise<void> {
     return runDoctor(this.context, {
@@ -1867,6 +1866,7 @@ export class AgentManagerProvider implements Disposable {
     this.pushState()
   }
   private async disposeAsync(): Promise<void> {
+    this.unsubColors?.() // fork_change
     await this.stateReady?.catch((err) => this.log("dispose: stateReady rejected:", err))
     await this.contexts.dispose()
     await this.browserLifecycle.dispose()

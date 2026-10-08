@@ -32,6 +32,8 @@ type Ctx = {
   caffeination: () => void
   // fork_change start
   shake: (sessionID: string) => Promise<void>
+  sessionColors: () => void
+  setSessionColor: (sessionID: string, color: string | null) => Promise<void>
   // fork_change end
 }
 
@@ -80,7 +82,14 @@ function isResume(input: { sessionID?: unknown; messageID?: unknown; requestID?:
 }
 // fork_change start
 async function routeSessionMessage(
-  message: { type: string; sessionID?: unknown; messageID?: unknown; requestID?: unknown },
+  message: {
+    type: string
+    sessionID?: unknown
+    sessionId?: unknown
+    messageID?: unknown
+    requestID?: unknown
+    color?: unknown
+  },
   ctx: Ctx,
 ): Promise<boolean | undefined> {
   if (await handleSessionTagsMessage(message, ctx.post)) return true
@@ -90,6 +99,12 @@ async function routeSessionMessage(
   }
   if (message.type === "shake") {
     if (typeof message.sessionID === "string") await ctx.shake(message.sessionID)
+    return true
+  }
+  if (message.type === "setSessionColor") {
+    if (typeof message.sessionId === "string" && (message.color === null || typeof message.color === "string")) {
+      await ctx.setSessionColor(message.sessionId, message.color)
+    }
     return true
   }
   return undefined
@@ -154,6 +169,10 @@ export async function routeEarlyMessage(
   }
   if (message.type === "requestSpeechToTextModels") {
     await ctx.speechToTextModels()
+    return true
+  }
+  if (message.type === "requestSessionColors") {
+    ctx.sessionColors()
     return true
   }
   if (message.type === "requestBrowserSettings") {

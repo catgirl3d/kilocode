@@ -3,7 +3,10 @@ import { createDroppable } from "@thisbeyond/solid-dnd"
 import { ContextMenu } from "@kilocode/kilo-ui/context-menu"
 import { Icon } from "@kilocode/kilo-ui/icon"
 import type { SectionState } from "../src/types/messages"
-import { SECTION_COLORS, colorCss } from "./section-colors"
+// fork_change start
+import { ColorMenuItems } from "./color-menu"
+import { colorCss } from "./section-colors"
+// fork_change end
 import { useLanguage } from "../src/context/language"
 import { SidebarSectionHeader } from "./SidebarSectionHeader"
 
@@ -120,22 +123,13 @@ const SectionHeader: Component<Props> = (props) => {
               <ContextMenu.ItemLabel>{t("agentManager.section.rename")}</ContextMenu.ItemLabel>
             </ContextMenu.Item>
             <ContextMenu.Separator />
-            <ContextMenu.Group>
-              <ContextMenu.GroupLabel>{t("agentManager.section.setColor")}</ContextMenu.GroupLabel>
-              <div class="am-color-grid">
-                <ContextMenu.Item onSelect={() => props.onSetColor(null)} class="am-color-grid-item">
-                  <span class="am-color-swatch am-color-swatch-default"></span>
-                </ContextMenu.Item>
-                {SECTION_COLORS.map((c) => (
-                  <ContextMenu.Item onSelect={() => props.onSetColor(c.label)} class="am-color-grid-item">
-                    <span
-                      class={`am-color-swatch ${props.section.color === c.label ? "am-color-swatch-active" : ""}`}
-                      style={{ background: c.css }}
-                    ></span>
-                  </ContextMenu.Item>
-                ))}
-              </div>
-            </ContextMenu.Group>
+            {/* fork_change start - shared palette grid */}
+            <ColorMenuItems
+              label={t("agentManager.section.setColor")}
+              color={props.section.color}
+              onSet={props.onSetColor}
+            />
+            {/* fork_change end */}
             <ContextMenu.Separator />
             <ContextMenu.Item onSelect={() => props.onMoveUp?.()} disabled={props.isFirst}>
               <Icon name="arrow-up" size="small" />

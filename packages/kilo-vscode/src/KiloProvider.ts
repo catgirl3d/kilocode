@@ -93,6 +93,7 @@ import {
 } from "./kilo-provider/notifications"
 import { childID } from "./kilo-provider/task-session"
 // fork_change start
+import { onSessionColorsChanged, sessionColors, setSessionColor } from "./session-colors"
 import { onSessionTagsChanged, removeSessionTags } from "./session-tags"
 // fork_change end
 import { VisibleTaskStreams } from "./kilo-provider/visible-task-streams"
@@ -556,6 +557,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private unsubscribeClearPendingPrompts: (() => void) | null = null
   private unsubscribeDirectoryProvider: (() => void) | null = null
   private unsubscribeSandboxPreference: (() => void) | null = null
+  private unsubscribeSessionColors: (() => void) | null = null // fork_change
   private unsubscribeSessionTags: (() => void) | null = null // fork_change
   private initConnectionPromise: Promise<void> | null = null
   private webviewMessageDisposable: vscode.Disposable | null = null
@@ -644,6 +646,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.postMessage({ type: "mcpRemovalState", name: event.name, removing: event.phase === "removing" })
     })
     // fork_change start
+    this.unsubscribeSessionColors = onSessionColorsChanged((colors) => {
+      this.postMessage({ type: "sessionColorsLoaded", colors })
+    })
     this.unsubscribeSessionTags = onSessionTagsChanged((state) => {
       this.postMessage({ type: "sessionTagsLoaded", state })
     })
@@ -1321,6 +1326,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           promoteBackgroundJob: (jobID, sessionID) => this.promoteBackgroundJob(jobID, sessionID),
           caffeination: () => void vscode.commands.executeCommand("kilo-code.new.toggleCaffeination"),
           shake: (sessionID) => this.handleShake(sessionID), // fork_change
+          // fork_change start
+          sessionColors: () => this.postMessage({ type: "sessionColorsLoaded", colors: sessionColors() }),
+          setSessionColor: (sessionID, color) => setSessionColor(sessionID, color),
+          // fork_change end
         })
       ) {
         return
@@ -6491,6 +6500,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.unsubscribeClearPendingPrompts?.()
     this.unsubscribeDirectoryProvider?.()
     this.unsubscribeSandboxPreference?.()
+    this.unsubscribeSessionColors?.() // fork_change
     this.unsubscribeSessionTags?.() // fork_change
     this.unsubscribeAcknowledged?.()
     this.viewStateDisposable?.dispose()

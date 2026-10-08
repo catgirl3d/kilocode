@@ -8,6 +8,7 @@ import { recentSessions } from "../../context/session-utils"
 import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../utils/date"
 import type { SessionInfo } from "../../types/messages"
 import { SessionTags } from "../shared/SessionTags"
+import { SessionColorStripe } from "../shared/SessionColorStripe"
 // fork_change end
 
 interface WelcomeEmptyStateProps {
@@ -86,6 +87,7 @@ export const WelcomeEmptyState: Component<WelcomeEmptyStateProps> = (props) => {
                 <For each={group.items}>
                   {(item) => (
                     <button class="recent-session-item" onClick={() => props.onSelectSession?.(item.id)}>
+                      <SessionColorStripe sessionID={item.id} />
                       <span class="recent-session-title" dir="auto">
                         {item.title || language.t("session.untitled")}
                       </span>

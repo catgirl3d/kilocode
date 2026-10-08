@@ -46,6 +46,7 @@ interface Props {
   local: Record<string, LocalGitStats>
   prs: Record<string, Record<string, PRStatus | null>>
   sessions: Record<string, ProjectSessionInfo[]>
+  color?: (id: string) => string | undefined // fork_change
   selectedProject?: string
   selection?: string
   currentSessionID?: () => string | undefined
@@ -116,6 +117,7 @@ export const ProjectList: Component<Props> = (props) => {
     for (const project of props.projects) {
       const state = props.states[project.id]
       if (!state) continue
+      const color = (id: string) => (props.color ? props.color(id) : state.sessionColors?.[id]) // fork_change
       const store = props.store?.(project.id)
       const local = props.sessions[project.id]?.filter((session) => session.worktreeId === null) ?? []
       items.push({
@@ -168,6 +170,7 @@ export const ProjectList: Component<Props> = (props) => {
           sessionId: session.id,
           location: session.worktreeId ? "worktree" : "local",
           worktreeId: session.worktreeId ?? undefined,
+          sessionColor: color(session.id), // fork_change
         })
       }
     }

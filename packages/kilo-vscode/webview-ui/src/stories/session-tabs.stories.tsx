@@ -200,6 +200,54 @@ export const PinnedTabs: Story = {
   ),
 }
 
+export const ColoredTabs: Story = {
+  name: "Session tabs - colored",
+  render: () => (
+    <StoryProviders noPadding>
+      <div style={{ padding: "12px", background: "var(--surface-base)" }}>
+        <div class="session-tab-bar">
+          <div class="am-tab-list" role="tablist" aria-label="Colored session tabs" style={{ "--tab-count": 2 }}>
+            <div class="am-tab-sortable">
+              <SessionTab
+                title="Investigate flaky sidebar search"
+                active={false}
+                accent="var(--vscode-terminal-ansiRed)"
+                state="idle"
+                stateLabel="Current session"
+                closeTitle="Close tab"
+                closeLabel="Close tab"
+                role="tab"
+                selected={false}
+                tabIndex={0}
+                onSelect={noop}
+                onMiddleClick={noop}
+                onClose={noop}
+              />
+            </div>
+            <div class="am-tab-sortable">
+              <SessionTab
+                title="Color-coded review follow-up"
+                active={false}
+                accent="var(--vscode-charts-green, var(--vscode-terminal-ansiGreen))"
+                state="idle"
+                stateLabel="Current session"
+                closeTitle="Close tab"
+                closeLabel="Close tab"
+                role="tab"
+                selected={false}
+                tabIndex={-1}
+                onSelect={noop}
+                onMiddleClick={noop}
+                onClose={noop}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </StoryProviders>
+  ),
+}
+
 export const SwitcherOpen: Story = {
   name: "Session tab switcher — open",
   render: () => (

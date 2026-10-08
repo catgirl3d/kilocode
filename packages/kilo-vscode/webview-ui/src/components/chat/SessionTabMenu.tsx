@@ -15,6 +15,7 @@ export const SessionTabMenu: ParentComponent<{
   closeShortcut?: JSX.Element
   /** Extra items rendered above the fork/pin/close actions, e.g. per-tab copy actions. */
   leading?: JSX.Element
+  colorMenu?: JSX.Element // fork_change
 }> = (props) => {
   const { t } = useLanguage()
   return (
@@ -53,6 +54,14 @@ export const SessionTabMenu: ParentComponent<{
               <ContextMenu.Separator />
             </Show>
           </Show>
+          {/* fork_change start */}
+          <Show when={props.colorMenu}>
+            {props.colorMenu}
+            <Show when={props.closeable !== false || props.onCloseOthers}>
+              <ContextMenu.Separator />
+            </Show>
+          </Show>
+          {/* fork_change end */}
           <Show when={props.closeable !== false}>
             <ContextMenu.Item onSelect={props.onClose}>
               <Icon name="close" size="small" />
