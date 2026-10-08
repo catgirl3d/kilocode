@@ -129,10 +129,16 @@ export namespace Suggestion {
     blocking?: boolean
     tool?: { messageID: string; callID: string }
   }): Promise<Action> {
-    // Auto-dismiss if a newer prompt is already queued on this session.
+    // fork_change start
+    // Auto-dismiss if a newer blocking prompt is already queued on this
+    // session. A waiting background task settlement is not blocking: the
+    // suggestion stays and the settlement waits behind the user's answer.
+    // fork_change end
     // Synchronous check immediately before the pending set, so there's no
     // interleaving with dismissAll called from SessionPrompt.prompt.
-    if (KiloSessionPromptQueue.hasFollowup(SessionID.make(input.sessionID))) {
+    // fork_change start
+    if (KiloSessionPromptQueue.hasBlockingFollowup(SessionID.make(input.sessionID))) {
+      // fork_change end
       log.info("auto-dismissed — followup queued", { sessionID: input.sessionID })
       throw new DismissedError()
     }
