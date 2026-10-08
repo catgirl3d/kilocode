@@ -1067,6 +1067,7 @@ export interface AgentManagerStateMessage {
   orphanDirectories?: { path: string; kind: "broken" | "leftover"; bytes?: number; sized?: boolean }[]
   tabOrder?: Record<string, string[]>
   pinnedTabs?: Record<string, string[]>
+  sessionColors?: Record<string, string> // fork_change
   worktreeOrder?: string[]
   sessionsCollapsed?: boolean
   sidebarCollapsed?: boolean
@@ -1291,6 +1292,11 @@ export interface FavoritesLoadedMessage {
 }
 
 // fork_change start
+export interface SessionColorsLoadedMessage {
+  type: "sessionColorsLoaded"
+  colors: Record<string, string>
+}
+
 export interface SessionTagsLoadedMessage {
   type: "sessionTagsLoaded"
   state: SessionTagsState
@@ -2104,6 +2110,7 @@ export type ExtensionMessage =
   | RecentsLoadedMessage
   | ModelSelectorExpandedLoadedMessage
   | FavoritesLoadedMessage
+  | SessionColorsLoadedMessage // fork_change
   // fork_change start - local session metadata
   | SessionTagsLoadedMessage
   | SessionTagResultMessage

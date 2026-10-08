@@ -34,6 +34,7 @@ import {
   promotePendingDraftDiscard,
 } from "../utils/draft-store"
 import { applyPinnedTabs, reorderPinnedTabs, togglePinnedTab } from "../utils/tab-order"
+import { withSessionColor } from "../utils/session-color-map" // fork_change
 import { closableRight, closeToRight, sessionCloseDeps } from "../utils/session-close"
 
 interface LocalTabsState extends Record<string, unknown> {
@@ -58,6 +59,8 @@ interface LocalTabsValue {
   closableRight: (id: string) => string[]
   isPinned: (id: string) => boolean
   togglePinned: (id: string) => void
+  sessionColor: (id: string) => string | undefined // fork_change
+  setSessionColor: (id: string, color: string | null) => void // fork_change
   previewCloud: (id: string) => void
   reorder: (from: string, to: string) => boolean
   move: (id: string, offset: -1 | 1) => number | undefined
@@ -98,6 +101,23 @@ export const LocalTabsProvider: ParentComponent = (props) => {
     if (isPendingTab(id)) return
     setPinned((prev) => togglePinnedTab(prev, id))
   }
+  // fork_change start
+  const [colors, setColors] = createSignal<Record<string, string>>({})
+  const sessionColor = (id: string) => colors()[id]
+  const setSessionColor = (id: string, color: string | null) => {
+    if (isPendingTab(id)) return
+    setColors((prev) => withSessionColor(prev, id, color))
+    vscode.postMessage({ type: "setSessionColor", sessionId: id, color })
+  }
+  onMount(() => {
+    const unsub = vscode.onMessage((message) => {
+      if (message.type !== "sessionColorsLoaded") return
+      setColors(message.colors)
+    })
+    vscode.postMessage({ type: "requestSessionColors" })
+    onCleanup(unsub)
+  })
+  // fork_change end
   const focus = (id: string | undefined, options: { scrollToBottom?: boolean } = {}) => {
     setCloud(undefined)
     if (!id || isPendingTab(id)) {
@@ -296,6 +316,8 @@ export const LocalTabsProvider: ParentComponent = (props) => {
         closableRight: rightTabs,
         isPinned,
         togglePinned,
+        sessionColor, // fork_change
+        setSessionColor, // fork_change
         previewCloud,
         reorder,
         move,
