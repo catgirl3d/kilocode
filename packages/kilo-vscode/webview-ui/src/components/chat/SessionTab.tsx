@@ -1,6 +1,6 @@
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Icon } from "@kilocode/kilo-ui/icon"
-import { TooltipKeybind } from "@kilocode/kilo-ui/tooltip"
+import { Tooltip, TooltipKeybind } from "@kilocode/kilo-ui/tooltip" // fork_change
 import { Show, type Component, type JSX } from "solid-js"
 import { ActivityIcon } from "../shared/ActivityIcon"
 import { description, type Activity } from "../../utils/session-activity"
@@ -31,10 +31,7 @@ export const SessionTab: Component<{
 }> = (props) => {
   const { t } = useLanguage()
   const hint = () => (props.onTogglePin ? t("session.tabs.pinHint") : "")
-  const tooltip = () => {
-    const base = props.state === "idle" ? props.title : `${props.title}: ${t(description(props.state))}`
-    return hint() ? `${base} · ${hint()}` : base
-  }
+  const state = () => (props.state === "idle" ? "" : t(description(props.state))) // fork_change
   const click = (event: MouseEvent) => {
     if (event.shiftKey && props.onTogglePin) {
       event.preventDefault()
@@ -64,9 +61,24 @@ export const SessionTab: Component<{
         onMouseDown={props.onMiddleClick}
         onKeyDown={props.onKeyDown}
       >
-        <TooltipKeybind
-          title={tooltip()}
-          keybind={props.keybind ?? ""}
+        {/* fork_change start - structured hover tooltip */}
+        <Tooltip
+          value={
+            <div class="am-tab-tooltip-body">
+              <div class="am-tab-tooltip-head">
+                <span class="am-tab-tooltip-title">{props.title}</span>
+                <Show when={props.keybind}>
+                  <span class="am-tab-tooltip-keybind">{props.keybind}</span>
+                </Show>
+              </div>
+              <Show when={state()}>
+                <span class="am-tab-tooltip-state">{state()}</span>
+              </Show>
+              <Show when={hint()}>
+                <span class="am-tab-tooltip-hint">{hint()}</span>
+              </Show>
+            </div>
+          }
           placement="bottom"
           gutter={8}
           class="am-tab-tooltip"
@@ -85,7 +97,8 @@ export const SessionTab: Component<{
             </Show>
             <span class="am-tab-label">{props.title}</span>
           </span>
-        </TooltipKeybind>
+        </Tooltip>
+        {/* fork_change end */}
       </div>
       {/* A pinned tab has no close button. The click that needed guarding is the
           one on a control already sitting under the cursor, so the control is
