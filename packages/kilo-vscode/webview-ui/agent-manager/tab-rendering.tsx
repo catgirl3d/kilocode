@@ -93,6 +93,8 @@ export interface TabRenderDeps {
   sessionFork: (id: string) => void
   isPinned: (id: string) => boolean
   togglePinned: (id: string) => void
+  sessionColor: (id: string) => string | undefined // fork_change
+  setSessionColor: (id: string, color: string | null) => void // fork_change
   onTabKey: (id: string, event: KeyboardEvent) => void
   reviewLabel: string
   reviewTooltip: string
@@ -217,6 +219,8 @@ function renderSessionTab(s: SessionInfo, deps: TabRenderDeps): JSX.Element {
       onFork={pending ? undefined : () => deps.sessionFork(s.id)}
       pinned={deps.isPinned(s.id)}
       onTogglePin={pending ? undefined : () => deps.togglePinned(s.id)}
+      color={deps.sessionColor(s.id) ?? null} // fork_change
+      onSetColor={pending ? undefined : (color) => deps.setSessionColor(s.id, color)} // fork_change
     />
   )
 }
