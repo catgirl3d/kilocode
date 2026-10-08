@@ -109,6 +109,49 @@ body.vscode-light
   }
 }
 
+/* fork_change start - bulk session selection */
+.session-list [data-slot="list-search-wrapper"] {
+  flex-wrap: wrap;
+}
+
+.session-select-toggle {
+  flex-shrink: 0;
+}
+
+.session-list .session-select-check {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding-right: 6px;
+}
+
+.session-list .session-select-check [data-component="checkbox"] {
+  margin: 0;
+  gap: 0;
+}
+
+.session-list .session-row:has(.session-select-check) [data-slot="session-row-action"] {
+  display: none;
+}
+
+.session-select-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 10px 2px;
+}
+
+.session-select-count {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--kilo-font-size-12);
+  color: var(--text-weak, var(--vscode-descriptionForeground));
+  white-space: nowrap;
+}
+/* fork_change end */
+
 /* History View (unified Local + Cloud + optional Worktree tabs) */
 .history-view {
   display: flex;
