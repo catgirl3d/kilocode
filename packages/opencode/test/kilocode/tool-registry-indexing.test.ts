@@ -40,26 +40,39 @@ describe("kilocode tool registry indexing", () => {
   const logger = Log.create({ service: "kilocode-tool-registry" })
 
   it.live("omits semantic_search without waiting for slow indexing startup", () =>
-    provideTmpdirInstance(
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const prev = process.env["KILO_PLATFORM"]
+        process.env["KILO_PLATFORM"] = "cli"
+        return prev
+      }),
       () =>
-        Effect.gen(function* () {
-          const avail = spyOn(KiloIndexing, "available").mockImplementation(() => new Promise<boolean>(() => {}))
+        provideTmpdirInstance(
+          () =>
+            Effect.gen(function* () {
+              const avail = spyOn(KiloIndexing, "available").mockImplementation(() => new Promise<boolean>(() => {}))
 
-          try {
-            const registry = yield* ToolRegistry.Service
-            const ids = yield* registry.ids()
+              try {
+                const registry = yield* ToolRegistry.Service
+                const ids = yield* registry.ids()
 
-            expect(ids).not.toContain("semantic_search")
-            expect(ids).not.toContain("codesearch")
-            expect(ids).toContain("question")
-            expect(ids).toContain("read")
-            expect(ids).toContain("suggest")
-            expect(avail).not.toHaveBeenCalled()
-          } finally {
-            avail.mockRestore()
-          }
+                expect(ids).not.toContain("semantic_search")
+                expect(ids).not.toContain("codesearch")
+                expect(ids).toContain("question")
+                expect(ids).toContain("read")
+                expect(ids).toContain("suggest")
+                expect(avail).not.toHaveBeenCalled()
+              } finally {
+                avail.mockRestore()
+              }
+            }),
+          { git: true },
+        ),
+      (prev) =>
+        Effect.sync(() => {
+          if (prev === undefined) delete process.env["KILO_PLATFORM"]
+          if (prev !== undefined) process.env["KILO_PLATFORM"] = prev
         }),
-      { git: true },
     ),
   )
 
@@ -161,28 +174,41 @@ describe("kilocode tool registry indexing", () => {
   )
 
   it.live("includes semantic_search hint in glob and grep descriptions when indexing is enabled", () =>
-    provideTmpdirInstance(
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const prev = process.env["KILO_PLATFORM"]
+        process.env["KILO_PLATFORM"] = "cli"
+        return prev
+      }),
       () =>
-        Effect.gen(function* () {
-          const ready = spyOn(KiloIndexing, "ready").mockReturnValue(true)
+        provideTmpdirInstance(
+          () =>
+            Effect.gen(function* () {
+              const ready = spyOn(KiloIndexing, "ready").mockReturnValue(true)
 
-          try {
-            const agent = yield* Agent.Service
-            const build = yield* agent.get("build")
-            const registry = yield* ToolRegistry.Service
-            const tools = yield* registry.tools({ ...ref, agent: build })
-            const ids = tools.map((tool) => tool.id)
-            const glob = tools.find((tool) => tool.id === "glob")?.description ?? ""
-            const grep = tools.find((tool) => tool.id === "grep")?.description ?? ""
+              try {
+                const agent = yield* Agent.Service
+                const build = yield* agent.get("build")
+                const registry = yield* ToolRegistry.Service
+                const tools = yield* registry.tools({ ...ref, agent: build })
+                const ids = tools.map((tool) => tool.id)
+                const glob = tools.find((tool) => tool.id === "glob")?.description ?? ""
+                const grep = tools.find((tool) => tool.id === "grep")?.description ?? ""
 
-            expect(ids).toContain("semantic_search")
-            expect(glob).toContain("semantic_search")
-            expect(grep).toContain("semantic_search")
-          } finally {
-            ready.mockRestore()
-          }
+                expect(ids).toContain("semantic_search")
+                expect(glob).toContain("semantic_search")
+                expect(grep).toContain("semantic_search")
+              } finally {
+                ready.mockRestore()
+              }
+            }),
+          { git: true, config: { indexing: { enabled: true } } },
+        ),
+      (prev) =>
+        Effect.sync(() => {
+          if (prev === undefined) delete process.env["KILO_PLATFORM"]
+          if (prev !== undefined) process.env["KILO_PLATFORM"] = prev
         }),
-      { git: true, config: { indexing: { enabled: true } } },
     ),
   )
 
@@ -260,17 +286,24 @@ describe("kilocode tool registry indexing", () => {
   }
 
   test("enables semantic search from indexing configuration before the index is ready", () => {
-    expect(
-      KiloToolRegistry.indexing({
-        indexing: { enabled: true },
-      }),
-    ).toBe(true)
-    expect(
-      KiloToolRegistry.indexing({
-        indexing: { enabled: false },
-      }),
-    ).toBe(false)
-    expect(KiloToolRegistry.indexing({}, { indexing: { enabled: true } })).toBe(true)
+    const prev = process.env["KILO_PLATFORM"]
+    process.env["KILO_PLATFORM"] = "cli"
+    try {
+      expect(
+        KiloToolRegistry.indexing({
+          indexing: { enabled: true },
+        }),
+      ).toBe(true)
+      expect(
+        KiloToolRegistry.indexing({
+          indexing: { enabled: false },
+        }),
+      ).toBe(false)
+      expect(KiloToolRegistry.indexing({}, { indexing: { enabled: true } })).toBe(true)
+    } finally {
+      if (prev === undefined) delete process.env["KILO_PLATFORM"]
+      if (prev !== undefined) process.env["KILO_PLATFORM"] = prev
+    }
   })
 
   it.live("omits memory tools when project memory is disabled but keeps kilo_local_recall", () =>
