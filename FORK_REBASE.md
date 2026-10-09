@@ -11,8 +11,17 @@ It does not describe OpenCode merge automation.
   fast-path lets an executor continue autonomously — plus immutable baseline SHAs,
   fork intent, cross-package decisions, approvals, and review findings.
 - Executors are package-scoped subagent sessions, with a root executor for root
-  files. Create them lazily and reuse the same session ID throughout the rebase;
-  do not start a fresh executor for each conflict.
+  files. Create them lazily and reuse each one for its package's Mechanical,
+  fast-path, and Bounded stops. Rotate it only at a stop boundary: when it shows
+  stale Git state, repeats a corrected mistake, or has handled about five Bounded
+  stops. A fresh executor implements each Deep decision from the coordinator's
+  spec and is retired after that stop, or after directly following stops of the
+  same feature; the package executor then continues.
+- Every fresh executor starts from one fixed handoff: repository path, role and
+  limits, marker rules, Known Pitfalls, current Git state, approved decisions,
+  and its assignment.
+- Record every executor and reviewer session ID when the session starts; resuming
+  a session needs its ID.
 - Only one agent may mutate the worktree or index at a time: coordinator Git
   operations and executor edits are never concurrent. On every activation, the
   executor re-reads `HEAD`, the replayed fork commit, unmerged paths, and staged
@@ -20,9 +29,6 @@ It does not describe OpenCode merge automation.
 - An executor may edit only its package. For a stop spanning packages, the relevant
   executors act sequentially; only coupled cross-package behavior or contracts make
   the stop Deep automatically.
-- Replace an executor only when its context is demonstrably unreliable, using a
-  concise handoff of the current Git state and approved decisions. Rotation is not
-  a routine per-conflict step.
 - Executors never invent semantic or architectural decisions.
 - The user decides only when analysis reveals a genuine architectural, product, or
   contract choice, not for every routine resolution.
@@ -33,22 +39,25 @@ Upstream does not receive or contain this fork's changes. The rebase replays loc
 fork commits over the fetched upstream history. Upstream may independently implement
 an overlapping user-facing feature.
 
-- Start with a clean working tree.
+- Start with a clean working tree. Untracked user notes that no replayed commit
+  touches may stay; never delete, move, commit, or stash them.
 - Before any history is rewritten, create a local backup branch pinned to the
-  current `main` tip, e.g. `git branch backup/pre-rebase-<short-sha> main`.
-  Create it once per rebase, not per stop; keep backup branches local and never
-  push them.
+  current `main` tip with `git branch backup/pre-rebase-<short-sha> main`; never
+  check out a backup branch. Create it once per rebase, not per stop; keep backup
+  branches local and never push them.
 - Before `git fetch`, record the full SHA values of old `main` and old
   `upstream/main`; use these immutable SHAs in the range-diff.
-- Fetch `upstream`, then rebase local `main` onto `upstream/main`.
+- Fetch `upstream`, then run `git rebase upstream/main main`. Naming the branch
+  makes Git check out `main` first, whatever branch was checked out before.
 - Use the repository's `zdiff3` conflict style.
 - All rebase operations and continue steps must be strictly non-interactive: use
   `git -c core.editor=true rebase --continue` (or have `core.editor=true` configured)
   so agent subprocesses never hang waiting for an interactive text editor.
 - Do not push without an explicit request.
 
-Keep the commands simple. Do not use stash or add platform-specific recipes to
-this process; create backup branches only at the fixed recovery points
+Keep the commands simple and the process steps platform-neutral; environment
+workarounds belong in Known Pitfalls. Do not use stash. Create backup branches
+only at the fixed recovery points
 (pre-rebase and pre-surgery), never for individual stops, and do not delete them
 automatically.
 
@@ -60,8 +69,7 @@ command for exhaustive recon, a complete contract catalogue, baseline runs, or
 timing runs. Keep the plan in the session, not in a repository ledger.
 
 - **Decision batch.** Collect the predictable product and contract choices from the
-  recon notes (see below) and
-  resolve them with the user before starting. Decisions that only become provable at
+  recon notes (see below) and resolve them with the user before starting. Decisions that only become provable at
   their stop stay with that stop; routine resolutions are not user decisions.
 - **Working check plan.** Name checks for the known affected contracts, including
   risks in auto-merged code, and update their scope at actual stops. Record why a
@@ -101,19 +109,15 @@ They do not need to predict every stop.
   work is the closed list of verification findings and owner folds. A skipped commit,
   range-diff anomaly, or reproduced regression is not "new scope" - classify it and
   reopen the gate it belongs to.
-- Before freezing the candidate for regression review: final formatting, required
-  generation, and the planned final guards have already run explicitly on the
-  assembled tree.
-- After behavior validation: complete the planned final guards and history
-  finalization, not unrelated audits. Reuse check results when only commit SHAs
-  changed and the checked inputs and environment remain the same.
-- Freeze order: owner folds and history surgery happen before freezing the
-  candidate for regression review; any mutation after freeze invalidates reviewer
-  approvals.
-- Finalization order that avoids rework: required generation -> formatting ->
-  structural guards -> package typecheck/lint -> behavior checks -> owner folds ->
-  freeze -> committed fork-audit (Marker Discipline step 4). Later steps must not
+- Finalization order on the assembled tree: required generation -> formatting ->
+  structural guards, including the worktree fork-audit -> package typecheck/lint ->
+  behavior checks -> owner folds and history surgery -> committed fork-audit
+  (Marker Discipline step 4) -> freeze for regression review. Everything that can
+  mutate the tree, including fixes found by the committed audit, happens before the
+  freeze; any mutation after it invalidates reviewer approvals. Later steps must not
   change the inputs of already-passed checks.
+- Reuse check results when only commit SHAs changed and the checked inputs and
+  environment remain the same. Do not add unrelated audits.
 - After regression review: newly found unrelated defects are follow-ups, not rebase
   work, unless the user explicitly expands scope.
 
@@ -165,15 +169,55 @@ All four conditions must pass:
    names or missing changelog text never prove it.
 
 Runtime imports, executable code, tests, configuration, schemas, protocol unions,
-registries, directives, and generated contracts do not qualify as Mechanical. This
-exclusion routes them to Bounded or Deep; it does not make them Deep automatically.
-Do not launch research merely to make a Mechanical classification pass.
+registries, directives, and generated contracts do not qualify as Mechanical, except
+through the Verbatim-Union Fast-Path below. This exclusion routes them to Bounded or
+Deep; it does not make them Deep automatically. Do not launch research merely to
+make a Mechanical classification pass.
 
 When every unit in the stop is Mechanical, the relevant package executors resolve
-their units sequentially. After Stop Checks, the last active
-executor confirms no unmerged paths remain and may run `git -c core.editor=true rebase --continue`
+their units sequentially. After Stop Checks, the last active executor confirms no
+unmerged paths remain and may run `git -c core.editor=true rebase --continue`
 without coordinator approval. Mechanical stops do not trigger conflict-specific
 behavioral review later.
+
+### Verbatim-Union Fast-Path
+
+A standing extension of Mechanical for conflicts in which the two sides touch
+different order-insensitive units and the fork's changes replay unchanged. Grant it
+for a conflicted path only when ALL hold:
+
+1. **Region**: every conflicted hunk lies in an import block, the members of a
+   type, interface, or props declaration, a flat dictionary of literal values such
+   as a locale file, or a run of whole declarations at module or namespace scope.
+   JSX, function bodies, bare top-level statements, side-effect imports
+   (`import "x"`), registries, protocol unions, schemas, and configuration do not
+   qualify.
+2. **Disjoint units**: each side adds or changes only its own units (import
+   declarations or specifiers, members, keys, declarations). No unit is changed by
+   both sides, and neither side deletes or renames a unit the other side uses.
+3. **Distinct names**: added names and keys do not collide, and each imported name
+   is exported by its source module in the index.
+4. **Verbatim replay**: the staged change reproduces the fork commit's change
+   exactly, ignoring blank lines. The comparison below prints nothing, and Stop
+   Checks pass.
+
+```bash
+p=<conflicted path>
+f() { grep -E '^[+-]' | grep -vE '^(\+\+\+|---) |^[+-][[:space:]]*$'; }
+diff <(git diff REBASE_HEAD^ REBASE_HEAD -- "$p" | f) <(git diff --cached HEAD -- "$p" | f)
+```
+
+The comparison proves only that the fork's lines were carried over exactly and
+none of upstream's were dropped. It does not prove placement or semantics, which is
+why condition 1 restricts the regions. Blank-line placement is left to formatting
+and the final audit.
+
+The executor gets a short assignment without an approval packet, for example
+"take HEAD's import block, add <names> as in the fork commit, stage", and reports
+the comparison output. The coordinator reruns the comparison for each conflicted
+path, reads the staged diff, and continues. If any condition fails, the unit goes
+to Bounded. Record these units as `mechanical(verbatim-union)`. Like Mechanical
+stops, they do not trigger the reviewer policy.
 
 ### Bounded Resolution
 
@@ -203,12 +247,19 @@ change, or cross-package dependency. A fixture adapting to a locally obvious API
 change can be Bounded; a test changing expected product behavior cannot.
 
 The relevant package executors resolve their Bounded units sequentially. Once every
-unit is staged, the last active executor stops before `git -c core.editor=true rebase --continue`. Its
-compact approval packet contains the original commit, paths, both intents, staged
-diff, coupled regions, local check results, applicable post-rebase guard, and Stop
-Checks status. The coordinator verifies that packet and exact staged candidate without
-repeating the investigation or successful checks unless their inputs changed or
-the evidence is insufficient. Local test permission does not authorize Bounded or
+unit is staged, the last active executor stops before
+`git -c core.editor=true rebase --continue` and submits an approval packet:
+- the original commit and paths;
+- one line per side's intent;
+- local check results and Stop Checks status;
+- the applicable post-rebase guard.
+
+If the verbatim-replay comparison from the fast path prints nothing, or the decision
+batch already fixed the composition, the packet includes that output or the decision
+reference. Otherwise it includes the coupled regions and the staged diff. The
+coordinator reads the staged candidate itself and verifies the packet
+without repeating the investigation or successful checks unless their inputs changed
+or the evidence is insufficient. Local test permission does not authorize Bounded or
 Deep continuation. Any later index or worktree change invalidates the approval and
 requires resubmission.
 
@@ -222,8 +273,9 @@ whose intent or result is not proven inside the Bounded evidence boundary.
 The executor stops before editing. The coordinator investigates the concrete unknown
 and uses a review agent only when a named question requires it and that agent has the
 necessary tools. The user decides only genuine product, architecture, or contract
-choices. After a decision, the relevant executor implements it and submits the full
-staged candidate for coordinator verification before continuing the rebase.
+choices. After a decision, a fresh executor for that package implements it (see
+Responsibilities) and submits the full staged candidate for coordinator
+verification before continuing the rebase.
 
 Always preserve or adjust valid fork annotations during conflict resolution and
 remove stale annotations as described below.
@@ -235,8 +287,8 @@ remove stale annotations as described below.
 - **Audit & reconcile annotations strictly at the end**: After all rebase commits are replayed and code builds cleanly, perform the fork annotation audit in one dedicated final pass:
   1. Run `bun run script/fork-audit.ts --worktree` to audit the entire rebased tree against `upstream/main`.
   2. Fix any missing coverage, nested markers, or AST splits across touched files in one batch.
-  3. Fold marker fixes into the dedicated annotation commit (e.g. `chore(fork): fix annotation coverage after rebase`) or create a clean follow-up commit.
-  4. Finally, run `bun run script/fork-audit.ts` (without `--worktree`) to verify that the committed net fork diff `upstream/main...HEAD` is 100% clean.
+  3. Fold each marker fix into the commit that owns the marked change. Only markers without a single owner go into one `chore(fork): fix annotation coverage after rebase` commit.
+  4. Before freezing the candidate, run `bun run script/fork-audit.ts` (without `--worktree`) to verify that the committed net fork diff `upstream/main...HEAD` is 100% clean.
 
 ### Annotation Commit Conflicts
 
@@ -265,8 +317,7 @@ Two mechanical rules prevent audit failures when restoring or adjusting markers:
   consecutive added lines; a single uncovered blank line marks the whole block
   as missing even though the code itself is wrapped.
 - Include every changed marker path in the final worktree audit (Marker Discipline
-  step 1) and run prettier
-  before folding fixes into the annotation commit; the committed audit reads HEAD
+  step 1) and run prettier before folding the fixes; the committed audit reads HEAD
   and silently ignores uncommitted edits.
 
 For `bun.lock` conflicts, never resolve manually; use:
@@ -319,10 +370,10 @@ pre-rebase fork history; with a consolidated history this takes a minute.
   tests of one fork feature folds into that feature's commit with
   `git-surgeon fold <owner> --from <fix>`; the feature must stay
   self-contained. The remainder without a feature owner (generated SDK, docs,
-  cross-cutting fixtures, annotations) goes into a single commit named
-  `fix(rebase): adapt fork tail to upstream <version> drift`, where
-  `<version>` is the upstream release in the rebase base; fold later remainder
-  additions into it instead of opening a new commit. Never open a separate
+  cross-cutting fixtures, annotations) goes into one commit per rebase named
+  `fix(rebase): adapt fork tail to upstream v<version> drift`, where
+  `<version>` is the upstream release in the new base; fold later remainder
+  additions from the same rebase into it. Never open a separate
   `adapt <area>` commit per area, and never record drift in `CHANGELOG-FORK.md`
   or changesets: the tail must not grow one stop per adapted area, and the next
   rebase must still see where the adaptation remainder lives.
@@ -393,12 +444,9 @@ Every such operation ends with three checks before anything is pushed:
   only by the upstream range.
 - If dependency inputs changed, synchronize dependencies before any typecheck. Do
   not investigate dependency type errors against stale `node_modules`.
-- Run the deterministic checks in the Phase Gates finalize order (finalization ->
-  formatting -> guards -> typecheck/lint -> behavior checks -> folds -> freeze),
-  which already places required generation and formatting before the guards. Add
-  the committed fork-audit run as the last step after owner folds (Marker
-  Discipline step 4). These must cover affected
-  contracts and their direct consumers, not just files with textual conflicts.
+- Run the deterministic checks in the Phase Gates finalization order. They must
+  cover affected contracts and their direct consumers, not just files with textual
+  conflicts.
   A broader aggregate requires the plan's recorded escalation condition; shared or
   root fixes include all direct consumer packages.
 - For VS Code changes with Bounded or Deep resolutions, run sequentially from
@@ -508,7 +556,9 @@ preservation. Review the range-diff against both the pre-rebase fork HEAD and th
 - Any mutation after freezing the candidate invalidates both reviewer approvals.
   Rerun affected deterministic checks, record a new clean `HEAD`, and resume both
   existing reviewer session IDs against that SHA until both approve. Do not create a
-  third reviewer.
+  third reviewer. If a reviewer session cannot be resumed, start one replacement in
+  the same role and give it the previous findings, the SHA it approved, and the
+  delta since then.
 - Reviewer and research prompts must require the concrete capabilities needed by the
   question. An agent without Git access cannot answer a Git-history question.
 - Classify every finding as exactly one of:
@@ -527,8 +577,8 @@ preservation. Review the range-diff against both the pre-rebase fork HEAD and th
 
 Finish only when the working tree is clean, `git diff --check upstream/main..main`
 passes, the range-diff has been reviewed, the planned behavior checks pass or their
-failures have been classified as above or reported to the user as origin unknown, and this tracked-file conflict-marker scan
-has empty output and exits 1 as expected:
+failures have been classified as above or reported to the user as origin unknown,
+and this tracked-file conflict-marker scan has empty output and exits 1 as expected:
 
 ```bash
 git grep -nE '^(<{7}|\|{7}|={7}|>{7})( |$)'
@@ -556,3 +606,51 @@ Before finalizing or pushing, audit for subtle merge artifacts that bypass TypeS
    ```
 
 `zdiff3` helps show the common base in a conflict; it does not validate behavior.
+
+## Known Pitfalls
+
+Traps that cost real time in earlier rebases. Each entry gives the symptom, then
+the rule.
+
+- **Rebasing the wrong branch.** A rebase started while a backup branch was checked
+  out rewrote the backup instead of `main`. Create backups with `git branch` only,
+  and start with `git rebase upstream/main main`.
+- **Masked exit codes.** `cmd | tail; echo $?` reports the exit code of `tail`,
+  so a failing audit was reported as passing. Write the full output to a log and
+  read the command's own exit code (`cmd > log 2>&1; echo $?`, or `set -o pipefail`).
+- **rerere replays old resolutions.** With `rerere.enabled=true`, Git writes a
+  recorded resolution into the worktree file even when `rerere.autoupdate=false`.
+  The path stays unmerged, and Stop Checks cannot tell. When Git prints
+  "Resolved '<path>' using previous resolution", run `git checkout -m -- <path>`
+  and resolve from the index stages.
+- **Ambient host environment.** Agents running inside VS Code inherit
+  `KILO_PLATFORM=vscode` and `KILO_CLIENT=vscode`, which change CLI config
+  semantics. Before calling a CLI failure a regression, rerun the single test with
+  `KILO_PLATFORM` cleared or pinned as the test expects. Tests that depend on it
+  pin it and restore it.
+- **Load-only timeouts.** A test that times out only while other heavy work runs is
+  not a regression until it also fails alone. Raise a single case's timeout only to
+  match comparable cases, never a whole suite's.
+- **Windows paths in upstream tests.** Upstream tests pass on upstream CI, but raw
+  POSIX fixture paths canonicalize to drive-letter paths on Windows. Use the
+  product's canonicalization helper in the fixture. Put the fix in the drift
+  commit unless a fork feature owns the test.
+- **Git Bash path conversion.** MSYS rewrites arguments such as
+  `upstream/main:path` and `:1:path` into Windows paths, so `git show` and
+  `git cat-file` silently read the wrong object. Prefix such commands with
+  `MSYS_NO_PATHCONV=1`.
+- **Rehearsal labels are not routes.** Labels like "mechanical" or "union" in
+  sandbox or rehearsal notes are observations. Route each stop from its own index
+  stages, and never copy files from a rehearsal worktree.
+- **Superseded fork commits.** When upstream absorbs a fork commit's main change,
+  the replayed commit keeps a stale subject and changelog entry. List such commits
+  in the final report so the user can reword or drop them.
+- **Pre-existing format debt.** A file that already fails `prettier --check` on the
+  old tree stays as it is during the rebase. Reformatting it creates a fake fork
+  diff.
+- **Cleanup.** Never delete worktrees, temporary directories, or backup branches
+  with `rm -rf` or scripts. Locked files on Windows make removal hang. Leave
+  cleanup to the user.
+- **Fetch refname conflicts.** `refname conflict` errors on unrelated upstream refs
+  come from stale remote-tracking refs and do not affect `main`.
+  `git remote prune upstream` clears them.
