@@ -11916,21 +11916,35 @@
             }
           },
           "400": {
-            "description": "Bad request",
+            "description": "ConfigOverlayWriteError | InvalidRequestError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConfigOverlayWriteError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
                 }
               }
             }
           },
           "409": {
-            "description": "ConfigOverlayConflictError",
+            "description": "ConfigOverlayConflictError | ConfigOverlayShadowedError",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConfigOverlayConflictError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConfigOverlayConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ConfigOverlayShadowedError"
+                    }
+                  ]
                 }
               }
             }
@@ -37079,6 +37093,53 @@
           }
         },
         "required": ["code", "message", "target"],
+        "additionalProperties": false
+      },
+      "ConfigOverlayShadowedError": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "shadowedBy": {
+            "type": "string"
+          }
+        },
+        "required": ["message", "path"],
+        "additionalProperties": false
+      },
+      "ConfigOverlayWriteError": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["message", "path"]
+            }
+          }
+        },
+        "required": ["message"],
         "additionalProperties": false
       },
       "ConfigRulesResponse": {
