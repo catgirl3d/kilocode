@@ -70,3 +70,64 @@
 .model-quick-switcher-tooltip[data-component="tooltip"] {
   border-radius: var(--radius-sm);
 }
+
+/* Prompt selectors: restore the pre-rebase hint-control styling on the new
+   agent and variant trigger slots. */
+.prompt-selectors {
+  gap: 4px;
+  height: auto;
+}
+
+.prompt-selectors .prompt-selector::before {
+  display: none;
+}
+
+.prompt-selector[data-part="model"]:has(> .model-quick-switcher) {
+  min-width: auto;
+}
+
+.prompt-selectors .prompt-selector[data-part] [data-slot="popover-trigger"]:not(.model-selector-quick-open) {
+  height: auto !important;
+  min-height: 22px;
+  padding: 4px 6px !important;
+  font-size: var(--kilo-font-size-12);
+  line-height: normal;
+  border-radius: 6px;
+  border-start-start-radius: 6px;
+  border-start-end-radius: 6px;
+  border-end-start-radius: 6px;
+  border-end-end-radius: 6px;
+  background: var(--surface-base);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  opacity: 1;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 0.15s;
+  color: var(--text-base, var(--vscode-foreground));
+}
+
+.prompt-selectors .prompt-selector [data-slot="popover-trigger"]:not(.model-selector-quick-open)[data-expanded] {
+  background: var(--surface-base-hover) !important;
+  background-color: var(--surface-base-hover) !important;
+}
+
+.prompt-selectors .prompt-selector [data-slot="popover-trigger"]:not(.model-selector-quick-open):hover:not(:disabled) {
+  background: var(--surface-base-hover);
+  background-color: var(--surface-base-hover);
+}
+
+.prompt-selectors .prompt-selector [data-slot="popover-trigger"]:not(.model-selector-quick-open):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--border-focus);
+}
+
+.prompt-selectors .selector-trigger-chevron,
+.prompt-selectors .model-selector-trigger-chevron {
+  display: block !important;
+}
+
+body.vscode-high-contrast .prompt-selectors .prompt-selector [data-component="button"],
+body.vscode-high-contrast-light .prompt-selectors .prompt-selector [data-component="button"] {
+  border-color: var(--vscode-contrastBorder, transparent) !important;
+}
