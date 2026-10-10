@@ -220,6 +220,7 @@ export interface SessionContextValue {
   ) => boolean
   abort: () => void
   compact: () => void
+  undoCompact: (messageID: string) => void // fork_change
   shake: () => void // fork_change
   shaking: () => boolean // fork_change
   respondToPermission: (

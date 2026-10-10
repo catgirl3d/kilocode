@@ -26,12 +26,18 @@ import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/se
 import { Session } from "@/session/session"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { Database } from "@opencode-ai/core/database/database"
-import { SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
+import {
+  MessageTable,
+  PartTable,
+  SessionInputTable,
+  SessionMessageTable,
+  SessionTable,
+} from "@opencode-ai/core/session/sql"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
-import { eq } from "drizzle-orm"
+import { asc, eq } from "drizzle-orm"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, provideInstanceEffect, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { TestLLMServer } from "../lib/llm-server"
@@ -69,7 +75,12 @@ function createSession(input?: Session.CreateInput) {
   return Session.use.create(input)
 }
 
-function createTextMessage(sessionID: SessionIDType, text: string) {
+function createTextMessage(
+  sessionID: SessionIDType,
+  text: string,
+  time = Date.now(),
+  model = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test") },
+) {
   return Effect.gen(function* () {
     const svc = yield* Session.Service
     const info = yield* svc.updateMessage({
@@ -77,8 +88,8 @@ function createTextMessage(sessionID: SessionIDType, text: string) {
       role: "user",
       sessionID,
       agent: "build",
-      model: { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test") },
-      time: { created: Date.now() },
+      model,
+      time: { created: time },
     })
     const part = yield* svc.updatePart({
       id: PartID.ascending(),
@@ -88,6 +99,163 @@ function createTextMessage(sessionID: SessionIDType, text: string) {
       text,
     })
     return { info, part }
+  })
+}
+
+const ref = { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test-model") }
+
+const assistant = (
+  sessionID: SessionIDType,
+  parentID: MessageID,
+  input: { created: number; text?: string; summary?: boolean; finish?: string },
+) =>
+  Effect.gen(function* () {
+    const svc = yield* Session.Service
+    const info = yield* svc.updateMessage({
+      id: MessageID.ascending(),
+      role: "assistant",
+      sessionID,
+      parentID,
+      mode: "build",
+      agent: "build",
+      path: { cwd: "/", root: "/" },
+      modelID: ref.modelID,
+      providerID: ref.providerID,
+      summary: input.summary,
+      finish: input.finish,
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: input.created, completed: input.created },
+    })
+    if (input.text == null) return info
+    yield* svc.updatePart({
+      id: PartID.ascending(),
+      sessionID,
+      messageID: info.id,
+      type: "text",
+      text: input.text,
+    })
+    return info
+  })
+
+const step = (
+  sessionID: SessionIDType,
+  messageID: MessageID,
+  input: Pick<SessionV1.StepFinishPart, "cost" | "tokens">,
+) =>
+  Effect.gen(function* () {
+    const svc = yield* Session.Service
+    return yield* svc.updatePart({
+      id: PartID.ascending(),
+      sessionID,
+      messageID,
+      type: "step-finish",
+      reason: "stop",
+      model: ref,
+      ...input,
+    })
+  })
+
+const compact = (sessionID: SessionIDType, messageID: MessageID, tailStartID: MessageID) =>
+  Effect.gen(function* () {
+    const svc = yield* Session.Service
+    return yield* svc.updatePart({
+      id: PartID.ascending(),
+      sessionID,
+      messageID,
+      type: "compaction",
+      auto: true,
+      tail_start_id: tailStartID,
+    })
+  })
+
+const tool = (sessionID: SessionIDType, messageID: MessageID) =>
+  Effect.gen(function* () {
+    const svc = yield* Session.Service
+    return yield* svc.updatePart({
+      id: PartID.ascending(),
+      sessionID,
+      messageID,
+      type: "tool",
+      callID: "tail-tool-call",
+      tool: "read",
+      state: {
+        status: "completed",
+        input: { path: "tail.txt" },
+        output: "tail tool output",
+        title: "Read tail.txt",
+        metadata: {},
+        time: { start: 1, end: 2 },
+      },
+    })
+  })
+
+const usage = (sessionID: SessionIDType) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const row = yield* db
+      .select({
+        cost: SessionTable.cost,
+        input: SessionTable.tokens_input,
+        output: SessionTable.tokens_output,
+        reasoning: SessionTable.tokens_reasoning,
+        read: SessionTable.tokens_cache_read,
+        write: SessionTable.tokens_cache_write,
+      })
+      .from(SessionTable)
+      .where(eq(SessionTable.id, sessionID))
+      .get()
+      .pipe(Effect.orDie)
+    if (row == null) return yield* Effect.die(new Error(`Missing session usage: ${sessionID}`))
+    return row
+  })
+
+const state = (sessionID: SessionIDType) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    return {
+      messages: yield* Session.use.messages({ sessionID }),
+      messageRows: yield* db
+        .select()
+        .from(MessageTable)
+        .where(eq(MessageTable.session_id, sessionID))
+        .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
+        .all(),
+      partRows: yield* db
+        .select()
+        .from(PartTable)
+        .where(eq(PartTable.session_id, sessionID))
+        .orderBy(asc(PartTable.time_created), asc(PartTable.id))
+        .all(),
+      usage: yield* usage(sessionID),
+    }
+  })
+
+function modelText(body: Record<string, unknown>) {
+  const messages: unknown[] = Array.isArray(body.messages) ? body.messages : []
+  return messages
+    .flatMap((message) => {
+      if (message == null || typeof message !== "object") return []
+      if (!("content" in message)) return []
+      const content = message.content
+      if (typeof content === "string") return [content]
+      if (!Array.isArray(content)) return []
+      return (content as unknown[]).flatMap((part) => {
+        if (part == null || typeof part !== "object") return []
+        if (!("text" in part)) return []
+        const text = part.text
+        return typeof text === "string" ? [text] : []
+      })
+    })
+    .join("\n")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function inputFor(inputs: Record<string, unknown>[], start: number, prompt: string) {
+  return inputs.slice(start).findLast((body) => {
+    const text = modelText(body)
+    return text.includes(prompt) && !text.includes("Generate a title for this conversation")
   })
 }
 
@@ -1084,6 +1252,299 @@ describe("session HttpApi", () => {
         ).toBe(true)
       }),
     { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "deletes newest compaction messages while preserving unrelated storage and usage",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-kilo-directory": test.directory, "content-type": "application/json" }
+        const base = Date.now() - 60_000
+        const target = yield* createSession({ title: "compaction target" })
+        const foreign = yield* createSession({ title: "foreign session" })
+        const earlier = yield* createTextMessage(target.id, "surviving earlier text", base, ref)
+        const earlierAnswer = yield* assistant(target.id, earlier.info.id, {
+          created: base + 1,
+          text: "surviving earlier answer",
+          finish: "stop",
+        })
+        const tail = yield* createTextMessage(target.id, "surviving tail text", base + 4, ref)
+        const marker = yield* createTextMessage(target.id, "compaction marker text", base + 2, ref)
+        yield* compact(target.id, marker.info.id, tail.info.id)
+        const summary = yield* assistant(target.id, marker.info.id, {
+          created: base + 3,
+          text: "summary storage text",
+          summary: true,
+          finish: "stop",
+        })
+        yield* step(target.id, summary.id, {
+          cost: 2.5,
+          tokens: { total: 28, input: 11, output: 7, reasoning: 3, cache: { read: 5, write: 2 } },
+        })
+        const tailAnswer = yield* assistant(target.id, tail.info.id, {
+          created: base + 5,
+          text: "surviving tail answer",
+          finish: "stop",
+        })
+        yield* step(target.id, tailAnswer.id, {
+          cost: 3.5,
+          tokens: { total: 35, input: 13, output: 9, reasoning: 4, cache: { read: 6, write: 3 } },
+        })
+        yield* tool(target.id, tailAnswer.id)
+        const foreignUser = yield* createTextMessage(foreign.id, "foreign session text", base + 10, ref)
+        const foreignAnswer = yield* assistant(foreign.id, foreignUser.info.id, {
+          created: base + 11,
+          text: "foreign session answer",
+          finish: "stop",
+        })
+        yield* step(foreign.id, foreignAnswer.id, {
+          cost: 7.25,
+          tokens: { total: 38, input: 17, output: 8, reasoning: 2, cache: { read: 7, write: 4 } },
+        })
+
+        const before = yield* state(target.id)
+        const foreignBefore = yield* state(foreign.id)
+        const markerMessage = before.messages.find((message) => message.info.id === marker.info.id)
+        const summaryMessage = before.messages.find((message) => message.info.id === summary.id)
+        expect(markerMessage?.info).toMatchObject({ role: "user", sessionID: target.id })
+        expect(
+          markerMessage?.parts.every((part) => part.sessionID === target.id && part.messageID === marker.info.id),
+        ).toBe(true)
+        expect(before.partRows).toContainEqual(
+          expect.objectContaining({
+            message_id: marker.info.id,
+            session_id: target.id,
+            data: expect.objectContaining({ type: "compaction", auto: true, tail_start_id: tail.info.id }),
+          }),
+        )
+        expect(summaryMessage?.info).toMatchObject({
+          role: "assistant",
+          sessionID: target.id,
+          parentID: marker.info.id,
+          summary: true,
+          finish: "stop",
+        })
+        const summaryInfo = summaryMessage?.info
+        if (summaryInfo == null || summaryInfo.role !== "assistant") {
+          throw new Error("Expected compaction summary assistant message")
+        }
+        expect(summaryInfo.error).toBeUndefined()
+        expect(
+          summaryMessage?.parts.every((part) => part.sessionID === target.id && part.messageID === summary.id),
+        ).toBe(true)
+        expect(before.messages.map((message) => message.info.id)).toEqual([
+          earlier.info.id,
+          earlierAnswer.id,
+          marker.info.id,
+          summary.id,
+          tail.info.id,
+          tailAnswer.id,
+        ])
+        expect(before.messageRows).toHaveLength(before.messages.length)
+        expect(before.partRows.length).toBeGreaterThan(before.messageRows.length)
+        expect(before.usage).toEqual({ cost: 6, input: 24, output: 16, reasoning: 7, read: 11, write: 5 })
+        expect(foreignBefore.usage).toEqual({ cost: 7.25, input: 17, output: 8, reasoning: 2, read: 7, write: 4 })
+        const read = (sessionID: SessionIDType) =>
+          requestJson<SessionV1.WithParts[]>(pathFor(SessionPaths.messages, { sessionID }), { headers })
+        expect(yield* read(target.id)).toEqual(before.messages)
+        expect(yield* read(foreign.id)).toEqual(foreignBefore.messages)
+
+        const mismatch = yield* request(
+          pathFor(SessionPaths.deleteMessage, { sessionID: foreign.id, messageID: summary.id }),
+          { method: "DELETE", headers },
+        )
+        yield* mismatch.text
+        expect(yield* state(target.id)).toEqual(before)
+        expect(yield* state(foreign.id)).toEqual(foreignBefore)
+        expect(yield* read(target.id)).toEqual(before.messages)
+        expect(yield* read(foreign.id)).toEqual(foreignBefore.messages)
+
+        expect(
+          yield* requestJson<boolean>(
+            pathFor(SessionPaths.deleteMessage, { sessionID: target.id, messageID: summary.id }),
+            { method: "DELETE", headers },
+          ),
+        ).toBe(true)
+        const afterSummary = yield* state(target.id)
+        expect(afterSummary.messages).toEqual(before.messages.filter((message) => message.info.id !== summary.id))
+        expect(afterSummary.messages.some((message) => message.info.id === marker.info.id)).toBe(true)
+        expect(afterSummary.partRows.some((part) => part.message_id === summary.id)).toBe(false)
+        expect(afterSummary.usage).toEqual({ cost: 3.5, input: 13, output: 9, reasoning: 4, read: 6, write: 3 })
+        expect({
+          cost: before.usage.cost - afterSummary.usage.cost,
+          input: before.usage.input - afterSummary.usage.input,
+          output: before.usage.output - afterSummary.usage.output,
+          reasoning: before.usage.reasoning - afterSummary.usage.reasoning,
+          read: before.usage.read - afterSummary.usage.read,
+          write: before.usage.write - afterSummary.usage.write,
+        }).toEqual({ cost: 2.5, input: 11, output: 7, reasoning: 3, read: 5, write: 2 })
+        expect(yield* state(foreign.id)).toEqual(foreignBefore)
+        expect(yield* read(target.id)).toEqual(afterSummary.messages)
+
+        expect(
+          yield* requestJson<boolean>(
+            pathFor(SessionPaths.deleteMessage, { sessionID: target.id, messageID: marker.info.id }),
+            { method: "DELETE", headers },
+          ),
+        ).toBe(true)
+        const afterMarker = yield* state(target.id)
+        expect(afterMarker.messages).toEqual(
+          before.messages.filter((message) => message.info.id !== summary.id && message.info.id !== marker.info.id),
+        )
+        expect(afterMarker.partRows.some((part) => part.message_id === marker.info.id)).toBe(false)
+        expect(afterMarker.messages.some((message) => message.info.id === tailAnswer.id)).toBe(true)
+        expect(afterMarker.messages.flatMap((message) => message.parts).some((part) => part.type === "tool")).toBe(true)
+        expect(afterMarker.usage).toEqual(afterSummary.usage)
+        expect(yield* state(foreign.id)).toEqual(foreignBefore)
+        expect(yield* read(target.id)).toEqual(afterMarker.messages)
+        expect(yield* read(foreign.id)).toEqual(foreignBefore.messages)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+    30_000,
+  )
+
+  it.live(
+    "uses surviving history for the next model input after newest compaction deletion",
+    () =>
+      Effect.gen(function* () {
+        const llm = yield* TestLLMServer
+        const dir = yield* tmpdirScoped({ git: true, config: testProviderConfig(llm.url) })
+        const fixture = yield* Effect.gen(function* () {
+          const session = yield* createSession({ title: "model history" })
+          const base = Date.now() - 60_000
+          const old = yield* createTextMessage(session.id, "old history sentinel", base, ref)
+          yield* assistant(session.id, old.info.id, {
+            created: base + 1,
+            text: "old assistant sentinel",
+            finish: "stop",
+          })
+          const tail = yield* createTextMessage(session.id, "retained tail sentinel", base + 4, ref)
+          const marker = yield* createTextMessage(session.id, "compaction marker sentinel", base + 2, ref)
+          yield* compact(session.id, marker.info.id, tail.info.id)
+          const summary = yield* assistant(session.id, marker.info.id, {
+            created: base + 3,
+            text: "summary sentinel",
+            summary: true,
+            finish: "stop",
+          })
+          yield* step(session.id, summary.id, {
+            cost: 0.5,
+            tokens: { total: 6, input: 2, output: 1, reasoning: 1, cache: { read: 1, write: 1 } },
+          })
+          const tailAnswer = yield* assistant(session.id, tail.info.id, {
+            created: base + 5,
+            text: "retained tail answer",
+            finish: "stop",
+          })
+          yield* step(session.id, tailAnswer.id, {
+            cost: 0.75,
+            tokens: { total: 8, input: 3, output: 2, reasoning: 1, cache: { read: 1, write: 1 } },
+          })
+          const stored = yield* state(session.id)
+          const markerMessage = stored.messages.find((message) => message.info.id === marker.info.id)
+          const summaryMessage = stored.messages.find((message) => message.info.id === summary.id)
+          expect(
+            stored.messages.filter((message) => message.parts.some((part) => part.type === "compaction")),
+          ).toHaveLength(1)
+          expect(markerMessage?.info).toMatchObject({ role: "user", sessionID: session.id })
+          expect(
+            markerMessage?.parts.every((part) => part.sessionID === session.id && part.messageID === marker.info.id),
+          ).toBe(true)
+          expect(stored.partRows).toContainEqual(
+            expect.objectContaining({
+              message_id: marker.info.id,
+              session_id: session.id,
+              data: expect.objectContaining({ type: "compaction", auto: true, tail_start_id: tail.info.id }),
+            }),
+          )
+          expect(summaryMessage?.info).toMatchObject({
+            role: "assistant",
+            sessionID: session.id,
+            parentID: marker.info.id,
+            summary: true,
+            finish: "stop",
+          })
+          const summaryInfo = summaryMessage?.info
+          if (summaryInfo == null || summaryInfo.role !== "assistant") {
+            throw new Error("Expected compaction summary assistant message")
+          }
+          expect(summaryInfo.error).toBeUndefined()
+          expect(
+            summaryMessage?.parts.every((part) => part.sessionID === session.id && part.messageID === summary.id),
+          ).toBe(true)
+          return { session, marker, summary, tail }
+        }).pipe(provideInstanceEffect(dir))
+        const headers = { "x-kilo-directory": dir, "content-type": "application/json" }
+        const prompt = (messageID: MessageID, text: string) =>
+          request(pathFor(SessionPaths.promptAsync, { sessionID: fixture.session.id }), {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              messageID,
+              agent: "build",
+              model: { providerID: "test", modelID: "test-model" },
+              parts: [{ type: "text", text }],
+            }),
+          })
+        const idle = () =>
+          pollWithTimeout(
+            requestJson<Record<string, unknown>>(SessionPaths.status, { headers }).pipe(
+              Effect.map((statuses) => (statuses[fixture.session.id] == null ? true : undefined)),
+            ),
+            "Prompt did not become idle",
+          )
+        const oldText = "old history sentinel"
+        const summaryText = "summary sentinel"
+        const tailText = "retained tail sentinel"
+        const beforePrompt = "before-delete prompt sentinel"
+        const beforeStart = (yield* llm.inputs).length
+        expect((yield* prompt(MessageID.ascending(), beforePrompt)).status).toBe(204)
+        const beforeBody = yield* pollWithTimeout(
+          Effect.map(llm.inputs, (inputs) => inputFor(inputs, beforeStart, beforePrompt)),
+          "First model request was not captured",
+        )
+        yield* idle()
+        const beforeText = modelText(beforeBody)
+        expect(beforeText).not.toContain(oldText)
+        expect(beforeText).toContain(summaryText)
+        expect(beforeText).toContain(tailText)
+        expect(beforeText).toContain(beforePrompt)
+
+        expect(
+          yield* requestJson<boolean>(
+            pathFor(SessionPaths.deleteMessage, { sessionID: fixture.session.id, messageID: fixture.summary.id }),
+            { method: "DELETE", headers },
+          ),
+        ).toBe(true)
+        expect(
+          yield* requestJson<boolean>(
+            pathFor(SessionPaths.deleteMessage, { sessionID: fixture.session.id, messageID: fixture.marker.info.id }),
+            { method: "DELETE", headers },
+          ),
+        ).toBe(true)
+
+        const afterPrompt = "after-delete prompt sentinel"
+        const afterStart = (yield* llm.inputs).length
+        expect((yield* prompt(MessageID.ascending(), afterPrompt)).status).toBe(204)
+        const afterBody = yield* pollWithTimeout(
+          Effect.map(llm.inputs, (inputs) => inputFor(inputs, afterStart, afterPrompt)),
+          "Second model request was not captured",
+        )
+        yield* idle()
+        const afterText = modelText(afterBody)
+        expect(afterText).toContain(oldText)
+        expect(afterText).not.toContain(summaryText)
+        expect(afterText).toContain(tailText)
+        expect(afterText).toContain(afterPrompt)
+
+        const stored = yield* Session.use.messages({ sessionID: fixture.session.id }).pipe(provideInstanceEffect(dir))
+        expect(stored.some((message) => message.info.id === fixture.marker.info.id)).toBe(false)
+        expect(stored.some((message) => message.info.id === fixture.summary.id)).toBe(false)
+        expect(stored.some((message) => message.parts.some((part) => part.type === "compaction"))).toBe(false)
+        expect(stored.some((message) => message.info.id === fixture.tail.info.id)).toBe(true)
+      }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node))),
+    30_000,
   )
 
   // kilocode_change start - deleting a prompt that already started is a successful no-op

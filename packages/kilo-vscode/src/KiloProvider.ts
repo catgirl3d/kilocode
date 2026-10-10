@@ -72,6 +72,7 @@ import { ToolInputStream } from "./kilo-provider/tool-input-stream"
 import { handleSidebarWorktreeMessage } from "./kilo-provider/sidebar-worktree"
 import { parseMessageFiles, type MessageFile } from "./kilo-provider/message-files"
 import { renameSession } from "./kilo-provider/rename-session"
+import { lastCompaction } from "./kilo-provider/compaction-undo" // fork_change
 import { handleFileSearch, type SearchRoot } from "./kilo-provider/file-search"
 import { handleSessionSearch } from "./kilo-provider/session-search"
 import { handleFilePicker } from "./kilo-provider/file-picker"
@@ -523,6 +524,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private readonly owners = new Map<string, { dir: string; project: string }>()
   private sessionGitDirectories = new Map<string, string>() // Stable Git root resolved for each session.
   private sessionGitRecoveries = new Set<string>() // Sessions whose older history was scanned for a Git root.
+  private undoCompactingSessions = new Set<string>() // fork_change - sessions with an in-flight compaction undo.
   private readonly aborts = new SessionAbort()
   private projectID: string | undefined // Current workspace project ID used to filter sessions.
   private loadMessagesAbort: AbortController | null = null // Current load request cancellation.
@@ -1546,6 +1548,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         case "compact":
           await this.handleCompact(message.sessionID, message.providerID, message.modelID)
           break
+        // fork_change start
+        case "undoCompact":
+          await this.handleUndoCompact(message.sessionID, message.messageID)
+          break
+        // fork_change end
         case "requestAgents":
           this.fetchAndSendAgents().catch((e) => console.error("[Kilo New] fetchAndSendAgents failed:", e))
           break
@@ -5180,6 +5187,61 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       })
     }
   }
+
+  // fork_change start
+  /**
+   * Delete the newest compaction marker and its summary reply. Removing both
+   * makes the model-facing projection fall back to the full pre-compaction
+   * history without touching any other message.
+   */
+  private async handleUndoCompact(sessionID: string, messageID: string): Promise<void> {
+    if (!this.client) {
+      this.postMessage({ type: "error", message: "Not connected to CLI backend", sessionID })
+      return
+    }
+    if (this.undoCompactingSessions.has(sessionID)) return
+    this.undoCompactingSessions.add(sessionID)
+
+    try {
+      const workspaceDir = this.getWorkspaceDirectory(sessionID)
+      const result = await this.client.session.messages(
+        { sessionID, directory: workspaceDir, limit: 0 },
+        { throwOnError: true },
+      )
+      const pair = lastCompaction(result.data ?? [], messageID)
+      if (!pair) {
+        this.postMessage({ type: "error", message: "The compaction to undo no longer exists", sessionID })
+        return
+      }
+      if (pair.summaryID) {
+        const summary = await this.client.session.deleteMessage(
+          { sessionID, messageID: pair.summaryID, directory: workspaceDir },
+          { throwOnError: true },
+        )
+        if (summary.data !== true) {
+          this.postMessage({ type: "error", message: "Could not remove the compaction summary", sessionID })
+          return
+        }
+      }
+      const marker = await this.client.session.deleteMessage(
+        { sessionID, messageID: pair.markerID, directory: workspaceDir },
+        { throwOnError: true },
+      )
+      if (marker.data !== true) {
+        this.postMessage({ type: "error", message: "Could not remove the compaction marker", sessionID })
+      }
+    } catch (error) {
+      console.error("[Kilo New] KiloProvider: Failed to undo compaction:", error)
+      this.postMessage({
+        type: "error",
+        message: getErrorMessage(error) || "Failed to undo compaction",
+        sessionID,
+      })
+    } finally {
+      this.undoCompactingSessions.delete(sessionID)
+    }
+  }
+  // fork_change end
 
   // fork_change start
   private async handleShake(sessionID?: string): Promise<void> {

@@ -54,7 +54,24 @@ export interface TranscriptErrorRow extends TranscriptMeta {
   error: NonNullable<Message["error"]>
 }
 
-export type TranscriptRow = TranscriptUserRow | TranscriptAssistantRow | TranscriptDiffRow | TranscriptErrorRow
+// fork_change start
+export interface TranscriptCompactionRow extends TranscriptMeta {
+  type: "compaction"
+  key: string
+  message: Message
+  /** True for the newest compaction marker only; older markers stay inert. */
+  undoable: boolean
+}
+// fork_change end
+
+// fork_change start
+export type TranscriptRow =
+  | TranscriptUserRow
+  | TranscriptAssistantRow
+  | TranscriptDiffRow
+  | TranscriptErrorRow
+  | TranscriptCompactionRow
+// fork_change end
 
 export interface TranscriptOptions {
   size?: number
@@ -140,8 +157,19 @@ function equal(a: TranscriptRow, b: TranscriptRow) {
   if (a.type === "error" && b.type === "error") {
     return a.message === b.message && a.error === b.error
   }
+  // fork_change start
+  const compact = sameCompaction(a, b)
+  if (compact !== undefined) return compact
+  // fork_change end
   return false
 }
+
+// fork_change start - keep the row-equality complexity budget out of `equal`
+function sameCompaction(a: TranscriptRow, b: TranscriptRow): boolean | undefined {
+  if (a.type !== "compaction" || b.type !== "compaction") return undefined
+  return a.message === b.message && a.undoable === b.undoable
+}
+// fork_change end
 
 function diffs(msg: Message) {
   if (!msg.summary || typeof msg.summary === "boolean") return []
@@ -205,6 +233,26 @@ function copy(messages: Message[], getParts: (id: string) => Part[], live: boole
   return undefined
 }
 
+// fork_change start - compaction divider rows
+function compactionRow(meta: TranscriptMeta, turn: MessageTurn, user: Part[]): TranscriptCompactionRow | undefined {
+  if (meta.queued) return undefined
+  if (!user.some((part) => part.type === "compaction")) return undefined
+  return { ...meta, type: "compaction", key: `${turn.id}:compaction`, message: turn.user, undoable: false }
+}
+
+function markLastCompaction(rows: TranscriptRow[], revert: TranscriptOptions["revert"]) {
+  // An active revert hides newer compactions from the host's full-history check,
+  // so any visible older marker would be rejected as stale: offer nothing.
+  if (revert) return
+  for (let i = rows.length - 1; i >= 0; i -= 1) {
+    const row = rows[i]!
+    if (row.type !== "compaction") continue
+    row.undoable = true
+    return
+  }
+}
+// fork_change end
+
 export function transcriptRows(
   turns: MessageTurn[],
   getParts: (id: string) => Part[],
@@ -226,7 +274,12 @@ export function transcriptRows(
     const copied = copy(turn.assistant, parts, meta.live)
     const user = turn.partial ? [] : parts(turn.user.id)
 
-    if (!turn.partial && (!meta.queued || content(user))) {
+    // fork_change start - a compaction marker is a user message with a compaction
+    // part: render a divider row instead of an empty bubble
+    const compact = compactionRow(meta, turn, user)
+    if (compact) {
+      rows.push(compact)
+    } else if (!turn.partial && (!meta.queued || content(user))) {
       rows.push({
         ...meta,
         type: "user",
@@ -237,6 +290,7 @@ export function transcriptRows(
         answered: turn.assistant.length > 0,
       })
     }
+    // fork_change end
 
     const assistant: TranscriptAssistantRow[] = []
     for (const msg of turn.assistant) {
@@ -293,6 +347,10 @@ export function transcriptRows(
       rows.push({ ...meta, type: "error", key: `${turn.id}:error:${failed.id}`, message: failed, error: failed.error })
     }
   }
+
+  // fork_change start - only the newest compaction marker can be undone
+  markLastCompaction(rows, opts.revert)
+  // fork_change end
 
   if (prev.length === 0) return rows
   const prior = new Map(prev.map((row) => [row.key, row]))
