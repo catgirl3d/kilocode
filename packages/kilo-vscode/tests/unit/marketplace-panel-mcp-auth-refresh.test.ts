@@ -5,22 +5,32 @@ import { mcpAuth } from "../../src/services/mcp-auth"
 const { MarketplacePanelProvider } = await import("../../src/MarketplacePanelProvider")
 
 interface Internals {
+  handle(message: { type?: string }): Promise<void>
   remove(item: MarketplaceItem, scope: "project" | "global"): Promise<void>
   marketplace: { remove: (...args: unknown[]) => Promise<{ success: boolean; slug: string; error?: string }> }
 }
 
+type Calls = Array<{ type: "resume" | "connect"; directory?: string }>
+
 function panel() {
+  const calls: Calls = []
   const connection = {
     getClient: () => undefined,
     getClientAsync: async () => ({}),
+    connect: async (directory: string) => {
+      calls.push({ type: "connect", directory })
+    },
+    resume: () => {
+      calls.push({ type: "resume" })
+    },
     onStateChange: () => () => {},
     onLanguageChanged: () => () => {},
     onEventFiltered: () => () => {},
-  } as never
-  const provider = new MarketplacePanelProvider({} as never, connection, {} as never)
+  }
+  const provider = new MarketplacePanelProvider({} as never, connection as never, {} as never)
   const internal = provider as unknown as Internals
   internal.marketplace.remove = mock(async () => ({ success: true, slug: "anaconda" }))
-  return { internal, connection }
+  return { internal, connection, calls, provider }
 }
 
 /**
@@ -34,7 +44,7 @@ describe("MarketplacePanelProvider MCP removal auth refresh", () => {
   it("refreshes the shared MCP auth service after removing an MCP server", async () => {
     const { internal, connection } = panel()
     const refresh = mock(async () => [] as string[])
-    mcpAuth(connection).refresh = refresh
+    mcpAuth(connection as never).refresh = refresh
     const item = { id: "anaconda", type: "mcp" } as MarketplaceItem
 
     await internal.remove(item, "global")
@@ -46,7 +56,7 @@ describe("MarketplacePanelProvider MCP removal auth refresh", () => {
     const { internal, connection } = panel()
     internal.marketplace.remove = mock(async () => ({ success: false, slug: "anaconda", error: "boom" }))
     const refresh = mock(async () => [] as string[])
-    mcpAuth(connection).refresh = refresh
+    mcpAuth(connection as never).refresh = refresh
     const item = { id: "anaconda", type: "mcp" } as MarketplaceItem
 
     await internal.remove(item, "global")
@@ -57,11 +67,25 @@ describe("MarketplacePanelProvider MCP removal auth refresh", () => {
   it("does not refresh MCP auth for non-MCP item types", async () => {
     const { internal, connection } = panel()
     const refresh = mock(async () => [] as string[])
-    mcpAuth(connection).refresh = refresh
+    mcpAuth(connection as never).refresh = refresh
     const item = { id: "my-skill", type: "skill" } as MarketplaceItem
 
     await internal.remove(item, "global")
 
     expect(refresh).not.toHaveBeenCalled()
+  })
+})
+
+describe("MarketplacePanelProvider retry host handler", () => {
+  it("resumes the connection hold before connecting the panel directory", async () => {
+    const { internal, calls, provider } = panel()
+
+    try {
+      await internal.handle({ type: "retryConnection" })
+
+      expect(calls).toEqual([{ type: "resume" }, { type: "connect", directory: "/repo" }])
+    } finally {
+      provider.dispose()
+    }
   })
 })
