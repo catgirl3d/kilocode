@@ -182,9 +182,15 @@ export function isRootSession(session: ParentSession): boolean {
   return session.parentID === undefined || session.parentID === null
 }
 
+// fork_change start
+/** Sessions that belong in conversation lists: sub-agent child sessions are excluded. */
+export function rootSessions<T extends ParentSession>(sessions: T[]): T[] {
+  return sessions.filter(isRootSession)
+}
+// fork_change end
+
 export function recentSessions<T extends RecentSession>(sessions: T[]): T[] {
-  return [...sessions]
-    .filter(isRootSession)
+  return rootSessions(sessions) // fork_change
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 7) // fork_change
 }
