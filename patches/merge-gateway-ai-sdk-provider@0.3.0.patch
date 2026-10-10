@@ -1,0 +1,56 @@
+diff --git a/dist/chunk-5ERZAMCP.mjs b/dist/chunk-5ERZAMCP.mjs
+index a03caba..5ead123 100644
+--- a/dist/chunk-5ERZAMCP.mjs
++++ b/dist/chunk-5ERZAMCP.mjs
+@@ -14252,7 +14252,10 @@ var chatCompletionResponseSchema = external_exports.object({
+   usage: external_exports.object({
+     prompt_tokens: external_exports.number().optional(),
+     completion_tokens: external_exports.number().optional(),
+-    total_tokens: external_exports.number().optional()
++    total_tokens: external_exports.number().optional(),
++    prompt_tokens_details: external_exports.object({
++      cached_tokens: external_exports.number().nullable().optional()
++    }).nullable().optional().catch(undefined)
+   }).optional()
+ });
+ var chatCompletionChunkData = external_exports.object({
+@@ -14285,7 +14288,10 @@ var chatCompletionChunkData = external_exports.object({
+   usage: external_exports.object({
+     prompt_tokens: external_exports.number().optional(),
+     completion_tokens: external_exports.number().optional(),
+-    total_tokens: external_exports.number().optional()
++    total_tokens: external_exports.number().optional(),
++    prompt_tokens_details: external_exports.object({
++      cached_tokens: external_exports.number().nullable().optional()
++    }).nullable().optional().catch(undefined)
+   }).nullable().optional()
+ }).passthrough();
+ var chatCompletionErrorData = external_exports.object({
+diff --git a/dist/index.js b/dist/index.js
+index addbb6f..16b7d7d 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -14270,7 +14270,10 @@ var chatCompletionResponseSchema = external_exports.object({
+   usage: external_exports.object({
+     prompt_tokens: external_exports.number().optional(),
+     completion_tokens: external_exports.number().optional(),
+-    total_tokens: external_exports.number().optional()
++    total_tokens: external_exports.number().optional(),
++    prompt_tokens_details: external_exports.object({
++      cached_tokens: external_exports.number().nullable().optional()
++    }).nullable().optional().catch(undefined)
+   }).optional()
+ });
+ var chatCompletionChunkData = external_exports.object({
+@@ -14303,7 +14306,10 @@ var chatCompletionChunkData = external_exports.object({
+   usage: external_exports.object({
+     prompt_tokens: external_exports.number().optional(),
+     completion_tokens: external_exports.number().optional(),
+-    total_tokens: external_exports.number().optional()
++    total_tokens: external_exports.number().optional(),
++    prompt_tokens_details: external_exports.object({
++      cached_tokens: external_exports.number().nullable().optional()
++    }).nullable().optional().catch(undefined)
+   }).nullable().optional()
+ }).passthrough();
+ var chatCompletionErrorData = external_exports.object({
