@@ -97,6 +97,7 @@ export class KiloConnectionService {
   private error: Error | null = null
   private connectPromise: Promise<void> | null = null
   private healthPollTimer: ReturnType<typeof setInterval> | null = null
+  private suspended = false // fork_change - [fork] manual disconnect holds reconnects until resume()
 
   private readonly eventListeners: Set<SSEEventListener> = new Set()
   private readonly filteredListeners = new Set<{ filter: SSEEventFilter; listener: SSEEventListener }>()
@@ -173,6 +174,11 @@ export class KiloConnectionService {
    */
   async connect(workspaceDir: string): Promise<void> {
     this.trackDirectory(workspaceDir)
+    // fork_change start - [fork] a manual disconnect holds lazy reconnects until resume()
+    if (this.suspended) {
+      throw new Error("CLI is disconnected. Retry to reconnect.")
+    }
+    // fork_change end
     if (this.connectPromise) {
       return this.connectPromise
     }
@@ -188,7 +194,11 @@ export class KiloConnectionService {
       await this.connectPromise
     } catch (error) {
       // If doConnect() fails before SSE can emit a state transition, avoid leaving consumers stuck in "connecting".
-      this.setState("error", this.error ?? (error instanceof Error ? error : new Error(String(error))))
+      // fork_change start - [fork] keep the manual disconnect message when the stopped connect attempt fails
+      if (!this.suspended) {
+        this.setState("error", this.error ?? (error instanceof Error ? error : new Error(String(error))))
+      }
+      // fork_change end
       throw error
     } finally {
       this.connectPromise = null
@@ -282,6 +292,25 @@ export class KiloConnectionService {
   getConnectionError(): Error | null {
     return this.error
   }
+
+  // fork_change start - [fork] manual disconnect: stop the CLI and hold lazy reconnects
+  /**
+   * Stop the CLI server and hold every connect attempt until resume().
+   * A manual disconnect must not be undone by lazy getClientAsync() calls or
+   * autocomplete prewarm paths; only an explicit retry resumes the backend.
+   */
+  disconnect(): void {
+    this.suspended = true
+    this.serverManager.dispose()
+    this.resetConnection()
+    this.setState("error", new Error("CLI stopped. Retry to reconnect."))
+  }
+
+  /** Allow connect() again after a manual disconnect(). */
+  resume(): void {
+    this.suspended = false
+  }
+  // fork_change end
 
   /**
    * Subscribe to SSE events. Returns unsubscribe function.
@@ -961,6 +990,12 @@ export class KiloConnectionService {
     this.resetConnection()
 
     const server = await this.serverManager.getServer()
+    // fork_change start - [fork] a disconnect during startup must not leave a live server behind
+    if (this.suspended) {
+      this.serverManager.dispose()
+      throw new Error("CLI is disconnected. Retry to reconnect.")
+    }
+    // fork_change end
     this.info = { port: server.port }
 
     const config: ServerConfig = {

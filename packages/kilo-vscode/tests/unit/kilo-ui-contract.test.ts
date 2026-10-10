@@ -572,6 +572,8 @@ describe("Memory control placement contract (source)", () => {
     expect(header).toContain("memory.disable()")
     expect(header).toContain('<PromptOverflow items={actions()} placement="bottom-end" />')
     expect(header).toContain('key: "search"')
+    expect(header).toContain('key: "disconnectCli"')
+    expect(header).toContain('type: "disconnectCli"')
     expect(header).toMatch(/"chat\.compactHeaderActions"\] \?\? true/)
     expect(header).toContain('icon: "compress"')
     expect(header).toContain('icon: "collapse"')

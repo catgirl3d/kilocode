@@ -380,3 +380,67 @@ describe("KiloConnectionService server exit handling", () => {
     expect(stateErr?.message).toBe("CLI background process exited with code 1. Retry to reconnect.")
   })
 })
+
+describe("KiloConnectionService manual disconnect", () => {
+  test("stops the server, reports error, and holds connect until resume", async () => {
+    const service = new KiloConnectionService({} as any)
+    let disposed = 0
+    let spawns = 0
+    ;(service as any).serverManager = {
+      dispose: () => {
+        disposed += 1
+      },
+      getServer: async () => {
+        spawns += 1
+        throw new Error("spawn failed")
+      },
+    }
+
+    const events: Array<{ state: string; error?: string }> = []
+    service.onStateChange((state, error) => events.push({ state, error: error?.message }))
+
+    service.disconnect()
+
+    expect(disposed).toBe(1)
+    expect(events.at(-1)).toEqual({ state: "error", error: "CLI stopped. Retry to reconnect." })
+
+    await expect(service.connect("/tmp/ws")).rejects.toThrow("CLI is disconnected. Retry to reconnect.")
+    expect(spawns).toBe(0)
+
+    service.resume()
+    await expect(service.connect("/tmp/ws")).rejects.toThrow("spawn failed")
+    expect(spawns).toBe(1)
+  })
+
+  test("drops the connected client so getClient() stops serving requests", () => {
+    const service = new KiloConnectionService({} as any)
+    ;(service as any).serverManager = { dispose: () => {} }
+    ;(service as any).client = {}
+    ;(service as any).state = "connected"
+
+    service.disconnect()
+
+    expect(() => service.getClient()).toThrow("Not connected")
+    expect(service.getConnectionState()).toBe("error")
+  })
+
+  test("disposes a server that finished spawning after a disconnect", async () => {
+    const service = new KiloConnectionService({} as any)
+    let disposed = 0
+    ;(service as any).serverManager = {
+      dispose: () => {
+        disposed += 1
+      },
+      getServer: async () => {
+        // The spawn wins the race: the process exists only after disconnect() ran.
+        service.disconnect()
+        return { port: 4040, password: "secret", process: {} }
+      },
+    }
+
+    await expect(service.connect("/tmp/ws")).rejects.toThrow("CLI is disconnected. Retry to reconnect.")
+
+    expect(disposed).toBe(2)
+    expect(() => service.getClient()).toThrow("Not connected")
+  })
+})
