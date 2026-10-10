@@ -109,11 +109,22 @@ export function useFilteredList<T>(props: FilteredListProps<T>) {
     }
   }
 
+  // kilocode_change start - [fork] keep the active item across data refreshes; reset to the first item only
+  // when the filter changed or the active item disappeared. Resetting on every refetch stole the hover and
+  // keyboard highlight while a live-updating list (session history) refreshed during agent activity.
+  let lastFilter = store.filter
   createEffect(
     on(grouped, () => {
+      const changed = lastFilter !== store.filter
+      lastFilter = store.filter
+      if (!changed) {
+        const key = list.active()
+        if (key && flat().some((x) => props.key(x) === key)) return
+      }
       reset()
     }),
   )
+  // kilocode_change end
 
   const onInput = (value: string) => {
     setStore("filter", value)
