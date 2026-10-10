@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import * as vscode from "vscode"
-import { KiloConnectionService } from "./connection-service"
-import type { SSEPayload } from "./sdk-sse-adapter"
+import { KiloConnectionService } from "../../src/services/cli-backend/connection-service"
+import type { SSEPayload } from "../../src/services/cli-backend/sdk-sse-adapter"
 
 function state(value: boolean) {
   return {
@@ -379,4 +379,218 @@ describe("KiloConnectionService server exit handling", () => {
     ;(service as any).handleServerExit(1, null)
     expect(stateErr?.message).toBe("CLI background process exited with code 1. Retry to reconnect.")
   })
+})
+
+describe("KiloConnectionService manual disconnect", () => {
+  type Internals = {
+    serverManager: {
+      dispose: () => void
+      getServer: () => Promise<{ port: number; password: string }>
+    }
+    checkinTimer: ReturnType<typeof setInterval> | null
+    healthPollTimer: ReturnType<typeof setInterval> | null
+  }
+
+  function backend(ready = true) {
+    const opened = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>()
+    const requests: string[] = []
+    const preconnect = globalThis.fetch.preconnect
+    const transport = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: Parameters<typeof fetch>[0]) => {
+          const route = new URL(input instanceof Request ? input.url : String(input)).pathname
+          requests.push(route)
+          if (route !== "/global/event") return Response.json({})
+          return new Response(
+            new ReadableStream<Uint8Array>(
+              {
+                start(controller) {
+                  if (!ready) return
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      'data: {"directory":"/repo","payload":{"type":"server.connected","properties":{}}}\n\n',
+                    ),
+                  )
+                },
+                pull(controller) {
+                  opened.resolve(controller)
+                },
+              },
+              { highWaterMark: 0 },
+            ),
+            { headers: { "Content-Type": "text/event-stream" } },
+          )
+        },
+        { preconnect },
+      ),
+    )
+    const service = new KiloConnectionService({} as vscode.ExtensionContext)
+    const internal = service as unknown as Internals
+    // Replace process startup and HTTP transport, not the SDK or SSE lifecycle.
+    internal.serverManager = {
+      dispose: () => {},
+      getServer: async () => ({ port: 52512, password: "test" }),
+    }
+    return {
+      service,
+      internal,
+      opened,
+      requests,
+      dispose: () => {
+        service.dispose()
+        transport.mockRestore()
+      },
+    }
+  }
+
+  test("stops the server, reports error, and holds connect until resume", async () => {
+    const service = new KiloConnectionService({} as any)
+    let disposed = 0
+    let spawns = 0
+    ;(service as any).serverManager = {
+      dispose: () => {
+        disposed += 1
+      },
+      getServer: async () => {
+        spawns += 1
+        throw new Error("spawn failed")
+      },
+    }
+
+    const events: Array<{ state: string; error?: string }> = []
+    service.onStateChange((state, error) => events.push({ state, error: error?.message }))
+
+    service.disconnect()
+
+    expect(disposed).toBe(1)
+    expect(events.at(-1)).toEqual({ state: "error", error: "CLI stopped. Retry to reconnect." })
+
+    await expect(service.connect("/tmp/ws")).rejects.toThrow("CLI is disconnected. Retry to reconnect.")
+    await expect(service.getClientAsync("/tmp/ws")).rejects.toThrow("CLI is disconnected. Retry to reconnect.")
+    await expect(service.getClientAsync()).rejects.toThrow("CLI is disconnected. Retry to reconnect.")
+    expect(spawns).toBe(0)
+
+    service.resume()
+    await expect(service.connect("/tmp/ws")).rejects.toThrow("spawn failed")
+    expect(spawns).toBe(1)
+  })
+
+  test("drops the connected client so getClient() stops serving requests", () => {
+    const service = new KiloConnectionService({} as any)
+    ;(service as any).serverManager = { dispose: () => {} }
+    ;(service as any).client = {}
+    ;(service as any).state = "connected"
+
+    service.disconnect()
+
+    expect(() => service.getClient()).toThrow("Not connected")
+    expect(service.getConnectionState()).toBe("error")
+  })
+
+  test.each(["ready", "failed"] as const)(
+    "preserves manual disconnect when a pending server startup becomes %s",
+    async (result) => {
+      const state = backend()
+      const startup = Promise.withResolvers<{ port: number; password: string }>()
+      let disposed = 0
+      state.internal.serverManager = {
+        dispose: () => disposed++,
+        getServer: () => startup.promise,
+      }
+
+      try {
+        const pending = state.service.connect("/tmp/ws")
+        state.service.disconnect()
+        const error = state.service.getConnectionError()
+        if (result === "ready") startup.resolve({ port: 4040, password: "test" })
+        if (result === "failed") startup.reject(new Error("startup cancelled"))
+
+        await expect(pending).rejects.toThrow(
+          result === "ready" ? "CLI is disconnected. Retry to reconnect." : "startup cancelled",
+        )
+        expect(disposed).toBe(result === "ready" ? 2 : 1)
+        expect(state.service.getConnectionState()).toBe("error")
+        expect(state.service.getConnectionError()).toBe(error)
+        expect(error?.message).toBe("CLI stopped. Retry to reconnect.")
+        expect(state.service.getServerConfig()).toBeNull()
+        expect(state.service.getServerInfo()).toBeNull()
+        expect(() => state.service.getClient()).toThrow("Not connected")
+        expect(state.requests).toEqual([])
+      } finally {
+        state.dispose()
+      }
+    },
+  )
+
+  test("blocks background clients until resume establishes a fresh SDK connection", async () => {
+    const state = backend()
+    try {
+      const first = await state.service.getClientAsync("/repo")
+      expect(state.service.getConnectionState()).toBe("connected")
+      state.service.disconnect()
+
+      await expect(state.service.getClientAsync("/repo")).rejects.toThrow("CLI is disconnected")
+      await expect(state.service.getClientAsync("/repo/worktree")).rejects.toThrow("CLI is disconnected")
+      expect(state.requests.filter((route) => route === "/global/event")).toHaveLength(1)
+      expect(state.service.getServerConfig()).toBeNull()
+      expect(state.service.getServerInfo()).toBeNull()
+      expect(state.internal.checkinTimer).toBeNull()
+      expect(state.internal.healthPollTimer).toBeNull()
+
+      state.service.resume()
+      const second = await state.service.getClientAsync("/repo")
+      expect(second).not.toBe(first)
+      expect(state.service.getConnectionState()).toBe("connected")
+      expect(state.service.getConnectionError()).toBeNull()
+      expect(state.requests.filter((route) => route === "/global/event")).toHaveLength(2)
+    } finally {
+      state.dispose()
+    }
+  })
+
+  test("cancels startup before the first SSE event without replacing the manual disconnect error", async () => {
+    const state = backend(false)
+    try {
+      const pending = state.service.connect("/repo")
+      await state.opened.promise
+      state.service.disconnect()
+
+      await expect(pending).rejects.toThrow("SSE connection ended")
+      expect(state.service.getConnectionState()).toBe("error")
+      expect(state.service.getConnectionError()?.message).toBe("CLI stopped. Retry to reconnect.")
+      expect(state.service.getServerInfo()).toBeNull()
+      expect(state.service.getServerConfig()).toBeNull()
+      expect(() => state.service.getClient()).toThrow("Not connected")
+      expect(state.internal.checkinTimer).toBeNull()
+      expect(state.internal.healthPollTimer).toBeNull()
+    } finally {
+      state.dispose()
+    }
+  })
+
+  test.each([false, true])(
+    "rejects startup disconnected by the connected listener without recreating timers (resume=%s)",
+    async (resume) => {
+      const state = backend()
+      const events: string[] = []
+      state.service.onStateChange((event) => {
+        events.push(event)
+        if (event !== "connected") return
+        state.service.disconnect()
+        if (resume) state.service.resume()
+      })
+
+      try {
+        await expect(state.service.connect("/repo")).rejects.toThrow("CLI stopped. Retry to reconnect.")
+        expect(events).toContain("connected")
+        expect(state.service.getConnectionState()).toBe("error")
+        expect(state.service.getConnectionError()?.message).toBe("CLI stopped. Retry to reconnect.")
+        expect(() => state.service.getClient()).toThrow("Not connected")
+        expect(state.internal.checkinTimer).toBeNull()
+        expect(state.internal.healthPollTimer).toBeNull()
+      } finally {
+        state.dispose()
+      }
+    },
+  )
 })
