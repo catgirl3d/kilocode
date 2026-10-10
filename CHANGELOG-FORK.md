@@ -34,6 +34,7 @@
 
 ### Fixes & Enhancements
 
+- Show real Merge Gateway prompt-cache usage: the bundled provider keeps gateway-reported cached-token counts, so cache reads appear in session usage and costs instead of reading zero.
 - Present session tab hover details as a structured tooltip: the title and activity state read as separate rows, and the Shift+click pin hint sits on its own separated line instead of running into the title.
 - Mark subagent task cards with an amber dot while the child retries after a provider limit and a red dot when a background child ends in error, instead of showing green running or gray completed.
 - Show live activity in the Agent Manager subagent inspector: a busy or retrying child keeps a working row with the retry message and countdown, and its tab marks error or waiting states with a warning icon instead of an unmarked avatar.
