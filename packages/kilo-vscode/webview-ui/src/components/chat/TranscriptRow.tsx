@@ -14,6 +14,7 @@ import { AssistantMessage } from "./AssistantMessage"
 import { ErrorDisplay, type ErrorDisplayProps } from "./ErrorDisplay"
 import { VscodeUserMessage } from "./VscodeUserMessage"
 import { SnapshotBadge } from "./SnapshotBadge" // fork_change
+import { CompactionDivider } from "./CompactionDivider" // fork_change
 
 interface TranscriptRowViewProps {
   row: TranscriptRow
@@ -102,6 +103,18 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
           </div>
         )}
       </Show>
+
+      {/* fork_change start */}
+      <Show when={props.row.type === "compaction" ? props.row : undefined}>
+        {(row) => (
+          <CompactionDivider
+            undoable={row().undoable && !props.readonly}
+            undoDisabled={session.status() !== "idle"}
+            onUndo={() => session.undoCompact(row().message.id)}
+          />
+        )}
+      </Show>
+      {/* fork_change end */}
 
       <Show when={props.row.type === "assistant" ? props.row : undefined}>
         {(row) => (
