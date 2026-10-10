@@ -46,7 +46,10 @@ const info = (id: string, title: string, updatedAt: string): SessionInfo => ({
   updatedAt,
 })
 
-const shared = [info("shared", "Shared session", "2026-08-03T10:00:00.000Z")]
+const shared = [
+  info("shared", "Shared session", "2026-08-03T10:00:00.000Z"),
+  { ...info("child", "Sub-agent session", "2026-08-04T10:00:00.000Z"), parentID: "shared" },
+]
 const scoped = [info("scoped", "Scoped session", "2026-08-02T10:00:00.000Z")]
 const store = { sessions: () => shared }
 const language = { t: (key: string) => key }
@@ -81,5 +84,6 @@ scopedView()
 const defaultView = show({})
 await window.happyDOM.waitUntilComplete()
 assert.deepEqual(titles(), ["Shared session"], "the sidebar default did not read the shared store")
+assert.equal(titles().includes("Sub-agent session"), false, "sub-agent sessions stay out of recent sessions")
 
 defaultView()
