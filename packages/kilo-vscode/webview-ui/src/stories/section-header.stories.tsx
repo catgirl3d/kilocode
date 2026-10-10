@@ -7,6 +7,7 @@
 import type { Meta, StoryObj } from "storybook-solidjs-vite"
 import { StoryProviders } from "./StoryProviders"
 import SectionHeader from "../../agent-manager/SectionHeader"
+import { SECTION_COLORS } from "../../agent-manager/section-colors"
 import { WorktreeItem } from "../../agent-manager/WorktreeItem"
 import type { SectionState, WorktreeState, WorktreeGitStats } from "../types/messages"
 import { DragDropProvider, DragDropSensors } from "@thisbeyond/solid-dnd"
@@ -183,13 +184,13 @@ export const Empty: Story = {
 }
 
 // ---------------------------------------------------------------------------
-// Color variations — all 8 palette colors
+// Color variations — every palette color
 // ---------------------------------------------------------------------------
 
 export const AllColors: Story = {
   name: "Section — all color variations",
   render: () => {
-    const colors = ["Red", "Orange", "Yellow", "Green", "Cyan", "Blue", "Purple", "Magenta"] as const
+    const colors = SECTION_COLORS.map((item) => item.label)
     return (
       <StoryProviders noPadding>
         <div style={{ "max-height": "600px", overflow: "auto" }}>

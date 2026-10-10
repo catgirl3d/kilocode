@@ -1703,8 +1703,8 @@ body.am-project-dragging-active * {
 /* Color picker grid in section context menu */
 
 .am-color-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(9, max-content);
   gap: 2px;
   padding: 4px 8px;
 }
@@ -1721,7 +1721,8 @@ body.am-project-dragging-active * {
   height: 16px;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1.5px solid transparent;
+  border: 1.5px solid
+    var(--vscode-contrastBorder, color-mix(in srgb, var(--vscode-foreground, #808080) 30%, transparent));
 }
 
 .am-color-swatch-active {
