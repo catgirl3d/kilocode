@@ -86,6 +86,14 @@ export interface UnrevertSessionRequest {
   sessionID: string
 }
 
+// fork_change start
+export interface UndoCompactRequest {
+  type: "undoCompact"
+  sessionID: string
+  messageID: string
+}
+// fork_change end
+
 export interface DeleteMessageRequest {
   type: "deleteMessage"
   sessionID: string
@@ -1846,6 +1854,7 @@ export type WebviewMessage =
   | PromoteBackgroundJobMessage
   | RevertSessionRequest
   | UnrevertSessionRequest
+  | UndoCompactRequest // fork_change
   | DeleteMessageRequest
   | PermissionResponseRequest
   | CreateSessionRequest
