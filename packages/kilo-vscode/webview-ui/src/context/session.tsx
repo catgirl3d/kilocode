@@ -2453,6 +2453,14 @@ export const SessionProvider: ParentComponent = (props) => {
       return
     }
 
+    // fork_change start - the server finalizes an active revert before compacting,
+    // which permanently deletes the hidden redo history
+    if (store.sessions[sessionID]?.revert) {
+      showToast({ variant: "error", title: language.t("command.session.compact.blocked") })
+      return
+    }
+    // fork_change end
+
     const sel = selected()
     if (!available(sel)) return
     vscode.postMessage({
@@ -2462,6 +2470,23 @@ export const SessionProvider: ParentComponent = (props) => {
       modelID: sel.modelID,
     })
   }
+
+  // fork_change start - delete the newest compaction marker and its summary reply
+  function undoCompact(messageID: string) {
+    if (!server.isConnected()) {
+      console.warn("[Kilo New] Cannot undo compaction: not connected")
+      return
+    }
+
+    const sessionID = currentSessionID()
+    if (!sessionID) {
+      console.warn("[Kilo New] Cannot undo compaction: no current session")
+      return
+    }
+
+    vscode.postMessage({ type: "undoCompact", sessionID, messageID })
+  }
+  // fork_change end
 
   function respondToPermission(
     permissionId: string,
@@ -3075,6 +3100,7 @@ export const SessionProvider: ParentComponent = (props) => {
     sendCommand,
     abort,
     compact,
+    undoCompact, // fork_change
     shake, // fork_change
     shaking: () => shakeActions.shaking() === currentSessionID(), // fork_change
     respondToPermission,

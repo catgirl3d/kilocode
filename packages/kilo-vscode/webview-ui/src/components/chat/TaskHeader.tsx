@@ -58,7 +58,11 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   // fork_change end
   const hasMessages = createMemo(() => session.messages().length > 0)
   const busy = createMemo(() => session.status() === "busy")
-  const canCompact = createMemo(() => !busy() && session.visibleMessages().length > 0 && !!session.selected())
+  // fork_change start - compacting would finalize an active revert and erase its hidden history
+  const canCompact = createMemo(
+    () => !busy() && !session.revert() && session.visibleMessages().length > 0 && !!session.selected(),
+  )
+  // fork_change end
   const canShake = createMemo(() => !busy() && session.visibleMessages().length > 0 && !session.shaking()) // fork_change
 
   const money = createMemo(() => new Intl.NumberFormat(language.locale(), { style: "currency", currency: "USD" }))
@@ -457,7 +461,13 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
           </Tooltip>
           {/* fork_change end */}
           <Show when={!props.readonly}>
-            <Tooltip value={language.t("command.session.compact")} placement="bottom">
+            {/* fork_change start - explain why compacting is blocked under an active revert */}
+            <Tooltip
+              value={
+                session.revert() ? language.t("command.session.compact.blocked") : language.t("command.session.compact")
+              }
+              placement="bottom"
+            >
               <IconButton
                 icon="compress"
                 size="small"
@@ -467,6 +477,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                 aria-label={language.t("command.session.compact")}
               />
             </Tooltip>
+            {/* fork_change end */}
             {/* fork_change start */}
             <Tooltip value={language.t("command.session.shake")} placement="bottom">
               <IconButton
