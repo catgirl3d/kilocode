@@ -1577,6 +1577,9 @@ export const dict = {
   "plan.exit.ready": "Plan is ready:",
   "chat.search.placeholder": "Search chat…",
   "chat.search.toggle": "Search chat",
+  // fork_change start - [fork] manual CLI disconnect action
+  "chat.action.disconnectCli": "Disconnect from CLI",
+  // fork_change end
   "chat.search.matchCase": "Match Case",
   "chat.search.matchWholeWord": "Match Whole Word",
   "chat.search.useRegex": "Use Regular Expression",

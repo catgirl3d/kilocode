@@ -233,6 +233,7 @@ export class MarketplacePanelProvider implements vscode.Disposable {
         this.flushPendingFocus()
         return
       case "retryConnection":
+        this.connection.resume() // fork_change - [fork] an explicit retry releases the manual disconnect hold
         await this.connect()
         return
       case "fetchMarketplaceData":
