@@ -57,6 +57,7 @@ const items: SessionInfo[] = [
   { id: "ses-three", title: "Gamma session", createdAt: now, updatedAt: now },
   { id: "ses-four", title: "Delta session", createdAt: now, updatedAt: now },
   { id: "ses-five", title: "Epsilon session", createdAt: now, updatedAt: now },
+  { id: "ses-child", title: "Child session", parentID: "ses-one", createdAt: now, updatedAt: now },
 ]
 
 const [sessions, setSessions] = createSignal(items)
@@ -158,9 +159,17 @@ assert.equal(
 )
 assert.equal(bar(), null, "the bulk action bar stays hidden until select mode is entered")
 
+setSessions((prev) => [
+  ...prev,
+  { id: "ses-late-child", title: "Late child session", parentID: "ses-one", createdAt: now, updatedAt: now },
+])
+await settle()
+assert.equal(item("ses-late-child"), null, "sub-agent sessions stay out of the history list after a live update")
+
 // enter select mode
 toggle().click()
 await settle()
+assert.equal(item("ses-child"), null, "sub-agent sessions stay out of the history list")
 assert.equal(history().querySelectorAll(".session-select-check").length, 5, "select mode shows a checkbox on every row")
 assert.equal(count(), "Selected: 0", "select mode starts with an empty selection")
 assert.equal(barButtons()[1]?.disabled, true, "delete stays disabled while nothing is selected")

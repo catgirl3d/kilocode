@@ -14,6 +14,7 @@ import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox" // fork_change
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
+import { rootSessions } from "../../context/session-utils" // fork_change
 import { useLanguage } from "../../context/language"
 import { useSessionTags } from "../../context/session-tags" // fork_change
 import { useLocalTabs } from "../../context/local-tabs" // fork_change
@@ -55,7 +56,7 @@ const SessionList: Component<SessionListProps> = (props) => {
 
   // fork_change start - derive tag search values without mutating SessionInfo
   const tagged = createMemo(() =>
-    session.sessions().map((item) => ({
+    rootSessions(session.sessions()).map((item) => ({
       ...item,
       tags: tags
         .forSession(item.id)
