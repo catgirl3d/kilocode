@@ -95,6 +95,7 @@ function loadedSettings(message: ExtensionMessage): Record<string, unknown> | un
     return {
       "chat.shiftTabCyclesVariant": message.settings.shiftTabCyclesVariant,
       agentManagerSplash: message.settings.agentManagerSplash,
+      "chat.compactHeaderActions": message.settings.compactHeaderActions, // fork_change
       browserAutomation: message.settings.browserAutomation,
       agentManagerBrowserOpenLinksIn: message.settings.agentManagerBrowserOpenLinksIn,
       workspaceTrusted: message.settings.workspaceTrusted,
@@ -339,6 +340,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     if (message.type !== "chatSettingsLoaded") return
     mergeSettings({
       "chat.shiftTabCyclesVariant": message.settings.shiftTabCyclesVariant,
+      "chat.compactHeaderActions": message.settings.compactHeaderActions, // fork_change
     })
   })
 
