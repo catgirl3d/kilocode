@@ -24,6 +24,7 @@ import {
   removeSessionToolPartsForMessage,
   upsertSessionToolPart,
   recentSessions,
+  rootSessions,
   optimistic,
   revertPromptState,
   messageParts,
@@ -173,6 +174,19 @@ describe("recentSessions", () => {
     recentSessions(sessions)
 
     expect(sessions.map((session) => session.id)).toEqual(["old", "new", "mid"])
+  })
+})
+
+describe("rootSessions", () => {
+  it("keeps root sessions and drops sub-agent sessions", () => {
+    const result = rootSessions([
+      { id: "root" },
+      { id: "child", parentID: "root" },
+      { id: "null-parent", parentID: null },
+      { id: "blank-parent", parentID: "" },
+    ])
+
+    expect(result.map((session) => session.id)).toEqual(["root", "null-parent"])
   })
 })
 
