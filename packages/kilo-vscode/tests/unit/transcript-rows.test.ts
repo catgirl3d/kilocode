@@ -294,6 +294,159 @@ describe("transcriptRows", () => {
     expect(rows.map((row) => `${row.turn}:${row.message.id}`)).toEqual(["u1:u1", "u1:a1", "u2:u2", "u2:a2"])
   })
 
+  it("renders a compaction divider row instead of an empty user bubble", () => {
+    const u1 = user("u1")
+    const a1 = assistant("a1", "u1")
+    const u2 = user("u2")
+    const a2 = assistant("a2", "u2", { summary: true })
+    const rows = transcriptRows(
+      messageTurns([u1, a1, u2, a2]),
+      lookup({
+        u1: [part("p1", "u1")],
+        u2: [{ id: "c1", messageID: "u2", type: "compaction", auto: false }],
+        a2: [part("p2", "a2")],
+      }),
+    )
+
+    expect(rows.map((row) => `${row.turn}:${row.type}`)).toEqual([
+      "u1:user",
+      "u1:assistant",
+      "u2:compaction",
+      "u2:assistant",
+    ])
+  })
+
+  it("marks only the newest compaction row as undoable", () => {
+    const c1 = user("c1")
+    const s1 = assistant("s1", "c1", { summary: true })
+    const u1 = user("u1")
+    const c2 = user("c2")
+    const s2 = assistant("s2", "c2", { summary: true })
+    const marker = (id: string): Part[] => [{ id: `p-${id}`, messageID: id, type: "compaction", auto: false }]
+    const rows = transcriptRows(messageTurns([c1, s1, u1, c2, s2]), lookup({ c1: marker("c1"), c2: marker("c2") }))
+
+    expect(rows.filter((row) => row.type === "compaction").map((row) => [row.message.id, row.undoable])).toEqual([
+      ["c1", false],
+      ["c2", true],
+    ])
+  })
+
+  it("updates compaction undoability when rebuilt rows reconcile with previous output", () => {
+    const c1Parts: Part[] = [{ id: "p-c1", messageID: "c1", type: "compaction", auto: false }]
+    const tailParts = [part("p-tail", "tail")]
+    const tailReplyParts = [part("p-tail-reply", "tail-reply")]
+    const c1 = user("c1", { parts: c1Parts })
+    const s1 = assistant("s1", "c1", { summary: true })
+    const tail = user("tail")
+    const tailReply = assistant("tail-reply", "tail")
+    const messagesA = [c1, s1, tail, tailReply]
+    const partsA = { c1: c1Parts, tail: tailParts, "tail-reply": tailReplyParts }
+    const first = transcriptRows(
+      messageTurns(messagesA, undefined, (message) => lookup(partsA)(message.id)),
+      lookup(partsA),
+    )
+    const controlParts = { ...partsA }
+    const control = transcriptRows(
+      messageTurns([...messagesA], undefined, (message) => lookup(controlParts)(message.id)),
+      lookup(controlParts),
+      {},
+      first,
+    )
+    const firstCompaction = first.find((row) => row.type === "compaction")
+
+    expect(first.filter((row) => row.type === "compaction").map((row) => [row.message.id, row.undoable])).toEqual([
+      ["c1", true],
+    ])
+    expect(firstCompaction).toMatchObject({
+      type: "compaction",
+      key: "c1:compaction",
+      turn: "c1",
+      partial: false,
+      queued: false,
+      live: false,
+      message: c1,
+      undoable: true,
+    })
+    expect(control.find((row) => row.type === "compaction")).toBe(firstCompaction)
+
+    const c2Parts: Part[] = [{ id: "p-c2", messageID: "c2", type: "compaction", auto: false }]
+    const c2 = user("c2", { parts: c2Parts })
+    const s2 = assistant("s2", "c2", { summary: true })
+    const messagesB = [...messagesA, c2, s2]
+    const partsB = { ...partsA, c2: c2Parts }
+    const second = transcriptRows(
+      messageTurns(messagesB, undefined, (message) => lookup(partsB)(message.id)),
+      lookup(partsB),
+      {},
+      first,
+    )
+    const secondC1 = second.find((row) => row.type === "compaction" && row.message.id === "c1")
+    const secondC2 = second.find((row) => row.type === "compaction" && row.message.id === "c2")
+
+    expect(second.filter((row) => row.type === "compaction").map((row) => [row.message.id, row.undoable])).toEqual([
+      ["c1", false],
+      ["c2", true],
+    ])
+    expect(secondC1).toMatchObject({
+      type: "compaction",
+      key: "c1:compaction",
+      turn: "c1",
+      partial: false,
+      queued: false,
+      live: false,
+      message: c1,
+      undoable: false,
+    })
+    expect(secondC2).toMatchObject({ key: "c2:compaction", message: c2, undoable: true })
+    expect(secondC1).not.toBe(firstCompaction)
+    expect(second.find((row) => row.message === tail)).toBe(first.find((row) => row.message === tail))
+    expect(second.find((row) => row.message === tailReply)).toBe(first.find((row) => row.message === tailReply))
+
+    const messagesC = [...messagesA]
+    const partsC = { ...partsA }
+    const third = transcriptRows(
+      messageTurns(messagesC, undefined, (message) => lookup(partsC)(message.id)),
+      lookup(partsC),
+      {},
+      second,
+    )
+    const thirdC1 = third.find((row) => row.type === "compaction" && row.message.id === "c1")
+
+    expect(third.filter((row) => row.type === "compaction").map((row) => [row.message.id, row.undoable])).toEqual([
+      ["c1", true],
+    ])
+    expect(thirdC1).toMatchObject({
+      type: "compaction",
+      key: "c1:compaction",
+      turn: "c1",
+      partial: false,
+      queued: false,
+      live: false,
+      message: c1,
+      undoable: true,
+    })
+    expect(thirdC1).not.toBe(secondC1)
+    expect(third.some((row) => row.turn === "c2")).toBe(false)
+    expect(third.find((row) => row.message === tail)).toBe(second.find((row) => row.message === tail))
+    expect(third.find((row) => row.message === tailReply)).toBe(second.find((row) => row.message === tailReply))
+  })
+
+  it("does not offer undo for compaction markers hidden behind an active revert", () => {
+    const c1 = user("c1")
+    const s1 = assistant("s1", "c1", { summary: true })
+    const u1 = user("u1")
+    const c2 = user("c2")
+    const s2 = assistant("s2", "c2", { summary: true })
+    const marker = (id: string): Part[] => [{ id: `p-${id}`, messageID: id, type: "compaction", auto: false }]
+    const revert = { messageID: "u1" }
+    const turns = messageTurns([c1, s1, u1, c2, s2], revert)
+    const rows = transcriptRows(turns, lookup({ c1: marker("c1"), c2: marker("c2") }), { revert })
+
+    expect(rows.filter((row) => row.type === "compaction").map((row) => [row.message.id, row.undoable])).toEqual([
+      ["c1", false],
+    ])
+  })
+
   it("replaces only rows whose data or metadata changed", () => {
     const u1 = user("u1")
     const a1 = assistant("a1", "u1")
