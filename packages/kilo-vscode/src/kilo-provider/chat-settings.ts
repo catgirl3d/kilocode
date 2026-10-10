@@ -12,6 +12,7 @@ export function buildChatSettingsMessage() {
       agentManagerSplash:
         vscode.workspace.getConfiguration("kilo-code.new.experimental").get<boolean>("agentManagerSplash", false) ===
         true,
+      compactHeaderActions: config.get<boolean>("compactHeaderActions", true), // fork_change
       browserAutomation: vscode.workspace
         .getConfiguration("kilo-code.new.experimental")
         .get("browserAutomation", false),
@@ -46,5 +47,5 @@ export function watchChatConfig(post: Post): vscode.Disposable {
 }
 
 export function validChatSetting(key: string, value: unknown) {
-  return key === "shiftTabCyclesVariant" && typeof value === "boolean"
+  return (key === "shiftTabCyclesVariant" || key === "compactHeaderActions") && typeof value === "boolean" // fork_change
 }
