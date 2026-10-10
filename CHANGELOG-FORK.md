@@ -42,6 +42,7 @@
 - Mark subagent task cards with an amber dot while the child retries after a provider limit and a red dot when a background child ends in error, instead of showing green running or gray completed.
 - Show live activity in the Agent Manager subagent inspector: a busy or retrying child keeps a working row with the retry message and countdown, and its tab marks error or waiting states with a warning icon instead of an unmarked avatar.
 - Fix memory corrections so a corrected record replaces the previous version instead of leaving both discoverable.
+- Reject ambiguous memory forget keys without changing records and list the exact ids needed to retry; explain the same id-based retry for ambiguous corrections.
 - Skip pre-commit verification guards while a rebase is in progress, so intermediate rebase commits no longer fail on unfinished trees.
 - Remove the dead chat-search auto-expand plumbing (`forceOpen*`) left in the chat message renderer after the upstream search rework; no behavior change.
 - Finish that cleanup: drop the disconnected chat-search `forceOpen` adapter from the `kilo-ui` message parts and the task tool card (the generic `BasicTool.forceOpen` API stays); no behavior change.
