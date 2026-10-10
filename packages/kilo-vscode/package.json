@@ -1288,6 +1288,11 @@
           "default": true,
           "description": "Cycle through reasoning effort variants with Shift+Tab in prompt inputs. Disable to keep Shift+Tab for keyboard focus navigation."
         },
+        "kilo-code.new.chat.compactHeaderActions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show session actions (search chat, compact session, clear heavy tool output) in a compact More actions menu in the chat header. Disable to show them as separate buttons."
+        },
         "kilo-code.new.agentManager.pushFixes": {
           "type": "boolean",
           "default": true,
