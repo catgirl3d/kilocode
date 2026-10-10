@@ -294,6 +294,59 @@ describe("transcriptRows", () => {
     expect(rows.map((row) => `${row.turn}:${row.message.id}`)).toEqual(["u1:u1", "u1:a1", "u2:u2", "u2:a2"])
   })
 
+  it("renders a compaction divider row instead of an empty user bubble", () => {
+    const u1 = user("u1")
+    const a1 = assistant("a1", "u1")
+    const u2 = user("u2")
+    const a2 = assistant("a2", "u2", { summary: true })
+    const rows = transcriptRows(
+      messageTurns([u1, a1, u2, a2]),
+      lookup({
+        u1: [part("p1", "u1")],
+        u2: [{ id: "c1", messageID: "u2", type: "compaction", auto: false }],
+        a2: [part("p2", "a2")],
+      }),
+    )
+
+    expect(rows.map((row) => `${row.turn}:${row.type}`)).toEqual([
+      "u1:user",
+      "u1:assistant",
+      "u2:compaction",
+      "u2:assistant",
+    ])
+  })
+
+  it("marks only the newest compaction row as undoable", () => {
+    const c1 = user("c1")
+    const s1 = assistant("s1", "c1", { summary: true })
+    const u1 = user("u1")
+    const c2 = user("c2")
+    const s2 = assistant("s2", "c2", { summary: true })
+    const marker = (id: string): Part[] => [{ id: `p-${id}`, messageID: id, type: "compaction", auto: false }]
+    const rows = transcriptRows(messageTurns([c1, s1, u1, c2, s2]), lookup({ c1: marker("c1"), c2: marker("c2") }))
+
+    expect(rows.filter((row) => row.type === "compaction").map((row) => [row.message.id, row.undoable])).toEqual([
+      ["c1", false],
+      ["c2", true],
+    ])
+  })
+
+  it("does not offer undo for compaction markers hidden behind an active revert", () => {
+    const c1 = user("c1")
+    const s1 = assistant("s1", "c1", { summary: true })
+    const u1 = user("u1")
+    const c2 = user("c2")
+    const s2 = assistant("s2", "c2", { summary: true })
+    const marker = (id: string): Part[] => [{ id: `p-${id}`, messageID: id, type: "compaction", auto: false }]
+    const revert = { messageID: "u1" }
+    const turns = messageTurns([c1, s1, u1, c2, s2], revert)
+    const rows = transcriptRows(turns, lookup({ c1: marker("c1"), c2: marker("c2") }), { revert })
+
+    expect(rows.filter((row) => row.type === "compaction").map((row) => [row.message.id, row.undoable])).toEqual([
+      ["c1", false],
+    ])
+  })
+
   it("replaces only rows whose data or metadata changed", () => {
     const u1 = user("u1")
     const a1 = assistant("a1", "u1")
