@@ -2662,7 +2662,7 @@ try {
     assert(row)
     const swatch = () => row.querySelector<HTMLElement>(".am-sidebar-search-swatch")
     assert(swatch())
-    assert.equal(swatch()?.style.background, "var(--vscode-charts-blue)")
+    assert.equal(swatch()?.style.background, "#4a9ef7")
     const menu = root.querySelector(".am-sidebar-search")
     assert(menu)
 
@@ -2671,10 +2671,7 @@ try {
     const changed = find()
     assert(changed)
     assert.strictEqual(root.querySelector(".am-sidebar-search"), menu)
-    assert.equal(
-      changed.querySelector<HTMLElement>(".am-sidebar-search-swatch")?.style.background,
-      "var(--vscode-charts-purple)",
-    )
+    assert.equal(changed.querySelector<HTMLElement>(".am-sidebar-search-swatch")?.style.background, "#b180d7")
 
     a.setSessionColors({ [sidA]: "Green" })
     await settle()
