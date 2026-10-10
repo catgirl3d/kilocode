@@ -162,6 +162,41 @@ async function enterSelectsFirst() {
   assert.equal(document.activeElement, target, "Popover close stole focus from the prompt")
 }
 
+async function refreshKeepsHighlight() {
+  setItems(rows)
+  selected.length = 0
+  restored.length = 0
+  await settle()
+
+  await open()
+
+  const input = query<HTMLInputElement>('[data-slot="list-search"] input', "Switcher search did not render")
+  input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }))
+  await settle()
+
+  const highlighted = query<HTMLButtonElement>(
+    '[data-slot="list-item"][data-active="true"]',
+    "ArrowDown did not highlight a row",
+  )
+  const key = highlighted.dataset.key!
+  setItems((prev) =>
+    prev.map((item) => (item.id === key ? { ...item, state: "busy" as const, stateLabel: "Working" } : item)),
+  )
+  await settle()
+  const activity = query<HTMLElement>(
+    `[data-slot="list-item"][data-key="${key}"] [data-activity]`,
+    "Highlighted row activity did not render",
+  )
+  assert.equal(activity.getAttribute("data-activity"), "busy", "the refreshed row exposes live activity")
+  assert.equal(
+    query(`[data-slot="list-item"][data-key="${key}"]`, "Highlighted row disappeared").getAttribute("data-active"),
+    "true",
+    "a live refresh kept the highlighted row",
+  )
+  query<HTMLButtonElement>(`[data-slot="list-item"][data-key="${key}"]`, "Highlighted row disappeared").click()
+  await settle()
+}
+
 async function deleteReopened() {
   await open()
 
@@ -197,6 +232,7 @@ async function closeToOne() {
 await closeFiltered()
 await selectFiltered()
 await enterSelectsFirst()
+await refreshKeepsHighlight()
 await deleteReopened()
 await closeToOne()
 
