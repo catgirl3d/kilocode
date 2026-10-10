@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Show a "Session compacted" divider in VS Code chat instead of a blank message, with an Undo compaction action that deletes the newest compaction so the model sees the full message history again.
 - Organize local sessions with reusable colored tags in recent sessions, local history/search, and the active session header; keep session tabs uncluttered.
 - Preserve complete typed memory records, deliver them in full during recall when they fit within the response budget, and support exact lookup by `memory_id`.
 - Scope fork annotation audits to locally edited or branch-changed files without misclassifying committed fork markers.
@@ -34,6 +35,7 @@
 
 ### Fixes & Enhancements
 
+- Block Compact while an undo is active so the hidden redo history is not finalized and deleted silently.
 - Show real Merge Gateway prompt-cache usage: the bundled provider keeps gateway-reported cached-token counts, so cache reads appear in session usage and costs instead of reading zero.
 - Present session tab hover details as a structured tooltip: the title and activity state read as separate rows, and the Shift+click pin hint sits on its own separated line instead of running into the title.
 - Mark subagent task cards with an amber dot while the child retries after a provider limit and a red dot when a background child ends in error, instead of showing green running or gray completed.
