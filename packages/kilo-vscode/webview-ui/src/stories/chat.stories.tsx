@@ -216,12 +216,13 @@ export const ChatViewSessionDockStability: Story = {
   name: "ChatView — session dock keeps its height",
   render: () => {
     const [busy, setBusy] = createSignal(false)
+    const [retry, setRetry] = createSignal(false)
     const [goal, setGoal] = createSignal(false)
     // Statuses of deliberately different widths: the label swap is what used to
     // shove the centered spinner sideways.
     const labels = ["Thinking…", "Searching the codebase", "Making edits"]
     const [step, setStep] = createSignal(0)
-    const status = () => (busy() ? "busy" : "idle")
+    const status = () => (retry() ? "retry" : busy() ? "busy" : "idle")
     const base = mockSessionValue({ id: SESSION_ID, status: "idle", closeReason: "completed" })
     const session = {
       ...base,
@@ -230,9 +231,12 @@ export const ChatViewSessionDockStability: Story = {
         goal: goal() ? { text: "Keep the session controls available", active: busy() } : undefined,
       }),
       status,
-      statusInfo: () => ({ type: status() }),
+      statusInfo: () =>
+        retry()
+          ? { type: "retry", attempt: 1, message: "The usage limit has been reached", next: Date.now() + 9_000 }
+          : { type: status() },
       statusText: () => (busy() ? labels[step() % labels.length] : undefined),
-      busyTiming: () => (busy() ? { active: 2000, since: Date.now() } : undefined),
+      busyTiming: () => (status() !== "idle" ? { active: 2000, since: Date.now() } : undefined),
       submitting: () => busy(),
       isSubmitting: () => busy(),
       messages: () => [{ id: "msg-001" }] as any[],
@@ -246,6 +250,15 @@ export const ChatViewSessionDockStability: Story = {
               <div style={{ height: "400px", display: "flex", "flex-direction": "column" }}>
                 <button data-testid="toggle-busy" onClick={() => setBusy(!busy())}>
                   toggle busy
+                </button>
+                <button
+                  data-testid="toggle-retry"
+                  onClick={() => {
+                    setBusy(false)
+                    setRetry(!retry())
+                  }}
+                >
+                  toggle retry
                 </button>
                 <button data-testid="next-status" onClick={() => setStep(step() + 1)}>
                   next status

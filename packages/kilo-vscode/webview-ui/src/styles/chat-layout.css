@@ -282,6 +282,11 @@
   color: var(--vscode-descriptionForeground);
 }
 
+.working-indicator[data-retrying] {
+  --working-indicator-color: var(--vscode-errorForeground, #f85149);
+  color: var(--working-indicator-color);
+}
+
 .working-indicator-scroll[data-component="button"] {
   height: auto;
   max-width: 100%;
@@ -305,7 +310,7 @@
 .working-indicator-scroll:focus-visible:not(:disabled),
 .working-indicator-scroll:active:not(:disabled) {
   background: var(--surface-interactive-hover, var(--vscode-list-hoverBackground));
-  color: var(--vscode-foreground);
+  color: var(--working-indicator-color, var(--vscode-foreground));
 }
 
 /* On a wide surface (Agent Manager) the dock spans the whole composer. The lane
@@ -381,6 +386,11 @@
   --text-shimmer-peak-color: var(--vscode-foreground);
 }
 
+.working-indicator[data-retrying] .working-status [data-component="text-shimmer"] {
+  --text-shimmer-base-color: var(--working-indicator-color);
+  --text-shimmer-peak-color: var(--working-indicator-color);
+}
+
 /* Reserving the width keeps the cluster still while the counter ticks: tabular
    digits alone still reflow when the value gains a character (9s to 10s). */
 .working-elapsed {
@@ -404,6 +414,11 @@
   min-width: 5ch;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
+}
+
+.working-indicator[data-retrying] .working-count,
+.working-indicator[data-retrying] .working-elapsed:not([data-empty]) {
+  opacity: 1;
 }
 
 @keyframes working-status-in {
