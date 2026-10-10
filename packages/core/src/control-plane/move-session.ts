@@ -3,6 +3,7 @@ export * as MoveSession from "./move-session"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
+import { FSUtil } from "../fs-util" // kilocode_change - [fork] canonicalize move destinations
 import { Git } from "../git"
 import { Location } from "../location"
 import { ProjectV2 } from "../project"
@@ -77,7 +78,12 @@ const layer = Layer.effect(
     const moveSession = Effect.fn("MoveSession.moveSession")(function* (input: Input) {
       const current = yield* sessions.get(input.sessionID)
       if (!current) return yield* new SessionV2.NotFoundError({ sessionID: input.sessionID })
-      const directory = AbsolutePath.make(input.destination.directory)
+      // kilocode_change start - [fork] canonicalize the destination before persisting: clients may
+      // send case-folded spellings (the Agent Manager project root is lowercased), and storing the
+      // raw value rewrites session.directory into a form that directory-scoped listings no longer
+      // match. Canonicalizing here also makes the "already at this location" guard work.
+      const directory = AbsolutePath.make(FSUtil.resolve(input.destination.directory))
+      // kilocode_change end
       if (current.location.directory === directory) return
 
       const destination = yield* project.resolve(directory)
