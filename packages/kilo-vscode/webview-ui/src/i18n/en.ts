@@ -104,6 +104,13 @@ export const dict = {
     "Debug: session {{sessionID}}; raw {{raw}} -> context {{projection}}; tools {{tools}}, completed {{completed}}, protected {{protected}}, already cleared {{compacted}}, candidates {{candidates}}, ~{{tokens}} tokens",
   "command.session.shake.failed": "Failed to clear tool output",
   // fork_change end
+  // fork_change start - undo compaction
+  "compaction.divider.label": "Session compacted",
+  "compaction.undo.label": "Undo compaction",
+  "compaction.undo.tooltip": "Delete this compaction so the model sees the full message history again",
+  "compaction.undo.busy": "Wait for the agent to finish",
+  "command.session.compact.blocked": "Finish or redo the current undo before compacting",
+  // fork_change end
   "command.session.export": "Export session transcript",
 
   "dialog.provider.search.placeholder": "Search providers",
