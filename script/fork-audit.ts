@@ -600,6 +600,16 @@ function inlineCandidates(markers: MarkerBlock[], real: Set<number>, lines: stri
   })
 }
 
+function designated(lines: string[], line: number) {
+  if (/\[fork\]/.test(lines[line - 1] ?? "")) return true
+  for (let k = line - 1; k > 0; k--) {
+    const text = (lines[k - 1] ?? "").trim()
+    if (!text.startsWith("//") || /kilocode_change/.test(text)) break
+    if (/\[fork\]/.test(text)) return true
+  }
+  return false
+}
+
 function fragmentedCandidates(markers: MarkerBlock[], real: Set<number>) {
   const blocks = markers
     .filter((marker) => marker.type === "block" && marker.markerType === "fork")
@@ -762,6 +772,7 @@ type Audit = {
   }[]
   inline: { startLine: number; endLine: number; line: number; text: string }[]
   fragmented: { first: number; second: number; gap: number }[]
+  designation: { line: number; startLine: number; endLine: number }[]
 }
 function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: string, isNew: boolean): Audit | null {
   const content = cfg.worktree
@@ -948,6 +959,16 @@ function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: 
     )
     if (f.base) overwrap.push({ startLine: m.startLine, endLine: m.endLine, ...f })
   }
+  const designation: Audit["designation"] = []
+  for (const n of real) {
+    if (designated(lines, n)) continue
+    const covering = parsed.markers.filter(
+      (m) => m.type === "block" && m.markerType === "kilo" && m.startLine <= n && n <= m.endLine,
+    )
+    if (!covering.length || covering.some((m) => !inherited(m))) continue
+    const outer = covering.reduce((a, b) => (b.startLine < a.startLine ? b : a))
+    designation.push({ line: n, startLine: outer.startLine, endLine: outer.endLine })
+  }
   const source = parseAuditSource(file, content),
     baseSource = base == null ? null : parseAuditSource(file, base)
   if (parsed.wholeFileMarkerLine < 0 && source)
@@ -981,6 +1002,7 @@ function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: 
     overwrap,
     inline: inlineCandidates(parsed.markers, realSet, lines),
     fragmented: fragmentedCandidates(parsed.markers, realSet),
+    designation,
   }
 }
 
@@ -992,7 +1014,7 @@ function main() {
   }
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      "Usage: bun run script/fork-audit.ts [--worktree] [--base=<ref>] [--select=agent-local|branch] [--overwrap-report] [--inline-report] [paths...]\n" +
+      "Usage: bun run script/fork-audit.ts [--worktree] [--base=<ref>] [--select=agent-local|branch] [--overwrap-report] [--inline-report] [--fragment-report] [--designation-report] [paths...]\n" +
         "  --select changes file selection only; agent-local requires --worktree, while branch selects HEAD-side paths from origin/main...HEAD.",
     )
     process.exit(0)
@@ -1071,6 +1093,7 @@ function main() {
   const overwrapReport = args.includes("--overwrap-report")
   const inlineReport = args.includes("--inline-report")
   const fragmentReport = args.includes("--fragment-report")
+  const designationReport = args.includes("--designation-report")
   const overwraps: {
     file: string
     start: number
@@ -1080,6 +1103,7 @@ function main() {
     lines: number[]
   }[] = []
   const fragments: { file: string; first: number; second: number; gap: number }[] = []
+  const designations: { file: string; line: number; startLine: number; endLine: number }[] = []
   let audited = 0
   for (const file of targets) {
     const result = auditFile({ worktree: s.worktree, base, ref }, file, newFiles.has(file) || untracked.includes(file))
@@ -1115,6 +1139,7 @@ function main() {
           `   [INLINE] L${candidate.startLine}-L${candidate.endLine}: single changed line L${candidate.line} (${candidate.text.trim()})`,
         )
     fragments.push(...result.fragmented.map((fragment) => ({ file, ...fragment })))
+    designations.push(...result.designation.map((item) => ({ file, ...item })))
     console.log("")
   }
   if (overwrapReport) {
@@ -1129,6 +1154,13 @@ function main() {
     console.log("FRAGMENTED REGIONS (read-only advisory)")
     for (const fragment of fragments)
       console.log(`   [FRAGMENTED] ${fragment.file} L${fragment.first}/L${fragment.second}: ${fragment.gap} line gap`)
+  }
+  if (designationReport) {
+    console.log("FORK DESIGNATION (read-only advisory)")
+    for (const item of designations)
+      console.log(
+        `   [DESIGNATION] ${item.file} L${item.line} (inherited kilocode block L${item.startLine}-L${item.endLine})`,
+      )
   }
   console.log(
     `Summary: files audited ${audited}; ignored ${ignoredCount}; rename destinations skipped ${renameDestinations.size}; deletion-only ${deletionOnly}; findings ${bad} (fatal); warnings ${warnings} (non-fatal); candidate '${s.candidate}'; merge-base '${base}'`,

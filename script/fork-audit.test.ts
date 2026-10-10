@@ -322,6 +322,64 @@ describe("read-only contract", () => {
     expect(reports.out).toContain("OVERWRAP REPORT")
   })
 
+  it("lists fork-owned lines under inherited Kilo regions without [fork] only in the designation report", () => {
+    const file = "packages/opencode/src/designation-a.ts",
+      source = "// kilocode_change start\nexport const changed = 1\n// kilocode_change end\n",
+      dir = fixture({ [file]: source })
+    writeFileSync(
+      path.join(dir, file),
+      source.replace("export const changed = 1", "export const changed = 1\nexport const added = 2"),
+    )
+    const plain = run(dir, ["--worktree", "--base=upstream", file])
+    expect(plain.code).toBe(0)
+    expect(plain.out).not.toContain("[DESIGNATION]")
+    const report = run(dir, ["--worktree", "--base=upstream", "--designation-report", file])
+    expect(report.code).toBe(0)
+    expect(report.out).toContain("findings 0")
+    expect(report.out).toContain("FORK DESIGNATION")
+    expect(report.out).toContain("[DESIGNATION]")
+    expect(report.out).toContain("L3")
+  })
+
+  it("treats a [fork] designation on the line as covered", () => {
+    const file = "packages/opencode/src/designation-b.ts",
+      source = "// kilocode_change start\nexport const changed = 1\n// kilocode_change end\n",
+      dir = fixture({ [file]: source })
+    writeFileSync(
+      path.join(dir, file),
+      source.replace("export const changed = 1", "export const changed = 1\nexport const added = 2 // [fork]"),
+    )
+    const report = run(dir, ["--worktree", "--base=upstream", "--designation-report", file])
+    expect(report.code).toBe(0)
+    expect(report.out).not.toContain("[DESIGNATION]")
+  })
+
+  it("skips fork-authored blocks when the whole region is new", () => {
+    const file = "packages/opencode/src/designation-c.ts",
+      source = "export const fresh = 1\n",
+      dir = fixture({ [file]: source })
+    writeFileSync(path.join(dir, file), "// kilocode_change start\nexport const fresh = 2\n// kilocode_change end\n")
+    const report = run(dir, ["--worktree", "--base=upstream", "--designation-report", file])
+    expect(report.code).toBe(0)
+    expect(report.out).not.toContain("[DESIGNATION]")
+  })
+
+  it("treats a [fork] comment block directly above the line as covered", () => {
+    const file = "packages/opencode/src/designation-d.ts",
+      source = "// kilocode_change start\nexport const changed = 1\n// kilocode_change end\n",
+      dir = fixture({ [file]: source })
+    writeFileSync(
+      path.join(dir, file),
+      source.replace(
+        "export const changed = 1",
+        "// [fork] explains the change\n// over two lines\nexport const added = 2",
+      ),
+    )
+    const report = run(dir, ["--worktree", "--base=upstream", "--designation-report", file])
+    expect(report.code).toBe(0)
+    expect(report.out).not.toContain("[DESIGNATION]")
+  })
+
   it("reports ignored, rename, and deletion-only counts", () => {
     const dir = fixture()
     mkdirSync(path.join(dir, "packages/kilo-vscode/fixtures"), { recursive: true })
