@@ -226,7 +226,9 @@ function createConnection(client: ReturnType<typeof createClient> | null) {
       },
       onChange: () => () => undefined,
     },
-    connect: async () => {},
+    connect: async (_dir?: string) => {},
+    disconnect: () => {},
+    resume: () => {},
     getClient: () => client,
     runExplicitAbort: async (_sid: string, _dir: string, action: () => Promise<void>) => action(),
     onEventFiltered: () => () => undefined,
@@ -257,6 +259,7 @@ function createConnection(client: ReturnType<typeof createClient> | null) {
 
 type ProviderInternals = {
   connectionState: State
+  initConnectionPromise: Promise<void> | null
   loadMessagesAbort: AbortController | null
   hasConnected: boolean
   isWebviewReady: boolean
@@ -2351,5 +2354,118 @@ describe("KiloProvider.handleLoadMessages / prepend into deleted session", () =>
       (msg) => typeof msg === "object" && msg && (msg as { type?: unknown }).type === "messagesLoaded",
     )
     expect(loaded).toEqual([])
+  })
+})
+
+describe("KiloProvider CLI connection host handlers", () => {
+  it.each([
+    ["confirmation", "Localized disconnect", 1],
+    ["cancellation", undefined, 0],
+    ["unrelated action", "Another action", 0],
+  ] as const)("disconnects only for the localized %s answer", async (_name, answer, expected) => {
+    const client = createClient()
+    const { provider, internal, connection } = makeProvider(client)
+    const shown = Promise.withResolvers<void>()
+    const response = Promise.withResolvers<string | undefined>()
+    const translate = spyOn(vscode.l10n, "t").mockImplementation((input) => {
+      const message = typeof input === "string" ? input : input.message
+      return message === "Disconnect" ? "Localized disconnect" : message
+    })
+    const warning = spyOn(vscode.window, "showWarningMessage").mockImplementation(async () => {
+      shown.resolve()
+      return response.promise
+    })
+    const disconnect = spyOn(connection, "disconnect")
+    const resume = spyOn(connection, "resume")
+    const connect = spyOn(connection, "connect")
+    let pending: Promise<void> | undefined
+
+    try {
+      const listener = Promise.withResolvers<(message: Record<string, unknown>) => Promise<void>>()
+      internal.setupWebviewMessageHandler({
+        onDidReceiveMessage: (handler: (message: Record<string, unknown>) => Promise<void>) => {
+          listener.resolve(handler)
+          return { dispose: () => {} }
+        },
+      })
+      const receive = await listener.promise
+      pending = receive({ type: "disconnectCli" })
+
+      await shown.promise
+      expect(disconnect).not.toHaveBeenCalled()
+      expect(resume).not.toHaveBeenCalled()
+      expect(connect).not.toHaveBeenCalled()
+      expect(warning).toHaveBeenCalledWith(
+        "Disconnect from the Kilo CLI? Running sessions in this window will be interrupted.",
+        { modal: true },
+        "Localized disconnect",
+      )
+      expect(translate).toHaveBeenCalledWith("Disconnect")
+
+      response.resolve(answer)
+      await pending
+      expect(disconnect).toHaveBeenCalledTimes(expected)
+      expect(resume).not.toHaveBeenCalled()
+      expect(connect).not.toHaveBeenCalled()
+    } finally {
+      response.resolve(undefined)
+      try {
+        if (pending) await pending
+      } finally {
+        connect.mockRestore()
+        resume.mockRestore()
+        disconnect.mockRestore()
+        warning.mockRestore()
+        translate.mockRestore()
+        provider.dispose()
+      }
+    }
+  })
+
+  it("resumes before retrying the known project and reports a failed initialization", async () => {
+    const client = createClient()
+    const failure = Promise.withResolvers<void>()
+    const calls: string[] = []
+    const { provider, internal, sent, connection } = makeProvider(client, { rootDirectory: () => "/repo" })
+    const error = spyOn(console, "error").mockImplementation(() => {})
+    let init: Promise<void> | null = null
+
+    connection.resume = () => {
+      calls.push("resume")
+    }
+    connection.connect = async (dir) => {
+      calls.push(`connect:${dir}`)
+      await failure.promise
+    }
+
+    try {
+      const listener = Promise.withResolvers<(message: Record<string, unknown>) => Promise<void>>()
+      internal.setupWebviewMessageHandler({
+        onDidReceiveMessage: (handler: (message: Record<string, unknown>) => Promise<void>) => {
+          listener.resolve(handler)
+          return { dispose: () => {} }
+        },
+      })
+      const receive = await listener.promise
+      await receive({ type: "retryConnection" })
+
+      init = internal.initConnectionPromise
+      if (!init) throw new Error("Expected retry initialization to start")
+      expect(calls).toEqual(["resume", "connect:/repo"])
+
+      failure.reject(new Error("connect failed"))
+      await init
+
+      expect(sent).toContainEqual({ type: "connectionState", state: "error", error: "connect failed" })
+      expect(internal.initConnectionPromise).toBeNull()
+    } finally {
+      failure.reject(new Error("connect failed"))
+      try {
+        if (init) await init
+      } finally {
+        error.mockRestore()
+        provider.dispose()
+      }
+    }
   })
 })
