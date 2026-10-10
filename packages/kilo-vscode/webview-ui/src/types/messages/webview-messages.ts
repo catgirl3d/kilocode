@@ -1454,6 +1454,12 @@ export interface RetryConnectionRequest {
   type: "retryConnection"
 }
 
+// fork_change start
+export interface DisconnectCliRequest {
+  type: "disconnectCli"
+}
+// fork_change end
+
 export interface ReloadRequest {
   type: "reload"
 }
@@ -2075,6 +2081,7 @@ export type WebviewMessage =
   | DiffVirtualSetMarkdownRenderRequest
   | DiffVirtualSetDiffStyleRequest
   | RetryConnectionRequest
+  | DisconnectCliRequest // fork_change
   | ReloadRequest
   | OpenSubAgentViewerRequest
   | PreviewImageRequest
