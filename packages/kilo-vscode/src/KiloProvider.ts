@@ -1501,10 +1501,24 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           break
         case "retryConnection":
           console.log("[Kilo New] KiloProvider: 🔄 Retrying connection...")
+          this.connectionService.resume() // fork_change - [fork] an explicit retry releases the manual disconnect hold
           this.initializeConnection().catch((e) =>
             console.error("[Kilo New] KiloProvider: ❌ Retry connection failed:", e),
           )
           break
+        // fork_change start - [fork] manual CLI disconnect from the chat header menu
+        case "disconnectCli": {
+          const action = vscode.l10n.t("Disconnect")
+          const confirmed = await vscode.window.showWarningMessage(
+            vscode.l10n.t("Disconnect from the Kilo CLI? Running sessions in this window will be interrupted."),
+            { modal: true },
+            action,
+          )
+          if (confirmed !== action) break
+          this.connectionService.disconnect()
+          break
+        }
+        // fork_change end
         case "reload":
           this.handleReload().catch((e) => console.error("[Kilo New] KiloProvider: Reload failed:", e))
           break
