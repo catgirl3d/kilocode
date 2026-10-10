@@ -88,9 +88,9 @@ Turborepo + Bun workspaces. The packages you'll work with most:
 
 Use conventional commit-style messages and PR titles: `type(scope): summary`.
 
-Valid types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. Scopes are optional; use the affected package or area when helpful, e.g. `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, or `plugin`.
+Valid types are `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `perf`, and `style`. Always include a scope; [Commit Conventions](#commit-conventions) covers which one to use.
 
-Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributing guide`, `chore(sdk): regenerate types`.
+Examples: `fix(ui): simplify thinking toggle styling`, `docs(fork): update contributing guide`, `chore(sdk): regenerate types`.
 
 ## Style Guide
 
@@ -175,7 +175,7 @@ Padding makes every content change rewrite the entire table, which blows up diff
 
 ## Commit Conventions
 
-[Conventional Commits](https://www.conventionalcommits.org/) with scopes matching packages: `vscode`, `cli`, `agent-manager`, `sdk`, `ui`, `i18n`, `kilo-docs`, `gateway`, `telemetry`, `desktop`. Omit scope when spanning multiple packages.
+[Conventional Commits](https://www.conventionalcommits.org/) with a scope on every commit: a package (`vscode`, `cli`, `agent-manager`, `sdk`, `ui`, `i18n`, `kilo-docs`, `gateway`, `telemetry`, `desktop`) or the subsystem that owns the change (`session`, `memory`, `task`, `snapshot`, `indexing`, `rebase`, `fork`). Cross-package changes still take one scope — the area that owns the user-visible behavior; fork-wide maintenance uses `fork`.
 
 ## Changesets
 
