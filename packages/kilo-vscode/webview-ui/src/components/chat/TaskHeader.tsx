@@ -94,6 +94,12 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       disabled: !canShake(),
       run: () => session.shake(),
     },
+    {
+      key: "disconnectCli",
+      icon: "circle-x",
+      label: language.t("chat.action.disconnectCli"),
+      run: () => vscode.postMessage({ type: "disconnectCli" }),
+    },
   ])
   // fork_change end
 

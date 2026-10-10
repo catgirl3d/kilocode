@@ -45,6 +45,9 @@ const mockVscode = {
     openExternal: noop,
   },
   version: "1.90.0",
+  l10n: {
+    t: (message: string) => message,
+  },
   workspace: {
     workspaceFolders: [{ uri: { fsPath: "/repo" } }],
     /** Overridden per test to stand in for the editor's own file index. */
