@@ -57,6 +57,16 @@ describe("buildChatSettingsMessage", () => {
     expect(buildChatSettingsMessage().settings.shiftTabCyclesVariant).toBe(false)
   })
 
+  it("enables compact header actions by default", () => {
+    expect(buildChatSettingsMessage().settings.compactHeaderActions).toBe(true)
+  })
+
+  it("returns the persisted compact header preference", () => {
+    state.set("compactHeaderActions", false)
+
+    expect(buildChatSettingsMessage().settings.compactHeaderActions).toBe(false)
+  })
+
   it("broadcasts browser preference changes to all open chat viewers", () => {
     Object.defineProperty(vscode.workspace, "isTrusted", { configurable: true, value: true })
     const workspace = vscode.workspace as unknown as Stub
@@ -84,6 +94,7 @@ describe("buildChatSettingsMessage", () => {
         type: "chatSettingsLoaded",
         settings: {
           shiftTabCyclesVariant: true,
+          compactHeaderActions: true,
           browserAutomation: true,
           agentManagerBrowserOpenLinksIn: "external",
           workspaceTrusted: true,
@@ -151,10 +162,12 @@ describe("timeline settings", () => {
 })
 
 describe("validChatSetting", () => {
-  it("accepts only boolean cycling updates", () => {
+  it("accepts only boolean chat setting updates", () => {
     expect(validChatSetting("shiftTabCyclesVariant", true)).toBe(true)
     expect(validChatSetting("shiftTabCyclesVariant", false)).toBe(true)
     expect(validChatSetting("shiftTabCyclesVariant", "false")).toBe(false)
+    expect(validChatSetting("compactHeaderActions", true)).toBe(true)
+    expect(validChatSetting("compactHeaderActions", "false")).toBe(false)
     expect(validChatSetting("unknown", true)).toBe(false)
   })
 })
