@@ -81,6 +81,71 @@ test("only one of the two states is visible in the dock", async ({ page }) => {
   await expect(page.locator('[data-component="session-dock"] .new-task-button-wrapper')).toBeHidden()
 })
 
+test("retry status uses the error color for the complete working row", async ({ page }) => {
+  await openStory(page)
+  await page.getByTestId("toggle-retry").click()
+
+  const row = page.locator(".working-indicator")
+  await expect(row).toBeVisible()
+  await expect(row.locator(".working-count")).toBeVisible()
+  await expect(row.locator(".working-elapsed")).toBeVisible()
+
+  const colors = await page.evaluate(() => {
+    const cancel = document.querySelector(".working-cancel")!
+    const row = document.querySelector(".working-indicator")!
+    const nodes = [
+      row,
+      row.querySelector(".working-indicator-scroll")!,
+      row.querySelector('[data-component="spinner"]')!,
+      row.querySelector(".working-status")!,
+      row.querySelector('[data-slot="text-shimmer-char-base"]')!,
+      row.querySelector(".working-count")!,
+      row.querySelector(".working-elapsed")!,
+    ]
+    const shimmer = row.querySelector('[data-component="text-shimmer"]')!
+    const shimmerColor = (name: string) => {
+      const sample = document.createElement("span")
+      sample.style.color = `var(${name})`
+      shimmer.append(sample)
+      const color = getComputedStyle(sample).color
+      sample.remove()
+      return color
+    }
+    return {
+      expected: getComputedStyle(cancel).color,
+      actual: nodes.map((node) => getComputedStyle(node).color),
+      shimmer: [shimmerColor("--text-shimmer-base-color"), shimmerColor("--text-shimmer-peak-color")],
+    }
+  })
+
+  expect(colors.actual).toEqual(Array.from({ length: colors.actual.length }, () => colors.expected))
+  expect(colors.shimmer).toEqual([colors.expected, colors.expected])
+  expect(await row.locator(".working-count").evaluate((node) => getComputedStyle(node).opacity)).toBe("1")
+
+  const elapsed = row.locator(".working-elapsed")
+  await elapsed.evaluate((node) => node.setAttribute("data-empty", ""))
+  expect(await elapsed.evaluate((node) => getComputedStyle(node).opacity)).toBe("0")
+  await elapsed.evaluate((node) => node.removeAttribute("data-empty"))
+  expect(await elapsed.evaluate((node) => getComputedStyle(node).opacity)).toBe("1")
+
+  const button = row.locator(".working-indicator-scroll")
+  await button.hover()
+  expect(await button.evaluate((node) => getComputedStyle(node).color)).toBe(colors.expected)
+
+  await page.getByTestId("toggle-retry").click()
+  await page.getByTestId("toggle-busy").click()
+  await expect(row).not.toHaveAttribute("data-retrying")
+  const busyColor = await row.evaluate((node) => {
+    const sample = document.createElement("span")
+    sample.style.color = "var(--vscode-descriptionForeground)"
+    node.append(sample)
+    const color = getComputedStyle(sample).color
+    sample.remove()
+    return color
+  })
+  expect(await row.evaluate((node) => getComputedStyle(node).color)).toBe(busyColor)
+})
+
 /**
  * The dock owns the space above the composer. A gutter left on only one of its
  * two states put a gap under the actions row that the working indicator did not
