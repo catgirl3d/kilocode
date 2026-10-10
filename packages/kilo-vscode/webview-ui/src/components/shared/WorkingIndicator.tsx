@@ -108,7 +108,7 @@ export const WorkingIndicator: Component<WorkingIndicatorProps> = (props) => {
   }
 
   return (
-    <div class="working-indicator">
+    <div class="working-indicator" data-retrying={isRetrying() ? "" : undefined} /* fork_change - [fork] retry color */>
       <Button variant="ghost" size="small" class="working-indicator-scroll" onClick={() => props.onScrollToBottom?.()}>
         <Spinner />
         <StatusText text={statusText()} />
@@ -126,7 +126,6 @@ export const WorkingIndicator: Component<WorkingIndicatorProps> = (props) => {
         </Show>
         <span class="sr-only">{language.t("session.messages.scrollToBottom")}</span>
       </Button>
-      {/* fork_change start - [fork] status-only docks hide the retry cancel action */}
       <Show when={isRetrying() && props.canCancel !== false}>
         <Button
           variant="secondary"
@@ -138,7 +137,7 @@ export const WorkingIndicator: Component<WorkingIndicatorProps> = (props) => {
           {language.t("ui.sessionTurn.cancel") || "Cancel"}
         </Button>
       </Show>
-      {/* fork_change end */}
     </div>
+    // fork_change end
   )
 }
