@@ -1407,6 +1407,11 @@ export const dict = {
   "settings.display.tokenThroughput.title": "Show Token Throughput",
   "settings.display.tokenThroughput.description":
     "Display the text-generation rate (tokens/sec) on the latest assistant message and in the task header. Shown by default; disable this setting to hide it when needed.",
+  // fork_change start - compact header actions display setting
+  "settings.display.compactHeader.title": "Compact Header Actions",
+  "settings.display.compactHeader.description":
+    "Show session actions (search chat, compact session, clear heavy tool output) in a More actions menu in the chat header. Disable to show them as separate buttons.",
+  // fork_change end
   "settings.display.autoApprovalReason.title": "Show Auto-Approval Reason",
   "settings.display.autoApprovalReason.description":
     "Show why a tool call was auto-approved, such as a matching permission rule or an agent default.",

@@ -146,6 +146,21 @@ const DisplayTab: Component = () => {
           </Switch>
         </SettingsRow>
 
+        {/* fork_change start - compact header actions setting */}
+        <SettingsRow
+          title={language.t("settings.display.compactHeader.title")}
+          description={language.t("settings.display.compactHeader.description")}
+        >
+          <Switch
+            checked={Boolean(settings()["chat.compactHeaderActions"] ?? true)}
+            onChange={(checked: boolean) => updateSetting("chat.compactHeaderActions", checked)}
+            hideLabel
+          >
+            {language.t("settings.display.compactHeader.title")}
+          </Switch>
+        </SettingsRow>
+        {/* fork_change end */}
+
         <div class="settings-display-presets" role="group" aria-label={language.t("settings.display.presets.title")}>
           <span class="settings-display-presets-title">{language.t("settings.display.presets.title")}</span>
           <div class="settings-display-presets-actions">

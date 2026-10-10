@@ -26,6 +26,7 @@ export interface OverflowItem {
 
 interface Props {
   items: OverflowItem[]
+  placement?: "top-end" | "bottom-end" // fork_change
 }
 
 const RANK: Record<Tone, number> = { success: 1, warning: 2, error: 3 }
@@ -43,8 +44,13 @@ export const PromptOverflow: Component<Props> = (props) => {
   const busy = () => props.items.some((item) => item.busy)
 
   return (
-    <DropdownMenu gutter={4} placement="top-end">
-      <Tooltip value={language.t("prompt.action.more")} placement="top" openDelay={0}>
+    // fork_change start - optional downward placement for the task header
+    <DropdownMenu gutter={4} placement={props.placement ?? "top-end"}>
+      <Tooltip
+        value={language.t("prompt.action.more")}
+        placement={props.placement === "bottom-end" ? "bottom" : "top"}
+        openDelay={0}
+      >
         <DropdownMenu.Trigger
           as={IconButton}
           icon="dot-grid"
@@ -78,5 +84,6 @@ export const PromptOverflow: Component<Props> = (props) => {
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu>
+    // fork_change end
   )
 }

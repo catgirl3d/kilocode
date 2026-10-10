@@ -1,12 +1,14 @@
+// fork_change start - session maintenance actions moved into the overflow menu
 /**
  * TaskHeader component
  * Sticky header above the chat messages showing session title,
- * cost, context usage, and a compact button.
+ * cost, context usage, and session maintenance actions.
  * Todo progress lives in the session dock (see TodoChip).
  *
  * When expanded, shows the task timeline (colored bars representing
  * session activity) and a context window progress bar.
  */
+// fork_change end
 
 import { Component, For, Show, createMemo, createSignal, createEffect, on, onMount, onCleanup } from "solid-js"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
@@ -16,6 +18,7 @@ import { Icon } from "@kilocode/kilo-ui/icon" // fork_change
 import { Switch } from "@kilocode/kilo-ui/switch"
 import { useSession } from "../../context/session"
 import { useMemory } from "../../context/memory"
+import { useConfig } from "../../context/config"
 // fork_change end
 import { calcTokenUsage, collapseCostBreakdown, sessionCost } from "../../context/session-utils"
 import { useLanguage } from "../../context/language"
@@ -35,6 +38,7 @@ import { DeferredPopover } from "../shared/DeferredPopover"
 import { SessionTags, SessionTagsButton } from "../shared/SessionTags"
 import { isPendingTab } from "../../utils/local-tabs"
 import type { MemoryActivity } from "../../utils/memory-activity"
+import { PromptOverflow, type OverflowItem } from "./PromptOverflow"
 // fork_change end
 
 interface TaskHeaderProps {
@@ -46,6 +50,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const memory = useMemory() // fork_change
   const language = useLanguage()
   const search = useTranscriptSearch()
+  const { settings } = useConfig() // fork_change
 
   const title = createMemo(() => session.currentSession()?.title ?? language.t("command.session.new"))
   const canRename = createMemo(() => !props.readonly && !!session.currentSession())
@@ -64,6 +69,50 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   )
   // fork_change end
   const canShake = createMemo(() => !busy() && session.visibleMessages().length > 0 && !session.shaking()) // fork_change
+  const compact = createMemo(() => Boolean(settings()["chat.compactHeaderActions"] ?? true)) // fork_change
+
+  // fork_change start - session actions fold into the "..." menu
+  const actions = createMemo<OverflowItem[]>(() => [
+    {
+      key: "search",
+      icon: "magnifying-glass",
+      label: language.t("chat.search.toggle"),
+      run: () => toggleSearch(),
+    },
+    {
+      key: "compact",
+      icon: "compress",
+      label: language.t("command.session.compact"),
+      description: session.revert() ? language.t("command.session.compact.blocked") : undefined,
+      disabled: !canCompact(),
+      run: () => session.compact(),
+    },
+    {
+      key: "shake",
+      icon: "collapse",
+      label: language.t("command.session.shake"),
+      disabled: !canShake(),
+      run: () => session.shake(),
+    },
+  ])
+  // fork_change end
+
+  // fork_change start - the search toggle, inline in the classic layout and in read-only viewers
+  const searchView = () => (
+    <Tooltip value={language.t("chat.search.toggle")} placement="bottom">
+      <IconButton
+        icon="magnifying-glass"
+        size="small"
+        variant="ghost"
+        class="task-header-search-toggle"
+        data-active={search.active() ? "" : undefined}
+        onClick={toggleSearch}
+        aria-label={language.t("chat.search.toggle")}
+        aria-pressed={search.active()}
+      />
+    </Tooltip>
+  )
+  // fork_change end
 
   const money = createMemo(() => new Intl.NumberFormat(language.locale(), { style: "currency", currency: "USD" }))
   const fmt = (n: number) => money().format(n)
@@ -276,7 +325,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   return (
     <Show when={hasMessages()}>
       <div data-component="task-header">
-        {/* fork_change start - keep tag controls outside the rename target */}
+        {/* fork_change start - shrinkable title region */}
         <div data-slot="task-header-title">
           <div data-slot="task-header-name">
             <Show
@@ -309,16 +358,6 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
               </span>
             </Show>
           </div>
-          <Show when={sid()}>
-            {(id) => (
-              <>
-                <SessionTags sessionID={id()} compact />
-                <Show when={!props.readonly}>
-                  <SessionTagsButton sessionID={id()} />
-                </Show>
-              </>
-            )}
-          </Show>
         </div>
         {/* fork_change end */}
         <Show when={model()}>
@@ -360,7 +399,17 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
               </Tooltip>
             )}
           </Show>
-          {/* fork_change start */}
+          {/* fork_change start - session tags sit left of the context control */}
+          <Show when={sid()}>
+            {(id) => (
+              <>
+                <SessionTags sessionID={id()} compact />
+                <Show when={!props.readonly}>
+                  <SessionTagsButton sessionID={id()} />
+                </Show>
+              </>
+            )}
+          </Show>
           <Tooltip value={activityTooltip()} placement="bottom" contentClass="task-header-memory-tooltip">
             <DeferredPopover
               placement="bottom-end"
@@ -460,50 +509,46 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
             </DeferredPopover>
           </Tooltip>
           {/* fork_change end */}
-          <Show when={!props.readonly}>
-            {/* fork_change start - explain why compacting is blocked under an active revert */}
-            <Tooltip
-              value={
-                session.revert() ? language.t("command.session.compact.blocked") : language.t("command.session.compact")
-              }
-              placement="bottom"
-            >
-              <IconButton
-                icon="compress"
-                size="small"
-                variant="ghost"
-                disabled={!canCompact()}
-                onClick={() => session.compact()}
-                aria-label={language.t("command.session.compact")}
-              />
-            </Tooltip>
-            {/* fork_change end */}
-            {/* fork_change start */}
-            <Tooltip value={language.t("command.session.shake")} placement="bottom">
-              <IconButton
-                icon="collapse"
-                size="small"
-                variant="ghost"
-                disabled={!canShake()}
-                onClick={() => session.shake()}
-                aria-label={language.t("command.session.shake")}
-              />
-            </Tooltip>
-            {/* fork_change end */}
+          {/* fork_change start - compact mode folds actions into the overflow menu; read-only viewers keep the inline search */}
+          <Show when={compact()}>
+            <Show when={props.readonly} fallback={<PromptOverflow items={actions()} placement="bottom-end" />}>
+              {searchView()}
+            </Show>
           </Show>
+          <Show when={!compact()}>
+            <Show when={!props.readonly}>
+              <Tooltip
+                value={
+                  session.revert()
+                    ? language.t("command.session.compact.blocked")
+                    : language.t("command.session.compact")
+                }
+                placement="bottom"
+              >
+                <IconButton
+                  icon="compress"
+                  size="small"
+                  variant="ghost"
+                  disabled={!canCompact()}
+                  onClick={() => session.compact()}
+                  aria-label={language.t("command.session.compact")}
+                />
+              </Tooltip>
+              <Tooltip value={language.t("command.session.shake")} placement="bottom">
+                <IconButton
+                  icon="collapse"
+                  size="small"
+                  variant="ghost"
+                  disabled={!canShake()}
+                  onClick={() => session.shake()}
+                  aria-label={language.t("command.session.shake")}
+                />
+              </Tooltip>
+            </Show>
+            {searchView()}
+          </Show>
+          {/* fork_change end */}
           <Show when={hasMessages()}>
-            <Tooltip value={language.t("chat.search.toggle")} placement="bottom">
-              <IconButton
-                icon="magnifying-glass"
-                size="small"
-                variant="ghost"
-                class="task-header-search-toggle"
-                data-active={search.active() ? "" : undefined}
-                onClick={toggleSearch}
-                aria-label={language.t("chat.search.toggle")}
-                aria-pressed={search.active()}
-              />
-            </Tooltip>
             <IconButton
               icon="chevron-down"
               size="small"
