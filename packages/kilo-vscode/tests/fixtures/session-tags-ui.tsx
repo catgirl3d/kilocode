@@ -75,6 +75,7 @@ const { WelcomeEmptyState } = await import("../../webview-ui/src/components/chat
 const { TaskHeader } = await import("../../webview-ui/src/components/chat/TaskHeader")
 const { SessionTabStrip } = await import("../../webview-ui/src/components/chat/SessionTabStrip")
 const { PENDING_TAB_PREFIX } = await import("../../webview-ui/src/utils/local-tabs")
+const { SECTION_COLORS } = await import("../../webview-ui/agent-manager/section-colors")
 
 const now = new Date().toISOString()
 const items: SessionInfo[] = [
@@ -307,12 +308,12 @@ assert.equal(plain.querySelector('[data-slot="session-tags"]'), null, "an untagg
 
 const welcomeStripe = home.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')
 assert(welcomeStripe, "a colored session shows the color stripe on the welcome screen")
-assert.equal(welcomeStripe.style.background, "var(--vscode-terminal-ansiRed)")
+assert.equal(welcomeStripe.style.background, "#e5534b")
 assert.equal(plain.querySelector('[data-slot="session-color-stripe"]'), null, "a session without a color has no stripe")
 
 const historyStripe = item("ses-home")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')
 assert(historyStripe, "the local history row shows the session color stripe")
-assert.equal(historyStripe.style.background, "var(--vscode-terminal-ansiRed)")
+assert.equal(historyStripe.style.background, "#e5534b")
 assert.equal(
   item("ses-plain")?.querySelector('[data-slot="session-color-stripe"]'),
   null,
@@ -328,7 +329,7 @@ assert.equal(
 )
 assert.equal(
   item("ses-plain")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
-  "var(--vscode-charts-blue)",
+  "#4a9ef7",
   "the shared store updates history stripes reactively",
 )
 
@@ -348,7 +349,7 @@ function openRowMenu(id: string, scope: string) {
 
 function purpleSwatch(menu: HTMLElement) {
   return [...menu.querySelectorAll<HTMLElement>(".am-color-grid-item")].find(
-    (entry) => entry.querySelector<HTMLElement>(".am-color-swatch")?.style.background === "var(--vscode-charts-purple)",
+    (entry) => entry.querySelector<HTMLElement>(".am-color-swatch")?.style.background === "#b180d7",
   )
 }
 
@@ -358,7 +359,7 @@ const historyMenu = findHistoryMenu()
 assert(historyMenu, "the history row menu opens")
 assert.equal(
   historyMenu.querySelectorAll(".am-color-grid-item").length,
-  9,
+  SECTION_COLORS.length + 1,
   "the menu exposes the full palette plus the clear entry",
 )
 assert(purpleSwatch(historyMenu), "the menu offers the shared color palette")
@@ -369,7 +370,7 @@ assert.deepEqual(colorWrites.at(-1), { type: "setSessionColor", sessionId: "ses-
 assert.equal(colorWrites.length, 1, "the menu assignment writes a single color message")
 assert.equal(
   item("ses-plain")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
-  "var(--vscode-charts-purple)",
+  "#b180d7",
   "the sidebar menu assignment updates the history stripe",
 )
 
@@ -377,7 +378,7 @@ const amRow = (id: string) =>
   root.querySelector<HTMLElement>(`[data-testid="am-history"] [data-slot="list-item"][data-key="${id}"]`)
 assert.equal(
   amRow("ses-home")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
-  "var(--vscode-charts-purple)",
+  "#b180d7",
   "a host-provided color source shows stripes without local tabs",
 )
 assert.equal(
@@ -387,7 +388,7 @@ assert.equal(
 )
 assert.equal(
   amRow("ses-plain")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
-  "var(--vscode-charts-blue)",
+  "#4a9ef7",
   "the host color map drives its own rows",
 )
 
@@ -401,7 +402,7 @@ await settle()
 assert.deepEqual(amSets.at(-1), { id: "ses-tagged", color: "Purple" })
 assert.equal(
   amRow("ses-tagged")?.querySelector<HTMLElement>('[data-slot="session-color-stripe"]')?.style.background,
-  "var(--vscode-charts-purple)",
+  "#b180d7",
   "the host-backed menu assignment updates the stripe",
 )
 

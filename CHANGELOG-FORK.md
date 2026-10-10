@@ -85,3 +85,4 @@
 - Capture snapshots once per root response and when background tasks settle, instead of after every mutating tool or model step.
 - Stop the parent agent from idling inside its turn while a background subagent runs: prompts now state that ending the turn does not end the task and that the completion notification resumes the session.
 - Fix Windows path normalization in the Promise-facade guard without relaxing its classification checks.
+- Expand the shared section and session tag palette from 8 to 17 colors — lime, pink, teal, indigo, brown, coral, gray, dark gray, and white — switch the whole palette to fixed swatches that stay readable on both light and dark themes, and lay the color menu out in two compact rows of nine.
