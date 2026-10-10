@@ -552,6 +552,7 @@ export interface ChatSettingsLoadedMessage {
   settings: {
     shiftTabCyclesVariant: boolean
     agentManagerSplash: boolean
+    compactHeaderActions: boolean // fork_change
     browserAutomation: boolean
     agentManagerBrowserOpenLinksIn: "external" | "integrated"
     workspaceTrusted: boolean
