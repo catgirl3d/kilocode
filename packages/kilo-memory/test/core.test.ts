@@ -1812,6 +1812,13 @@ describe("memory core package", () => {
         ops: [
           { action: "add", file: "project.md", section: "Facts", key: "tests", text: "Project tests" },
           { action: "add", file: "environment.md", section: "Commands", key: "tests", text: "bun test" },
+          {
+            action: "add",
+            file: "project.md",
+            section: "Decisions",
+            key: "project.md:Facts:tests",
+            text: "Normalized alias must survive exact removal.",
+          },
         ],
       })
 
@@ -1821,7 +1828,524 @@ describe("memory core package", () => {
       expect(result.result.removed).toBe(1)
       expect(result.detail).toMatchObject({ type: "saved", added: 0, removed: 1 })
       expect(shown.sources.project).not.toContain("Project tests")
+      expect(shown.sources.project).toContain("Normalized alias must survive exact removal.")
       expect(shown.sources.environment).toContain("bun test")
+    })
+  })
+
+  test("forget rejects a duplicated bare key across source files without changing either source", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", file: "project.md", section: "Facts", key: "shared", text: "Project version." },
+          {
+            action: "add",
+            file: "corrections.md",
+            section: "Corrections",
+            key: "shared",
+            text: "Correction version.",
+          },
+        ],
+      })
+      const before = {
+        project: await MemoryFiles.readSource(t.root, "project.md"),
+        corrections: await MemoryFiles.readSource(t.root, "corrections.md"),
+      }
+      const rejection = Memory.forget({ root: t.root, query: "shared" })
+
+      await expect(rejection).rejects.toThrow("project.md:Facts:shared")
+      await expect(rejection).rejects.toThrow("corrections.md:Corrections:shared")
+      await expect(rejection).rejects.toThrow("pass one exact record id as query")
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before.project)
+      expect(await MemoryFiles.readSource(t.root, "corrections.md")).toBe(before.corrections)
+    })
+  })
+
+  test("forget rejects a duplicated key across sections of one source file", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", file: "project.md", section: "Facts", key: "shared", text: "Fact version." },
+          {
+            action: "add",
+            file: "project.md",
+            section: "Decisions",
+            key: "shared",
+            text: "Decision version.",
+          },
+        ],
+      })
+      const before = await MemoryFiles.readSource(t.root, "project.md")
+
+      const rejection = Memory.forget({ root: t.root, query: "shared" })
+
+      await expect(rejection).rejects.toThrow("project.md:Facts:shared")
+      await expect(rejection).rejects.toThrow("project.md:Decisions:shared")
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before)
+    })
+  })
+
+  test("atomic mixed explicit batch rejects ambiguous removal without persisting any operation", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", file: "project.md", section: "Facts", key: "unique_remove", text: "Remove this fact." },
+          { action: "add", file: "project.md", section: "Facts", key: "shared", text: "Project shared fact." },
+          {
+            action: "add",
+            file: "environment.md",
+            section: "Commands",
+            key: "shared",
+            text: "Environment shared command.",
+          },
+          {
+            action: "add",
+            file: "corrections.md",
+            section: "Corrections",
+            key: "unrelated_correction",
+            text: "Keep this unrelated correction.",
+          },
+        ],
+      })
+
+      const paths = MemoryPaths.files(t.root)
+      const before = {
+        project: await MemoryFiles.readSource(t.root, "project.md"),
+        environment: await MemoryFiles.readSource(t.root, "environment.md"),
+        corrections: await MemoryFiles.readSource(t.root, "corrections.md"),
+        index: await MemoryFiles.readIndex(t.root),
+        state: await Bun.file(paths.state).text(),
+      }
+      expect(before.index).toContain("unique_remove")
+      expect(before.state).not.toBe("")
+
+      const rejection = Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "remove", query: "project.md:Facts:unique_remove" },
+          { action: "add", key: "new_batch_fact", text: "This add must not persist." },
+          { action: "remove", query: "shared" },
+        ],
+      })
+
+      await expect(rejection).rejects.toThrow('Ambiguous memory remove query "shared"')
+
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before.project)
+      expect(await MemoryFiles.readSource(t.root, "environment.md")).toBe(before.environment)
+      expect(await MemoryFiles.readSource(t.root, "corrections.md")).toBe(before.corrections)
+      expect(await MemoryFiles.readIndex(t.root)).toBe(before.index)
+      expect(await Bun.file(paths.state).text()).toBe(before.state)
+    })
+  })
+
+  test("forget removes one unique bare key and preserves other records", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", file: "project.md", section: "Facts", key: "unique", text: "Remove this record." },
+          { action: "add", file: "project.md", section: "Decisions", key: "keep", text: "Keep this record." },
+        ],
+      })
+
+      const result = await Memory.forget({ root: t.root, query: "unique" })
+      const shown = await Memory.show({ root: t.root })
+
+      expect(result.result.removed).toBe(1)
+      expect(shown.sources.project).not.toContain("Remove this record.")
+      expect(shown.sources.project).toContain("Keep this record.")
+    })
+  })
+
+  test("forget rejects a slug-normalized key collision without changing either source", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", file: "project.md", section: "Facts", key: "normalized_key", text: "Project version." },
+          {
+            action: "add",
+            file: "corrections.md",
+            section: "Corrections",
+            key: "normalized_key",
+            text: "Correction version.",
+          },
+        ],
+      })
+      const before = {
+        project: await MemoryFiles.readSource(t.root, "project.md"),
+        corrections: await MemoryFiles.readSource(t.root, "corrections.md"),
+      }
+      const rejection = Memory.forget({ root: t.root, query: "normalized key" })
+
+      await expect(rejection).rejects.toThrow('Ambiguous memory remove query "normalized key"')
+      await expect(rejection).rejects.toThrow("project.md:Facts:normalized_key")
+      await expect(rejection).rejects.toThrow("corrections.md:Corrections:normalized_key")
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before.project)
+      expect(await MemoryFiles.readSource(t.root, "corrections.md")).toBe(before.corrections)
+    })
+  })
+
+  test("correct rejects an ambiguous twin and explains the exact-id retry without changing sources", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", file: "project.md", section: "Facts", key: "shared", text: "Project version." },
+          {
+            action: "add",
+            file: "corrections.md",
+            section: "Corrections",
+            key: "shared",
+            text: "Correction version.",
+          },
+        ],
+      })
+      const before = {
+        project: await MemoryFiles.readSource(t.root, "project.md"),
+        corrections: await MemoryFiles.readSource(t.root, "corrections.md"),
+      }
+      const rejection = Memory.correct({ root: t.root, key: "shared", text: "Replacement version." })
+
+      await expect(rejection).rejects.toThrow("project.md:Facts:shared")
+      await expect(rejection).rejects.toThrow("corrections.md:Corrections:shared")
+      await expect(rejection).rejects.toThrow("pass one exact record id as key to select the record")
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before.project)
+      expect(await MemoryFiles.readSource(t.root, "corrections.md")).toBe(before.corrections)
+    })
+  })
+
+  test("correcting a project twin removes that fact and replaces the correction twin", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", file: "project.md", section: "Facts", key: "shared", text: "Project version." },
+          {
+            action: "add",
+            file: "corrections.md",
+            section: "Corrections",
+            key: "shared",
+            text: "Old correction version.",
+          },
+          {
+            action: "add",
+            file: "corrections.md",
+            section: "Corrections",
+            key: "other",
+            text: "Unrelated correction.",
+          },
+        ],
+      })
+
+      await Memory.correct({
+        root: t.root,
+        key: "project.md:Facts:shared",
+        text: "Replacement version.",
+      })
+      const project = await MemoryFiles.readSource(t.root, "project.md")
+      const corrections = await MemoryFiles.readSource(t.root, "corrections.md")
+
+      expect(project).not.toContain("Project version.")
+      expect(corrections).toContain("- shared :: Replacement version.")
+      expect(corrections).not.toContain("Old correction version.")
+      expect(corrections).toContain("- other :: Unrelated correction.")
+    })
+  })
+
+  test("correcting a correction twin replaces only that correction and preserves the project fact", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "add", file: "project.md", section: "Facts", key: "shared", text: "Project version." },
+          {
+            action: "add",
+            file: "corrections.md",
+            section: "Corrections",
+            key: "shared",
+            text: "Old correction version.",
+          },
+          {
+            action: "add",
+            file: "corrections.md",
+            section: "Corrections",
+            key: "other",
+            text: "Unrelated correction.",
+          },
+        ],
+      })
+
+      await Memory.correct({
+        root: t.root,
+        key: "corrections.md:Corrections:shared",
+        text: "Replacement version.",
+      })
+      const project = await MemoryFiles.readSource(t.root, "project.md")
+      const corrections = await MemoryFiles.readSource(t.root, "corrections.md")
+
+      expect(project).toContain("- shared :: Project version.")
+      expect(corrections).toContain("- shared :: Replacement version.")
+      expect(corrections).not.toContain("Old correction version.")
+      expect(corrections).toContain("- other :: Unrelated correction.")
+    })
+  })
+
+  test("duplicate remove queries keep their initial resolution", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "",
+          "## Facts",
+          "- tests :: A",
+          "## Decisions",
+          "- project.md_tests :: B",
+          "## Constraints",
+          "- project.md_tests :: C",
+          "",
+        ].join("\n"),
+      )
+
+      const before = await MemoryFiles.readSource(t.root, "project.md")
+      const result = await Memory.apply({
+        root: t.root,
+        ops: [
+          { action: "remove", query: "project.md:tests" },
+          { action: "remove", query: "project.md:tests" },
+        ],
+      })
+      const after = await MemoryFiles.readSource(t.root, "project.md")
+
+      expect(result.result.removed).toBe(1)
+      expect(after).toBe(before.replace("- tests :: A\n", ""))
+      expect(after).toContain("- project.md_tests :: B")
+      expect(after).toContain("- project.md_tests :: C")
+    })
+  })
+
+  test("stale canonical ids reject forget and correct without changing sources", async () => {
+    const id = "project.md:Facts:missing"
+    for (const action of ["forget", "correct"] as const) {
+      await use(async (t) => {
+        await Memory.enable({ root: t.root })
+        await MemoryFiles.writeSource(
+          t.root,
+          "project.md",
+          ["# Project Memory", "", "## Decisions", "- project.md_facts_missing :: Surviving alias.", ""].join("\n"),
+        )
+        const before = {
+          project: await MemoryFiles.readSource(t.root, "project.md"),
+          corrections: await MemoryFiles.readSource(t.root, "corrections.md"),
+        }
+
+        if (action === "forget") {
+          await expect(Memory.forget({ root: t.root, query: id })).rejects.toThrow(
+            `no current memory record for id "${id}"`,
+          )
+        }
+        if (action === "correct") {
+          await expect(Memory.correct({ root: t.root, key: id, text: "Replacement." })).rejects.toThrow(
+            `no current memory record for id "${id}"`,
+          )
+        }
+
+        expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before.project)
+        expect(await MemoryFiles.readSource(t.root, "corrections.md")).toBe(before.corrections)
+      })
+    }
+  })
+
+  test("canonical-id forget ignores a literal raw key equal to that id", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "",
+          "## Facts",
+          "- tests :: Canonical record.",
+          "## Decisions",
+          "- project.md:Facts:tests :: Literal raw key record.",
+          "",
+        ].join("\n"),
+      )
+
+      const result = await Memory.forget({ root: t.root, query: "project.md:Facts:tests" })
+      const project = await MemoryFiles.readSource(t.root, "project.md")
+
+      expect(result.result.removed).toBe(1)
+      expect(project).not.toContain("Canonical record.")
+      expect(project).toContain("- project.md:Facts:tests :: Literal raw key record.")
+    })
+  })
+
+  test("physical duplicate lines reject forget and correct before changing sources", async () => {
+    for (const action of ["id", "bare", "correct"] as const) {
+      await use(async (t) => {
+        await Memory.enable({ root: t.root })
+        await MemoryFiles.writeSource(
+          t.root,
+          "project.md",
+          ["# Project Memory", "", "## Facts", "- duplicate :: first", "- duplicate :: second", ""].join("\n"),
+        )
+        const before = {
+          project: await MemoryFiles.readSource(t.root, "project.md"),
+          corrections: await MemoryFiles.readSource(t.root, "corrections.md"),
+        }
+
+        const rejection =
+          action === "id"
+            ? Memory.forget({ root: t.root, query: "project.md:Facts:duplicate" })
+            : action === "bare"
+              ? Memory.forget({ root: t.root, query: "duplicate" })
+              : Memory.correct({ root: t.root, key: "project.md:Facts:duplicate", text: "Replacement." })
+        const error = await rejection.catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+
+        expect(error).toBeInstanceOf(Error)
+        if (!(error instanceof Error)) return
+        expect(error.message).toContain("stored lines are duplicated")
+        expect(error.message).not.toContain("pass one exact record id")
+
+        expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before.project)
+        expect(await MemoryFiles.readSource(t.root, "corrections.md")).toBe(before.corrections)
+      })
+    }
+
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        ["# Project Memory", "", "## Facts!", "- collision :: first", "## Facts?", "- collision :: second", ""].join(
+          "\n",
+        ),
+      )
+      const before = await MemoryFiles.readSource(t.root, "project.md")
+
+      await expect(Memory.forget({ root: t.root, query: "collision" })).rejects.toThrow("Ambiguous memory")
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before)
+    })
+  })
+
+  test("many-match ambiguity keeps retry guidance and a bounded id list", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "",
+          "## Facts",
+          "- many :: project fact",
+          "## Decisions",
+          "- many :: project decision",
+          "## Constraints",
+          "- many :: project constraint",
+          "## Questions",
+          "- many :: project question",
+          "",
+        ].join("\n"),
+      )
+      await MemoryFiles.writeSource(
+        t.root,
+        "environment.md",
+        ["# Environment", "", "## Commands", "- many :: command", "## Paths", "- many :: path", ""].join("\n"),
+      )
+      await MemoryFiles.writeSource(
+        t.root,
+        "corrections.md",
+        ["# Corrective Memory", "", "## Corrections", "- many :: correction", "## Notes", "- many :: note", ""].join(
+          "\n",
+        ),
+      )
+
+      const error = await Memory.forget({ root: t.root, query: "many" }).catch((err: unknown) =>
+        err instanceof Error ? err : new Error(String(err)),
+      )
+
+      expect(error).toBeInstanceOf(Error)
+      if (!(error instanceof Error)) return
+      expect(error.message.length).toBeLessThanOrEqual(240)
+      expect(error.message.startsWith('Ambiguous memory remove query "many": pass one exact record id as query')).toBe(
+        true,
+      )
+      expect(error.message).toContain("project.md:Facts:many")
+      expect(error.message).toContain("+4 more")
+    })
+  })
+
+  test("long ambiguity ids are omitted instead of being truncated into pseudo-ids", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const key = `key_${"k".repeat(146)}`
+      const one = `section_${"x".repeat(119)}`
+      const two = `section_${"y".repeat(119)}`
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        ["# Project Memory", `## ${one}`, `- ${key} :: first`, `## ${two}`, `- ${key} :: second`, ""].join("\n"),
+      )
+      const before = {
+        project: await MemoryFiles.readSource(t.root, "project.md"),
+      }
+
+      const error = await Memory.forget({ root: t.root, query: `project.md:${key}` }).catch((err: unknown) =>
+        err instanceof Error ? err : new Error(String(err)),
+      )
+
+      expect(error).toBeInstanceOf(Error)
+      if (!(error instanceof Error)) return
+      expect(error.message.length).toBeLessThanOrEqual(240)
+      expect(error.message.startsWith("Ambiguous memory remove query")).toBe(true)
+      expect(error.message).toContain("pass one exact record id as query")
+      expect(error.message).not.toContain(`project.md:${one.slice(0, 30)}...`)
+      expect(error.message).toContain("ids omitted (too long to display)")
+      expect(error.message).toContain("kilo_memory_recall typed/search")
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before.project)
+    })
+  })
+
+  test("ambiguity reports long later matches that do not fit the id list", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const key = "shared_key_1234567890"
+      const section = `section_${"x".repeat(119)}`
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        ["# Project Memory", "## Facts", `- ${key} :: short`, `## ${section}`, `- ${key} :: long`, ""].join("\n"),
+      )
+      const before = await MemoryFiles.readSource(t.root, "project.md")
+
+      const error = await Memory.forget({ root: t.root, query: key }).catch((err: unknown) =>
+        err instanceof Error ? err : new Error(String(err)),
+      )
+
+      expect(error).toBeInstanceOf(Error)
+      if (!(error instanceof Error)) return
+      expect(error.message.length).toBeLessThanOrEqual(240)
+      expect(error.message).toContain(`project.md:Facts:${key}`)
+      expect(error.message).toContain("+1 more")
+      expect(error.message).toContain("pass one exact record id as query")
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before)
     })
   })
 
