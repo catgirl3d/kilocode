@@ -32,6 +32,12 @@ type BundledSDK = { languageModel(modelId: string): LanguageModelV3 }
 
 export const KILO_BUNDLED_PROVIDERS: Record<string, () => Promise<(options: any) => BundledSDK>> = {
   "@kilocode/kilo-gateway": async () => createKilo as unknown as (options: any) => BundledSDK,
+  // fork_change start - bundled patched merge-gateway provider keeps cache usage; drop once upstream ships the fix
+  "merge-gateway-ai-sdk-provider": () =>
+    import("merge-gateway-ai-sdk-provider").then(
+      (m) => m.createMergeGateway as unknown as (options: any) => BundledSDK,
+    ),
+  // fork_change end
 }
 
 // ---------------------------------------------------------------------------
