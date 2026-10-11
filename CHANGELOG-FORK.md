@@ -68,6 +68,7 @@
 - Hide the "Move your opencode configuration" notice.
 - Hide the "Feedback & Support" button and the "How Agent Manager works" reopen button from the welcome screens in VS Code chat and Agent Manager.
 - Remember explicitly selected models and reasoning variants for each mode when starting new tasks.
+- Keep prompt selector popovers closed until clicked or opened with the keyboard, so moving the pointer across the prompt toolbar no longer switches the open selector.
 - Isolate CLI unit tests from the developer's real Kilo setup: test runs no longer read global skills, rules, or VS Code MCP settings from the actual user profile, and docs and VS Code tasks now point at the isolated per-file test runner.
 - Fix Enhance Prompt when using ChatGPT sign-in (OpenAI OAuth): stream the rewrite request and send the instruction the way the Codex backend expects.
 - Cap LLM retry waits at 60 seconds so provider quota windows no longer cause excessive session stalls.
