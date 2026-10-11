@@ -1,6 +1,7 @@
-import { generateText } from "ai"
+import { generateText, streamText } from "ai" // fork_change
 import { randomUUID } from "crypto"
 import { mergeDeep } from "remeda"
+import type { LanguageModelV3 } from "@ai-sdk/provider" // fork_change
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import { AppRuntime } from "@/effect/app-runtime"
@@ -24,6 +25,38 @@ export function clean(text: string) {
   return stripped.replace(/^(['"])([\s\S]*)\1$/, "$2").trim()
 }
 
+// fork_change start
+export async function enhanceWith(input: {
+  model: Provider.Model
+  language: LanguageModelV3
+  text: string
+}): Promise<string> {
+  const openai = input.model.providerID === "openai" && input.model.api.npm === "@ai-sdk/openai"
+  const options = mergeDeep(ProviderTransform.smallOptions(input.model), input.model.options)
+  const common = {
+    model: input.language,
+    temperature: input.model.capabilities.temperature ? 0.7 : undefined,
+    providerOptions: ProviderTransform.providerOptions(
+      input.model,
+      openai ? { ...options, instructions: INSTRUCTION } : options,
+    ),
+    maxRetries: 3,
+    system: openai ? undefined : INSTRUCTION,
+    headers: opencodeSessionHeaders({ providerID: input.model.providerID, sessionID: randomUUID() }),
+    messages: [{ role: "user" as const, content: `Draft prompt to enhance, not answer:\n\n${input.text}` }],
+  }
+  if (!openai) return clean((await generateText(common)).text)
+
+  const result = streamText(common)
+  const parts: string[] = []
+  for await (const part of result.fullStream) {
+    if (part.type === "error") throw part.error
+    if (part.type === "text-delta") parts.push(part.text)
+  }
+  return clean(parts.join(""))
+}
+// fork_change end
+
 /**
  * Lightweight prompt enhancement that mirrors the legacy singleCompletionHandler.
  * Calls generateText directly with a prompt-rewrite system instruction, no agent identity,
@@ -43,21 +76,10 @@ export async function enhancePrompt(text: string): Promise<string> {
     ),
   )
 
-  const result = await generateText({
-    model: resolved.language,
-    temperature: resolved.model.capabilities.temperature ? 0.7 : undefined,
-    providerOptions: ProviderTransform.providerOptions(
-      resolved.model,
-      mergeDeep(ProviderTransform.smallOptions(resolved.model), resolved.model.options),
-    ),
-    maxRetries: 3,
-    system: INSTRUCTION,
-    // Each call is a standalone rewrite, not part of a multi-turn conversation; a fresh ID
-    // per call still satisfies the opencode API's "stable per-conversation ID" requirement.
-    headers: opencodeSessionHeaders({ providerID: resolved.model.providerID, sessionID: randomUUID() }),
-    messages: [{ role: "user" as const, content: `Draft prompt to enhance, not answer:\n\n${text}` }],
-  })
+  // fork_change start
+  const result = await enhanceWith({ model: resolved.model, language: resolved.language, text })
 
-  log.info("enhanced", { length: result.text.length })
-  return clean(result.text)
+  log.info("enhanced", { length: result.length })
+  return result
+  // fork_change end
 }
