@@ -4,8 +4,6 @@
  * A layout shell shared by the chat prompt and the Agent Manager New Worktree
  * dialog. Callers pass their existing selectors as slots, so each popover,
  * slash command, and keyboard shortcut keeps its own code path. The shell adds:
- * - Menu bar behavior: while one popover is open, moving the pointer onto
- *   another segment opens that segment instead.
  * - Left and Right arrows move focus between segments.
  * - Reasoning collapses before the agent or model name truncates
  *   (`data-tight`), and a changed reasoning value peeks out for a moment
@@ -128,32 +126,6 @@ export const PromptSelectors: Component<Props> = (props) => {
     })
   })
 
-  // Pending hover switch, cancelled on a newer hover and on unmount.
-  let hover = 0
-  onCleanup(() => cancelAnimationFrame(hover))
-
-  /** Another segment's popover is open, so hovering `target` should switch to it. */
-  const switchable = (target: HTMLButtonElement) => {
-    if (!root || !target.isConnected || target.disabled || target.hasAttribute("data-expanded")) return false
-    return triggers(root).some((el) => el !== target && el.hasAttribute("data-expanded"))
-  }
-
-  const onPointerOver = (e: PointerEvent) => {
-    if (e.pointerType === "touch") return
-    const target = (e.target as HTMLElement).closest<HTMLButtonElement>(TRIGGER)
-    if (!target || !switchable(target)) return
-    // The new popover takes focus, so the open one closes as an outside focus.
-    // Wait one frame so the hover tooltip has opened first. Opening the popover
-    // then closes it, the same as a click does. Check again after the frame:
-    // the open popover may have closed, or the pointer may have left.
-    cancelAnimationFrame(hover)
-    hover = requestAnimationFrame(() => {
-      hover = 0
-      if (!target.matches(":hover") || !switchable(target)) return
-      target.click()
-    })
-  }
-
   const onKeyDown = (e: KeyboardEvent) => {
     if (!root || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return
     const list = triggers(root)
@@ -164,8 +136,10 @@ export const PromptSelectors: Component<Props> = (props) => {
     list[(idx + step + list.length) % list.length]?.focus()
   }
 
+  // fork_change start
   return (
-    <div class="prompt-selectors" ref={root} onPointerOver={onPointerOver} onKeyDown={onKeyDown}>
+    <div class="prompt-selectors" ref={root} onKeyDown={onKeyDown}>
+      {/* fork_change end */}
       <div class="prompt-selector" data-part="agent">
         {props.agent}
       </div>
