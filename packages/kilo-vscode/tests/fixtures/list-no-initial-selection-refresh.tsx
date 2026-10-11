@@ -101,9 +101,7 @@ function noneActive() {
 }
 
 function refresh(seq: number) {
-  setItems((prev) =>
-    prev.map((entry) => (entry.id === "one" ? { ...entry, title: `Item one live ${seq}` } : entry)),
-  )
+  setItems((prev) => prev.map((entry) => (entry.id === "one" ? { ...entry, title: `Item one live ${seq}` } : entry)))
 }
 
 await settle()
