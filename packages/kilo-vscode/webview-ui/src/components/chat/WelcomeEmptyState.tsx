@@ -1,12 +1,12 @@
-// fork_change start - hide feedback button from the welcome screen
-import { type Component, createSignal, For, Show, createMemo } from "solid-js"
+import { type Component, createSignal, For, Show, createMemo } from "solid-js" // fork_change - feedback footer removed (no JSX type), createMemo for date groups
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { AnimatedKiloLogo, reduced } from "../brand/AnimatedKiloLogo"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
 import { recentSessions } from "../../context/session-utils"
-import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../utils/date"
+import { DATE_GROUP_KEYS, dateGroupKey, formatRelativeDate } from "../../utils/date" // fork_change
 import type { SessionInfo } from "../../types/messages"
+// fork_change start
 import { SessionTags } from "../shared/SessionTags"
 import { SessionColorStripe } from "../shared/SessionColorStripe"
 // fork_change end
