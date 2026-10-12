@@ -77,6 +77,15 @@ export interface WorktreeInfo {
   sessionId?: string
 }
 
+// fork_change start
+export class WorktreeRollbackError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "WorktreeRollbackError"
+  }
+}
+// fork_change end
+
 export type StartPointSource = "remote" | "local-tracking" | "local-branch" | "fallback"
 
 interface StartPointResult {
@@ -346,6 +355,17 @@ export class WorktreeManager {
     return this.withGitLock(() => this.renameBranchImpl(worktreePath, current, requested))
   }
 
+  // fork_change start
+  async renameWorktree(
+    worktreePath: string,
+    current: string,
+    requested: string,
+  ): Promise<{ branch: string; path: string }> {
+    await this.ensureMigrated()
+    return this.withGitLock(() => this.renameWorktreeImpl(worktreePath, current, requested))
+  }
+  // fork_change end
+
   /** Whether the worktree has uncommitted changes or commits ahead of base.
    *  Used to defer automatic branch naming until the branch carries real work. */
   async hasWork(worktreePath: string, base: string): Promise<boolean> {
@@ -518,6 +538,19 @@ export class WorktreeManager {
   }
 
   private async renameBranchImpl(worktreePath: string, current: string, requested: string): Promise<string> {
+    const { branch, git } = await this.validateRename(worktreePath, current, requested, false) // fork_change
+
+    await git.raw(["branch", "-m", current, branch])
+    this.log(`Renamed branch: ${current} -> ${branch}`)
+    return branch
+  } // fork_change
+
+  private async validateRename( // fork_change
+    worktreePath: string, // fork_change
+    current: string, // fork_change
+    requested: string, // fork_change
+    worktreeChecks: boolean, // fork_change
+  ): Promise<{ git: SimpleGit; branch: string }> { // fork_change
     if (!this.isManagedPath(worktreePath)) throw new Error("Worktree is not managed by Agent Manager")
 
     const git = this.client(worktreePath)
@@ -538,16 +571,151 @@ export class WorktreeManager {
 
     const locals = new Set((await this.git.branch()).all)
     const remoteNames = new Set(remotes.filter(Boolean).map((ref) => ref.replace(/^[^/]+\//, "")))
-    const available = (name: string) => !locals.has(name) && !remoteNames.has(name)
+    // fork_change start
+    const listing = worktreeChecks ? parseWorktreeList(await this.git.raw(["worktree", "list", "--porcelain"])) : []
+    if (worktreeChecks) {
+      const source = listing.find((entry) => pathKey(entry.path) === pathKey(worktreePath))
+      if (!source || source.bare || source.detached || source.branch !== current) {
+        throw new Error("Worktree is not registered at the requested path")
+      }
+    }
+    const registered = new Set(listing.map((entry) => pathKey(entry.path)))
+    const available = (name: string) => {
+      if (locals.has(name) || remoteNames.has(name)) return false
+      if (!worktreeChecks) return true
+      const target = path.join(this.dir, directory(name))
+      return !fs.existsSync(target) && !registered.has(pathKey(target))
+    }
+    // fork_change end
     const branch = available(base)
       ? base
       : Array.from({ length: 10_000 }, (_, index) => `${base}-${index + 2}`).find(available)
-    if (!branch) throw new Error("No available generated branch name")
+    // fork_change start
+    if (!branch) {
+      throw new Error(worktreeChecks ? "No available generated worktree name" : "No available generated branch name")
+    }
+    // fork_change end
 
-    await git.raw(["branch", "-m", current, branch])
-    this.log(`Renamed branch: ${current} -> ${branch}`)
-    return branch
+    return { git, branch } // fork_change
+  } // fork_change
+
+  // fork_change start
+  private async renameWorktreeImpl(
+    worktreePath: string,
+    current: string,
+    requested: string,
+  ): Promise<{ branch: string; path: string }> {
+    const { branch } = await this.validateRename(worktreePath, current, requested, true)
+
+    const target = path.join(this.dir, directory(branch))
+    await this.git.raw(["branch", "-m", current, branch])
+    try {
+      await this.moveWorktree(worktreePath, target, branch)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      try {
+        await this.restoreRenamedWorktree(worktreePath, target, branch)
+      } catch (restore) {
+        const detail = restore instanceof Error ? restore.message : String(restore)
+        throw new WorktreeRollbackError(
+          `Worktree rollback failed for source=${worktreePath}, target=${target}, branch=${branch}: ${detail}; original move failure: ${message}`,
+        )
+      }
+      try {
+        await this.git.raw(["branch", "-m", branch, current])
+      } catch (rollback) {
+        const detail = rollback instanceof Error ? rollback.message : String(rollback)
+        throw new WorktreeRollbackError(
+          `Worktree rollback failed for source=${worktreePath}, target=${target}; branch rollback failed while restoring ${branch} to ${current}: ${detail}; original move failure: ${message}`,
+        )
+      }
+      try {
+        await this.verifyWorktreeState(worktreePath, target, current)
+      } catch (verify) {
+        const detail = verify instanceof Error ? verify.message : String(verify)
+        throw new WorktreeRollbackError(
+          `Worktree rollback verification failed for source=${worktreePath}, target=${target}, branch=${current}: ${detail}; original move failure: ${message}`,
+        )
+      }
+      throw new Error(`Failed to move worktree after renaming branch "${current}" to "${branch}": ${message}`)
+    }
+
+    this.log(`Renamed worktree: ${current} -> ${branch} (${worktreePath} -> ${target})`)
+    return { branch, path: target }
   }
+  // fork_change end
+
+  // fork_change start
+  private async moveWorktree(oldPath: string, newPath: string, branch: string): Promise<void> {
+    let nativeError: unknown
+    // Git-native move was verified on Windows Git 2.51.0: it preserves the checkout and updates
+    // worktree metadata. Keep the filesystem fallback for Git versions and submodule checkouts that reject it.
+    try {
+      await this.git.raw(["worktree", "move", oldPath, newPath])
+      await this.verifyMovedWorktree(oldPath, newPath, branch)
+      return
+    } catch (error) {
+      nativeError = error
+    }
+
+    try {
+      if (fs.existsSync(oldPath)) await fs.promises.rename(oldPath, newPath)
+      await this.git.raw(["worktree", "repair", newPath])
+      await this.verifyMovedWorktree(oldPath, newPath, branch)
+      return
+    } catch (fallback) {
+      const native = nativeError instanceof Error ? nativeError.message : String(nativeError)
+      const repair = fallback instanceof Error ? fallback.message : String(fallback)
+      throw new Error(`Git worktree move failed: ${native}; filesystem rename and worktree repair failed: ${repair}`)
+    }
+  }
+  // fork_change end
+
+  // fork_change start
+  private async restoreRenamedWorktree(oldPath: string, newPath: string, branch: string): Promise<void> {
+    const oldExists = fs.existsSync(oldPath)
+    const newExists = fs.existsSync(newPath)
+    if (oldExists === newExists) {
+      throw new Error(
+        `Cannot identify worktree to restore: source=${oldPath} exists=${oldExists}, target=${newPath} exists=${newExists}`,
+      )
+    }
+
+    const active = oldExists ? oldPath : newPath
+    const other = oldExists ? newPath : oldPath
+    await this.verifyWorktreeState(active, other, branch)
+    if (!oldExists) {
+      await fs.promises.rename(newPath, oldPath)
+      await this.git.raw(["worktree", "repair", "--", oldPath])
+    }
+    await this.verifyWorktreeState(oldPath, newPath, branch)
+  }
+
+  private async verifyWorktreeState(activePath: string, otherPath: string, branch: string): Promise<void> {
+    if (!fs.existsSync(activePath) || fs.existsSync(otherPath)) {
+      throw new Error(`Unexpected worktree paths: active=${activePath}, other=${otherPath}`)
+    }
+    const git = this.client(activePath)
+    await git.raw(["status"])
+    const actual = (await git.revparse(["--abbrev-ref", "HEAD"])).trim()
+    if (actual !== branch) throw new Error(`Worktree is on branch "${actual}", expected "${branch}"`)
+
+    const entries = parseWorktreeList(await this.git.raw(["worktree", "list", "--porcelain"]))
+    const entry = entries.find((item) => pathKey(item.path) === pathKey(activePath))
+    if (!entry || entry.detached || entry.bare || entry.branch !== branch) {
+      throw new Error(`Git worktree list did not verify ${activePath} on branch ${branch}`)
+    }
+    if (entries.some((item) => pathKey(item.path) === pathKey(otherPath))) {
+      throw new Error(`Git worktree list still contains the other path ${otherPath}`)
+    }
+  }
+  // fork_change end
+
+  // fork_change start
+  private async verifyMovedWorktree(oldPath: string, newPath: string, branch: string): Promise<void> {
+    return this.verifyWorktreeState(newPath, oldPath, branch)
+  }
+  // fork_change end
 
   private async prepareWorktreePath(worktreePath: string, branch?: string): Promise<string> {
     if (!fs.existsSync(worktreePath)) return worktreePath

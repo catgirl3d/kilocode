@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import * as vscode from "vscode"
 import { KiloConnectionService } from "../../src/services/cli-backend/connection-service"
-import type { SSEPayload } from "../../src/services/cli-backend/sdk-sse-adapter"
+import { SdkSSEAdapter, type SSEPayload } from "../../src/services/cli-backend/sdk-sse-adapter"
 
 function state(value: boolean) {
   return {
@@ -383,6 +383,7 @@ describe("KiloConnectionService server exit handling", () => {
 
 describe("KiloConnectionService manual disconnect", () => {
   type Internals = {
+    handleServerExit: (code: number | null, signal: NodeJS.Signals | null) => void
     serverManager: {
       dispose: () => void
       getServer: () => Promise<{ port: number; password: string }>
@@ -391,9 +392,17 @@ describe("KiloConnectionService manual disconnect", () => {
     healthPollTimer: ReturnType<typeof setInterval> | null
   }
 
-  function backend(ready = true) {
+  function backend(
+    ready: boolean | ((attempt: number) => boolean) = true,
+    startup: (attempt: number) => Promise<{ port: number; password: string }> = async () => ({
+      port: 52512,
+      password: "test",
+    }),
+  ) {
     const opened = Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>()
     const requests: string[] = []
+    let attempts = 0
+    let startups = 0
     const preconnect = globalThis.fetch.preconnect
     const transport = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
@@ -401,11 +410,13 @@ describe("KiloConnectionService manual disconnect", () => {
           const route = new URL(input instanceof Request ? input.url : String(input)).pathname
           requests.push(route)
           if (route !== "/global/event") return Response.json({})
+          attempts++
+          const active = typeof ready === "function" ? ready(attempts) : ready
           return new Response(
             new ReadableStream<Uint8Array>(
               {
                 start(controller) {
-                  if (!ready) return
+                  if (!active) return
                   controller.enqueue(
                     new TextEncoder().encode(
                       'data: {"directory":"/repo","payload":{"type":"server.connected","properties":{}}}\n\n',
@@ -429,7 +440,7 @@ describe("KiloConnectionService manual disconnect", () => {
     // Replace process startup and HTTP transport, not the SDK or SSE lifecycle.
     internal.serverManager = {
       dispose: () => {},
-      getServer: async () => ({ port: 52512, password: "test" }),
+      getServer: () => startup(++startups),
     }
     return {
       service,
@@ -555,7 +566,7 @@ describe("KiloConnectionService manual disconnect", () => {
       await state.opened.promise
       state.service.disconnect()
 
-      await expect(pending).rejects.toThrow("SSE connection ended")
+      await expect(pending).rejects.toThrow("CLI is disconnected. Retry to reconnect.")
       expect(state.service.getConnectionState()).toBe("error")
       expect(state.service.getConnectionError()?.message).toBe("CLI stopped. Retry to reconnect.")
       expect(state.service.getServerInfo()).toBeNull()
@@ -565,6 +576,193 @@ describe("KiloConnectionService manual disconnect", () => {
       expect(state.internal.healthPollTimer).toBeNull()
     } finally {
       state.dispose()
+    }
+  })
+
+  test("serializes a resumed retry behind cancelled startup and shares the fresh attempt", async () => {
+    const firstStartup = Promise.withResolvers<{ port: number; password: string }>()
+    const secondStartup = Promise.withResolvers<{ port: number; password: string }>()
+    const secondStarted = Promise.withResolvers<void>()
+    const log: string[] = []
+    const state = backend(true, (attempt) => {
+      log.push(`get:${attempt}`)
+      if (attempt === 1) return firstStartup.promise
+      secondStarted.resolve()
+      return secondStartup.promise
+    })
+    let disposed = 0
+    const manager = state.internal.serverManager
+    state.internal.serverManager = {
+      getServer: manager.getServer,
+      dispose: () => {
+        disposed += 1
+        log.push(`dispose:${disposed}`)
+      },
+    }
+    const originalConnect = SdkSSEAdapter.prototype.connect
+    const adapters: SdkSSEAdapter[] = []
+    const connect = spyOn(SdkSSEAdapter.prototype, "connect").mockImplementation(function (this: SdkSSEAdapter) {
+      adapters.push(this)
+      originalConnect.call(this)
+    })
+    const original = state.service.connect("/repo")
+    log.push("connect:original")
+    state.service.disconnect()
+    state.service.resume()
+    const retry = state.service.connect("/repo")
+    const peer = state.service.connect("/repo")
+    void retry.catch(() => {})
+    void peer.catch(() => {})
+    try {
+      expect(state.requests).toEqual([])
+
+      firstStartup.resolve({ port: 52512, password: "cancelled" })
+      await expect(original).rejects.toThrow("CLI is disconnected. Retry to reconnect.")
+      expect(log).toContain("get:2")
+      await secondStarted.promise
+
+      expect(state.requests).toEqual([])
+      expect(adapters).toEqual([])
+      expect(disposed).toBe(2)
+      expect(log.indexOf("dispose:2")).toBeLessThan(log.indexOf("get:2"))
+
+      secondStartup.resolve({ port: 52513, password: "fresh" })
+      await expect(Promise.all([retry, peer])).resolves.toEqual([undefined, undefined])
+
+      expect(state.requests.filter((route) => route === "/global/event")).toHaveLength(1)
+      expect(adapters).toHaveLength(1)
+      expect(state.service.getConnectionState()).toBe("connected")
+      expect(state.service.getConnectionError()).toBeNull()
+      expect(state.service.getServerInfo()).toEqual({ port: 52513 })
+      expect(state.service.getServerConfig()).toEqual({
+        baseUrl: "http://127.0.0.1:52513",
+        password: "fresh",
+      })
+      expect(state.service.getClient()).toBeTruthy()
+      expect(state.internal.checkinTimer).not.toBeNull()
+      expect(state.internal.healthPollTimer).not.toBeNull()
+    } finally {
+      firstStartup.resolve({ port: 52512, password: "cancelled" })
+      secondStartup.resolve({ port: 52513, password: "fresh" })
+      await Promise.allSettled([original, retry, peer])
+      for (const adapter of adapters) adapter.dispose()
+      connect.mockRestore()
+      state.dispose()
+    }
+  })
+
+  test("publishes the shared attempt before synchronous connecting listeners can reenter", async () => {
+    const startup = Promise.withResolvers<{ port: number; password: string }>()
+    let starts = 0
+    const state = backend(true, () => {
+      starts += 1
+      return startup.promise
+    })
+    let entered = false
+    let nested: Promise<void> | undefined
+    state.service.onStateChange((event) => {
+      if (event !== "connecting" || entered) return
+      entered = true
+      nested = state.service.connect("/repo")
+    })
+    const original = state.service.connect("/repo")
+    void original.catch(() => {})
+    void nested?.catch(() => {})
+
+    try {
+      expect(starts).toBe(1)
+      startup.reject(new Error("startup failed"))
+      await Promise.allSettled([original, nested!])
+    } finally {
+      startup.reject(new Error("startup failed"))
+      await Promise.allSettled([original, nested!])
+      state.dispose()
+    }
+  })
+
+  test("ignores late callbacks from an old adapter after a fresh retry connects", async () => {
+    type Hooks = {
+      event?: Parameters<SdkSSEAdapter["onEvent"]>[0]
+      error?: Parameters<SdkSSEAdapter["onError"]>[0]
+      state?: Parameters<SdkSSEAdapter["onStateChange"]>[0]
+    }
+
+    const hooks = new Map<SdkSSEAdapter, Hooks>()
+    const originalEvent = SdkSSEAdapter.prototype.onEvent
+    const originalError = SdkSSEAdapter.prototype.onError
+    const originalState = SdkSSEAdapter.prototype.onStateChange
+    const onEvent = spyOn(SdkSSEAdapter.prototype, "onEvent").mockImplementation(function (
+      this: SdkSSEAdapter,
+      handler,
+    ) {
+      hooks.set(this, { ...hooks.get(this), event: handler })
+      return originalEvent.call(this, handler)
+    })
+    const onError = spyOn(SdkSSEAdapter.prototype, "onError").mockImplementation(function (
+      this: SdkSSEAdapter,
+      handler,
+    ) {
+      hooks.set(this, { ...hooks.get(this), error: handler })
+      return originalError.call(this, handler)
+    })
+    const onState = spyOn(SdkSSEAdapter.prototype, "onStateChange").mockImplementation(function (
+      this: SdkSSEAdapter,
+      handler,
+    ) {
+      hooks.set(this, { ...hooks.get(this), state: handler })
+      return originalState.call(this, handler)
+    })
+    const ctx = backend(true, async (attempt) => ({
+      port: attempt === 1 ? 52512 : 52513,
+      password: attempt === 1 ? "old" : "fresh",
+    }))
+    const events: Array<{ event: SSEPayload; dir?: string }> = []
+    const states: Array<{ value: string; error?: string }> = []
+    ctx.service.onEvent((event, dir) => events.push({ event, dir }))
+    ctx.service.onStateChange((value, error) => states.push({ value, error: error?.message }))
+
+    try {
+      await ctx.service.connect("/repo")
+      const old = [...hooks.keys()].at(0)
+      const stale = old == null ? undefined : hooks.get(old)
+      expect(stale?.event).toBeDefined()
+      expect(stale?.error).toBeDefined()
+      expect(stale?.state).toBeDefined()
+
+      ctx.service.disconnect()
+      ctx.service.resume()
+      await ctx.service.connect("/repo")
+
+      const client = ctx.service.getClient()
+      const config = ctx.service.getServerConfig()
+      const info = ctx.service.getServerInfo()
+      const current = ctx.service.getConnectionState()
+      const error = ctx.service.getConnectionError()
+      const checkin = ctx.internal.checkinTimer
+      const health = ctx.internal.healthPollTimer
+      const eventCount = events.length
+      const stateCount = states.length
+      const late = { id: "old-late", type: "server.connected", properties: {} } satisfies SSEPayload
+
+      stale?.event?.(late, "/repo")
+      stale?.error?.(new Error("old adapter error"))
+      stale?.state?.("disconnected")
+
+      expect(events).toHaveLength(eventCount)
+      expect(states).toHaveLength(stateCount)
+      expect(ctx.service.getConnectionState()).toBe(current)
+      expect(ctx.service.getConnectionError()).toBe(error)
+      expect(ctx.service.getServerConfig()).toBe(config)
+      expect(ctx.service.getServerInfo()).toBe(info)
+      expect(ctx.service.getClient()).toBe(client)
+      expect(ctx.internal.checkinTimer).toBe(checkin)
+      expect(ctx.internal.healthPollTimer).toBe(health)
+    } finally {
+      for (const adapter of hooks.keys()) adapter.dispose()
+      ctx.dispose()
+      onEvent.mockRestore()
+      onError.mockRestore()
+      onState.mockRestore()
     }
   })
 
@@ -581,7 +779,7 @@ describe("KiloConnectionService manual disconnect", () => {
       })
 
       try {
-        await expect(state.service.connect("/repo")).rejects.toThrow("CLI stopped. Retry to reconnect.")
+        await expect(state.service.connect("/repo")).rejects.toThrow("CLI is disconnected. Retry to reconnect.")
         expect(events).toContain("connected")
         expect(state.service.getConnectionState()).toBe("error")
         expect(state.service.getConnectionError()?.message).toBe("CLI stopped. Retry to reconnect.")
@@ -593,4 +791,25 @@ describe("KiloConnectionService manual disconnect", () => {
       }
     },
   )
+
+  test("rejects when the server exits in the synchronous connected listener", async () => {
+    const state = backend()
+    const message = "CLI background process exited with code 9. Retry to reconnect."
+    state.service.onStateChange((event) => {
+      if (event === "connected") state.internal.handleServerExit(9, null)
+    })
+
+    try {
+      await expect(state.service.connect("/repo")).rejects.toThrow(message)
+      expect(state.service.getConnectionState()).toBe("error")
+      expect(state.service.getConnectionError()?.message).toBe(message)
+      expect(state.service.getServerInfo()).toBeNull()
+      expect(state.service.getServerConfig()).toBeNull()
+      expect(() => state.service.getClient()).toThrow("Not connected")
+      expect(state.internal.checkinTimer).toBeNull()
+      expect(state.internal.healthPollTimer).toBeNull()
+    } finally {
+      state.dispose()
+    }
+  })
 })

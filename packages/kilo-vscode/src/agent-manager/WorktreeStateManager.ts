@@ -314,6 +314,21 @@ export class WorktreeStateManager {
     return true
   }
 
+  // fork_change start
+  renameOwnedWorktree(id: string, current: string, branch: string, path: string): boolean {
+    const wt = this.worktrees.get(id)
+    if (!wt || wt.branch !== current || wt.branchOwned !== true) return false
+    wt.branch = branch
+    wt.path = path
+    wt.originalBranch = undefined
+    wt.autoNameSessionId = undefined
+    wt.autoNamePromptCount = undefined
+    this.log(`Automatically renamed worktree ${id}: ${current} -> ${branch} (${path})`)
+    void this.save()
+    return true
+  }
+  // fork_change end
+
   updateWorktreeLabel(id: string, label: string): void {
     const wt = this.worktrees.get(id)
     if (!wt) return

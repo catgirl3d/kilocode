@@ -39,6 +39,8 @@ function deps(overrides: Partial<ToolDeps> = {}): ToolDeps {
       }) as never,
     getRoot: () => "/repo",
     getState: () => ({ addSession: mock(() => calls.push("addSession")) }) as never,
+    getWorktreeManager: () => undefined,
+    autoName: () => ({ enabled: false, prefix: "" }),
     getPanel: () => panel as never,
     openPanel: mock(() => calls.push("openPanel")),
     waitReady: mock(async () => calls.push("waitReady")),
@@ -472,6 +474,255 @@ describe("agent manager tool start", () => {
       { throwOnError: true },
     )
   })
+
+  it("renames an agent-started worktree before sending its prompt", async () => {
+    const flow: string[] = []
+    const generated: unknown[] = []
+    const row = {
+      id: "wt-1",
+      branch: "kilo/test",
+      path: "/repo/.kilo/worktrees/wt-1",
+      branchOwned: true,
+    }
+    const originalPath = row.path
+    const state = {
+      addSession: mock(() => flow.push("state")),
+      renameOwnedWorktree: mock((_id: string, _current: string, branch: string, path: string) => {
+        row.branch = branch
+        row.path = path
+        flow.push(`state-rename:${path}:${branch}`)
+        return true
+      }),
+    }
+    const manager = {
+      renameWorktree: mock(async (_path: string, _current: string, requested: string) => ({
+        branch: requested,
+        path: "/repo/.kilo/worktrees/fix-agent-start",
+      })),
+    }
+    const client = {
+      session: {
+        promptAsync: async (input: { directory: string }) => {
+          flow.push(`prompt:${input.directory}`)
+          return {}
+        },
+      },
+      branchName: {
+        generate: mock(async (input: unknown) => {
+          flow.push("generate")
+          generated.push(input)
+          return { data: { branch: "Fix Agent Start" } }
+        }),
+      },
+      experimental: {
+        controlPlane: {
+          moveSession: async () => {
+            flow.push("move")
+          },
+        },
+      },
+    }
+    const c = deps({
+      getClient: () => client as never,
+      getState: () => state as never,
+      getWorktreeManager: () => manager as never,
+      autoName: () => ({ enabled: true, prefix: "feat" }),
+      createWorktree: async () => ({ worktree: row, result: result(row.path) }),
+      createSessionInWorktree: async () => session("s-wt"),
+      registerWorktreeSession: mock((_id: string, directory: string) => flow.push(`register:${directory}`)),
+      notifyReady: mock((_id: string, created: CreateWorktreeResult) =>
+        flow.push(`ready:${created.path}:${created.branch}`),
+      ),
+    })
+
+    await startFromTool(c, {
+      requestID: "am-named",
+      mode: "worktree",
+      tasks: [{ prompt: "Fix Agent Start", model: { providerID: "provider-tool", modelID: "model-tool" } }],
+    })
+
+    expect(generated).toEqual([
+      {
+        directory: originalPath,
+        sessionID: "s-wt",
+        prompt: "Fix Agent Start",
+        providerID: "provider-tool",
+        modelID: "model-tool",
+      },
+    ])
+    expect(flow).toEqual([
+      "state",
+      "generate",
+      "move",
+      "state-rename:/repo/.kilo/worktrees/fix-agent-start:feat/fix-agent-start",
+      "register:/repo/.kilo/worktrees/fix-agent-start",
+      "ready:/repo/.kilo/worktrees/fix-agent-start:feat/fix-agent-start",
+      "prompt:/repo/.kilo/worktrees/fix-agent-start",
+    ])
+    expect(manager.renameWorktree).toHaveBeenCalledWith(originalPath, "kilo/test", "feat/fix-agent-start")
+    expect(flow.indexOf("register:/repo/.kilo/worktrees/fix-agent-start")).toBeLessThan(
+      flow.indexOf("prompt:/repo/.kilo/worktrees/fix-agent-start"),
+    )
+  })
+
+  it("cleans only the new session when naming fails after a partial rollback", async () => {
+    const originalPath = "/repo/.kilo/worktrees/wt-1"
+    const row = { id: "wt-1", branch: "kilo/test", path: originalPath, branchOwned: true }
+    const setupDone = Promise.withResolvers<void>()
+    const namingFailed = Promise.withResolvers<void>()
+    const state = {
+      addSession: mock(() => {}),
+      removeSession: mock(() => {}),
+      renameOwnedWorktree: mock(() => true),
+    }
+    const client = {
+      session: {
+        abort: mock(async (input: { sessionID: string; directory: string }) => {
+          expect(input).toEqual({ sessionID: "s-wt", directory: originalPath })
+          throw new Error("abort unavailable")
+        }),
+        delete: mock(async () => ({})),
+        promptAsync: mock(async () => ({})),
+      },
+      backgroundProcess: { stopSession: mock(async () => ({})) },
+      branchName: { generate: mock(async () => ({ data: { branch: "Fix Agent Start" } })) },
+      experimental: {
+        controlPlane: {
+          moveSession: mock(async () => {
+            throw new Error("move refused")
+          }),
+        },
+      },
+    }
+    let renames = 0
+    const manager = {
+      renameWorktree: mock(async () => {
+        renames++
+        if (renames === 2) {
+          namingFailed.resolve()
+          throw new Error("rollback refused")
+        }
+        return { branch: "feat/fix-agent-start", path: "/repo/.kilo/worktrees/fix-agent-start" }
+      }),
+    }
+    const aborts: string[][] = []
+    const clear = mock(() => {})
+    const panel = {
+      waitForReady: mock(async () => {}),
+      sessions: {
+        registerSession: mock(() => {}),
+        abortSessions: mock(async (ids: readonly string[]) => {
+          aborts.push([...ids])
+          throw new Error("abort unavailable")
+        }),
+        clearSessionDirectory: clear,
+      },
+    }
+    const c = deps({
+      getClient: () => client as never,
+      getState: () => state as never,
+      getPanel: () => panel as never,
+      getWorktreeManager: () => manager as never,
+      autoName: () => ({ enabled: true, prefix: "feat" }),
+      createWorktree: async () => ({ worktree: row, result: result(originalPath) }),
+      createSessionInWorktree: async () => session("s-wt"),
+      hasScript: () => false,
+      setup: async (_dir, _branch, _id, early) => {
+        await early?.()
+        await setupDone.promise
+      },
+    })
+
+    const pending = startFromTool(c, {
+      requestID: "am-naming-failure",
+      mode: "worktree",
+      tasks: [{ prompt: "Fix Agent Start" }],
+    })
+
+    await namingFailed.promise
+    expect(aborts).toEqual([])
+    setupDone.resolve()
+    await pending
+
+    expect(client.session.promptAsync).not.toHaveBeenCalled()
+    expect(c.notifyReady).not.toHaveBeenCalled()
+    expect(c.registerWorktreeSession).not.toHaveBeenCalled()
+    expect(c.cleanupWorktree).not.toHaveBeenCalled()
+    expect(aborts).toEqual([])
+    expect(client.session.abort).toHaveBeenCalledWith(
+      { sessionID: "s-wt", directory: originalPath },
+      { throwOnError: true },
+    )
+    expect(client.session.delete).toHaveBeenCalledWith(
+      { sessionID: "s-wt", directory: originalPath },
+      { throwOnError: true },
+    )
+    expect(c.log).toHaveBeenCalledWith(expect.stringContaining("abort unavailable"))
+    expect(state.removeSession).toHaveBeenCalledWith("s-wt")
+    expect(clear).toHaveBeenCalledWith("s-wt")
+    expect(c.post).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "error", message: expect.stringContaining("rollback refused") }),
+    )
+  })
+
+  it.each([
+    { label: "disabled", enabled: false, owned: true, task: { prompt: "Fix it" } },
+    { label: "unowned", enabled: true, owned: false, task: { prompt: "Fix it" } },
+    { label: "empty prompt", enabled: true, owned: true, task: { prompt: "   " } },
+    { label: "no prompt", enabled: true, owned: true, task: {} },
+    { label: "explicit name", enabled: true, owned: true, task: { prompt: "Fix it", name: "Prepared" } },
+    { label: "explicit branch", enabled: true, owned: true, task: { prompt: "Fix it", branchName: "prepared" } },
+    {
+      label: "manager unavailable",
+      enabled: true,
+      owned: true,
+      hasManager: false,
+      task: { prompt: "Fix it" },
+    },
+  ])(
+    "does not generate or reroute an ineligible $label worktree",
+    async ({ label, enabled, owned, hasManager = true, task }) => {
+      const originalPath = "/repo/.kilo/worktrees/original"
+      const row = { id: "wt-1", branch: "kilo/test", path: originalPath, branchOwned: owned }
+      const generated = mock(async () => ({ data: { branch: "Fix Generated Name" } }))
+      const moved = mock(async () => undefined)
+      const renamed = mock(async () => ({ branch: "feat/fix-generated-name", path: "/repo/.kilo/worktrees/renamed" }))
+      const registered: string[] = []
+      const prompted: string[] = []
+      const state = {
+        addSession: mock(() => {}),
+        renameOwnedWorktree: mock(() => true),
+      }
+      const client = {
+        session: {
+          promptAsync: mock(async (input: { directory: string }) => {
+            prompted.push(input.directory)
+            return {}
+          }),
+        },
+        branchName: { generate: generated },
+        experimental: { controlPlane: { moveSession: moved } },
+      }
+      const c = deps({
+        getClient: () => client as never,
+        getState: () => state as never,
+        getWorktreeManager: () => (hasManager ? ({ renameWorktree: renamed } as never) : undefined),
+        autoName: () => ({ enabled, prefix: "feat" }),
+        createWorktree: async () => ({ worktree: row, result: result(originalPath) }),
+        registerWorktreeSession: mock((_id: string, directory: string) => registered.push(directory)),
+      })
+
+      await startFromTool(c, { requestID: `am-ineligible-${label}`, mode: "worktree", tasks: [task] })
+
+      const prompt = "prompt" in task ? task.prompt : undefined
+      expect(generated).not.toHaveBeenCalled()
+      expect(renamed).not.toHaveBeenCalled()
+      expect(moved).not.toHaveBeenCalled()
+      expect(registered).toEqual([originalPath])
+      expect(prompted).toEqual(prompt?.trim() ? [originalPath] : [])
+      expect(row).toEqual({ id: "wt-1", branch: "kilo/test", path: originalPath, branchOwned: owned })
+    },
+  )
 
   it("deduplicates repeated delivery of the same exact request", async () => {
     const requests = new Set<string>()

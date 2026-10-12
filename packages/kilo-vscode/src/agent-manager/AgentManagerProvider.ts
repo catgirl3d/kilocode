@@ -1124,6 +1124,7 @@ export class AgentManagerProvider implements Disposable {
         getClient: () => this.connectionService.getClient(),
         getRoot: () => this.getRoot(),
         getState: () => this.getStateManager(),
+        ...{ getWorktreeManager: () => this.getWorktreeManager(), autoName: () => this.host.autoBranchNaming() }, // fork_change
         getPanel: () => this.panel,
         openPanel: (preserveFocus) => this.openPanel(preserveFocus),
         waitReady: (context) => this.waitForStateReady(context),

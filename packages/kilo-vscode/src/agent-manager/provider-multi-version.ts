@@ -5,11 +5,20 @@ import type { AgentManagerInMessage } from "./types"
 import { sanitizeBranchName, versionedName } from "./branch-name"
 import { resolveVersionModels, buildInitialMessages, type CreatedVersion } from "./multi-version"
 import { ensureSandbox } from "./sandbox-bootstrap"
-import { beginBoot, prepareSession, removeWorktreeSnapshot, type LifecycleHost } from "./provider-lifecycle"
+// fork_change start
+import {
+  beginBoot,
+  cleanupCreatedSession,
+  prepareSession,
+  removeWorktreeSnapshot,
+  type LifecycleHost,
+} from "./provider-lifecycle"
+// fork_change end
 import { plan } from "./creation-plan"
 import { Timing } from "./creation-timing"
 import { Semaphore } from "./semaphore"
 import type { WorktreeCreationFailure } from "./worktree-create"
+import { generateFromPrompt, renameFromPrompt } from "./worktree-naming" // fork_change
 
 const PROVISION_CONCURRENCY = 2
 
@@ -75,6 +84,7 @@ export async function createMultiVersion(
     baseBranch,
     branchName,
     worktreeName,
+    text, // fork_change
     models,
     providerID,
     modelID,
@@ -88,8 +98,9 @@ export async function createMultiVersion(
 
   // Phase 2: Git creation is complete, so independent setup/session pipelines
   // can overlap without racing the shared worktree metadata mutation.
+  const shared: { name?: Promise<string | null> } = {} // fork_change
   const provision = async (version: PreparedVersion) => {
-    const ready = await provisionVersion(ctx, host, version, (session) =>
+    const ready = await provisionVersion(ctx, host, version, shared, (session) => // fork_change
       sendInitialPrompt(
         host,
         ctx.id,
@@ -148,6 +159,7 @@ interface VersionSpec {
   baseBranch: string | undefined
   branchName: string | undefined
   worktreeName: string | undefined
+  text: string | undefined // fork_change
   models: ReturnType<typeof resolveVersionModels>["models"]
   providerID: string | undefined
   modelID: string | undefined
@@ -190,6 +202,7 @@ async function provisionVersion(
   ctx: ProjectContext,
   host: MultiVersionHost,
   prepared: PreparedVersion,
+  shared: { name?: Promise<string | null> }, // fork_change
   initial: (created: CreatedVersion) => void,
 ): Promise<CreatedVersion | null> {
   const { spec, wt } = prepared
@@ -236,7 +249,80 @@ async function provisionVersion(
 
   const state = ctx.stateManager()
   state.addSession(session.id, wt.worktree.id)
-  if (!spec.branchName && !spec.worktreeName && host.autoName().enabled) {
+  // fork_change start
+  const original = wt.result.path
+  const settings = host.autoName()
+  const versionModel = spec.models[spec.index]
+  const earlyProviderID = versionModel?.providerID ?? spec.providerID
+  const earlyModelID = versionModel?.modelID ?? spec.modelID
+  const eligible = [
+    settings.enabled,
+    !!spec.text,
+    !spec.branchName,
+    !spec.worktreeName,
+    wt.worktree.branchOwned === true,
+  ].every(Boolean)
+  let named: { branch: string; path: string } | null = null
+  try {
+    if (eligible) {
+      shared.name ??= generateFromPrompt(
+        host.client(),
+        {
+          directory: wt.result.path,
+          sessionID: session.id,
+          prompt: spec.text!,
+          providerID: earlyProviderID,
+          modelID: earlyModelID,
+        },
+        host.log,
+      )
+    }
+    const generated = eligible ? await shared.name! : null
+    named = generated
+      ? await renameFromPrompt({
+          client: host.client(),
+          manager: ctx.worktreeManager(),
+          state,
+          worktree: wt.worktree,
+          sessionID: session.id,
+          generated,
+          prefix: settings.prefix,
+          version: { index: spec.index, total: spec.versions },
+          log: host.log,
+        })
+      : null
+  } catch (error) {
+    await cleanupCreatedSession({
+      client: host.client(),
+      sessionID: session.id,
+      directory: original,
+      ready,
+      done,
+      abort: async () => {
+        await host.client().session.abort({ sessionID: session.id, directory: original }, { throwOnError: true })
+      },
+      forget: () => host.sessions.forget(session.id),
+      remove: () => state.removeSession(session.id),
+      clear: () => host.sessions.clearDirectory(session.id),
+      push: host.push,
+      log: host.log,
+    })
+    host.post({
+      type: "agentManager.worktreeSetup",
+      status: "error",
+      message: `Failed to name worktree: ${getErrorMessage(error)}`,
+      worktreeId: wt.worktree.id,
+    })
+    timing.mark("cleanup")
+    timing.end()
+    return null
+  }
+  if (named) {
+    wt.result.branch = named.branch
+    wt.result.path = named.path
+  }
+  // fork_change end
+  if ([!named, !spec.branchName, !spec.worktreeName, settings.enabled].every(Boolean)) { // fork_change
     state.armAutoName(wt.worktree.id, session.id)
   }
   timing.mark("state")
@@ -258,9 +344,6 @@ async function provisionVersion(
   // Set the per-version model immediately so the UI selector reflects
   // the correct model as soon as the worktree appears, before Phase 2.
   // Uses a dedicated message type to avoid clearing the busy state.
-  const versionModel = spec.models[spec.index]
-  const earlyProviderID = versionModel?.providerID ?? spec.providerID
-  const earlyModelID = versionModel?.modelID ?? spec.modelID
   if (earlyProviderID && earlyModelID) {
     host.post({
       type: "agentManager.setSessionModel",

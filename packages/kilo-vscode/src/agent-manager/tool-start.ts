@@ -1,14 +1,15 @@
 import type { KiloClient, Session } from "@kilocode/sdk/v2/client"
 import { sanitizeBranchName, versionedName } from "./branch-name"
-import type { CreateWorktreeResult } from "./WorktreeManager"
+import type { CreateWorktreeResult, WorktreeManager } from "./WorktreeManager" // fork_change
 import type { WorktreeStateManager } from "./WorktreeStateManager"
 import type { PanelContext } from "./host"
 import { PLATFORM, SNAPSHOT_INITIALIZATION } from "./constants"
 import { sameDirectory } from "../kilo-provider-utils"
 import { attribute } from "./prompt-attribution"
-import { beginBoot, prepareSession, type CreationBoot } from "./provider-lifecycle"
+import { beginBoot, cleanupCreatedSession, prepareSession, type CreationBoot } from "./provider-lifecycle" // fork_change
 import { Timing } from "./creation-timing"
 import { plan } from "./creation-plan"
+import { generateFromPrompt, renameFromPrompt } from "./worktree-naming" // fork_change
 
 const LABEL_MAX = 28
 const PREFIX = new Set(["feat", "fix", "chore", "bug", "issue", "task", "branch"])
@@ -47,6 +48,10 @@ export interface ToolDeps {
   getClient: () => KiloClient
   getRoot: () => string | undefined
   getState: () => WorktreeStateManager | undefined
+  // fork_change start
+  getWorktreeManager: () => WorktreeManager | undefined
+  autoName: () => { enabled: boolean; prefix: string }
+  // fork_change end
   getPanel: () => PanelContext | undefined
   openPanel: (preserveFocus?: boolean) => void
   waitReady: (context: string) => Promise<void>
@@ -258,6 +263,77 @@ async function worktree(
     return false
   }
   state.addSession(session.id, created.worktree.id)
+  // fork_change start
+  const original = created.result.path
+  const settings = deps.autoName()
+  const body = text(task)
+  const manager = deps.getWorktreeManager()
+  const eligible = [
+    settings.enabled,
+    !!body,
+    !task.name,
+    !task.branchName,
+    manager != null,
+    created.worktree.branchOwned === true,
+  ].every(Boolean)
+  let named: { branch: string; path: string } | null = null
+  try {
+    const generated = eligible
+      ? await generateFromPrompt(
+          client,
+          {
+            directory: created.result.path,
+            sessionID: session.id,
+            prompt: body!,
+            providerID: task.model?.providerID,
+            modelID: task.model?.modelID,
+          },
+          deps.log,
+        )
+      : null
+    named = generated
+      ? await renameFromPrompt({
+          client,
+          manager: manager!,
+          state,
+          worktree: {
+            id: created.worktree.id,
+            path: created.result.path,
+            branch: created.result.branch,
+            branchOwned: created.worktree.branchOwned,
+          },
+          sessionID: session.id,
+          generated,
+          prefix: settings.prefix,
+          version: versions ? { index, total } : undefined,
+          log: (message) => deps.log(message),
+        })
+      : null
+  } catch (error) {
+    const panel = deps.getPanel()
+    await cleanupCreatedSession({
+      client,
+      sessionID: session.id,
+      directory: original,
+      ready,
+      done: prepared.done,
+      abort: async () => {
+        await client.session.abort({ sessionID: session.id, directory: original }, { throwOnError: true })
+      },
+      remove: () => state.removeSession(session.id),
+      clear: () => panel?.sessions.clearSessionDirectory(session.id),
+      push: deps.push,
+      log: deps.log,
+    })
+    timing.mark("cleanup")
+    timing.end()
+    throw error
+  }
+  if (named) {
+    created.result.branch = named.branch
+    created.result.path = named.path
+  }
+  // fork_change end
   deps.registerWorktreeSession(session.id, created.result.path)
   timing.mark("state")
   deps.notifyReady(session.id, created.result, created.worktree.id)

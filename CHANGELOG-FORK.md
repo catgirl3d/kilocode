@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Name Agent Manager worktree branches and folders from the first prompt when no explicit name is provided.
 - Let the agent ask a short clarifying question when a request, term, or choice is genuinely unclear instead of guessing; the `question` tool is a normal part of the work, not a last resort.
 - Show a "Session compacted" divider in VS Code chat instead of a blank message, with an Undo compaction action that deletes the newest compaction so the model sees the full message history again.
 - Organize local sessions with reusable colored tags in recent sessions, local history/search, and the active session header; keep session tabs uncluttered.
@@ -36,6 +37,7 @@
 
 ### Fixes & Enhancements
 
+- Reliably name Agent Manager worktrees and branches from the first prompt, and retry automatic naming after a cancelled CLI request.
 - Block Compact while an undo is active so the hidden redo history is not finalized and deleted silently.
 - Show real Merge Gateway prompt-cache usage: the bundled provider keeps gateway-reported cached-token counts, so cache reads appear in session usage and costs instead of reading zero.
 - Present session tab hover details as a structured tooltip: the title and activity state read as separate rows, and the Shift+click pin hint sits on its own separated line instead of running into the title.

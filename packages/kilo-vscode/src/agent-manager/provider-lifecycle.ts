@@ -128,7 +128,7 @@ export interface LifecycleHost {
   forgetName: (worktreeId: string) => void
   stopDiffs: (path: string, orphaned: ManagedSession[]) => void
   capture: (event: string, props: Record<string, unknown>) => void
-  autoName: () => { enabled: boolean }
+  autoName: () => { enabled: boolean; prefix: string } // fork_change
   client: () => KiloClient
   acquirePtyCleanup: (directory: string) => Promise<() => void>
   metadata: (client: KiloClient, dir: string) => Promise<Record<string, unknown>>
@@ -159,6 +159,45 @@ export function lifecycleSessions(
     forget: (sid) => void panelSessions.delete(sid),
   }
 }
+
+// fork_change start
+/** Settle and remove one newly created backend session without touching its worktree. */
+export async function cleanupCreatedSession(input: {
+  client: KiloClient
+  sessionID: string
+  directory: string
+  ready: Promise<void>
+  done: Promise<void>
+  abort: () => Promise<void>
+  forget?: () => void
+  remove: () => void
+  clear: () => void
+  push: () => void
+  log: (...args: unknown[]) => void
+}): Promise<void> {
+  const run = async (label: string, work: () => unknown | Promise<unknown>) => {
+    try {
+      await work()
+    } catch (error) {
+      input.log(`${label}: ${getErrorMessage(error)}`)
+    }
+  }
+
+  await run("Failed to settle session ready barrier", () => input.ready)
+  await run("Failed to settle session completion barrier", () => input.done)
+  await run(`Failed to abort session ${input.sessionID}`, input.abort)
+  await run(`Failed to forget session ${input.sessionID}`, () => input.forget?.())
+  await run(`Failed to remove session ${input.sessionID} from state`, input.remove)
+  await run(`Failed to clear session ${input.sessionID} route`, input.clear)
+  await run("Failed to push session cleanup state", input.push)
+  await run("Failed to stop session processes", () =>
+    stopSessionProcesses(input.client, input.sessionID, input.directory),
+  )
+  await run(`Failed to delete session ${input.sessionID}`, () =>
+    input.client.session.delete({ sessionID: input.sessionID, directory: input.directory }, { throwOnError: true }),
+  )
+}
+// fork_change end
 
 /** Create a new worktree with an auto-created first session. */
 export async function createLifecycleWorktree(

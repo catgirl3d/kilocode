@@ -96,6 +96,7 @@ export class KiloConnectionService {
   private state: ConnectionState = "disconnected"
   private error: Error | null = null
   private connectPromise: Promise<void> | null = null
+  private attemptAbort: AbortController | null = null // fork_change - [fork] serialize cancellation attempts
   private healthPollTimer: ReturnType<typeof setInterval> | null = null
   private suspended = false // fork_change - [fork] manual disconnect holds reconnects until resume()
 
@@ -179,30 +180,54 @@ export class KiloConnectionService {
       throw new Error("CLI is disconnected. Retry to reconnect.")
     }
     // fork_change end
-    if (this.connectPromise) {
-      return this.connectPromise
+
+    // fork_change start - [fork] wait for a cancelled shared attempt before retrying
+    const current = this.connectPromise
+    if (current) {
+      if (!this.attemptAbort?.signal.aborted) return current
+      await current.catch(() => {})
+      if (this.suspended) {
+        throw new Error("CLI is disconnected. Retry to reconnect.")
+      }
+      if (this.connectPromise) return this.connectPromise
     }
+    // fork_change end
+
     if (this.state === "connected") {
       return
     }
 
+    // fork_change start - [fork] publish the shared attempt before connecting listeners can reenter
+    const attempt = new AbortController()
+    this.attemptAbort = attempt
+    const gate = Promise.withResolvers<void>()
+    this.connectPromise = gate.promise
+    const clear = () => {
+      if (this.attemptAbort === attempt) this.attemptAbort = null
+      if (this.connectPromise === gate.promise) this.connectPromise = null
+    }
+    // fork_change end
+
     // Mark as connecting early so concurrent callers won't start another connection attempt.
     this.setState("connecting")
 
-    this.connectPromise = this.doConnect(workspaceDir)
-    try {
-      await this.connectPromise
-    } catch (error) {
-      // If doConnect() fails before SSE can emit a state transition, avoid leaving consumers stuck in "connecting".
-      // fork_change start - [fork] keep the manual disconnect message when the stopped connect attempt fails
-      if (!this.suspended) {
-        this.setState("error", this.error ?? (error instanceof Error ? error : new Error(String(error))))
-      }
-      // fork_change end
-      throw error
-    } finally {
-      this.connectPromise = null
-    }
+    // fork_change start
+    void this.doConnect(workspaceDir, attempt.signal).then(
+      () => {
+        clear()
+        gate.resolve()
+      },
+      (error) => {
+        // If doConnect() fails before SSE can emit a state transition, avoid leaving consumers stuck in "connecting".
+        if (!this.suspended) {
+          this.setState("error", this.error ?? (error instanceof Error ? error : new Error(String(error))))
+        }
+        clear()
+        gate.reject(error)
+      },
+    )
+    return gate.promise
+    // fork_change end
   }
 
   /**
@@ -301,6 +326,7 @@ export class KiloConnectionService {
    */
   disconnect(): void {
     this.suspended = true
+    this.attemptAbort?.abort()
     this.serverManager.dispose()
     this.resetConnection()
     this.setState("error", new Error("CLI stopped. Retry to reconnect."))
@@ -985,13 +1011,13 @@ export class KiloConnectionService {
     this.setState("error", new Error(`CLI background process exited with ${reason}. Retry to reconnect.`))
   }
 
-  private async doConnect(workspaceDir: string): Promise<void> {
+  private async doConnect(workspaceDir: string, signal: AbortSignal): Promise<void> { // fork_change
     // Never expose a stale SDK client while its replacement server is starting.
     this.resetConnection()
 
     const server = await this.serverManager.getServer()
-    // fork_change start - [fork] a disconnect during startup must not leave a live server behind
-    if (this.suspended) {
+    // fork_change start - [fork] abort a cancelled startup after server allocation
+    if (signal.aborted || this.suspended) {
       this.serverManager.dispose()
       throw new Error("CLI is disconnected. Retry to reconnect.")
     }
@@ -1026,6 +1052,12 @@ export class KiloConnectionService {
       resolveConnected = resolve
       rejectConnected = reject
     })
+    // fork_change start - [fork] race the SSE connection against cancellation
+    const aborted = Promise.withResolvers<void>()
+    const abort = () => aborted.reject(new Error("CLI is disconnected. Retry to reconnect."))
+    if (signal.aborted) abort()
+    else signal.addEventListener("abort", abort, { once: true })
+    // fork_change end
 
     let didConnect = false
 
@@ -1071,11 +1103,17 @@ export class KiloConnectionService {
       }
     })
 
-    sse.connect()
+    // fork_change start - [fork] clean up the SSE adapter after the startup race
+    try {
+      sse.connect()
+      await Promise.race([connectedPromise, aborted.promise])
+    } finally {
+      signal.removeEventListener("abort", abort)
+      if (this.sseClient !== sse) sse.dispose()
+    }
+    // fork_change end
 
-    await connectedPromise
-
-    // fork_change start - a disconnect can reset this connection while its first SSE event is delivered
+    // fork_change start - [fork] reject a connection reset during SSE startup
     if (this.sseClient !== sse) {
       throw this.error ?? new Error("SSE connection ended before startup completed")
     }

@@ -113,7 +113,7 @@ describe("Agent Manager worktree deletion lifecycle", () => {
       forgetName: () => calls.push("name"),
       stopDiffs: () => calls.push("diff"),
       capture: () => undefined,
-      autoName: () => ({ enabled: false }),
+      autoName: () => ({ enabled: false, prefix: "" }),
       client: () => client as unknown as KiloClient,
       acquirePtyCleanup: async () => {
         calls.push("pty")
