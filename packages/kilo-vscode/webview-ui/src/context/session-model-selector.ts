@@ -14,10 +14,12 @@ type Deps = {
 
 export function createModelSelector(deps: Deps) {
   const select = (providerID: string, modelID: string, sessionID?: string, remember = true) => {
+    // fork_change end
     const session = sessionID ?? deps.current()
     const agent = deps.agent(session)
     const value = deps.variant(session)
     const selection = { providerID, modelID }
+    // fork_change start
     if (remember) {
       deps.apply(agent, selection, session)
       deps.carry(selection, value, agent, session)
@@ -25,6 +27,7 @@ export function createModelSelector(deps: Deps) {
       return
     }
     deps.set(session, agent, selection)
+    // fork_change end
   }
   const session = (sessionID: string, providerID: string, modelID: string) => {
     const agent = deps.agent(sessionID)
@@ -37,4 +40,3 @@ export function createModelSelector(deps: Deps) {
 
   return { select, session }
 }
-// fork_change end

@@ -144,6 +144,7 @@ function openMarkdownFile(file: string, message: EditorActionMessage, opts: Edit
 }
 
 export function handleEditorAction(message: EditorActionMessage, opts: EditorActionOptions): boolean {
+  // fork_change end
   if (message.type === "openPRComment") {
     openReview(message, opts.openPRComment)
     return true
@@ -153,8 +154,10 @@ export function handleEditorAction(message: EditorActionMessage, opts: EditorAct
     // for (when the webview provides it), not whatever session happens to be
     // current — mirrors the validateFiles case below.
     if (message.filePath) {
+      // fork_change start
       const file = message.filePath
       if (openMarkdownFile(file, message, opts)) return true
+      // fork_change end
       openFile(opts.dir(message.sessionID), message.filePath, message.line, message.column)
     }
     return true
@@ -179,10 +182,12 @@ export function handleEditorAction(message: EditorActionMessage, opts: EditorAct
     }
     return true
   }
+  // fork_change start
   if (message.type === "validateInstructionPath") {
     validateInstructionPath(message, opts)
     return true
   }
+  // fork_change end
   if (message.type === "openExternal") {
     openExternal(message.url)
     return true
@@ -201,7 +206,6 @@ export function handleEditorAction(message: EditorActionMessage, opts: EditorAct
   }
   return false
 }
-// fork_change end
 
 function openContent(content: string, language?: string): void {
   vscode.workspace.openTextDocument({ content, language: language || "log" }).then(
