@@ -43,16 +43,18 @@ export function getVariant(
   configured?: string,
   presetFirst = false,
 ) {
+  // fork_change end
   if (variants.length === 0) return undefined
   const scoped = session ? store[variantKey(sel, agent, session)] : undefined
+  // fork_change start
   const remembered = store[variantKey(sel, agent)]
   const legacy = store[legacyVariantKey(sel)]
+  // fork_change end
   const preset = configured && variants.includes(configured) ? configured : undefined
-  const stored = presetFirst ? (scoped ?? preset ?? remembered ?? legacy) : (scoped ?? remembered ?? preset ?? legacy)
+  const stored = presetFirst ? (scoped ?? preset ?? remembered ?? legacy) : (scoped ?? remembered ?? preset ?? legacy) // fork_change
   if (stored === undefined || stored === DEFAULT_VARIANT) return undefined
   return preserveVariant(stored, variants)
 }
-// fork_change end
 
 export function getAgentVariant(
   store: Record<string, string>,
