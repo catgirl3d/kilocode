@@ -259,26 +259,26 @@ export const ConfigProvider: ParentComponent = (props) => {
     if (message.type !== "shortcutContext") return
     setShortcuts({ bindings: message.bindings, selection: message.selection })
   })
-  // fork_change start
   const unsubscribe = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type === "configLoaded") {
-      load(message)
+      load(message) // fork_change
       return
     }
     if (message.type === "globalConfigLoaded") {
-      if (!acceptsConfig(saving(), blocked())) return
+      if (!acceptsConfig(saving(), blocked())) return // fork_change
       const server = hideRemovedMcp(message.config, removedMcp())
+      // fork_change start
       const pending = hideRemovedMcp(globalDraft() as Config, removedMcp())
       setGlobalConfig(mergeScopedConfig(server, pending))
+      // fork_change end
       setSavedGlobal(server)
       return
     }
     if (message.type === "configUpdated") {
-      update(message)
+      update(message) // fork_change
       return
     }
   })
-  // fork_change end
   const unsubscribeExpired = vscode.onMessage((message: ExtensionMessage) => {
     if (message.type !== "configBindingExpired") return
     setBindings({})
