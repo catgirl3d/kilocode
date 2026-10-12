@@ -49,27 +49,32 @@ export function createSessionVariants(options: Options) {
 
   // fork_change start - Allow commands to preserve configured target-agent defaults.
   const current = (sessionID?: string, presetFirst = false) => {
+    // fork_change end
     const sid = sessionID ?? options.session()
     const selection = options.selected(sid)
     if (!selection) return undefined
     const variants = list(sid)
     if (variants.length === 0) return undefined
     const name = options.agent(sid)
-    return getVariant(options.selections(), selection, variants, name, sid, configured(name, selection), presetFirst)
+    return getVariant(options.selections(), selection, variants, name, sid, configured(name, selection), presetFirst) // fork_change
   }
 
+  // fork_change start
   const request = (sessionID?: string, presetFirst = false) =>
     current(sessionID, presetFirst) ?? (list(sessionID).length > 0 ? DEFAULT_VARIANT : undefined)
 
   // The raw choice behind current(), with the same normal priority.
+  // fork_change end
   const saved = (selection: ModelSelection, name: string, sessionID?: string) => {
     const scoped = sessionID ? options.selections()[variantKey(selection, name, sessionID)] : undefined
     if (scoped !== undefined) return scoped
+    // fork_change start
     const remembered = options.selections()[variantKey(selection, name)]
     if (remembered !== undefined) return remembered
+    // fork_change end
     const preset = configured(name, selection)
     if (preset && Object.keys(options.find(selection)?.variants ?? {}).includes(preset)) return preset
-    return options.selections()[legacyVariantKey(selection)]
+    return options.selections()[legacyVariantKey(selection)] // fork_change
   }
 
   const choice = (sessionID?: string) => {
@@ -78,17 +83,20 @@ export function createSessionVariants(options: Options) {
     return model ? saved(model, options.agent(id), id) : undefined
   }
 
+  // fork_change start
   const select = (value: string | undefined, sessionID?: string, remember = true) => {
+    // fork_change end
     const sid = sessionID ?? options.session()
     const selection = options.selected(sid)
     if (!selection) return
-    const name = options.agent(sid)
+    const name = options.agent(sid) // fork_change
     const next = value ?? DEFAULT_VARIANT
+    // fork_change start
     const key = variantKey(selection, name, sid)
     options.set(key, next)
     if (remember) options.remember(name, selection, next)
+    // fork_change end
   }
-  // fork_change end
 
   const carry = (selection: ModelSelection, value: string | undefined, name: string, sessionID?: string) => {
     const list = Object.keys(options.find(selection)?.variants ?? {})

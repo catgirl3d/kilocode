@@ -299,23 +299,25 @@ const SessionList: Component<SessionListProps> = (props) => {
 
   return (
     <div class="session-list">
-      {/* fork_change start - include session tags in local search and rows */}
-      <List<SessionInfo & { tags: string }>
+      <List<SessionInfo & { tags: string }> /* fork_change */
         items={items()}
         key={(s) => s.id}
-        filterKeys={["title", "tags"]}
+        filterKeys={["title", "tags"]} /* fork_change - include session tags in local search and rows */
         current={currentSession()}
         onMove={announce}
         onSelect={(s) => {
+          // fork_change start - multi-select mode
           if (!s) return
           if (selecting()) {
             toggle(s.id)
             return
           }
           if (renamingId() !== s.id) {
+            // fork_change end
             props.onSelectSession(s.id)
           }
         }}
+        /* fork_change start - add bulk selection controls to the session search */
         search={{
           placeholder: language.t("session.search.placeholder"),
           autofocus: true,
@@ -369,7 +371,6 @@ const SessionList: Component<SessionListProps> = (props) => {
           </>
         )}
       </List>
-      {/* fork_change end */}
       <Show when={props.sessionIds?.() === undefined && session.sessionsHasMore()}>
         <div class="session-list-load-more">
           <Button
