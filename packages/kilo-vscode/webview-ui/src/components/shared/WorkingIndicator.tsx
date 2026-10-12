@@ -126,7 +126,7 @@ export const WorkingIndicator: Component<WorkingIndicatorProps> = (props) => {
         </Show>
         <span class="sr-only">{language.t("session.messages.scrollToBottom")}</span>
       </Button>
-      <Show when={isRetrying() && props.canCancel !== false}>
+      <Show when={isRetrying() && props.canCancel !== false} /* fork_change - [fork] status-only dock cancel */>
         <Button
           variant="secondary"
           size="small"
@@ -138,6 +138,5 @@ export const WorkingIndicator: Component<WorkingIndicatorProps> = (props) => {
         </Button>
       </Show>
     </div>
-    // fork_change end
   )
 }
