@@ -2126,7 +2126,6 @@ export const SessionProvider: ParentComponent = (props) => {
 
   // Switch the agent first so a mode-only command resolves the target agent's
   // config model and effort instead of carrying the outgoing one.
-  // fork_change start
   function applyOverrides(
     overrides: { agent?: string; model?: string; variant?: string } | undefined,
     scope: string | undefined,
@@ -2136,14 +2135,13 @@ export const SessionProvider: ParentComponent = (props) => {
       selectAgent(overrides.agent, scope)
     }
     if (overrides?.model) {
-      selectModel(selection.providerID, selection.modelID, scope, false)
+      selectModel(selection.providerID, selection.modelID, scope, false) // fork_change
     }
     if (overrides?.variant !== undefined) {
-      selectVariant(overrides.variant, scope, false)
+      selectVariant(overrides.variant, scope, false) // fork_change
     }
     recordModelUsage(selection.providerID, selection.modelID)
   }
-  // fork_change end
 
   /** Create an optimistic user message + parts in the store so the UI updates instantly. */
   function addOptimistic(
