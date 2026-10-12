@@ -32,6 +32,14 @@
  * Findings:
  * - `[MISSING]`, redundant fork markers, `fork_change` diagnostics, and
  *   mixed-family diagnostics are fatal and exit 1.
+ * - `[OVERWRAP]`: a `fork_change` block that captures upstream lines a
+ *   narrower legal region would leave outside is reported as a warning; the
+ *   message lists the minimal regions to mark instead. A `fork_change`
+ *   region may end right after a construct's head (signature, condition,
+ *   opening tag) or between whole members of its body. Set
+ *   `FORK_AUDIT_OVERWRAP=error` to make it fatal.
+ * - `[SYNTAX]`: the file gained parse errors relative to the merge-base,
+ *   usually from a marker placed where no comment can stand.
  * - Kilo-only `kilocode_change` anomalies remain visible as `[WARNING]` and
  *   do not increment fatal findings.
  * - Equivalent structural anomalies already present at the resolved
@@ -41,7 +49,7 @@
  * CLI:
  * - `bun run script/fork-audit.ts [--worktree] [--base=<ref>]
  *   [--select=agent-local|branch] [--overwrap-report] [--inline-report]
- *   [--fragment-report] [paths...]`
+ *   [--designation-report] [paths...]`
  * - `--select` changes file selection only: `agent-local` requires `--worktree`
  *   and includes local tracked/untracked changes; `branch` selects HEAD-side
  *   paths from `origin/main...HEAD`. Audits still use the canonical `--base`.
@@ -70,7 +78,7 @@ const MAX_PREVIEW = 5
 
 type MarkerFamily = "fork" | "kilo"
 type MarkerEvent = { family: MarkerFamily; kind: "start" | "end" | "inline" | "whole_file"; index: number }
-type Diagnostic = { message: string; families: MarkerFamily[] }
+type Diagnostic = { message: string; families: MarkerFamily[]; soft?: boolean }
 type MarkerStack = { line: number; families: MarkerFamily[] }
 
 function markerName(family: MarkerFamily): string {
@@ -570,6 +578,14 @@ export function templateSpans(lines: string[]): boolean[] {
   }
   return out
 }
+// Keyword-and-punctuation lines such as `return {` or `} else {` carry no ownership:
+// diff alignment pairs them with any upstream twin, so they count as context.
+export function isTrivial(line: string): boolean {
+  return /^[\s{}()[\];,>]*(?:return|else|try|finally|break|continue|do)?[\s{}()[\];,>]*$/.test(
+    stripMarkerComments(line).trim(),
+  )
+}
+
 export function isStructural(line: string): boolean {
   const t = line.trim()
   return !t || /^[\s{}()[\];,>]+$/.test(t) || /^<\/?[\w.]*\s*>$/.test(t) || /^\/>$/.test(t)
@@ -610,22 +626,6 @@ function designated(lines: string[], line: number) {
   return false
 }
 
-function fragmentedCandidates(markers: MarkerBlock[], real: Set<number>) {
-  const blocks = markers
-    .filter((marker) => marker.type === "block" && marker.markerType === "fork")
-    .sort((a, b) => a.startLine - b.startLine)
-  return blocks.flatMap((first, index) => {
-    const second = blocks[index + 1]
-    if (!second) return []
-    const gap = second.startLine - first.endLine - 1
-    return gap >= 0 &&
-      gap <= 4 &&
-      [...real].some((line) => line <= first.endLine) &&
-      [...real].some((line) => line >= second.startLine)
-      ? [{ first: first.startLine, second: second.startLine, gap }]
-      : []
-  })
-}
 export function classifyOverwrap(
   interior: number[],
   added: Set<number>,
@@ -638,7 +638,7 @@ export function classifyOverwrap(
     templateLines: number[] = [],
     churnLines: number[] = []
   for (const n of interior) {
-    if (added.has(n) || comment.has(n) || isStructural(lines[n - 1] ?? "")) continue
+    if (added.has(n) || comment.has(n) || isStructural(lines[n - 1] ?? "") || isTrivial(lines[n - 1] ?? "")) continue
     if (spans[n - 1]) templateLines.push(n)
     else if (churn.has(n)) churnLines.push(n)
     else meaningfulLines.push(n)
@@ -668,21 +668,171 @@ export function parseAuditSource(file: string, content: string): ts.SourceFile |
               : null
   return kind === null ? null : ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true, kind)
 }
-export function structureCuts(source: ts.SourceFile, startLine: number, endLine: number) {
+function span(source: ts.SourceFile, node: ts.Node) {
+  return [
+    source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+    source.getLineAndCharacterOfPosition(node.getEnd()).line + 1,
+  ] as const
+}
+
+// A node spanning lines a..b is cut by a region whose content is lo..hi.
+function crosses(a: number, b: number, lo: number, hi: number) {
+  return (a >= lo && a <= hi && b > hi) || (b >= lo && b <= hi && a < lo)
+}
+
+// Member lists without a closing token end on their last member's line, so a
+// region around that member looks like a cut although it sits between members.
+const LISTS = new Set([ts.SyntaxKind.JsxAttributes, ts.SyntaxKind.CaseClause, ts.SyntaxKind.DefaultClause])
+
+export function structureCuts(source: ts.SourceFile, startLine: number, endLine: number, lists = false) {
   const out: { kind: string; startLine: number; endLine: number }[] = []
   const lo = startLine + 1,
     hi = endLine - 1
   const walk = (node: ts.Node) => {
     if (!ts.isSourceFile(node)) {
-      const a = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-        b = source.getLineAndCharacterOfPosition(node.getEnd()).line + 1
-      if ((a >= lo && a <= hi && b > hi) || (b >= lo && b <= hi && a < lo))
+      const [a, b] = span(source, node)
+      if (crosses(a, b, lo, hi) && !(lists && LISTS.has(node.kind)))
         out.push({ kind: ts.SyntaxKind[node.kind] ?? "SyntaxNode", startLine: a, endLine: b })
     }
     ts.forEachChild(node, walk)
   }
   walk(source)
   return out.filter((x, i) => !out.some((y, j) => j < i && y.startLine <= x.startLine && y.endLine >= x.endLine))
+}
+
+// Containers whose whole members can be separated by a standalone marker line
+// that Prettier keeps in place. Boundaries inside any other construct (operator
+// chains, ternaries, call arguments, template or JSX text) cannot hold a marker.
+const SAFE = new Set([
+  ts.SyntaxKind.SourceFile,
+  ts.SyntaxKind.Block,
+  ts.SyntaxKind.ModuleBlock,
+  ts.SyntaxKind.CaseBlock,
+  ts.SyntaxKind.CaseClause,
+  ts.SyntaxKind.DefaultClause,
+  ts.SyntaxKind.JsxElement,
+  ts.SyntaxKind.JsxFragment,
+  ts.SyntaxKind.JsxOpeningElement,
+  ts.SyntaxKind.JsxSelfClosingElement,
+  ts.SyntaxKind.JsxAttributes,
+  ts.SyntaxKind.ObjectLiteralExpression,
+  ts.SyntaxKind.ArrayLiteralExpression,
+  ts.SyntaxKind.ObjectBindingPattern,
+  ts.SyntaxKind.ArrayBindingPattern,
+  ts.SyntaxKind.NamedImports,
+  ts.SyntaxKind.NamedExports,
+  ts.SyntaxKind.ClassDeclaration,
+  ts.SyntaxKind.ClassExpression,
+  ts.SyntaxKind.InterfaceDeclaration,
+  ts.SyntaxKind.TypeLiteral,
+  ts.SyntaxKind.EnumDeclaration,
+])
+
+// Whether a standalone marker line fits between `line` and `line + 1`.
+function placeable(source: ts.SourceFile, notes: { start: number; end: number }[], line: number) {
+  if (notes.some((note) => note.start <= line && note.end > line)) return false
+  const inner = (node: ts.Node): ts.Node =>
+    ts.forEachChild(node, (child) => {
+      const [a, b] = span(source, child)
+      return a <= line && b > line ? inner(child) : undefined
+    }) ?? node
+  return SAFE.has(inner(source).kind)
+}
+
+/**
+ * Smallest marker regions inside content lines first..last that cover every
+ * real line without cutting a construct or putting a boundary where no marker
+ * can stand. Regions separated only by quiet lines (blank, comment, structural,
+ * template, churn) are joined when the join cuts nothing.
+ */
+export function minimalRegions(
+  source: ts.SourceFile,
+  lines: string[],
+  real: number[],
+  first: number,
+  last: number,
+  quiet: Set<number>,
+) {
+  const nodes: (readonly [number, number])[] = [],
+    notes = comments(lines).spans
+  const walk = (node: ts.Node) => {
+    if (!ts.isSourceFile(node)) {
+      const range = span(source, node)
+      if (range[0] !== range[1] && !LISTS.has(node.kind)) nodes.push(range)
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(source)
+  const ok = (line: number) => placeable(source, notes, line)
+  // Mirrors structuralFindings(..., heads): nothing may start before a region and
+  // end inside it, and a construct may continue past the region only when both
+  // boundaries sit between whole members of a container.
+  const fits = (lo: number, hi: number) =>
+    !nodes.some(([a, b]) => a < lo && b >= lo && b <= hi) &&
+    (!nodes.some(([a, b]) => a >= lo && a <= hi && b > hi) || (ok(lo - 1) && ok(hi)))
+  const grow = (start: number, end: number) => {
+    let lo = start,
+      hi = end
+    for (;;) {
+      const top = nodes.find(([a, b]) => a < lo && b >= lo && b <= hi)
+      if (top && lo > first) {
+        lo = Math.max(first, top[0])
+        continue
+      }
+      if (lo > first && !ok(lo - 1)) {
+        lo--
+        continue
+      }
+      if (hi < last && !ok(hi)) {
+        hi++
+        continue
+      }
+      const tail = nodes.filter(([a, b]) => a >= lo && a <= hi && b > hi)
+      if (tail.length && hi < last && !(ok(lo - 1) && ok(hi))) {
+        hi = Math.min(last, Math.max(...tail.map(([, b]) => b)))
+        continue
+      }
+      return [lo, hi] as [number, number]
+    }
+  }
+  const runs: [number, number][] = []
+  for (const n of real.filter((n) => n >= first && n <= last).sort((a, b) => a - b)) {
+    const run = runs.at(-1)
+    if (run && run[1] === n - 1) run[1] = n
+    else runs.push([n, n])
+  }
+  const out: [number, number][] = []
+  for (const [lo, hi] of runs.map(([a, b]) => grow(a, b)).sort((a, b) => a[0] - b[0])) {
+    const prev = out.at(-1)
+    if (prev && lo <= prev[1] + 1) {
+      out.splice(-1, 1, grow(prev[0], Math.max(prev[1], hi)))
+      continue
+    }
+    const gap = prev ? Array.from({ length: lo - prev[1] - 1 }, (_, i) => prev[1] + 1 + i) : []
+    if (prev && gap.every((n) => quiet.has(n)) && fits(prev[0], hi)) {
+      prev[1] = hi
+      continue
+    }
+    out.push([lo, hi])
+  }
+  // Take in trailing quiet lines (closing braces and tags) when they finish a
+  // construct the region opened, so a fork-added block keeps its own closer.
+  return out.map(([lo, hi]): [number, number] => {
+    const open = (end: number) => nodes.some(([a, b]) => a >= lo && a <= end && b > end)
+    if (!open(hi)) return [lo, hi]
+    for (let end = hi + 1; end <= last && quiet.has(end); end++) if (!open(end) && fits(lo, end)) return [lo, end]
+    return [lo, hi]
+  })
+}
+
+function ranges(lines: number[]) {
+  const out: [number, number][] = []
+  for (const n of [...lines].sort((a, b) => a - b)) {
+    const range = out.at(-1)
+    if (range && range[1] === n - 1) range[1] = n
+    else out.push([n, n])
+  }
+  return out.map(([a, b]) => (a === b ? `L${a}` : `L${a}-L${b}`))
 }
 
 export function detachedHeader(
@@ -742,12 +892,25 @@ export function matchFindings(
   return out
 }
 
-function structuralFindings(source: ts.SourceFile, startLine: number, endLine: number): StructuralFinding[] {
-  const out: StructuralFinding[] = [],
+export function structuralFindings(
+  source: ts.SourceFile,
+  startLine: number,
+  endLine: number,
+  heads = false,
+): StructuralFinding[] {
+  // With heads, a region may stop after the head of a construct (signature,
+  // condition, opening tag, optionally its leading members) when both markers
+  // sit between whole members of a container. Constructs that start before the
+  // region are still cut.
+  const notes = heads ? comments(splitLines(source.text)).spans : [],
+    open = heads && placeable(source, notes, startLine) && placeable(source, notes, endLine - 1),
+    out: StructuralFinding[] = [],
     header = detachedHeader(source, startLine, endLine)
-  if (header) out.push({ category: "DETACHED_HEADER", kind: header.kind, startLine: header.line, endLine: header.line })
-  for (const cut of structureCuts(source, startLine, endLine))
-    out.push({ category: "STRUCTURE_SPLIT", kind: cut.kind, startLine: cut.startLine, endLine: cut.endLine })
+  if (header && !open)
+    out.push({ category: "DETACHED_HEADER", kind: header.kind, startLine: header.line, endLine: header.line })
+  for (const cut of structureCuts(source, startLine, endLine, heads))
+    if (!open || cut.startLine <= startLine)
+      out.push({ category: "STRUCTURE_SPLIT", kind: cut.kind, startLine: cut.startLine, endLine: cut.endLine })
   return out
 }
 
@@ -771,7 +934,6 @@ type Audit = {
     excessive: boolean
   }[]
   inline: { startLine: number; endLine: number; line: number; text: string }[]
-  fragmented: { first: number; second: number; gap: number }[]
   designation: { line: number; startLine: number; endLine: number }[]
 }
 function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: string, isNew: boolean): Audit | null {
@@ -948,16 +1110,49 @@ function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: 
         ![...churn].some((n) => n >= m.startLine && n <= m.endLine && stripMarkerComments(lines[n - 1] ?? "")),
     ),
     overwrap: Audit["overwrap"] = [],
-    realSet = new Set(real)
-  for (const m of parsed.markers.filter((x) => x.type === "block" && x.markerType === "fork")) {
-    const f = classifyOverwrap(
-      Array.from({ length: Math.max(0, m.endLine - m.startLine - 1) }, (_, i) => i + m.startLine + 1),
-      new Set(real),
-      lines,
-      templateSpans(lines),
-      churn,
+    realSet = new Set(real),
+    source = parseAuditSource(file, content),
+    baseSource = base == null ? null : parseAuditSource(file, base)
+  // A marker must never break parsing: count parse errors that land on marker
+  // lines, against the merge-base so breakage inherited from upstream stays quiet.
+  const broken = (tree: ts.SourceFile | null, text: string[]) =>
+    ((tree as (ts.SourceFile & { parseDiagnostics?: ts.Diagnostic[] }) | null)?.parseDiagnostics ?? []).filter(
+      (item) => tree && ANY.test(text[tree.getLineAndCharacterOfPosition(item.start ?? 0).line] ?? ""),
     )
+  const fresh = broken(source, lines),
+    first = fresh.at(0)
+  if (source && first && fresh.length > broken(baseSource, baseLines).length)
+    add(
+      `[SYNTAX] L${source.getLineAndCharacterOfPosition(first.start ?? 0).line + 1}: file no longer parses (${ts.flattenDiagnosticMessageText(first.messageText, " ")})`,
+    )
+  for (const m of parsed.markers.filter((x) => x.type === "block" && x.markerType === "fork")) {
+    const interior = Array.from({ length: Math.max(0, m.endLine - m.startLine - 1) }, (_, i) => i + m.startLine + 1),
+      f = classifyOverwrap(interior, new Set(real), lines, templateSpans(lines), churn)
     if (f.base) overwrap.push({ startLine: m.startLine, endLine: m.endLine, ...f })
+    // Redundant and structurally broken blocks already fail on their own diagnostics.
+    if (!f.meaningful || !source || parsed.wholeFileMarkerLine >= 0) continue
+    if (!real.some((n) => n > m.startLine && n < m.endLine)) continue
+    if (structuralFindings(source, m.startLine, m.endLine, true).length) continue
+    const foreign = new Set(f.meaningfulLines),
+      regions = minimalRegions(
+        source,
+        lines,
+        real,
+        m.startLine + 1,
+        m.endLine - 1,
+        new Set(interior.filter((n) => !foreign.has(n))),
+      ),
+      outside = f.meaningfulLines.filter((n) => !regions.some(([a, b]) => n >= a && n <= b))
+    if (!outside.length) continue
+    const shown = ranges(outside),
+      message = `[OVERWRAP] L${m.startLine}-L${m.endLine}: upstream ${shown.slice(0, 10).join(", ")}${shown.length > 10 ? ` (+${shown.length - 10} more)` : ""} can stay outside; minimal regions ${regions.map(([a, b]) => (a === b ? `L${a}` : `L${a}-L${b}`)).join(", ")}`
+    // Advisory by default; FORK_AUDIT_OVERWRAP=error makes the finding fatal.
+    if (process.env.FORK_AUDIT_OVERWRAP !== "error") {
+      errors.push(message)
+      diagnostics.push({ message, families: [m.markerType], soft: true })
+      continue
+    }
+    add(message, [m.markerType])
   }
   const designation: Audit["designation"] = []
   for (const n of real) {
@@ -969,14 +1164,14 @@ function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: 
     const outer = covering.reduce((a, b) => (b.startLine < a.startLine ? b : a))
     designation.push({ line: n, startLine: outer.startLine, endLine: outer.endLine })
   }
-  const source = parseAuditSource(file, content),
-    baseSource = base == null ? null : parseAuditSource(file, base)
   if (parsed.wholeFileMarkerLine < 0 && source)
     for (const m of parsed.markers.filter((x) => x.type === "block")) {
       const counterpart = baseBlock(m),
         priorFindings =
-          counterpart && baseSource ? structuralFindings(baseSource, counterpart.startLine, counterpart.endLine) : [],
-        findings = structuralFindings(source, m.startLine, m.endLine)
+          counterpart && baseSource
+            ? structuralFindings(baseSource, counterpart.startLine, counterpart.endLine, m.markerType === "fork")
+            : [],
+        findings = structuralFindings(source, m.startLine, m.endLine, m.markerType === "fork")
       for (const finding of matchFindings(findings, priorFindings, same)) {
         if (finding.category === "DETACHED_HEADER")
           add(
@@ -1001,7 +1196,6 @@ function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: 
     diagnostics,
     overwrap,
     inline: inlineCandidates(parsed.markers, realSet, lines),
-    fragmented: fragmentedCandidates(parsed.markers, realSet),
     designation,
   }
 }
@@ -1014,7 +1208,7 @@ function main() {
   }
   if (args.includes("--help") || args.includes("-h")) {
     console.log(
-      "Usage: bun run script/fork-audit.ts [--worktree] [--base=<ref>] [--select=agent-local|branch] [--overwrap-report] [--inline-report] [--fragment-report] [--designation-report] [paths...]\n" +
+      "Usage: bun run script/fork-audit.ts [--worktree] [--base=<ref>] [--select=agent-local|branch] [--overwrap-report] [--inline-report] [--designation-report] [paths...]\n" +
         "  --select changes file selection only; agent-local requires --worktree, while branch selects HEAD-side paths from origin/main...HEAD.",
     )
     process.exit(0)
@@ -1090,9 +1284,9 @@ function main() {
     newFiles = new Set(fatalGit(["diff", "--name-only", "--diff-filter=A", ref]).trim().split("\n").filter(Boolean))
   let bad = 0,
     warnings = 0
+  const failed = new Set<string>()
   const overwrapReport = args.includes("--overwrap-report")
   const inlineReport = args.includes("--inline-report")
-  const fragmentReport = args.includes("--fragment-report")
   const designationReport = args.includes("--designation-report")
   const overwraps: {
     file: string
@@ -1102,7 +1296,6 @@ function main() {
     trivial: number
     lines: number[]
   }[] = []
-  const fragments: { file: string; first: number; second: number; gap: number }[] = []
   const designations: { file: string; line: number; startLine: number; endLine: number }[] = []
   let audited = 0
   for (const file of targets) {
@@ -1111,14 +1304,17 @@ function main() {
     audited++
     const missing = result.blocks.filter((b) => !b.isCovered)
     const nestedHard = result.nested.filter((item) => isFatal(item.families)).length,
-      diagnosticHard = result.diagnostics.filter((item) => isFatal(item.families)).length,
+      diagnosticHard = result.diagnostics.filter((item) => !item.soft && isFatal(item.families)).length,
       hard = missing.length + result.redundant.length + nestedHard + diagnosticHard,
       soft = result.nested.length + result.diagnostics.length - nestedHard - diagnosticHard
     bad += hard
     warnings += soft
+    if (hard) failed.add(result.file)
     console.log(`${hard ? "FAIL" : "PASS"} ${result.file} (${result.covered}/${result.total} lines covered)`)
     for (const diagnostic of result.diagnostics)
-      console.log(`   [${isFatal(diagnostic.families) ? "ERROR" : "WARNING"}] ${diagnostic.message}`)
+      console.log(
+        `   [${!diagnostic.soft && isFatal(diagnostic.families) ? "ERROR" : "WARNING"}] ${diagnostic.message}`,
+      )
     for (const n of result.nested)
       console.log(`   [${isFatal(n.families) ? "ERROR" : "WARNING"}] [NESTED] L${n.startLine}-L${n.endLine}`)
     for (const b of missing) for (const line of formatMissingBlock(b)) console.log(line)
@@ -1138,22 +1334,17 @@ function main() {
         console.log(
           `   [INLINE] L${candidate.startLine}-L${candidate.endLine}: single changed line L${candidate.line} (${candidate.text.trim()})`,
         )
-    fragments.push(...result.fragmented.map((fragment) => ({ file, ...fragment })))
     designations.push(...result.designation.map((item) => ({ file, ...item })))
     console.log("")
   }
   if (overwrapReport) {
     console.log("OVERWRAP REPORT (read-only advisory)")
-    for (const item of overwraps)
+    for (const item of overwraps) {
       console.log(
         `   [${item.meaningful ? "CAPTURED" : "CONTEXT"}] ${item.file} L${item.start}-L${item.end}: upstream ${item.meaningful}, context ${item.trivial}`,
       )
-    for (const item of overwraps) if (item.lines.length) console.log(`     upstream lines: ${item.lines.join(", ")}`)
-  }
-  if (fragmentReport) {
-    console.log("FRAGMENTED REGIONS (read-only advisory)")
-    for (const fragment of fragments)
-      console.log(`   [FRAGMENTED] ${fragment.file} L${fragment.first}/L${fragment.second}: ${fragment.gap} line gap`)
+      if (item.lines.length) console.log(`     upstream lines: ${ranges(item.lines).join(", ")}`)
+    }
   }
   if (designationReport) {
     console.log("FORK DESIGNATION (read-only advisory)")
@@ -1169,6 +1360,8 @@ function main() {
     console.log(
       "\n⚠️  CRITICAL NOTICE: If marker anomalies (STRUCTURE_SPLIT, NESTED, DETACHED_HEADER) originate from upstream commits, DO NOT TOUCH THEM. Modifying upstream marker annotations creates severe merge conflicts during future rebases on upstream/main. Only fix annotations for changes introduced by this fork.",
     )
+    console.log("\nFAIL FILES:")
+    for (const file of failed) console.log(`   ${file}`)
   }
   process.exit(bad ? 1 : 0)
 }

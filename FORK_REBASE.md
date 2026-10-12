@@ -284,6 +284,7 @@ remove stale annotations as described below.
 
 - **Do NOT run full fork-audit on intermediate rebase stops**: During stops 1..N of a rebase, focus on code logic and the local checks named in the assignment (see Stop Checks); package typechecks and suites run once on the assembled tree. Do not attempt 100% fork marker coverage or full `fork-audit` runs on intermediate replayed commits — prior fork commits do not yet contain later annotation updates, and running `fork-audit` against `upstream/main` prematurely produces mass false failures.
 - **Preserve existing markers during conflict resolution**: When resolving code conflicts, keep existing upstream Kilo markers (`kilocode_change`) and surrounding fork marker wrappers intact. Do not strip markers unless the underlying fork change was completely superseded by upstream.
+- **Markers do not show deletions**: Lines the fork deleted carry no marker. Before taking the upstream side of a conflict outside fork markers, check the fork's diff for that file (`git diff <merge-base> <fork-commit> -- <file>`) and do not resurrect lines the fork removed.
 - **Audit & reconcile annotations strictly at the end**: After all rebase commits are replayed and code builds cleanly, perform the fork annotation audit in one dedicated final pass:
   1. Run `bun run script/fork-audit.ts --worktree` to audit the entire rebased tree against `upstream/main`.
   2. Fix any missing coverage, nested markers, or AST splits across touched files in one batch.
