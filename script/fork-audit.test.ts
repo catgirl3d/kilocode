@@ -6,13 +6,16 @@ import path from "node:path"
 import {
   classifyOverwrap,
   detachedHeader,
+  isTrivial,
   matchChurnLines,
   matchFindings,
+  minimalRegions,
   newFileHeaderError,
   parseAuditSource,
   parseCoveredRanges,
   renderedMarkerLines,
   scope,
+  structuralFindings,
   structureCuts,
   stripMarkerComments,
   takeChurnMatches,
@@ -52,12 +55,13 @@ function fixture(files: Record<string, string> = {}) {
   return dir
 }
 
-function run(dir: string, args: string[]) {
+function run(dir: string, args: string[], extra: Record<string, string> = {}) {
   const r = Bun.spawnSync({
     cmd: ["bun", script, ...args],
     cwd: dir,
     env: {
       ...process.env,
+      ...extra,
       FORK_AUDIT_ROOT: dir,
       GIT_CONFIG_GLOBAL: path.join(dir, "empty-config"),
       GIT_CONFIG_SYSTEM: path.join(dir, "empty-config"),
@@ -131,7 +135,6 @@ describe("read-only contract", () => {
       ["--worktree", "--base=upstream"],
       ["--worktree", "--base=upstream", "--overwrap-report"],
       ["--worktree", "--base=upstream", "--inline-report"],
-      ["--worktree", "--base=upstream", "--fragment-report"],
       ["--help"],
       ["-h"],
     ]
@@ -174,20 +177,24 @@ describe("read-only contract", () => {
     expect(result.out).toContain("whole-file '- new file' marker used on an existing file")
   })
 
-  it("reports detached callable headers while accepting a complete author block", () => {
-    const dir = fixture()
+  it("accepts a fork region that stops after a changed signature but not inside a parameter list", () => {
+    const file = "packages/kilo-vscode/src/head.ts",
+      dir = fixture({ [file]: "export function view(\n  other = 3,\n) {\n  return 1\n}\n" })
     writeFileSync(
-      path.join(dir, "packages/kilo-vscode/src/view.ts"),
-      "// fork_change start\nexport function view() {\n// fork_change end\n  return 2\n}\n",
+      path.join(dir, file),
+      "// fork_change start\nexport function view(\n  next = 2,\n// fork_change end\n  other = 3,\n) {\n  return 1\n}\n",
     )
-    const detached = run(dir, ["--worktree", "--base=upstream"])
-    expect(detached.code).toBe(1)
-    expect(detached.out).toContain("[DETACHED_HEADER]")
+    const split = run(dir, ["--worktree", "--base=upstream", file])
+    expect(split.code).toBe(1)
+    expect(split.out).toContain("[ERROR] [STRUCTURE_SPLIT]")
     writeFileSync(
-      path.join(dir, "packages/kilo-vscode/src/view.ts"),
-      "// fork_change start\nexport function view() {\n  return 2\n}\n// fork_change end\n",
+      path.join(dir, file),
+      "// fork_change start\nexport function view(next = 2, other = 3) {\n// fork_change end\n  return 1\n}\n",
     )
-    expect(run(dir, ["--worktree", "--base=upstream"]).out).not.toContain("[DETACHED_HEADER]")
+    const head = run(dir, ["--worktree", "--base=upstream", file])
+    expect(head.code).toBe(0)
+    expect(head.out).not.toContain("[DETACHED_HEADER]")
+    expect(head.out).not.toContain("[STRUCTURE_SPLIT]")
   })
 
   it("ignores structure findings from an unchanged merge-base marker block", () => {
@@ -301,7 +308,7 @@ describe("read-only contract", () => {
     expect(result.out).toContain("[NESTED]")
   })
 
-  it("prints inline, fragmentation, and detailed overwrap reports only when requested", () => {
+  it("prints inline and detailed overwrap reports only when requested", () => {
     const dir = fixture()
     writeFileSync(
       path.join(dir, "packages/kilo-vscode/src/view.ts"),
@@ -310,16 +317,212 @@ describe("read-only contract", () => {
     const plain = run(dir, ["--worktree", "--base=upstream"])
     expect(plain.out).not.toContain("[INLINE]")
     expect(plain.out).not.toContain("[CAPTURED]")
-    const reports = run(dir, [
-      "--worktree",
-      "--base=upstream",
-      "--inline-report",
-      "--fragment-report",
-      "--overwrap-report",
-    ])
+    const reports = run(dir, ["--worktree", "--base=upstream", "--inline-report", "--overwrap-report"]),
+      lines = reports.out.split("\n"),
+      at = lines.findIndex((line) => line.includes("[CAPTURED]"))
     expect(reports.out).toContain("[INLINE]")
-    expect(reports.out).toContain("FRAGMENTED REGIONS")
-    expect(reports.out).toContain("OVERWRAP REPORT")
+    expect(reports.out).not.toContain("FRAGMENTED")
+    expect(lines[at]).toContain("L1-L4")
+    expect(lines[at + 1]).toBe("     upstream lines: L3")
+  })
+
+  it("warns about a fork block that captures upstream lines a narrower region can leave outside", () => {
+    const dir = fixture(),
+      file = path.join(dir, "packages/kilo-vscode/src/view.ts")
+    writeFileSync(file, "// fork_change start\nexport const view = 2\nexport const stable = true\n// fork_change end\n")
+    const wide = run(dir, ["--worktree", "--base=upstream"])
+    expect(wide.code).toBe(0)
+    expect(wide.out).toContain("[WARNING] [OVERWRAP] L1-L4: upstream L3 can stay outside; minimal regions L2")
+    const strict = run(dir, ["--worktree", "--base=upstream"], { FORK_AUDIT_OVERWRAP: "error" })
+    expect(strict.code).toBe(1)
+    expect(strict.out).toContain("[ERROR] [OVERWRAP] L1-L4")
+    writeFileSync(file, "export const view = 2 // fork_change\nexport const stable = true\n")
+    const narrow = run(dir, ["--worktree", "--base=upstream"])
+    expect(narrow.code).toBe(0)
+    expect(narrow.out).not.toContain("[OVERWRAP]")
+  })
+
+  it("fails a marker that breaks parsing inside a JSX opening tag", () => {
+    const file = "packages/kilo-vscode/src/tag.tsx",
+      dir = fixture({ [file]: "export const View = () => (\n  <Show\n    when={a}\n  />\n)\n" })
+    writeFileSync(
+      path.join(dir, file),
+      "export const View = () => (\n  <Show\n    {/* fork_change start */}\n    when={b}\n    {/* fork_change end */}\n  />\n)\n",
+    )
+    const broken = run(dir, ["--worktree", "--base=upstream", file])
+    expect(broken.code).toBe(1)
+    expect(broken.out).toContain("[ERROR] [SYNTAX] L3: file no longer parses")
+    writeFileSync(
+      path.join(dir, file),
+      "export const View = () => (\n  <Show\n    when={b} /* fork_change */\n  />\n)\n",
+    )
+    const fixed = run(dir, ["--worktree", "--base=upstream", file])
+    expect(fixed.code).toBe(0)
+    expect(fixed.out).not.toContain("[SYNTAX]")
+  })
+
+  it("keeps a statement block when the changed line sits inside an expression", () => {
+    const file = "packages/kilo-vscode/src/pick.ts",
+      dir = fixture({ [file]: "export const pick = flag\n  ? first\n  : second\n" })
+    writeFileSync(
+      path.join(dir, file),
+      "// fork_change start\nexport const pick = flag\n  ? changed\n  : second\n// fork_change end\n",
+    )
+    const result = run(dir, ["--worktree", "--base=upstream", file])
+    expect(result.code).toBe(0)
+    expect(result.out).not.toContain("[OVERWRAP]")
+  })
+
+  it("narrows a block around a JSX element to a multi-line attribute with a changed operand", () => {
+    const file = "packages/kilo-vscode/src/show.tsx",
+      base = [
+        "export const View = () => (",
+        "  <Show",
+        "    when={",
+        "      first &&",
+        "      second &&",
+        "      third",
+        "    }",
+        "  >",
+        "    <span>one</span>",
+        "  </Show>",
+        ")",
+        "",
+      ],
+      changed = base.map((line) => line.replace("second", "changed")),
+      dir = fixture({ [file]: base.join("\n") })
+    writeFileSync(
+      path.join(dir, file),
+      ["// fork_change start", ...changed.slice(0, 11), "// fork_change end", ""].join("\n"),
+    )
+    const wide = run(dir, ["--worktree", "--base=upstream", file], { FORK_AUDIT_OVERWRAP: "error" })
+    expect(wide.code).toBe(1)
+    expect(wide.out).toContain("[OVERWRAP] L1-L13: upstream L2-L3, L10 can stay outside; minimal regions L4-L8")
+    writeFileSync(
+      path.join(dir, file),
+      [
+        ...changed.slice(0, 2),
+        "    /* fork_change start */",
+        ...changed.slice(2, 7),
+        "    /* fork_change end */",
+        ...changed.slice(7),
+      ].join("\n"),
+    )
+    const narrow = run(dir, ["--worktree", "--base=upstream", file])
+    expect(narrow.code).toBe(0)
+    expect(narrow.out).not.toContain("[ERROR]")
+  })
+
+  it("keeps a whole element when a head-only region would start inside parentheses", () => {
+    const file = "packages/kilo-vscode/src/menu.tsx",
+      base = [
+        "export const View = () => {",
+        "  return (",
+        '    <Menu placement="top">',
+        "      <span>one</span>",
+        "      <span>two</span>",
+        "    </Menu>",
+        "  )",
+        "}",
+        "",
+      ],
+      head = '    <Menu placement={props.placement ?? "top"}>',
+      dir = fixture({ [file]: base.join("\n") })
+    writeFileSync(
+      path.join(dir, file),
+      [
+        ...base.slice(0, 2),
+        "    // fork_change start",
+        head,
+        ...base.slice(3, 6),
+        "    // fork_change end",
+        ...base.slice(6),
+      ].join("\n"),
+    )
+    const whole = run(dir, ["--worktree", "--base=upstream", file])
+    expect(whole.code).toBe(0)
+    expect(whole.out).not.toContain("[OVERWRAP]")
+    writeFileSync(
+      path.join(dir, file),
+      [base[0], "  // fork_change start", base[1], head, "      {/* fork_change end */}", ...base.slice(3)].join("\n"),
+    )
+    const narrow = run(dir, ["--worktree", "--base=upstream", file])
+    expect(narrow.code).toBe(0)
+    expect(narrow.out).not.toContain("[ERROR]")
+  })
+
+  it("narrows an attribute block to the changed last attribute", () => {
+    const file = "packages/kilo-vscode/src/attrs.tsx",
+      base = ["export const View = () => (", "  <Icon", "    name={a}", "    size={b}", "  />", ")", ""],
+      dir = fixture({ [file]: base.join("\n") })
+    writeFileSync(
+      path.join(dir, file),
+      [
+        ...base.slice(0, 2),
+        "    /* fork_change start */",
+        ...base.slice(2, 4),
+        "    data={c}",
+        "    /* fork_change end */",
+        ...base.slice(4),
+      ].join("\n"),
+    )
+    const wide = run(dir, ["--worktree", "--base=upstream", file], { FORK_AUDIT_OVERWRAP: "error" })
+    expect(wide.code).toBe(1)
+    expect(wide.out).toContain("[OVERWRAP] L3-L7: upstream L4-L5 can stay outside; minimal regions L6")
+    writeFileSync(
+      path.join(dir, file),
+      [
+        ...base.slice(0, 4),
+        "    /* fork_change start */",
+        "    data={c}",
+        "    /* fork_change end */",
+        ...base.slice(4),
+      ].join("\n"),
+    )
+    const narrow = run(dir, ["--worktree", "--base=upstream", file])
+    expect(narrow.code).toBe(0)
+    expect(narrow.out).not.toContain("[STRUCTURE_SPLIT]")
+  })
+
+  it("narrows a block around a JSX parent to the added child", () => {
+    const file = "packages/kilo-vscode/src/view.tsx",
+      base = [
+        "export const View = () => (",
+        "  <div>",
+        "    <span>one</span>",
+        "    <span>two</span>",
+        "  </div>",
+        ")",
+        "",
+      ],
+      dir = fixture({ [file]: base.join("\n") })
+    writeFileSync(
+      path.join(dir, file),
+      [
+        "// fork_change start",
+        ...base.slice(0, 3),
+        "    <b>added</b>",
+        ...base.slice(3, 6),
+        "// fork_change end",
+        "",
+      ].join("\n"),
+    )
+    const wide = run(dir, ["--worktree", "--base=upstream", file], { FORK_AUDIT_OVERWRAP: "error" })
+    expect(wide.code).toBe(1)
+    expect(wide.out).toContain("[OVERWRAP] L1-L9: upstream L2, L4, L6 can stay outside; minimal regions L5")
+    writeFileSync(
+      path.join(dir, file),
+      [
+        ...base.slice(0, 3),
+        "    {/* fork_change start */}",
+        "    <b>added</b>",
+        "    {/* fork_change end */}",
+        ...base.slice(3),
+      ].join("\n"),
+    )
+    const narrow = run(dir, ["--worktree", "--base=upstream", file])
+    expect(narrow.code).toBe(0)
+    expect(narrow.out).not.toContain("[OVERWRAP]")
   })
 
   it("lists fork-owned lines under inherited Kilo regions without [fork] only in the designation report", () => {
@@ -431,6 +634,25 @@ describe("read-only diagnostics", () => {
     expect(result.out).not.toContain("[REDUNDANT]")
     expect(result.out).not.toContain("[ERROR]")
     expect(result.out).not.toContain("[WARNING]")
+  })
+
+  it("lists only failed files in the final output block", () => {
+    const dir = fixture(),
+      fail = "packages/kilo-vscode/src/view.ts",
+      pass = "packages/kilo-vscode/src/created.ts"
+    writeFileSync(path.join(dir, fail), "export const view = 2\nexport const missing = 3\n")
+    writeFileSync(path.join(dir, pass), "// fork_change - new file\nexport const created = true\n")
+
+    const result = run(dir, ["--worktree", "--base=upstream"]),
+      lines = result.out.trim().split("\n"),
+      start = lines.indexOf("FAIL FILES:")
+
+    expect(result.code).toBe(1)
+    expect(result.out).toContain(`FAIL ${fail}`)
+    expect(result.out).toContain(`PASS ${pass}`)
+    expect(start).toBeGreaterThan(lines.indexOf("Summary:"))
+    expect(start).toBeGreaterThan(lines.findIndex((line) => line.includes("CRITICAL NOTICE:")))
+    expect(lines.slice(start)).toEqual(["FAIL FILES:", `   ${fail}`])
   })
 
   it("reports missing coverage when a local refactor removes a fork marker", () => {
@@ -1055,14 +1277,14 @@ describe("read-only diagnostics", () => {
   it("focused audit: structure split is hard on the actual audit path", () => {
     const dir = fixture()
     const file = "packages/kilo-vscode/src/object.ts"
-    writeFileSync(path.join(dir, file), "export const value = {\n  stable: true\n}\n")
+    writeFileSync(path.join(dir, file), "export const value = first\n  + stable\n")
     git(dir, ["add", file])
     git(dir, ["commit", "-qm", "structure base"])
     git(dir, ["update-ref", "refs/remotes/upstream/main", "HEAD"])
     git(dir, ["branch", "-f", "upstream", "HEAD"])
     writeFileSync(
       path.join(dir, file),
-      "// fork_change start\nexport const value = {\n// fork_change end\n  stable: true\n}\n",
+      "// fork_change start\nexport const value = changed\n// fork_change end\n  + stable\n",
     )
     const result = run(dir, ["--worktree", "--base=upstream", file])
     expect(result.code).toBe(1)
@@ -1166,6 +1388,49 @@ describe("read-only diagnostics", () => {
     expect(detachedHeader(source, 1, 4)).toBeNull()
   })
 
+  it("suggests minimal regions that stop after a changed head without cutting a construct", () => {
+    const text = [
+      "export function keep() {",
+      "  const a = 1",
+      "  const b = 2",
+      "  return a + b",
+      "}",
+      "export const changed = () => {",
+      "  return 1",
+      "}",
+    ]
+    const source = parseAuditSource("value.ts", text.join("\n"))!
+    const regions = minimalRegions(source, text, [3, 6], 1, 8, new Set([5, 8]))
+    expect(regions).toEqual([
+      [3, 3],
+      [6, 6],
+    ])
+    for (const [lo, hi] of regions) expect(structuralFindings(source, lo - 1, hi + 1, true)).toEqual([])
+  })
+
+  it("keeps the closing brace of a construct the region opened", () => {
+    const text = ["export function added() {", "  const a = 1", "  return a", "}", "export const after = 2"]
+    const source = parseAuditSource("value.ts", text.join("\n"))!
+    expect(minimalRegions(source, text, [1, 2, 3], 1, 5, new Set([4]))).toEqual([[1, 4]])
+  })
+
+  it("treats keyword-and-punctuation lines as context, not captured upstream code", () => {
+    expect(isTrivial("  return {")).toBe(true)
+    expect(isTrivial("} else {")).toBe(true)
+    expect(isTrivial("result,")).toBe(false)
+    expect(isTrivial("return null")).toBe(false)
+    const lines = [
+      "// fork_change start",
+      "function added() {",
+      "  return {",
+      "    a: 1,",
+      "  }",
+      "}",
+      "// fork_change end",
+    ]
+    expect(classifyOverwrap([2, 3, 4, 5, 6], new Set([2, 4]), lines, templateSpans(lines)).meaningful).toBe(0)
+  })
+
   it("classifies overwrap as advisory context, template, churn, or captured code", () => {
     const lines = ["// fork_change start", "const old = 1", "const text = `old", "more`", "}", "// fork_change end"]
     const result = classifyOverwrap([2, 3, 4, 5], new Set([5]), lines, templateSpans(lines), new Set([2]))
@@ -1206,9 +1471,9 @@ describe("severity policy", () => {
 
   it("keeps equivalent fork structural and nested anomalies fatal in Kilo-exclusive files", () => {
     const file = "packages/kilo-vscode/src/fork-severity.ts",
-      base = "export const value = {\n  stable: true\n}\nexport const nested = 1\n",
+      base = "export const value = first\n  + stable\nexport const nested = 1\n",
       current =
-        "// fork_change start\nexport const value = {\n  changed: true,\n// fork_change end\n  stable: true\n}\n// fork_change start\nexport const nested = 2 // fork_change\n// fork_change end\n",
+        "// fork_change start\nexport const value = first\n  + changed\n// fork_change end\n  + stable\n// fork_change start\nexport const nested = 2 // fork_change\n// fork_change end\n",
       dir = fixture({ [file]: base })
     writeFileSync(path.join(dir, file), current)
     const result = run(dir, ["--worktree", "--base=upstream", file])
