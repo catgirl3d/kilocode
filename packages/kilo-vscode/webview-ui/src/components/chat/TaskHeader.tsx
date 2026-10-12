@@ -14,9 +14,9 @@ import { Component, For, Show, createMemo, createSignal, createEffect, on, onMou
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { Icon } from "@kilocode/kilo-ui/icon" // fork_change
-// fork_change start
-import { Switch } from "@kilocode/kilo-ui/switch"
+import { Switch } from "@kilocode/kilo-ui/switch" // fork_change
 import { useSession } from "../../context/session"
+// fork_change start
 import { useMemory } from "../../context/memory"
 import { useConfig } from "../../context/config"
 // fork_change end
@@ -331,8 +331,8 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   return (
     <Show when={hasMessages()}>
       <div data-component="task-header">
-        {/* fork_change start - shrinkable title region */}
         <div data-slot="task-header-title">
+          {/* fork_change start - shrinkable title region */}
           <div data-slot="task-header-name">
             <Show
               when={!renaming()}
@@ -364,8 +364,8 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
               </span>
             </Show>
           </div>
+          {/* fork_change end */}
         </div>
-        {/* fork_change end */}
         <Show when={model()}>
           {(m) => (
             <Tooltip
