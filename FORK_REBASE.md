@@ -288,7 +288,7 @@ remove stale annotations as described below.
 - **Audit & reconcile annotations strictly at the end**: After all rebase commits are replayed and code builds cleanly, perform the fork annotation audit in one dedicated final pass:
   1. Run `bun run script/fork-audit.ts --worktree` to audit the entire rebased tree against `upstream/main`.
   2. Fix any missing coverage, nested markers, or AST splits across touched files in one batch.
-  3. Fold each marker fix into the commit that owns the marked change. Only markers without a single owner go into one `chore(fork): fix annotation coverage after rebase` commit.
+  3. Fold each marker fix into the commit that owns the marked change. If a marker-annotation region contains fork lines from multiple owners, fold it to the owner of the region's first fork line by default, but first check that it applies to that owner's historical snapshot. Do not re-annotate a mixed region merely to give it a single owner. Pieces that edit the same `start`/`end` pair move together: fold them to one owner or leave all of them in the residual. Pieces that do not apply cleanly, whose final marker form is absent from the owner's snapshot, or whose fold leaves a new `start`/`end` imbalance in an intermediate commit go into one final `chore(fork): apply residual fork_change marker fixes` commit; its body lists the pieces and states that they are marker/comment placement only.
   4. Before freezing the candidate, run `bun run script/fork-audit.ts` (without `--worktree`) to verify that the committed net fork diff `upstream/main...HEAD` is 100% clean.
 
 ### Annotation Commit Conflicts
@@ -395,7 +395,7 @@ pre-rebase fork history; with a consolidated history this takes a minute.
 
 Splitting or folding commits (e.g. dissolving a tail extract into its owner
 with `git-surgeon split` / `fold` / `amend`) rewrites replayed descendants.
-Every such operation ends with three checks before anything is pushed:
+Every such operation ends with these checks before anything is pushed:
 
 - **Tree anchor.** Before the first rewrite, pin the pre-surgery HEAD as a local
   backup branch, e.g. `git branch backup/pre-surgery-<short-sha> HEAD`, and use
@@ -422,6 +422,11 @@ Every such operation ends with three checks before anything is pushed:
 - **One operation at a time.** After each split or fold, confirm the tree equality
   and the expected history before the next operation; stop on any mismatch instead
   of stacking recovery steps.
+- **Marker-fold equality.** After every fold, verify `git diff --quiet <pre-fold-ref> HEAD` and require empty output and a zero exit status. A marker fold only moves annotation edits between commits; the tree must remain bit-identical.
+- **Marker-balance check (required for marker folds).** Tree equality, comment-only diffs, and parse checks cannot see a misplaced `start`/`end`: markers are comments, and the tip stays bit-identical because the residual commit absorbs the difference. For every rewritten commit, compare the `start`/`end` nesting of each touched file before and after the fold and require no new imbalance; pre-existing imbalance may stay. One fold passed tree equality and the comment-only audit while leaving unbalanced markers in 88 intermediate snapshots.
+- **Silent mis-apply recovery.** `git-surgeon fold` applies the source piece's delta to the owner's OLD snapshot and can produce a wrong result without reporting a conflict when the context is incompatible. This happened when the final fold silently re-added broad `// fork_change start/end` markers in `packages/kilo-vscode/webview-ui/src/context/config.tsx` that the narrowing wave had removed; tree equality detected it. If a fold corrupts the tree, find the pre-fold state in `git reflog` (the `rebase (finish)` entry for the previous successful operation), `git reset --hard` to it, and move the offending piece to the residual list. Never hand-resolve a silent mis-apply.
+- **Residual valve.** Do not force-resolve pieces that conflict, whose final marker form does not exist on the owner's snapshot, or whose fold leaves a new marker imbalance. Pieces that edit the same `start`/`end` pair move together: fold them to one owner or leave all of them in the residual. Collect all such pieces in one final commit named `chore(fork): apply residual fork_change marker fixes`; its body lists them and states that they are marker/comment placement only. A zero remainder is not a success criterion; tree correctness and honest commit messages take priority.
+- **Optional historical-snapshot audit.** For larger folds, compare each folded owner's old and new commit with normalization and require differences only in comments or whitespace. Also require every touched TS/TSX file to parse at the new snapshot.
 
 ## Validation
 
