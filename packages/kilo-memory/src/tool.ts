@@ -46,16 +46,12 @@ export namespace MemoryTool {
     text: Schema.optional(Text).annotate({
       description: "Remember/correct: one concise fact with conditions and exceptions; stored in full.", // fork_change
     }),
-    // fork_change start
     query: Schema.optional(Text).annotate({
-      description: "Forget query; keys with multiple matches are rejected; duplicate stored lines must be fixed in the memory file.",
+      description: "Forget query; keys with multiple matches are rejected; duplicate stored lines must be fixed in the memory file.", // fork_change
     }),
-    // fork_change end
-    // fork_change start
     key: Schema.optional(Key).annotate({
-      description: "Stable key; correct accepts a canonical file:section:key id; forget accepts an exact id in query.",
+      description: "Stable key; correct accepts a canonical file:section:key id; forget accepts an exact id in query.", // fork_change
     }),
-    // fork_change end
     reason: Schema.optional(Schema.Literals(["out_of_scope"])).annotate({
       description: "Skip reason when action is skip.",
     }),
