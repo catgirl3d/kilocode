@@ -79,16 +79,11 @@ describe("BranchNamingController", () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
-  it("skips the first prompt and names on the second", async () => {
+  it("names from the first prompt", async () => {
     const wt = armed(state)
     const { naming, renamed, prompts, requests } = makeNaming(state, {
       generate: async () => ({ data: { branch: "fix-final-task" } }),
     })
-
-    naming.prompt({ sessionID: "session-1", text: "hi" })
-    await settle()
-    expect(state.getWorktree(wt.id)?.autoNameSessionId).toBe("session-1")
-    expect(requests.value).toBe(0)
 
     naming.prompt({ sessionID: "session-1", text: "Fix the task" })
     await settle()
@@ -99,22 +94,25 @@ describe("BranchNamingController", () => {
     expect(state.getWorktree(wt.id)?.autoNameSessionId).toBeUndefined()
   })
 
-  it("names on the first prompt once the worktree has work, via idle", async () => {
+  it("keeps a vague first prompt armed for an idle retry", async () => {
     const wt = armed(state)
     const { naming, renamed, requests } = makeNaming(state, {
-      generate: async () => ({ data: { branch: "fix-token-refresh-race" } }),
+      generate: async () => ({ data: { branch: null } }),
       hasWork: async () => true,
     })
 
-    naming.prompt({ sessionID: "session-1", text: "Fix the token refresh race" })
+    naming.prompt({ sessionID: "session-1", text: "hi" })
     await settle()
-    expect(requests.value).toBe(0)
+    expect(requests.value).toBe(1)
+    expect(renamed).toEqual([])
+    expect(state.getWorktree(wt.id)?.autoNameSessionId).toBe("session-1")
+
     naming.idle("session-1")
     await settle()
 
-    expect(requests.value).toBe(1)
-    expect(renamed).toEqual(["fix-token-refresh-race"])
-    expect(state.getWorktree(wt.id)?.autoNameSessionId).toBeUndefined()
+    expect(requests.value).toBe(2)
+    expect(renamed).toEqual([])
+    expect(state.getWorktree(wt.id)?.autoNameSessionId).toBe("session-1")
   })
 
   it("applies the user prefix", async () => {
@@ -137,10 +135,9 @@ describe("BranchNamingController", () => {
     })
 
     naming.prompt({ sessionID: "session-1", text: "Fix the token refresh race" })
-    naming.idle("session-1")
     await settle()
 
-    expect(prompts).toEqual([""])
+    expect(prompts).toEqual(["Fix the token refresh race"])
     expect(state.getWorktree(wt.id)).toMatchObject({
       branch: "marius/features/fix-token-refresh-race",
       autoNameSessionId: undefined,
@@ -233,7 +230,6 @@ describe("BranchNamingController", () => {
 
     naming.busy("session-1")
     naming.prompt({ sessionID: "session-1", text: "first" })
-    naming.prompt({ sessionID: "session-1", text: "fix the thing" })
     await settle()
     expect(renamed).toEqual([])
     expect(state.getWorktree(wt.id)?.branch).toBe("quiet-river")
@@ -264,7 +260,6 @@ describe("BranchNamingController", () => {
     })
 
     naming.prompt({ sessionID: "session-1", text: "first" })
-    naming.prompt({ sessionID: "session-1", text: "fix the thing" })
     await settle()
 
     expect(logs.some((msg) => msg.includes("Branch already has an upstream"))).toBe(true)
@@ -297,7 +292,7 @@ describe("BranchNamingController", () => {
       counts.push(requests.value)
     }
 
-    expect(counts).toEqual([0, 1, 2, 3, 3])
+    expect(counts).toEqual([1, 2, 3, 4, 4])
     expect(state.getWorktree(wt.id)?.autoNameSessionId).toBeUndefined()
   })
 
@@ -306,7 +301,6 @@ describe("BranchNamingController", () => {
     const response = deferred<{ data: { branch: string | null } }>()
     const { naming, renamed } = makeNaming(state, { generate: () => response.promise })
 
-    naming.prompt({ sessionID: "session-1", text: "first" })
     naming.prompt({ sessionID: "session-1", text: "fix the thing" })
     naming.busy("session-1")
     response.resolve({ data: { branch: "fix-thing" } })

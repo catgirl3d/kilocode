@@ -11,6 +11,49 @@ import { Effect } from "effect"
 const LIMIT = 4
 const CHARS = 1_000
 const BRANCH_CHARS = 50
+const TRANSLITERATION = new Map([
+  ["а", "a"],
+  ["б", "b"],
+  ["в", "v"],
+  ["г", "g"],
+  ["д", "d"],
+  ["е", "e"],
+  ["ё", "yo"],
+  ["ж", "zh"],
+  ["з", "z"],
+  ["и", "i"],
+  ["й", "y"],
+  ["к", "k"],
+  ["л", "l"],
+  ["м", "m"],
+  ["н", "n"],
+  ["о", "o"],
+  ["п", "p"],
+  ["р", "r"],
+  ["с", "s"],
+  ["т", "t"],
+  ["у", "u"],
+  ["ф", "f"],
+  ["х", "kh"],
+  ["ц", "ts"],
+  ["ч", "ch"],
+  ["ш", "sh"],
+  ["щ", "shch"],
+  ["ъ", ""],
+  ["ы", "y"],
+  ["ь", ""],
+  ["э", "e"],
+  ["ю", "yu"],
+  ["я", "ya"],
+  ["і", "i"],
+  ["ї", "yi"],
+  ["є", "ye"],
+  ["ґ", "g"],
+])
+
+function transliterate(value: string) {
+  return value.toLowerCase().replace(/[а-яёіїєґ]/g, (char) => TRANSLITERATION.get(char) ?? char)
+}
 
 const PROMPT = `Generate a Git branch name for the coherent engineering workstream described by the user's messages.
 
@@ -18,6 +61,7 @@ Return exactly one line:
 - a lowercase kebab-case branch slug, or
 - null when there is not yet a clear, stable workstream
 
+When the user's messages are not in English (for example, Russian), translate the workstream into English and return the English slug, for example "добавление функции поиска" -> add-search-function.
 Return null for greetings, acknowledgements, capability questions, casual conversation, vague requests, unresolved brainstorming, or messages that only select an option without enough preceding context.
 Return null when the messages only ask a question or check a status and do not describe work to perform (for example "is X fixed?", "check whether ...").
 A concrete implementation, investigation, planning, documentation, or research task is a valid workstream.
@@ -59,7 +103,7 @@ export function parse(value: string) {
     .toLowerCase()
   if (!line || line === "null") return null
   return (
-    line
+    transliterate(line)
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .replace(/-+/g, "-")
@@ -68,6 +112,7 @@ export function parse(value: string) {
   )
 }
 
+/** Uses full request options so non-Latin prompts are not degraded by small-model variants. */
 export const generate = Effect.fn("BranchName.generate")(function* (input: {
   sessionID: SessionID
   messages: string[]
@@ -90,7 +135,7 @@ export const generate = Effect.fn("BranchName.generate")(function* (input: {
     hidden: true,
     options: {},
     permission: [],
-    prompt: PROMPT,
+    prompt: "",
     temperature: 0.1,
   }
   const user: MessageV2.User = {
@@ -108,8 +153,8 @@ export const generate = Effect.fn("BranchName.generate")(function* (input: {
       user,
       tools: {},
       model,
-      small: true,
-      messages: [{ role: "user", content: `User messages, oldest to newest:\n\n${body}` }],
+      small: false,
+      messages: [{ role: "user", content: `${PROMPT}\n\nUser messages, oldest to newest:\n\n${body}` }],
       sessionID: `branch-name:${input.sessionID}`,
       system: [],
       retries: 1,

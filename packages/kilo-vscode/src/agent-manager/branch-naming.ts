@@ -54,8 +54,9 @@ export class BranchNamingController {
 
   constructor(private readonly deps: Deps) {}
 
-  /** Called for every outgoing user message. Defers naming until intent is clear:
-   *  the first message only arms, messages 2-4 may name, after that disarm. */
+  /** Called for every outgoing user message. The first message may name the
+   *  branch; later messages retry while armed, and vague prompts that return
+   *  null stay armed until the prompt limit is reached. */
   prompt(input: Prompt): void {
     const { state, worktree } = this.resolve(input.sessionID)
     if (!state || !worktree || worktree.autoNameSessionId !== input.sessionID) return
@@ -75,7 +76,6 @@ export class BranchNamingController {
       this.disarm(worktree.id)
       return
     }
-    if (count < 2) return
     if (this.requests.has(worktree.id) || this.pending.has(worktree.id)) return
     this.dispatch(worktree.id, input)
   }
@@ -88,9 +88,8 @@ export class BranchNamingController {
     this.busySessions.add(sessionID)
   }
 
-  /** Called when a session becomes idle. Triggers generation once when the
-   *  worktree already has changes (covering a single detailed first prompt),
-   *  and applies any rename that was held while the session was busy. */
+  /** Called when a session becomes idle. Retries a vague first prompt when the
+   *  worktree already has changes, and applies any rename held while busy. */
   idle(sessionID: string): void {
     this.busySessions.delete(sessionID)
     const { state, worktree } = this.resolve(sessionID)
