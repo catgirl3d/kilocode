@@ -632,8 +632,10 @@ export const ConfigProvider: ParentComponent = (props) => {
     if (message.type === "globalConfigLoaded") {
       if (!acceptsConfig(saving(), blocked())) return // fork_change
       const server = hideRemovedMcp(message.config, removedMcp())
+      // fork_change start
       const pending = hideRemovedMcp(globalDraft() as Config, removedMcp())
       setGlobalConfig(mergeScopedConfig(server, pending))
+      // fork_change end
       setSavedGlobal(server)
       return
     }
