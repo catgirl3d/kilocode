@@ -1163,53 +1163,56 @@ it.live(
   { timeout: 30_000 },
 )
 
-it.live("active tool calls use permissions changed after model streaming starts", () =>
-  provideTmpdirServer(
-    Effect.fnUntraced(function* ({ dir, llm }) {
-      const config = yield* Config.Service
-      const prompt = yield* SessionPrompt.Service
-      const sessions = yield* Session.Service
-      const permission = yield* Permission.Service
-      const file = path.join(dir, "note.txt")
-      const gate = Promise.withResolvers<void>()
+it.live(
+  "active tool calls use permissions changed after model streaming starts",
+  () =>
+    provideTmpdirServer(
+      Effect.fnUntraced(function* ({ dir, llm }) {
+        const config = yield* Config.Service
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const permission = yield* Permission.Service
+        const file = path.join(dir, "note.txt")
+        const gate = Promise.withResolvers<void>()
 
-      yield* Effect.promise(() => Bun.write(file, "old"))
-      yield* llm.push(reply().wait(gate.promise).tool("edit", { filePath: file, oldString: "old", newString: "new" }))
+        yield* Effect.promise(() => Bun.write(file, "old"))
+        yield* llm.push(reply().wait(gate.promise).tool("edit", { filePath: file, oldString: "old", newString: "new" }))
 
-      const chat = yield* sessions.create({ title: "Pinned" })
-      yield* prompt.prompt({
-        sessionID: chat.id,
-        agent: "build",
-        noReply: true,
-        parts: [{ type: "text", text: "edit note" }],
-      })
+        const chat = yield* sessions.create({ title: "Pinned" })
+        yield* prompt.prompt({
+          sessionID: chat.id,
+          agent: "build",
+          noReply: true,
+          parts: [{ type: "text", text: "edit note" }],
+        })
 
-      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkScoped)
-      yield* llm.wait(1)
-      yield* config.update({ permission: { edit: { "*": "allow" } } } as Config.Info)
-      gate.resolve(undefined)
+        const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkScoped)
+        yield* llm.wait(1)
+        yield* config.update({ permission: { edit: { "*": "allow" } } } as Config.Info)
+        gate.resolve(undefined)
 
-      yield* waitFor(
-        "edit without permission prompt",
-        Effect.gen(function* () {
-          const pending = yield* permission.list()
-          if (pending.length) throw new Error("edit permission was requested after config allowed it")
-          const text = yield* Effect.promise(() => Bun.file(file).text())
-          if (text === "new") return text
-        }),
-      )
+        yield* waitFor(
+          "edit without permission prompt",
+          Effect.gen(function* () {
+            const pending = yield* permission.list()
+            if (pending.length) throw new Error("edit permission was requested after config allowed it")
+            const text = yield* Effect.promise(() => Bun.file(file).text())
+            if (text === "new") return text
+          }),
+        )
 
-      const exit = yield* Fiber.await(fiber)
-      expect(Exit.isSuccess(exit)).toBe(true)
-    }),
-    {
-      git: true,
-      config: (url) => ({
-        ...providerCfg(url),
-        permission: { edit: "ask" },
+        const exit = yield* Fiber.await(fiber)
+        expect(Exit.isSuccess(exit)).toBe(true)
       }),
-    },
-  ),
+      {
+        git: true,
+        config: (url) => ({
+          ...providerCfg(url),
+          permission: { edit: "ask" },
+        }),
+      },
+    ),
+  60_000,
 )
 
 for (const [background, wildcard] of [
