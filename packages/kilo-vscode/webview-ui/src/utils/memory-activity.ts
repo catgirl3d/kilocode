@@ -21,7 +21,9 @@ export function markerActivity(parts: readonly MemoryMarkerMeta.Part[], at: numb
     at,
     tokens: meta.tokens,
     count: meta.count,
-    items: meta.items,
+    // fork_change start - [fork] structured recall items render as their text
+    items: meta.items.map((item) => (typeof item === "string" ? item : item.text)),
+    // fork_change end
     refs: meta.files,
   }
 }
