@@ -1,12 +1,12 @@
 import type { KiloClient, Session } from "@kilocode/sdk/v2/client"
 import { sanitizeBranchName, versionedName } from "./branch-name"
-import type { CreateWorktreeResult, WorktreeManager } from "./WorktreeManager" // fork_change
+import { WorktreeRollbackError, type CreateWorktreeResult, type WorktreeManager } from "./WorktreeManager" // fork_change
 import type { WorktreeStateManager } from "./WorktreeStateManager"
 import type { PanelContext } from "./host"
 import { PLATFORM, SNAPSHOT_INITIALIZATION } from "./constants"
 import { sameDirectory } from "../kilo-provider-utils"
 import { attribute } from "./prompt-attribution"
-import { beginBoot, cleanupCreatedSession, prepareSession, type CreationBoot } from "./provider-lifecycle" // fork_change
+import { beginBoot, prepareSession, type CreationBoot } from "./provider-lifecycle" // fork_change
 import { Timing } from "./creation-timing"
 import { plan } from "./creation-plan"
 import { generateFromPrompt, renameFromPrompt } from "./worktree-naming" // fork_change
@@ -201,6 +201,53 @@ async function local(
   return true
 }
 
+// fork_change start
+async function nameWorktree(
+  deps: ToolDeps,
+  client: KiloClient,
+  task: ToolTask,
+  created: WorktreeCreated,
+  state: WorktreeStateManager,
+  index: number,
+  total: number,
+  versions?: boolean,
+): Promise<{ branch: string; path: string } | null> {
+  const settings = deps.autoName()
+  const body = text(task)
+  const manager = deps.getWorktreeManager()
+  const eligible = [
+    settings.enabled,
+    !!body,
+    !task.name,
+    !task.branchName,
+    manager != null,
+    created.worktree.branchOwned === true,
+  ].every(Boolean)
+  if (!eligible) return null
+
+  const generated = await generateFromPrompt(
+    client,
+    { prompt: body!, providerID: task.model?.providerID, modelID: task.model?.modelID },
+    deps.log,
+  )
+  if (!generated) return null
+  return renameFromPrompt({
+    manager: manager!,
+    state,
+    worktree: {
+      id: created.worktree.id,
+      path: created.result.path,
+      branch: created.result.branch,
+      branchOwned: created.worktree.branchOwned,
+    },
+    generated,
+    prefix: settings.prefix,
+    version: versions ? { index, total } : undefined,
+    log: (message) => deps.log(message),
+  })
+}
+// fork_change end
+
 async function worktree(
   deps: ToolDeps,
   client: KiloClient,
@@ -226,6 +273,34 @@ async function worktree(
     timing.end()
     return false
   }
+
+  // fork_change start
+  const state = deps.getState()
+  if (!state) {
+    await deps.cleanupWorktree(created.worktree.id, created.result.path)
+    timing.mark("cleanup")
+    timing.end()
+    return false
+  }
+
+  let named: { branch: string; path: string } | null = null
+  try {
+    named = await nameWorktree(deps, client, task, created, state, index, total, versions)
+  } catch (error) {
+    if (!(error instanceof WorktreeRollbackError)) throw error
+    deps.log(`Failed to name worktree: ${error}`)
+    try {
+      await deps.cleanupWorktree(created.worktree.id, created.result.path)
+    } catch (cleanupError) {
+      deps.log(`Failed to clean up worktree after naming failed: ${cleanupError}`)
+    }
+    throw error
+  }
+  if (named) {
+    created.result.branch = named.branch
+    created.result.path = named.path
+  }
+  // fork_change end
 
   const prepared = await prepareSession(
     plan({ setupScript: deps.hasScript() }),
@@ -254,86 +329,7 @@ async function worktree(
     return false
   }
 
-  const state = deps.getState()
-  if (!state) {
-    await prepared.done
-    await deps.cleanupWorktree(created.worktree.id, created.result.path)
-    timing.mark("cleanup")
-    timing.end()
-    return false
-  }
   state.addSession(session.id, created.worktree.id)
-  // fork_change start
-  const original = created.result.path
-  const settings = deps.autoName()
-  const body = text(task)
-  const manager = deps.getWorktreeManager()
-  const eligible = [
-    settings.enabled,
-    !!body,
-    !task.name,
-    !task.branchName,
-    manager != null,
-    created.worktree.branchOwned === true,
-  ].every(Boolean)
-  let named: { branch: string; path: string } | null = null
-  try {
-    const generated = eligible
-      ? await generateFromPrompt(
-          client,
-          {
-            directory: created.result.path,
-            sessionID: session.id,
-            prompt: body!,
-            providerID: task.model?.providerID,
-            modelID: task.model?.modelID,
-          },
-          deps.log,
-        )
-      : null
-    named = generated
-      ? await renameFromPrompt({
-          client,
-          manager: manager!,
-          state,
-          worktree: {
-            id: created.worktree.id,
-            path: created.result.path,
-            branch: created.result.branch,
-            branchOwned: created.worktree.branchOwned,
-          },
-          sessionID: session.id,
-          generated,
-          prefix: settings.prefix,
-          version: versions ? { index, total } : undefined,
-          log: (message) => deps.log(message),
-        })
-      : null
-  } catch (error) {
-    const panel = deps.getPanel()
-    await cleanupCreatedSession({
-      client,
-      sessionID: session.id,
-      directory: original,
-      ready,
-      done: prepared.done,
-      abort: async () => {
-        await client.session.abort({ sessionID: session.id, directory: original }, { throwOnError: true })
-      },
-      remove: () => state.removeSession(session.id),
-      clear: () => panel?.sessions.clearSessionDirectory(session.id),
-      push: deps.push,
-      log: deps.log,
-    })
-    timing.mark("cleanup")
-    timing.end()
-    throw error
-  }
-  if (named) {
-    created.result.branch = named.branch
-    created.result.path = named.path
-  }
-  // fork_change end
   deps.registerWorktreeSession(session.id, created.result.path)
   timing.mark("state")
   deps.notifyReady(session.id, created.result, created.worktree.id)

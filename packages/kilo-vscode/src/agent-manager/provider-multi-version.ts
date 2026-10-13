@@ -8,7 +8,6 @@ import { ensureSandbox } from "./sandbox-bootstrap"
 // fork_change start
 import {
   beginBoot,
-  cleanupCreatedSession,
   prepareSession,
   removeWorktreeSnapshot,
   type LifecycleHost,
@@ -18,6 +17,7 @@ import { plan } from "./creation-plan"
 import { Timing } from "./creation-timing"
 import { Semaphore } from "./semaphore"
 import type { WorktreeCreationFailure } from "./worktree-create"
+import { WorktreeRollbackError } from "./WorktreeManager" // fork_change
 import { generateFromPrompt, renameFromPrompt } from "./worktree-naming" // fork_change
 
 const PROVISION_CONCURRENCY = 2
@@ -197,6 +197,76 @@ async function prepareVersion(
   return { spec, wt }
 }
 
+// fork_change start
+async function nameVersion(
+  ctx: ProjectContext,
+  host: MultiVersionHost,
+  prepared: PreparedVersion,
+  state: ReturnType<ProjectContext["stateManager"]>,
+  shared: { name?: Promise<string | null> },
+): Promise<{ branch: string; path: string } | null> {
+  const { spec, wt } = prepared
+  const settings = host.autoName()
+  const versionModel = spec.models[spec.index]
+  const providerID = versionModel?.providerID ?? spec.providerID
+  const modelID = versionModel?.modelID ?? spec.modelID
+  const eligible = [
+    settings.enabled,
+    !!spec.text,
+    !spec.branchName,
+    !spec.worktreeName,
+    wt.worktree.branchOwned === true,
+  ].every(Boolean)
+  if (!eligible) return null
+
+  shared.name ??= generateFromPrompt(host.client(), { prompt: spec.text!, providerID, modelID }, host.log)
+  const generated = await shared.name
+  if (!generated) return null
+  return renameFromPrompt({
+    manager: ctx.worktreeManager(),
+    state,
+    worktree: wt.worktree,
+    generated,
+    prefix: settings.prefix,
+    version: { index: spec.index, total: spec.versions },
+    log: host.log,
+  })
+}
+
+async function cleanupNamingFailure(
+  ctx: ProjectContext,
+  host: MultiVersionHost,
+  state: ReturnType<ProjectContext["stateManager"]>,
+  wt: PreparedVersion["wt"],
+  error: unknown,
+): Promise<void> {
+  host.log(`Failed to name worktree: ${error}`)
+  const clean = async (name: string, run: () => Promise<void> | void) => {
+    try {
+      await run()
+    } catch (cleanupError) {
+      host.log(`Failed to ${name}: ${cleanupError}`)
+    }
+  }
+  await clean("remove worktree after naming failed", () => ctx.worktreeManager().removeWorktree(wt.result.path, wt.result.branch))
+  await clean("remove worktree snapshot after naming failed", async () => {
+    await removeWorktreeSnapshot(host, ctx.root, wt.result.path)
+  })
+  await clean("remove worktree state after naming failed", () => {
+    state.removeWorktree(wt.worktree.id)
+  })
+  await clean("push state after naming failed", () => {
+    host.push()
+  })
+  host.post({
+    type: "agentManager.worktreeSetup",
+    status: "error",
+    message: `Failed to name worktree: ${getErrorMessage(error)}`,
+    worktreeId: wt.worktree.id,
+  })
+}
+// fork_change end
+
 /** Set up one prepared worktree, create its session, and expose it to the UI. */
 async function provisionVersion(
   ctx: ProjectContext,
@@ -207,6 +277,28 @@ async function provisionVersion(
 ): Promise<CreatedVersion | null> {
   const { spec, wt } = prepared
   const timing = Timing.start(`create ${wt.result.branch} v${spec.index + 1}`, host.log)
+  const state = ctx.stateManager()
+
+  // fork_change start
+  let named: { branch: string; path: string } | null = null
+  try {
+    named = await nameVersion(ctx, host, prepared, state, shared)
+  } catch (error) {
+    if (!(error instanceof WorktreeRollbackError)) throw error
+    await cleanupNamingFailure(ctx, host, state, wt, error)
+    timing.mark("cleanup")
+    timing.end()
+    return null
+  }
+  if (named) {
+    wt.result.branch = named.branch
+    wt.result.path = named.path
+  }
+  const settings = host.autoName()
+  const versionModel = spec.models[spec.index]
+  const earlyProviderID = versionModel?.providerID ?? spec.providerID
+  const earlyModelID = versionModel?.modelID ?? spec.modelID
+  // fork_change end
 
   const provisioned = await prepareSession(
     plan({ setupScript: host.hasScript() }),
@@ -247,81 +339,7 @@ async function provisionVersion(
     return null
   }
 
-  const state = ctx.stateManager()
   state.addSession(session.id, wt.worktree.id)
-  // fork_change start
-  const original = wt.result.path
-  const settings = host.autoName()
-  const versionModel = spec.models[spec.index]
-  const earlyProviderID = versionModel?.providerID ?? spec.providerID
-  const earlyModelID = versionModel?.modelID ?? spec.modelID
-  const eligible = [
-    settings.enabled,
-    !!spec.text,
-    !spec.branchName,
-    !spec.worktreeName,
-    wt.worktree.branchOwned === true,
-  ].every(Boolean)
-  let named: { branch: string; path: string } | null = null
-  try {
-    if (eligible) {
-      shared.name ??= generateFromPrompt(
-        host.client(),
-        {
-          directory: wt.result.path,
-          sessionID: session.id,
-          prompt: spec.text!,
-          providerID: earlyProviderID,
-          modelID: earlyModelID,
-        },
-        host.log,
-      )
-    }
-    const generated = eligible ? await shared.name! : null
-    named = generated
-      ? await renameFromPrompt({
-          client: host.client(),
-          manager: ctx.worktreeManager(),
-          state,
-          worktree: wt.worktree,
-          sessionID: session.id,
-          generated,
-          prefix: settings.prefix,
-          version: { index: spec.index, total: spec.versions },
-          log: host.log,
-        })
-      : null
-  } catch (error) {
-    await cleanupCreatedSession({
-      client: host.client(),
-      sessionID: session.id,
-      directory: original,
-      ready,
-      done,
-      abort: async () => {
-        await host.client().session.abort({ sessionID: session.id, directory: original }, { throwOnError: true })
-      },
-      forget: () => host.sessions.forget(session.id),
-      remove: () => state.removeSession(session.id),
-      clear: () => host.sessions.clearDirectory(session.id),
-      push: host.push,
-      log: host.log,
-    })
-    host.post({
-      type: "agentManager.worktreeSetup",
-      status: "error",
-      message: `Failed to name worktree: ${getErrorMessage(error)}`,
-      worktreeId: wt.worktree.id,
-    })
-    timing.mark("cleanup")
-    timing.end()
-    return null
-  }
-  if (named) {
-    wt.result.branch = named.branch
-    wt.result.path = named.path
-  }
-  // fork_change end
   if ([!named, !spec.branchName, !spec.worktreeName, settings.enabled].every(Boolean)) { // fork_change
     state.armAutoName(wt.worktree.id, session.id)
   }
