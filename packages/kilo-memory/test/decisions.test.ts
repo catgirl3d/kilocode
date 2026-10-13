@@ -156,7 +156,10 @@ describe("memory marker metadata", () => {
       tokens: 4,
       count: 2,
       files: ["project.md", "environment.md"],
-      items: ["first memory", "second memory"],
+      items: [
+        { kind: "fact", key: "first", text: "first memory" },
+        { kind: "environment", key: "second", text: "second memory" },
+      ],
     }
 
     expect(MemoryMarkerMeta.fromParts([{ type: "text", metadata: MemoryMarkerMeta.metadata(marker, true) }])).toEqual({
@@ -164,7 +167,10 @@ describe("memory marker metadata", () => {
       tokens: 4,
       count: 2,
       files: ["project.md", "environment.md"],
-      items: ["first memory", "second memory"],
+      items: [
+        { kind: "fact", key: "first", text: "first memory" },
+        { kind: "environment", key: "second", text: "second memory" },
+      ],
     })
   })
 
@@ -195,15 +201,15 @@ describe("memory marker metadata", () => {
       tokens: 3,
       count: 1,
       files: ["project.md"],
-      items: ["remembered"],
+      items: [{ kind: "other", key: "", text: "remembered" }],
     })
   })
 
-  test("extracts display text from typed and digest recall records", () => {
+  test("extracts structured items from typed and digest recall records", () => {
     const output = [
-      "record id=style source=project.md",
+      "record content=full id=style memory_id=project.md:style:style type=project_fact source=project.md updated=2026-07-15T10:00:00.000Z",
       "text: project_style :: Use type=module in package.json.",
-      "record id=session source=sessions/session.md",
+      "record id=session type=session_digest source=sessions/session.md updated=2026-07-15T10:00:00.000Z",
       'text: session=ses_123 topic="memory UX" 2026-07-15T10:00:00Z :: Restore the database icon.',
     ].join("\n")
 
@@ -213,7 +219,76 @@ describe("memory marker metadata", () => {
         metadata: { sources: ["project.md", "sessions/session.md"], count: 2 },
         tokens: 12,
       })?.items,
-    ).toEqual(["Use type=module in package.json.", "Restore the database icon."])
+    ).toEqual([
+      { kind: "fact", key: "project_style", text: "Use type=module in package.json." },
+      { kind: "digest", key: "memory UX", text: "Restore the database icon." },
+    ])
+  })
+
+  test("normalizes recalled record kinds", () => {
+    const rows = (types: string[]) =>
+      types
+        .flatMap((type, index) => [
+          `record id=${index} type=${type} source=project.md`,
+          `text: ${index} :: Row ${index}.`,
+        ])
+        .join("\n")
+
+    const first = MemoryMarkerMeta.fromRecall({
+      output: rows(["project_decision", "project_constraint", "env", "correction", "topic_hint"]),
+      metadata: { sources: ["project.md"], count: 5 },
+      tokens: 12,
+    })
+    const second = MemoryMarkerMeta.fromRecall({
+      output: rows(["latest_session_digest", "inference"]),
+      metadata: { sources: ["project.md"], count: 2 },
+      tokens: 6,
+    })
+
+    expect(first?.items.map((item) => item.kind)).toEqual([
+      "decision",
+      "constraint",
+      "environment",
+      "correction",
+      "topics",
+    ])
+    expect(second?.items.map((item) => item.kind)).toEqual(["digest", "other"])
+  })
+
+  test("uses the digest topic as key and falls back to the row prefix", () => {
+    const output = [
+      "record id=a type=session_digest source=sessions/one.md",
+      'text: session=ses_1 topic="memory UX" 2026-07-15T10:00:00Z :: First summary.',
+      "record id=b type=session_digest source=sessions/two.md",
+      "text: session=ses_2 2026-07-15T10:00:00Z :: Second summary.",
+    ].join("\n")
+
+    expect(
+      MemoryMarkerMeta.fromRecall({
+        output,
+        metadata: { sources: ["sessions/one.md", "sessions/two.md"], count: 2 },
+        tokens: 8,
+      })?.items,
+    ).toEqual([
+      { kind: "digest", key: "memory UX", text: "First summary." },
+      { kind: "digest", key: "session=ses_2 2026-07-15T10:00:00Z", text: "Second summary." },
+    ])
+  })
+
+  test("clips recalled text with a trailing ellipsis", () => {
+    const output = [
+      "record id=a type=project_fact source=project.md",
+      `text: a :: ${"x".repeat(120)}`,
+      "record id=b type=project_fact source=project.md",
+      `text: b :: ${"x".repeat(121)}z`,
+    ].join("\n")
+
+    expect(
+      MemoryMarkerMeta.fromRecall({ output, metadata: { sources: ["project.md"], count: 2 }, tokens: 8 })?.items,
+    ).toEqual([
+      { kind: "fact", key: "a", text: "x".repeat(120) },
+      { kind: "fact", key: "b", text: `${"x".repeat(119)}…` },
+    ])
   })
 
   test("does not retain startup context snippets", () => {
@@ -236,11 +311,44 @@ describe("memory marker metadata", () => {
       tokens: 4,
       count: 1,
       files: ["project.md"],
-      items: ["private memory"],
+      items: [{ kind: "fact", key: "private", text: "private memory" }],
     }
 
     expect(MemoryMarkerMeta.metadata(marker).kiloMemory).not.toHaveProperty("items")
-    expect(MemoryMarkerMeta.metadata(marker, true).kiloMemory).toHaveProperty("items", ["private memory"])
+    expect(MemoryMarkerMeta.metadata(marker, true).kiloMemory).toHaveProperty("items", [
+      { kind: "fact", key: "private", text: "private memory" },
+    ])
+  })
+
+  test("decodes structured persisted items and drops malformed ones", () => {
+    expect(
+      MemoryMarkerMeta.fromParts([
+        {
+          type: "text",
+          metadata: {
+            kiloMemory: {
+              type: "recall",
+              tokens: 3,
+              count: 2,
+              files: ["project.md"],
+              items: [
+                { kind: "decision", key: "deploy", text: "Use bun." },
+                { kind: "bogus", key: "x", text: "drop" },
+                { kind: "fact", key: 7, text: "drop" },
+                { text: "drop" },
+                "legacy line",
+              ],
+            },
+          },
+        },
+      ]),
+    ).toEqual({
+      type: "recall",
+      tokens: 3,
+      count: 2,
+      files: ["project.md"],
+      items: [{ kind: "decision", key: "deploy", text: "Use bun." }, "legacy line"],
+    })
   })
 
   test("bounds recall snippets without splitting surrogate pairs", () => {
@@ -254,7 +362,9 @@ describe("memory marker metadata", () => {
       tokens: 8,
     })
 
-    expect(marker?.items).toEqual(Array.from({ length: 5 }, () => `${"x".repeat(119)}😀`))
+    expect(marker?.items).toEqual(
+      Array.from({ length: 5 }, () => ({ kind: "other", key: "", text: `${"x".repeat(119)}…` })),
+    )
   })
 
   test("shows recall snippets only when verbose", () => {
@@ -263,12 +373,12 @@ describe("memory marker metadata", () => {
       tokens: 4,
       count: 1,
       files: ["project.md"],
-      items: ["remembered"],
+      items: [{ kind: "fact", key: "k", text: "remembered" }],
     }
     const startup = { ...recall, type: "startup" as const }
 
     expect(MemoryMarkerMeta.snippets(recall, false)).toEqual([])
     expect(MemoryMarkerMeta.snippets(startup, true)).toEqual([])
-    expect(MemoryMarkerMeta.snippets(recall, true)).toEqual(["remembered"])
+    expect(MemoryMarkerMeta.snippets(recall, true)).toEqual([{ kind: "fact", key: "k", text: "remembered" }])
   })
 })
