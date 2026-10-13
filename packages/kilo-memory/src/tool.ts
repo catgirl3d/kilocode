@@ -47,7 +47,10 @@ export namespace MemoryTool {
       description: "Remember/correct: one concise fact with conditions and exceptions; stored in full.", // fork_change
     }),
     query: Schema.optional(Text).annotate({
-      description: "Forget query; keys with multiple matches are rejected; duplicate stored lines must be fixed in the memory file.", // fork_change
+      // fork_change start - [fork] state that forget addresses typed records only.
+      description:
+        "Forget query; keys with multiple matches are rejected; duplicate stored lines must be fixed in the memory file; forget addresses typed records only (project.md, environment.md, corrections.md), and session digests cannot be forgotten.",
+      // fork_change end
     }),
     key: Schema.optional(Key).annotate({
       description: "Stable key; correct accepts a canonical file:section:key id; forget accepts an exact id in query.", // fork_change
@@ -65,7 +68,7 @@ export namespace MemoryTool {
   type Metadata = {
     sources: string[]
     count?: number
-    status?: "found" | "invalid" | "not_found" | "ambiguous" | "too_long" // fork_change
+    status?: "found" | "invalid" | "not_found" | "ambiguous" | "too_long" | "removed" | "unsupported_target" // fork_change - [fork] carry forget outcomes
     memory_id?: string // fork_change
     complete?: boolean // fork_change
     truncated?: boolean // fork_change
@@ -414,19 +417,30 @@ export namespace MemoryTool {
   function saved(input: { params: SaveParams; result: MemoryOperations.Result }): Result {
     const touched = files(input.params.action)
     return {
-      title: title({ action: input.params.action, added: input.result.added, removed: input.result.removed }),
+      // fork_change start - [fork] pass the forget outcome status into the title
+      title: title({
+        action: input.params.action,
+        added: input.result.added,
+        removed: input.result.removed,
+        status: input.result.status,
+      }),
+      // fork_change end
       output: output({
         action: input.params.action,
         count: input.result.operationCount,
         added: input.result.added,
         removed: input.result.removed,
         tokens: input.result.index.tokens,
+        status: input.result.status, // fork_change - [fork] render the forget status line
       }),
       metadata: {
         sources: touched,
         operationCount: input.result.operationCount,
         added: input.result.added,
         removed: input.result.removed,
+        // fork_change start - [fork] expose the forget status in tool metadata
+        ...(input.params.action === "forget" && input.result.status ? { status: input.result.status } : {}),
+        // fork_change end
       },
     }
   }
@@ -483,9 +497,23 @@ export namespace MemoryTool {
     return ["project.md"]
   }
 
-  function title(input: { action: SaveParams["action"]; added: number; removed: number }) {
+  // fork_change start - [fork] forget outcome drives the title
+  function title(input: {
+    action: SaveParams["action"]
+    added: number
+    removed: number
+    status?: MemoryOperations.Result["status"]
+  }) {
+    // fork_change end
     if (input.action === "skip") return "Kilo memory skipped: out of scope"
-    if (input.action === "forget") return `Kilo memory updated: ${input.removed} removed`
+    // fork_change start - [fork] report a forget miss and an unsupported digest target honestly
+    if (input.action === "forget") {
+      if (input.removed > 0) return `Kilo memory updated: ${input.removed} removed`
+      return input.status === "unsupported_target"
+        ? "Kilo memory forget: unsupported target"
+        : "Kilo memory forget: not found"
+    }
+    // fork_change end
     if (input.added === 0) return "Kilo memory unchanged"
     if (input.action === "correct")
       return `Kilo memory correction saved: ${input.added} op${input.added === 1 ? "" : "s"}`
@@ -498,13 +526,26 @@ export namespace MemoryTool {
     added: number
     removed: number
     tokens: number
+    status?: MemoryOperations.Result["status"] // fork_change - [fork] forget status rendered below
   }) {
+    // fork_change start - [fork] forget always reports its status and explains unsupported digest targets
+    const extra =
+      input.action === "forget"
+        ? [
+            `status=${input.status ?? "not_found"}`,
+            ...(input.status === "unsupported_target"
+              ? ["hint=Session digests are auto-managed and cannot be forgotten; they rotate automatically."]
+              : []),
+          ]
+        : []
+    // fork_change end
     return [
       `action=${input.action}`,
       `operationCount=${input.count}`,
       `added=${input.added}`,
       `removed=${input.removed}`,
       `indexTokens=${input.tokens}`,
+      ...extra, // fork_change - [fork] append the forget status lines above
     ].join("\n")
   }
 
