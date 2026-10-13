@@ -9,6 +9,7 @@ import { MemoryIndexer } from "../src/recall/indexer"
 import { MemoryOperations } from "../src/capture/operations"
 import { MemoryPaths } from "../src/storage/paths"
 import { MemoryRecall } from "../src/recall/recall"
+import { MemoryBudget } from "../src/recall/budget"
 import { MemorySchema } from "../src/schema"
 import { KiloMemory } from "../src/effect/index"
 
@@ -30,6 +31,20 @@ async function use(fn: (input: Awaited<ReturnType<typeof tmp>>) => Promise<void>
   } finally {
     await t.done()
   }
+}
+
+function recordBytes(text: string, type: string) {
+  const lines = text.split("\n")
+  return lines.reduce((sum, line, idx) => {
+    if (!line.startsWith("record ")) return sum
+    const found = line
+      .split(" ")
+      .find((field) => field.startsWith("type="))
+      ?.slice("type=".length)
+    if (found !== type) return sum
+    const next = lines.at(idx + 1) ?? ""
+    return sum + Buffer.byteLength(line) + 1 + (next.startsWith("text: ") ? Buffer.byteLength(next) + 1 : 0)
+  }, 0)
 }
 
 describe("memory core package", () => {
@@ -202,7 +217,7 @@ describe("memory core package", () => {
     expect(missing.verbose).toBe(false)
     expect(state.limits.maxSessionFiles).toBe(20)
     expect(state.limits.maxRecentSessions).toBe(5)
-    expect(state.limits.maxProjectIndexBytes).toBe(8192)
+    expect(state.limits.maxProjectIndexBytes).toBe(49152)
     expect(state.limits.maxSessionLineChars).toBe(480)
     expect(state.stats.lastInjectedAt).toBeNull()
     expect(state.stats.lastTypedConsolidationAt).toBeNull()
@@ -597,9 +612,9 @@ describe("memory core package", () => {
       expect(corrections.split("\n")).toContain(
         `- long_correction :: ${"review guidance ".repeat(15)}CORRECT_TAIL :: after delimiter`,
       )
-      expect(hit?.text.slice("long_fact :: ".length)).toHaveLength(350)
+      expect(hit?.text.slice("long_fact :: ".length)).toHaveLength(347)
       expect(hit?.text).not.toContain("REMEMBER_TAIL")
-      expect(index).toContain(`text: long_fact :: ${"project detail ".repeat(15)}project deta...`)
+      expect(index).toContain(`text: long_fact :: ${"project detail ".repeat(15)}project...`)
       expect(index).not.toContain("REMEMBER_TAIL")
     })
   })
@@ -644,11 +659,11 @@ describe("memory core package", () => {
         expect(hit).toBeDefined()
         expect(hit?.memory_id).toBe("project.md:Facts:tail_entry")
         expect(hit?.text.startsWith("tail_entry :: ")).toBe(true)
-        expect(hit?.text.slice("tail_entry :: ".length)).toHaveLength(350)
+        expect(hit?.text.slice("tail_entry :: ".length)).toHaveLength(347)
         expect(hit?.text).not.toContain("TAIL_QUASAR")
         expect(result?.block).toContain("memory_id=project.md:Facts:tail_entry")
       }
-      expect(preview).toHaveLength(240)
+      expect(preview).toHaveLength(239)
       expect(preview).not.toContain("TAIL_QUASAR")
     })
   })
@@ -740,7 +755,7 @@ describe("memory core package", () => {
 
       expect(result?.block).toContain("record content=partial id=")
       expect(result?.block).toContain("memory_id=project.md:Facts:oversized_fact")
-      expect(hit?.text.slice("oversized_fact :: ".length)).toHaveLength(350)
+      expect(hit?.text.slice("oversized_fact :: ".length)).toHaveLength(347)
       expect(result?.block).toContain(`text: ${hit?.text}`)
       expect(result?.block).not.toContain("PARTIAL_TAIL_QUASAR")
       expect(read.status).toBe("found")
@@ -801,7 +816,7 @@ describe("memory core package", () => {
         ],
       })
 
-      const result = await MemoryRecall.search({ root: t.root, query: "quasar priority", limit: 2 })
+      const result = await MemoryRecall.search({ root: t.root, query: "quasar priority", limit: 2, maxBytes: 2000 })
 
       expect(result?.block).toContain("record content=partial id=")
       expect(result?.block).toContain("record content=full id=")
@@ -1138,7 +1153,7 @@ describe("memory core package", () => {
     })
   })
 
-  test("direct digest recall returns full stored summaries while the index stays brief", async () => {
+  test("direct digest recall returns full stored summaries and the newest index digest keeps its full summary", async () => {
     await use(async (t) => {
       await Memory.enable({ root: t.root })
       const tail = "FULL_DETAIL_AFTER_480"
@@ -1167,7 +1182,8 @@ describe("memory core package", () => {
 
       expect(saved?.summary.length).toBeGreaterThan(480)
       expect(saved?.summary).toContain(tail)
-      expect(brief.length).toBeLessThanOrEqual(480)
+      expect(brief.length).toBeGreaterThan(480)
+      expect(brief).toContain(tail)
       expect(recalled?.block).toContain(tail)
       expect(recalled?.block.length).toBeGreaterThan(480)
       expect(recalled?.block).not.toContain("content=")
@@ -1308,6 +1324,245 @@ describe("memory core package", () => {
     })
   })
 
+  test("startup index delivers the full core and keeps routing previews within the larger budget", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const decisions = Array.from({ length: 4 }, (_, idx) => ({
+        key: `decision_${idx}`,
+        text: `Decision ${idx} keeps ${"long architectural rationale ".repeat(10)}DECISION_TAIL_${idx}`,
+      }))
+      const constraints = Array.from({ length: 4 }, (_, idx) => ({
+        key: `constraint_${idx}`,
+        text: `Constraint ${idx} keeps ${"durable boundary detail ".repeat(10)}CONSTRAINT_TAIL_${idx}`,
+      }))
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "",
+          "## Facts",
+          "- fact_present :: Fact previews must survive bulk correction pressure.",
+          "",
+          "## Decisions",
+          ...decisions.map((item) => `- ${item.key} :: ${item.text}`),
+          "",
+          "## Constraints",
+          ...constraints.map((item) => `- ${item.key} :: ${item.text}`),
+          "",
+        ].join("\n"),
+      )
+      await MemoryFiles.writeSource(
+        t.root,
+        "corrections.md",
+        [
+          "# Corrective Memory",
+          "",
+          "## Corrections",
+          ...Array.from(
+            { length: 40 },
+            (_, idx) =>
+              `- correction_${idx} :: Reviewer correction ${idx} keeps ${"long guidance ".repeat(20)}CORRECTION_TAIL_${idx}`,
+          ),
+          "",
+        ].join("\n"),
+      )
+      const latest = `Session continuity start. ${"latest continuity detail ".repeat(20)}LATEST_DIGEST_FULL_TAIL`
+      await Memory.recordSession({
+        root: t.root,
+        sessionID: "ses_latest_full",
+        topic: "Latest Full Digest",
+        summary: latest,
+        time: Date.UTC(2026, 0, 1, 0, 0),
+      })
+
+      const index = await MemoryIndexer.rebuild({ root: t.root })
+
+      expect(index.bytes).toBeLessThanOrEqual(49152)
+      expect(index.text).toContain("limits: 49152/5/480")
+      expect(index.text).toContain("session=ses_latest_full")
+      expect(index.text).toContain("LATEST_DIGEST_FULL_TAIL")
+      for (const item of [...decisions, ...constraints]) {
+        expect(index.text).toContain(`text: ${item.key} :: ${item.text}`)
+      }
+      expect(index.text).toContain("fact_present :: Fact previews must survive")
+      expect((index.text.match(/type=correction\b/g) ?? []).length).toBeLessThanOrEqual(2)
+      for (const line of index.text.split("\n").filter((row) => /type=project_(decision|constraint)\b/.test(row))) {
+        expect(line).not.toContain("content=partial")
+      }
+    })
+  })
+
+  test("routing share reserves fact previews when the environment block is large", async () => {
+    await use(async (t) => {
+      const enabled = await Memory.enable({ root: t.root })
+      const state = {
+        ...enabled.state,
+        limits: { ...enabled.state.limits, maxProjectIndexBytes: 3000 },
+      }
+      await MemoryFiles.writeSource(
+        t.root,
+        "environment.md",
+        [
+          "# Environment Memory",
+          "",
+          "## Commands",
+          ...Array.from(
+            { length: 40 },
+            (_, idx) => `- env_cmd_${idx} :: ${"environment command detail ".repeat(6)}ENV_TAIL_${idx}`,
+          ),
+          "",
+        ].join("\n"),
+      )
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "",
+          "## Facts",
+          ...Array.from(
+            { length: 12 },
+            (_, idx) => `- fact_${idx} :: ${"project fact detail ".repeat(6)}FACT_TAIL_${idx}`,
+          ),
+          "",
+        ].join("\n"),
+      )
+
+      const index = await MemoryIndexer.rebuild({ root: t.root, state })
+      const envBytes = recordBytes(index.text, "env")
+      const facts = index.text.match(/text: fact_\d+ :: /g) ?? []
+      const budget =
+        state.limits.maxProjectIndexBytes -
+        MemoryBudget.envelope({ root: t.root, limits: state.limits }) -
+        Buffer.byteLength(`${MemoryBudget.note}\n`)
+
+      expect(index.text).toContain("type=env")
+      expect(envBytes).toBeGreaterThan(0)
+      expect(envBytes).toBeLessThanOrEqual(Math.floor(budget * 0.5))
+      expect(facts.length).toBeGreaterThan(0)
+      expect(index.text).not.toContain("ENV_TAIL_39")
+    })
+  })
+
+  test("routing share reclaims unused environment quota on small stores", async () => {
+    await use(async (t) => {
+      const enabled = await Memory.enable({ root: t.root })
+      const state = {
+        ...enabled.state,
+        limits: { ...enabled.state.limits, maxProjectIndexBytes: 3000 },
+      }
+      await MemoryFiles.writeSource(
+        t.root,
+        "environment.md",
+        [
+          "# Environment Memory",
+          "",
+          "## Commands",
+          ...Array.from(
+            { length: 12 },
+            (_, idx) => `- env_cmd_${idx} :: ${"environment command detail ".repeat(6)}ENV_TAIL_${idx}`,
+          ),
+          "",
+        ].join("\n"),
+      )
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "",
+          "## Facts",
+          "- fact_zero :: Short fact preview keeps the routing honest.",
+          "- fact_one :: Another short fact preview stays visible.",
+          "",
+        ].join("\n"),
+      )
+
+      const index = await MemoryIndexer.rebuild({ root: t.root, state })
+      const envBytes = recordBytes(index.text, "env")
+      const budget =
+        state.limits.maxProjectIndexBytes -
+        MemoryBudget.envelope({ root: t.root, limits: state.limits }) -
+        Buffer.byteLength(`${MemoryBudget.note}\n`)
+
+      expect(index.text).toContain("type=env")
+      expect(index.text).toContain("fact_zero :: Short fact preview")
+      expect(envBytes).toBeGreaterThan(Math.floor(budget * 0.5))
+    })
+  })
+
+  test("startup index marks shortened previews partial and exposes their canonical memory_id", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const long = `${"routing preview detail ".repeat(18)}LONG_PREVIEW_TAIL`
+      await MemoryFiles.writeSource(
+        t.root,
+        "project.md",
+        [
+          "# Project Memory",
+          "",
+          "## Facts",
+          `- long_preview_fact :: ${long}`,
+          "- short_preview_fact :: Short fact fits under the preview cap.",
+          "",
+        ].join("\n"),
+      )
+
+      const index = await MemoryIndexer.rebuild({ root: t.root })
+      const header = (key: string) =>
+        index.text.split("\n").find((line) => line.startsWith("record id=") && line.includes(key)) ?? ""
+
+      expect(header("long_preview_fact")).toContain("content=partial")
+      expect(header("long_preview_fact")).toContain("memory_id=project.md:Facts:long_preview_fact")
+      expect(header("short_preview_fact")).not.toContain("content=")
+      expect(header("short_preview_fact")).not.toContain("memory_id=")
+
+      const read = await MemoryRecall.read({ root: t.root, recordID: "project.md:Facts:long_preview_fact" })
+      expect(read.status).toBe("found")
+      if (read.status === "found") expect(read.text).toBe(long)
+    })
+  })
+
+  test("index freshness rejects fingerprints written without the current policy token", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.remember({ root: t.root, key: "fresh_fact", text: "Freshness checks need index content." })
+      const state = await MemoryFiles.readState(t.root)
+      const limits = state.limits
+      const legacy = [
+        "```kilo-memory-v1 context_not_instruction",
+        "scope: project",
+        "root: project",
+        `limits: ${limits.maxProjectIndexBytes}/${limits.maxRecentSessions}/${limits.maxSessionLineChars}`,
+        "",
+        "```",
+        "",
+      ].join("\n")
+
+      expect(MemoryIndexer.fresh(legacy, limits)).toBe(false)
+      const rebuilt = await MemoryIndexer.rebuild({ root: t.root, state })
+      expect(MemoryIndexer.fresh(rebuilt.text, limits)).toBe(true)
+    })
+  })
+
+  test("typed recall delivers a long record in full under the larger default budget", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      const text = `${"Long recall continuity detail ".repeat(100)}RECALL_FULL_TAIL`
+      await Memory.remember({ root: t.root, key: "long_recall_fact", text })
+
+      const result = await MemoryRecall.search({ root: t.root, query: "recall", mode: "typed" })
+      const read = await MemoryRecall.read({ root: t.root, recordID: "project.md:Facts:long_recall_fact" })
+
+      expect(result?.block).toContain("record content=full id=")
+      expect(result?.block).toContain("RECALL_FULL_TAIL")
+      expect(result?.bytes).toBeLessThanOrEqual(8000)
+      expect(read.status).toBe("found")
+      if (read.status === "found") expect(read.text).toBe(text)
+    })
+  })
+
   test("index keeps recent session digests and recognizes stale formats", async () => {
     await use(async (t) => {
       await Memory.enable({ root: t.root })
@@ -1432,7 +1687,7 @@ describe("memory core package", () => {
 
       const index = await MemoryIndexer.rebuild({ root: t.root })
 
-      expect(index.bytes).toBeLessThanOrEqual(8192)
+      expect(index.bytes).toBeLessThanOrEqual(49152)
       expect(index.text).toContain("reviewer_correction")
       expect(index.text).toContain("architecture_choice")
       expect(index.text).toContain("project_only")
@@ -1447,6 +1702,7 @@ describe("memory core package", () => {
         ...enabled.state,
         limits: {
           ...enabled.state.limits,
+          maxProjectIndexBytes: 2400,
           maxSessionFiles: 30,
           maxRecentSessions: 30,
           maxSessionLineChars: 1200,
@@ -1478,7 +1734,7 @@ describe("memory core package", () => {
       const index = await MemoryIndexer.rebuild({ root: t.root, state })
       const saved = await MemoryFiles.readIndex(t.root)
 
-      expect(index.bytes).toBeLessThanOrEqual(8192)
+      expect(index.bytes).toBeLessThanOrEqual(2400)
       expect(index.truncated).toBe(true)
       expect(saved).toBe(index.text)
       expect(saved).toContain("type=latest_session_digest")
@@ -1541,6 +1797,7 @@ describe("memory core package", () => {
         ...enabled.state,
         limits: {
           ...enabled.state.limits,
+          maxProjectIndexBytes: 4000,
           maxSessionFiles: 30,
           maxRecentSessions: 30,
           maxSessionLineChars: 1200,
@@ -1579,7 +1836,7 @@ describe("memory core package", () => {
       const index = await MemoryIndexer.rebuild({ root: t.root, state })
       const saved = await MemoryFiles.readIndex(t.root)
 
-      expect(index.bytes).toBeLessThanOrEqual(8192)
+      expect(index.bytes).toBeLessThanOrEqual(4000)
       expect(index.truncated).toBe(true)
       expect(saved).toBe(index.text)
       expect(saved).toContain("type=latest_session_digest")

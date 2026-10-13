@@ -21,4 +21,15 @@ describe("memory text helpers", () => {
   test("brief degrades safely at tiny limits", () => {
     expect(MemoryText.brief("abcdef", 2)).toBe("...")
   })
+
+  test("brief cuts at the last word boundary within the limit", () => {
+    expect(MemoryText.brief("alpha bravo charlie delta", 14)).toBe("alpha...")
+    expect(MemoryText.brief("shortword verylongwordthatkeepsgoing", 16)).toBe("shortword...")
+  })
+
+  test("brief is code-point safe when cutting through multi-byte text", () => {
+    const clipped = MemoryText.brief("🙂🙂🙂🙂🙂 tail", 9)
+    expect(clipped).toBe("🙂🙂🙂🙂🙂...")
+    expect(Array.from(clipped)).toHaveLength(8)
+  })
 })

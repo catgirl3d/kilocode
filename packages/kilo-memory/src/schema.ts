@@ -73,7 +73,7 @@ export namespace MemorySchema {
   }
 
   const limits: Limits = {
-    maxProjectIndexBytes: 8192,
+    maxProjectIndexBytes: 49_152, // fork_change - Deliver the full core (digest + decisions + constraints) at startup.
     maxSessionFiles: 20,
     maxRecentSessions: 5,
     maxConsolidationInputBytes: 24_000,
