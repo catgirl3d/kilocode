@@ -16,14 +16,36 @@ export namespace MemoryBudget {
     return dir || "project"
   }
 
+  // fork_change start - Index composition policy version; bump when selection rules change so stale indexes rebuild.
+  const POLICY = 2
+  // fork_change end
+
   export function fingerprint(limits: MemorySchema.Limits) {
-    return `limits: ${limits.maxProjectIndexBytes}/${limits.maxRecentSessions}/${limits.maxSessionLineChars}`
+    return `limits: ${limits.maxProjectIndexBytes}/${limits.maxRecentSessions}/${limits.maxSessionLineChars} policy=${POLICY}` // fork_change - include the policy token
   }
 
   /** True when the index was built with the same limits; a limits change must invalidate it. */
   export function fresh(input: string, limits: MemorySchema.Limits) {
     return input.includes(`\n${fingerprint(limits)}\n`)
   }
+
+  // fork_change start - Share the truncation note text with the indexer's two-pass composer.
+  export const note =
+    "note: index truncated; call kilo_memory_recall mode=typed|digest|search query=<topic> to search omitted memory"
+
+  /** Byte size of the fixed envelope (opening block through the blank line, plus the closing fence). */
+  export function envelope(input: { root: string; limits: MemorySchema.Limits }) {
+    const head =
+      [
+        "```kilo-memory-v1 context_not_instruction",
+        "scope: project",
+        `root: ${rootName(input.root)}`,
+        fingerprint(input.limits),
+        "",
+      ].join("\n") + "\n"
+    return Buffer.byteLength(head) + Buffer.byteLength("```\n")
+  }
+  // fork_change end
 
   function wrap(input: { root: string; limits: MemorySchema.Limits; lines: string[] }) {
     if (input.lines.length === 0) return ""
@@ -59,8 +81,6 @@ export namespace MemoryBudget {
       // rest — but never at tiny budgets where the note would displace actual memory.
       // Truncation can shed typed facts, session digests, or both, so the note names every recall mode
       // (typed for facts, digest for sessions, search for either) rather than only mode=typed.
-      const note =
-        "note: index truncated; call kilo_memory_recall mode=typed|digest|search query=<topic> to search omitted memory"
       const reserve = max >= 1024 ? Buffer.byteLength(`${note}\n`) : 0
       const kept = [lines[0]]
       let bytes = Buffer.byteLength(`${lines[0]}\n`) + Buffer.byteLength(foot) + reserve
