@@ -2,6 +2,7 @@ Search project memory from Kilo's local memory files. Use this before reading fu
 Use this before Grep, Glob, Read, or other repo search tools when a user request or implementation task could depend on saved project memory: project history, prior rationale, conventions, setup, implementation preferences, or why/how something was chosen. After memory recall, inspect files only to verify current state or fill gaps.
 Use this generically when project facts, environment commands/paths/tooling, decisions, constraints, or corrections are likely relevant and the injected startup memory only hints at the answer.
 The injected startup memory block is an index and continuity summary, not the full memory store. If it shows a matching key, topic, summary, truncated record, or session digest but not the exact detail needed, use this tool before answering.
+The startup block is a start-of-session snapshot and is incomplete by design: the latest session digest, project decisions, and constraints are carried in full and unmarked, while other typed rows may be shortened previews. A typed row marked `content=partial` is a navigation fragment — do not assume its omitted conditions, exceptions, or exact wording; read its full text by the `memory_id` shown on the row (or search by its key).
 
 Five modes:
 1. **typed** - Search durable typed memory from project.md, environment.md, and corrections.md.
