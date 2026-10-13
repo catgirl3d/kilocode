@@ -555,7 +555,7 @@ describe("kilo_memory_recall", () => {
     })
   })
 
-  test("digest sessionID recall returns full summaries while index stays brief", async () => {
+  test("digest sessionID recall returns full summaries and the newest index digest keeps its full summary", async () => {
     await using dir = await tmpdir({ git: true })
     await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
       const memory = { directory: dir.path, worktree: dir.path }
@@ -580,7 +580,8 @@ describe("kilo_memory_recall", () => {
       const brief = latest.split(":: ").slice(1).join(":: ")
 
       expect(saved?.summary.length).toBeGreaterThan(480)
-      expect(brief.length).toBeLessThanOrEqual(480)
+      expect(brief.length).toBeGreaterThan(480)
+      expect(brief).toContain(tail)
       expect(result.output).toContain(tail)
       expect(result.output.length).toBeGreaterThan(480)
     })
