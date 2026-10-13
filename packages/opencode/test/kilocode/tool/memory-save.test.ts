@@ -176,6 +176,47 @@ describe("kilo_memory_save", () => {
     })
   })
 
+  test("reports a forget miss with an explicit not_found status", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const asks: Request[] = []
+      await KiloMemory.enable({ ctx: memory })
+
+      const forgotten = await execute(dir.path, { action: "forget", query: "missing_record" }, approved(asks))
+
+      expect(forgotten.title).toBe("Kilo memory forget: not found")
+      expect(forgotten.output).toContain("status=not_found")
+      expect(asks.map((req) => req.metadata.action)).toEqual(["forget"])
+    })
+  })
+
+  test("reports a forget addressed at a session digest as an unsupported target", async () => {
+    await using dir = await tmpdir({ git: true })
+    await withConfig(path.join(dir.path, "global", ".kilo"), async () => {
+      const memory = { directory: dir.path, worktree: dir.path }
+      const asks: Request[] = []
+      const enabled = await KiloMemory.enable({ ctx: memory })
+      await KiloMemory.recordSession({
+        root: enabled.root,
+        sessionID: "ses_digest_target",
+        summary: "Digest survives a forget attempt.",
+      })
+
+      const forgotten = await execute(
+        dir.path,
+        { action: "forget", query: "session=ses_digest_target" },
+        approved(asks),
+      )
+
+      expect(forgotten.title).toBe("Kilo memory forget: unsupported target")
+      expect(forgotten.output).toContain("status=unsupported_target")
+      expect(forgotten.output).toContain(
+        "hint=Session digests are auto-managed and cannot be forgotten; they rotate automatically.",
+      )
+    })
+  })
+
   test("does not save when project memory is disabled", async () => {
     await using dir = await tmpdir({ git: true })
     await withConfig(path.join(dir.path, "global", ".kilo"), async () => {

@@ -36,6 +36,8 @@
 
 ### Fixes & Enhancements
 
+- Report an explicit forget status when a memory query matches nothing, and identify queries that address session digests (which cannot be forgotten) instead of silently succeeding.
+- Retry transient Windows file-replace failures when writing project memory files, so concurrent reads no longer surface EPERM and leave the index stale.
 - Block Compact while an undo is active so the hidden redo history is not finalized and deleted silently.
 - Show real Merge Gateway prompt-cache usage: the bundled provider keeps gateway-reported cached-token counts, so cache reads appear in session usage and costs instead of reading zero.
 - Present session tab hover details as a structured tooltip: the title and activity state read as separate rows, and the Shift+click pin hint sits on its own separated line instead of running into the title.

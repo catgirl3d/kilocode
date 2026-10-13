@@ -31,6 +31,23 @@ export namespace MemoryFs {
     return typeof error === "object" && error !== null && "code" in error ? String(error.code) : ""
   }
 
+  // fork_change start - [fork] retry transient Windows destination locks during atomic replacement
+  async function replace(tmp: string, file: string) {
+    const max = 5
+    for (let attempt = 1; attempt <= max; attempt++) {
+      try {
+        await rename(tmp, file)
+        return
+      } catch (error) {
+        const kind = code(error)
+        if (attempt === max || !["EPERM", "EBUSY", "EACCES"].includes(kind)) throw error
+        warn("retrying memory replace", { file, attempt, code: kind })
+        await sleep(25 * 2 ** (attempt - 1) + Math.floor(Math.random() * 16))
+      }
+    }
+  }
+  // fork_change end
+
   export function parse(error: unknown) {
     return error instanceof SyntaxError
   }
@@ -91,7 +108,9 @@ export namespace MemoryFs {
       if (process.platform === "win32") return
       throw error
     })
-    await rename(tmp, file).catch(async (error: unknown) => {
+    // fork_change start - [fork] retry transient Windows destination locks during atomic replacement
+    await replace(tmp, file).catch(async (error: unknown) => {
+      // fork_change end
       await rm(tmp, { force: true }).catch((err: unknown) => warn("failed to clean memory temp file", { err, tmp }))
       throw error
     })
