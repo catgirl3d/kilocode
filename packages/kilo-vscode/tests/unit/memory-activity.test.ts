@@ -55,7 +55,7 @@ describe("memory activity", () => {
               tokens: 42,
               count: 1,
               files: ["project.md"],
-              items: ["Use Kilo colors"],
+              items: [],
             },
             true,
           ),
@@ -74,7 +74,7 @@ describe("memory activity", () => {
               tokens: 8,
               count: 2,
               files: ["project.md"],
-              items: ["Prefer dark mode"],
+              items: [{ kind: "fact", key: "theme", text: "Prefer dark mode" }],
             },
             true,
           ),
@@ -85,5 +85,27 @@ describe("memory activity", () => {
 
     expect(loaded).toMatchObject({ type: "loaded", tokens: 42, count: 1, items: [] })
     expect(recalled).toMatchObject({ type: "recalled", tokens: 8, count: 2, items: ["Prefer dark mode"] })
+  })
+
+  it("passes legacy persisted snippets through unchanged", () => {
+    const recalled = markerActivity(
+      [
+        {
+          type: "text",
+          metadata: {
+            kiloMemory: {
+              type: "recall",
+              tokens: 8,
+              count: 1,
+              files: ["project.md"],
+              items: ["Legacy memory line"],
+            },
+          },
+        },
+      ],
+      20,
+    )
+
+    expect(recalled).toMatchObject({ type: "recalled", tokens: 8, count: 1, items: ["Legacy memory line"] })
   })
 })
