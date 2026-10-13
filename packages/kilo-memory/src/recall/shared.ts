@@ -13,6 +13,7 @@ export namespace MemoryShared {
     key: string
     text: string
     full: string // fork_change
+    partial: boolean // fork_change
     memory_id: string // fork_change
     searchText: string // fork_change
     topics: MemorySchema.Topic[]
@@ -63,12 +64,17 @@ export namespace MemoryShared {
       const id = MemoryFiles.inventoryKey({ file: input.file, section: item.section, key: item.key })
       const inv = input.inventory.items[id]
       const data = { file: input.file, section: item.section, key: item.key, text: item.text }
+      // fork_change start - [fork] normalize once and reuse the clipped preview to flag partial rows
+      const flat = MemoryText.normalize(item.text)
+      const preview = MemoryText.clip(flat, input.max)
+      // fork_change end
       return {
         file: input.file,
         section: item.section,
         key: item.key,
-        text: brief(item.text, input.max),
+        text: preview, // fork_change
         full: `${item.key} :: ${item.text}`, // fork_change
+        partial: preview !== flat, // fork_change - true only when clip() actually shortened the text
         memory_id: id, // fork_change
         searchText: item.text, // fork_change
         topics: inv?.topics?.length ? inv.topics : MemoryTopics.assign(data),

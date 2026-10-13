@@ -33,23 +33,47 @@ export namespace MemoryIndexFormat {
     return "unknown"
   }
 
-  export function record(input: { kind: string; id: string; source: string; updated?: number | string; text: string }) {
+  // fork_change start - [fork] record() carries optional content=partial and memory_id routing markers.
+  export function record(input: {
+    kind: string
+    id: string
+    source: string
+    updated?: number | string
+    text: string
+    content?: "partial"
+    memory_id?: string
+  }) {
+    const markers = [
+      input.content ? `content=${input.content}` : "",
+      input.memory_id ? `memory_id=${input.memory_id}` : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+    // fork_change end
     return [
-      `record id=${id(input.id)} type=${id(input.kind.toLowerCase())} source=${id(input.source)} updated=${date(input.updated)}`,
+      // fork_change start - [fork] Insert routing markers after the record id.
+      `record id=${id(input.id)}${markers ? ` ${markers}` : ""} type=${id(input.kind.toLowerCase())} source=${id(input.source)} updated=${date(input.updated)}`,
+      // fork_change end
       `text: ${text(input.text)}`,
     ].join("\n")
   }
 
+  // fork_change start - [fork] Render typed items either as previews (marked partial) or as their full text.
+  function item(kind: string, entry: Item, full?: boolean) {
+    const partial = !full && entry.partial
+    return record({
+      kind,
+      id: MemoryFiles.inventoryKey({ file: entry.file, section: entry.section, key: entry.key }),
+      source: entry.file,
+      updated: entry.updatedAt,
+      text: full ? entry.full : `${entry.key} :: ${entry.text}`,
+      ...(partial ? { content: "partial" as const, memory_id: entry.memory_id } : {}),
+    })
+  }
+  // fork_change end
+
   export function lines(prefix: string, items: Item[]) {
-    return items.map((item) =>
-      record({
-        kind: prefix,
-        id: MemoryFiles.inventoryKey({ file: item.file, section: item.section, key: item.key }),
-        source: item.file,
-        updated: item.updatedAt,
-        text: `${item.key} :: ${item.text}`,
-      }),
-    )
+    return items.map((entry) => item(prefix, entry)) // fork_change - [fork] render through the item() helper
   }
 
   // One compact record mapping topics to the files holding them, so the model knows what kilo_memory_recall can find.
@@ -73,7 +97,9 @@ export namespace MemoryIndexFormat {
     ]
   }
 
-  export function project(items: Item[], input?: { include?: string[]; exclude?: string[] }) {
+  // fork_change start - [fork] project() can render typed items in full.
+  export function project(items: Item[], input?: { include?: string[]; exclude?: string[]; full?: boolean }) {
+    // fork_change end
     const include = new Set(input?.include ?? [])
     const exclude = new Set(input?.exclude ?? [])
     return [...items]
@@ -83,14 +109,6 @@ export namespace MemoryIndexFormat {
         return !exclude.has(kind)
       })
       .sort((a, b) => rank(a.section) - rank(b.section))
-      .map((item) =>
-        record({
-          kind: type(item.section),
-          id: MemoryFiles.inventoryKey({ file: item.file, section: item.section, key: item.key }),
-          source: item.file,
-          updated: item.updatedAt,
-          text: `${item.key} :: ${item.text}`,
-        }),
-      )
+      .map((entry) => item(type(entry.section), entry, input?.full)) // fork_change
   }
 }
