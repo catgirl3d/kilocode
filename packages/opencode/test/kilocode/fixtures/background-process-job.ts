@@ -108,10 +108,22 @@ try {
     const lib = dlopen("kernel32.dll", {
       CreateFileW: { args: ["ptr", "u32", "u32", "ptr", "u32", "u32", "u64"], returns: "u64" },
       CloseHandle: { args: ["u64"], returns: "i32" },
+      GetLastError: { args: [], returns: "u32" },
     })
-    // GENERIC_READ with no sharing, so rm fails with EBUSY while this handle is open
-    const handle = lib.symbols.CreateFileW(Buffer.from(control + "\0", "utf16le"), 0x80000000, 0, null, 3, 0, 0n)
-    if (handle === 0xffffffffffffffffn) throw new Error("could not lock stop file")
+    // GENERIC_READ with no sharing, so rm fails with EBUSY while this handle is open.
+    // Bun.write resolves before its IO thread closes the OS handle, so an immediate open
+    // sees ERROR_SHARING_VIOLATION and has to wait for the handle to be released.
+    const name = Buffer.from(control + "\0", "utf16le")
+    const lock = async () => {
+      const end = Date.now() + 2_000
+      while (true) {
+        const handle = lib.symbols.CreateFileW(name, 0x80000000, 0, null, 3, 0, 0n)
+        if (handle !== 0xffffffffffffffffn) return handle
+        if (lib.symbols.GetLastError() !== 32 || Date.now() >= end) throw new Error("could not lock stop file")
+        await Bun.sleep(25)
+      }
+    }
+    const handle = await lock()
     try {
       const removed = guard(control, ended)
       await until(() => notes.some((note) => note.includes("remove stop file")) || state.settled)
