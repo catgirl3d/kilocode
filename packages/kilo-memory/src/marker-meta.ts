@@ -4,13 +4,30 @@ export namespace MemoryMarkerMeta {
 
   export type Type = "recall" | "startup"
 
+  // fork_change start - [fork] structured recall items carry kind, key and text
+  export type Kind = "fact" | "decision" | "constraint" | "correction" | "environment" | "digest" | "topics" | "other"
+
+  export type Item = { kind: Kind; key: string; text: string }
+
+  const KINDS: readonly string[] = [
+    "fact",
+    "decision",
+    "constraint",
+    "correction",
+    "environment",
+    "digest",
+    "topics",
+    "other",
+  ]
+  // fork_change end
+
   export type Info = {
     type: Type
     bytes: number
     tokens: number
     count: number
     files: string[]
-    items: string[]
+    items: Item[] // fork_change - [fork] structured items
   }
 
   export type Part = {
@@ -25,7 +42,7 @@ export namespace MemoryMarkerMeta {
     tokens: number
     count: number
     files: string[]
-    items: string[]
+    items: (string | Item)[] // fork_change - [fork] legacy strings or structured items
   }
 
   export function metadata(marker: Info, verbose = false) {
@@ -54,23 +71,78 @@ export namespace MemoryMarkerMeta {
     }
   }
 
+  // fork_change start - [fork] clip with a trailing ellipsis
   function clip(input: string) {
-    return Array.from(input).slice(0, CHARS).join("")
+    const chars = Array.from(input)
+    if (chars.length <= CHARS) return input
+    return `${chars
+      .slice(0, CHARS - 1)
+      .join("")
+      .trimEnd()}…`
+  }
+  // fork_change end
+
+  // fork_change start - [fork] pair record headers with their text rows
+  function field(line: string, name: string) {
+    for (const part of line.split(" ")) {
+      if (!part.startsWith(`${name}=`)) continue
+      const value = part.slice(name.length + 1)
+      if (value) return value
+    }
   }
 
-  function list(input: readonly string[]) {
-    return input.filter(Boolean).slice(0, LIMIT).map(clip)
+  function kindOf(input: string | undefined): Kind {
+    if (!input) return "other"
+    const value = input.startsWith("project_") ? input.slice("project_".length) : input
+    if (value === "session_digest" || value === "latest_session_digest") return "digest"
+    if (value === "env") return "environment"
+    if (value === "topic_hint") return "topics"
+    return KINDS.includes(value) ? (value as Kind) : "other"
   }
 
-  function item(line: string) {
-    if (!line.startsWith("text:")) return
-    const value = line.slice("text:".length).trim()
+  function topic(value: string) {
+    const match = value.match(/topic="([^"]*)"/)
+    return match?.[1]
+  }
+
+  function parse(kind: Kind, value: string) {
     const idx = value.indexOf(" :: ")
-    return (idx >= 0 ? value.slice(idx + 4) : value).trim()
+    const prefix = idx >= 0 ? value.slice(0, idx).trim() : ""
+    const text = clip((idx >= 0 ? value.slice(idx + 4) : value).trim())
+    if (kind === "digest") return { kind, key: topic(value) ?? prefix, text }
+    return { kind, key: prefix, text }
   }
+
+  function decode(input: unknown) {
+    if (typeof input === "string") return input || undefined
+    if (!input || typeof input !== "object") return
+    const entry = input as { kind?: unknown; key?: unknown; text?: unknown }
+    if (typeof entry.kind !== "string" || !KINDS.includes(entry.kind)) return
+    if (typeof entry.key !== "string" || typeof entry.text !== "string") return
+    return { kind: entry.kind as Kind, key: entry.key, text: entry.text }
+  }
+
+  function list(input: readonly Item[]) {
+    return input.filter((entry) => entry.text).slice(0, LIMIT)
+  }
+  // fork_change end
 
   function items(input: string) {
-    return list(input.split("\n").map(item).filter((value) => value !== undefined))
+    // fork_change start - [fork] pair each record header with its text row
+    const found: Item[] = []
+    let kind: Kind = "other"
+    for (const line of input.split("\n")) {
+      const record = header(line)
+      if (record) {
+        kind = kindOf(field(record, "type"))
+        continue
+      }
+      if (!line.startsWith("text:")) continue
+      found.push(parse(kind, line.slice("text:".length).trim()))
+      kind = "other"
+    }
+    return list(found)
+    // fork_change end
   }
 
   export function snippets(input: Decoded | undefined, verbose: boolean) {
@@ -135,9 +207,9 @@ export namespace MemoryMarkerMeta {
           ? value.sources.filter((item) => typeof item === "string")
           : []
       const count = typeof value.count === "number" ? value.count : files.length
-      const items = Array.isArray(value.items)
-        ? list(value.items.filter((item): item is string => typeof item === "string"))
-        : []
+      // fork_change start - [fork] decode legacy string items and structured items
+      const items = Array.isArray(value.items) ? value.items.flatMap((item) => decode(item) ?? []).slice(0, LIMIT) : []
+      // fork_change end
       return { type, tokens, count, files, items }
     }
     return undefined
