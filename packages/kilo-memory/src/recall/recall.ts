@@ -11,8 +11,8 @@ import { MemorySlug } from "../slug"
 export namespace MemoryRecall {
   // fork_change start - Keep recall presentation limits independent from startup index limits.
   const previewChars = 350
-  const searchBytes = 2000
-  const digestBytes = 1200
+  const searchBytes = 8000
+  const digestBytes = 4000
   // fork_change end
 
   export type Mode = "search" | "typed" | "digest"
