@@ -31,6 +31,7 @@ export namespace MemoryOperations {
     operationCount: number
     added: number
     removed: number
+    status?: "removed" | "not_found" | "unsupported_target" // fork_change - [fork] honest outcome of a forget that removed no record
     skipped: Rejection[]
     index: MemoryIndexer.Result
   }
@@ -579,12 +580,16 @@ export namespace MemoryOperations {
       // Commit (IO): write changed documents, then rebuild the index and persist state.
       await writeDocs({ root: input.root, plan })
       const index = await persist({ root: input.root, state, count: plan.count })
+      // fork_change start - [fork] classify a forget that removed nothing instead of reporting a silent success
+      const status = await forgetStatus({ root: input.root, ops: input.ops, removed: plan.removed })
+      // fork_change end
       return {
         operationCount: plan.count,
         added: plan.added,
         removed: plan.removed,
         skipped: prepared.skipped,
         index,
+        ...(status ? { status } : {}), // fork_change - [fork] optional so other operation results keep their shape
       } satisfies Result
     })
   }
@@ -602,4 +607,20 @@ export namespace MemoryOperations {
   export async function forget(input: { root: string; query: string }) {
     return apply({ root: input.root, ops: [{ action: "remove", query: input.query }] })
   }
+
+  // fork_change start - [fork] report a lone remove that matched nothing: a miss, or a session digest target.
+  async function forgetStatus(input: { root: string; ops: Op[]; removed: number }): Promise<Result["status"]> {
+    const first = input.ops.at(0)
+    if (input.ops.length !== 1 || first == null || first.action !== "remove") return
+    if (input.removed > 0) return "removed"
+    const text = first.query.trim()
+    const candidate = text.startsWith("session=") ? text.slice("session=".length).trim() : text
+    if (!candidate) return "not_found"
+    const digest = await MemoryFiles.readSession(input.root, {
+      sessionID: candidate,
+      max: MemorySchema.maxStoredDigestSummary,
+    })
+    return digest ? "unsupported_target" : "not_found"
+  }
+  // fork_change end
 }

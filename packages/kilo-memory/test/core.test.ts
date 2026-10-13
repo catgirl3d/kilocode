@@ -1959,8 +1959,57 @@ describe("memory core package", () => {
       const shown = await Memory.show({ root: t.root })
 
       expect(result.result.removed).toBe(1)
+      expect(result.result.status).toBe("removed")
       expect(shown.sources.project).not.toContain("Remove this record.")
       expect(shown.sources.project).toContain("Keep this record.")
+    })
+  })
+
+  test("forget of an unknown query reports not_found without changing source files", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.apply({
+        root: t.root,
+        ops: [{ action: "add", file: "project.md", section: "Facts", key: "keep", text: "Keep this record." }],
+      })
+      const before = {
+        project: await MemoryFiles.readSource(t.root, "project.md"),
+        environment: await MemoryFiles.readSource(t.root, "environment.md"),
+        corrections: await MemoryFiles.readSource(t.root, "corrections.md"),
+      }
+
+      const result = await Memory.forget({ root: t.root, query: "missing_query" })
+
+      expect(result.result.removed).toBe(0)
+      expect(result.result.status).toBe("not_found")
+      expect(await MemoryFiles.readSource(t.root, "project.md")).toBe(before.project)
+      expect(await MemoryFiles.readSource(t.root, "environment.md")).toBe(before.environment)
+      expect(await MemoryFiles.readSource(t.root, "corrections.md")).toBe(before.corrections)
+    })
+  })
+
+  test("forget of an existing session digest reports unsupported_target and keeps the digest", async () => {
+    await use(async (t) => {
+      await Memory.enable({ root: t.root })
+      await Memory.recordSession({
+        root: t.root,
+        sessionID: "ses_digest_keep",
+        summary: "Digest must survive forget attempts.",
+        time: Date.UTC(2026, 0, 1),
+      })
+
+      const bare = await Memory.forget({ root: t.root, query: "ses_digest_keep" })
+      const prefixed = await Memory.forget({ root: t.root, query: "session=ses_digest_keep" })
+
+      expect(bare.result.removed).toBe(0)
+      expect(bare.result.status).toBe("unsupported_target")
+      expect(prefixed.result.removed).toBe(0)
+      expect(prefixed.result.status).toBe("unsupported_target")
+      const digest = await MemoryFiles.readSession(t.root, {
+        sessionID: "ses_digest_keep",
+        max: MemorySchema.maxStoredDigestSummary,
+      })
+      expect(digest?.summary).toContain("Digest must survive forget attempts.")
     })
   })
 
