@@ -11,6 +11,7 @@ import { Effect } from "effect"
 const LIMIT = 4
 const CHARS = 1_000
 const BRANCH_CHARS = 50
+// fork_change start
 const TRANSLITERATION = new Map([
   ["а", "a"],
   ["б", "b"],
@@ -50,11 +51,15 @@ const TRANSLITERATION = new Map([
   ["є", "ye"],
   ["ґ", "g"],
 ])
+// fork_change end
 
+// fork_change start
 function transliterate(value: string) {
   return value.toLowerCase().replace(/[а-яёіїєґ]/g, (char) => TRANSLITERATION.get(char) ?? char)
 }
+// fork_change end
 
+// fork_change start
 const PROMPT = `Generate a Git branch name for the coherent engineering workstream described by the user's messages.
 
 Return exactly one line:
@@ -68,6 +73,7 @@ A concrete implementation, investigation, planning, documentation, or research t
 Name the durable goal or outcome, not a tentative implementation detail. Prefer an action and object, such as fix-token-refresh-race or research-branch-naming.
 If the user asks for a specific branch name, prefer that name.
 Do not include a prefix, ticket number, explanation, quotes, markdown, or punctuation other than hyphens.`
+// fork_change end
 
 function text(message: MessageV2.WithParts) {
   return message.parts
@@ -102,6 +108,7 @@ export function parse(value: string) {
     .replace(/^['"`]|['"`]$/g, "")
     .toLowerCase()
   if (!line || line === "null") return null
+  // fork_change start
   return (
     transliterate(line)
       .replace(/[^a-z0-9]+/g, "-")
@@ -110,9 +117,12 @@ export function parse(value: string) {
       .slice(0, BRANCH_CHARS)
       .replace(/-+$/g, "") || null
   )
+  // fork_change end
 }
 
+// fork_change start
 /** Uses full request options so non-Latin prompts are not degraded by small-model variants. */
+// fork_change end
 export const generate = Effect.fn("BranchName.generate")(function* (input: {
   sessionID: SessionID
   messages: string[]
@@ -135,7 +145,7 @@ export const generate = Effect.fn("BranchName.generate")(function* (input: {
     hidden: true,
     options: {},
     permission: [],
-    prompt: "",
+    prompt: "", // fork_change
     temperature: 0.1,
   }
   const user: MessageV2.User = {
@@ -153,8 +163,10 @@ export const generate = Effect.fn("BranchName.generate")(function* (input: {
       user,
       tools: {},
       model,
+      // fork_change start
       small: false,
       messages: [{ role: "user", content: `${PROMPT}\n\nUser messages, oldest to newest:\n\n${body}` }],
+      // fork_change end
       sessionID: `branch-name:${input.sessionID}`,
       system: [],
       retries: 1,
