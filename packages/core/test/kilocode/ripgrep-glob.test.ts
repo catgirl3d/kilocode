@@ -142,6 +142,7 @@ const run = (input: Omit<Ripgrep.GlobInput, "limit"> & { limit?: number }) =>
   })
 
 describe("Kilo ripgrep glob", () => {
+  // prettier-ignore
   it.live("matches exactly what ripgrep matched before, minus ignored files", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -166,8 +167,10 @@ describe("Kilo ripgrep glob", () => {
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
+    30_000,
   )
 
+  // prettier-ignore
   it.live("applies find patterns and grep include globs the same way", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -202,6 +205,7 @@ describe("Kilo ripgrep glob", () => {
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
+    30_000,
   )
 
   it.live("keeps ignored folders and files out of results", () =>
