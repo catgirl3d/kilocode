@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test"
+import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { Session } from "@kilocode/sdk/v2/client"
@@ -7,7 +8,13 @@ import { WorktreeRollbackError } from "../../src/agent-manager/WorktreeManager"
 import type { ProjectContext } from "../../src/agent-manager/project/context"
 import type { CreateWorktreeOnDiskResult } from "../../src/agent-manager/worktree-create"
 
-function fixture(input: { generated: string | null; enabled?: boolean; branchName?: string; name?: string }) {
+function fixture(input: {
+  generated: string | null
+  enabled?: boolean
+  branchName?: string
+  name?: string
+  clientError?: boolean
+}) {
   const events: string[] = []
   const row = { id: "wt-0", branch: "random-branch", path: "/repo/wt-0", branchOwned: true }
   const state = {
@@ -66,7 +73,10 @@ function fixture(input: { generated: string | null; enabled?: boolean; branchNam
       } as CreateWorktreeOnDiskResult
     }),
     metadata: mock(async () => ({})),
-    client: () => client as never,
+    client: () => {
+      if (input.clientError) throw new Error("client disconnected")
+      return client as never
+    },
     hasScript: () => false,
     runSetup: mock(async () => events.push("setup")),
     createSession: mock(async () => {
@@ -98,7 +108,9 @@ describe("multi-version provisioning", () => {
 
     expect(client.branchName.generate).toHaveBeenCalledTimes(1)
     expect(events.indexOf("rename:feat/fix-token-refresh")).toBeLessThan(events.indexOf("setup"))
-    expect(events.indexOf("rename:feat/fix-token-refresh")).toBeLessThan(events.indexOf("session:/repo/feat/fix-token-refresh"))
+    expect(events.indexOf("rename:feat/fix-token-refresh")).toBeLessThan(
+      events.indexOf("session:/repo/feat/fix-token-refresh"),
+    )
     expect(row).toMatchObject({ branch: "feat/fix-token-refresh", path: "/repo/feat/fix-token-refresh" })
     expect(state.renameOwnedWorktree).toHaveBeenCalledWith(
       "wt-0",
@@ -122,6 +134,32 @@ describe("multi-version provisioning", () => {
     expect(events).toContain("session:/repo/wt-0")
     expect(row).toMatchObject({ branch: "random-branch", path: "/repo/wt-0" })
     expect(state.armAutoName).toHaveBeenCalledWith("wt-0", "session-0")
+  })
+
+  it("keeps provisioning at the random path when the client getter throws", async () => {
+    const { ctx, events, host, manager } = fixture({ generated: "Unused", clientError: true })
+
+    await createMultiVersion(ctx, host, {
+      type: "agentManager.createMultiVersion",
+      text: "Fix it",
+      versions: 1,
+    })
+
+    expect(manager.renameWorktree).not.toHaveBeenCalled()
+    expect(events).toContain("session:/repo/wt-0")
+    expect(host.log).toHaveBeenCalledWith(expect.stringContaining("client disconnected"))
+  })
+
+  it("does not arm multi-version fallback worktrees", async () => {
+    const { ctx, host, state } = fixture({ generated: null })
+
+    await createMultiVersion(ctx, host, {
+      type: "agentManager.createMultiVersion",
+      text: "Fix it",
+      versions: 2,
+    })
+
+    expect(state.armAutoName).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -286,13 +324,17 @@ describe("multi-version provisioning", () => {
       },
       createOnDisk: mock(async () => {
         const row = rows[index++]!
-        return { worktree: row, result: { path: row.path, branch: row.branch, parentBranch: "main" } } as CreateWorktreeOnDiskResult
+        return {
+          worktree: row,
+          result: { path: row.path, branch: row.branch, parentBranch: "main" },
+        } as CreateWorktreeOnDiskResult
       }),
       metadata: async () => ({}),
       client: () => client as never,
       hasScript: () => false,
       runSetup: async () => {},
-      createSession: async (_dir: string, _branch: string, id: string) => ({ id: `session-${id.slice(-1)}` }) as Session,
+      createSession: async (_dir: string, _branch: string, id: string) =>
+        ({ id: `session-${id.slice(-1)}` }) as Session,
       autoName: () => ({ enabled: true, prefix: "feat" }),
       register: mock(() => {}),
       notifyReady: mock(() => {}),
@@ -313,18 +355,19 @@ describe("multi-version provisioning", () => {
       ],
     })
 
-    const scratch = path.join(os.tmpdir(), "kilo-worktree-naming")
+    const scratch = path.join(os.tmpdir(), "kilo-worktree-naming-")
     expect(generated).toHaveBeenCalledTimes(1)
     expect(generated).toHaveBeenCalledWith(
       {
-        directory: scratch,
+        directory: expect.stringContaining(scratch),
         sessionID: "scratch-session",
         prompt: "Fix Shared Name",
         providerID: "provider-a",
         modelID: "model-a",
       },
-      expect.objectContaining({ throwOnError: true, signal: expect.any(AbortSignal) }),
+      expect.objectContaining({ throwOnError: true }),
     )
+    expect(generated.mock.calls[0]?.[1]).toHaveProperty("signal")
     expect(names).toEqual(["feat/fix-shared-name", "feat/fix-shared-name_v2"])
     expect(prompts).toEqual([
       expect.objectContaining({ providerID: "provider-a", modelID: "model-a" }),
@@ -369,7 +412,9 @@ describe("multi-version provisioning", () => {
       worktreeManager: () => manager,
     } as unknown as ProjectContext
     const messages: Record<string, unknown>[] = []
-    const create = mock(async (_dir: string, _branch: string, id: string) => ({ id: `session-${id.slice(-1)}` }) as Session)
+    const create = mock(
+      async (_dir: string, _branch: string, id: string) => ({ id: `session-${id.slice(-1)}` }) as Session,
+    )
     const host = {
       log: mock(() => {}),
       post: (message: Record<string, unknown>) => {
@@ -378,7 +423,10 @@ describe("multi-version provisioning", () => {
       },
       createOnDisk: mock(async () => {
         const row = rows[index++]!
-        return { worktree: row, result: { path: row.path, branch: row.branch, parentBranch: "main" } } as CreateWorktreeOnDiskResult
+        return {
+          worktree: row,
+          result: { path: row.path, branch: row.branch, parentBranch: "main" },
+        } as CreateWorktreeOnDiskResult
       }),
       metadata: async () => ({}),
       client: () => client as never,
@@ -407,5 +455,50 @@ describe("multi-version provisioning", () => {
     expect(messages.at(-1)).toEqual(
       expect.objectContaining({ type: "agentManager.multiVersionProgress", status: "done", completed: 1 }),
     )
+  })
+
+  it("cleans a renamed residual target and removes its state row", async () => {
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), "rollback-target-"))
+    try {
+      const { ctx, host, manager, state } = fixture({ generated: "Fix it" })
+      manager.renameWorktree.mockRejectedValue(
+        new WorktreeRollbackError("rollback refused", {
+          source: "/repo/wt-0",
+          target,
+          branch: "feat/fix-it",
+        }),
+      )
+
+      await createMultiVersion(ctx, host, {
+        type: "agentManager.createMultiVersion",
+        text: "Fix it",
+        versions: 1,
+      })
+
+      expect(manager.removeWorktree).toHaveBeenCalledWith(target, "feat/fix-it")
+      expect(state.removeWorktree).toHaveBeenCalledWith("wt-0")
+    } finally {
+      fs.rmSync(target, { recursive: true, force: true })
+    }
+  })
+
+  it("removes state when neither rollback path exists", async () => {
+    const { ctx, host, manager, state } = fixture({ generated: "Fix it" })
+    manager.renameWorktree.mockRejectedValue(
+      new WorktreeRollbackError("rollback refused", {
+        source: "/repo/wt-0",
+        target: "/missing-target",
+        branch: "feat/fix-it",
+      }),
+    )
+
+    await createMultiVersion(ctx, host, {
+      type: "agentManager.createMultiVersion",
+      text: "Fix it",
+      versions: 1,
+    })
+
+    expect(manager.removeWorktree).toHaveBeenCalledWith("/repo/wt-0", "random-branch")
+    expect(state.removeWorktree).toHaveBeenCalledWith("wt-0")
   })
 })

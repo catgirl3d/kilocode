@@ -209,6 +209,43 @@ describe("BranchNamingController", () => {
     expect(renamed).toEqual(["explore-options"])
   })
 
+  it("does not dispatch an idle fallback while a rename is pending", async () => {
+    const { naming, renamed, requests } = makeNaming(state, {
+      generate: async () => ({ data: { branch: "fix-pending-rename" } }),
+      hasWork: async () => true,
+    })
+
+    armed(state)
+    naming.busy("session-1")
+    naming.prompt({ sessionID: "session-1", text: "Fix the task" })
+    await settle()
+
+    naming.idle("session-1")
+    await settle()
+
+    expect(requests.value).toBe(1)
+    expect(renamed).toEqual(["fix-pending-rename"])
+  })
+
+  it("does not dispatch after arming changes during the idle work check", async () => {
+    const wt = armed(state)
+    const hasWork = deferred<boolean>()
+    const { naming, requests } = makeNaming(state, {
+      generate: async () => ({ data: { branch: null } }),
+      hasWork: () => hasWork.promise,
+    })
+
+    naming.prompt({ sessionID: "session-1", text: "hello" })
+    await settle()
+    naming.idle("session-1")
+    await Promise.resolve()
+    state.clearAutoName(wt.id)
+    hasWork.resolve(true)
+    await settle()
+
+    expect(requests.value).toBe(1)
+  })
+
   it("disarms after the maximum number of prompts without a rename", async () => {
     const wt = armed(state)
     const { naming, requests } = makeNaming(state, {

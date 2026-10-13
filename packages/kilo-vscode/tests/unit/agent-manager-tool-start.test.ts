@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, mock } from "bun:test"
+import * as fs from "node:fs"
+import * as os from "node:os"
+import * as path from "node:path"
 import { parseToolRequest, startFromTool, type ToolDeps, type ToolRequest } from "../../src/agent-manager/tool-start"
 import { WorktreeRollbackError, type CreateWorktreeResult } from "../../src/agent-manager/WorktreeManager"
 import type { Session } from "@kilocode/sdk/v2/client"
@@ -583,6 +586,7 @@ describe("agent manager tool start", () => {
       renameWorktree: mock(async () => {
         throw new WorktreeRollbackError("rollback refused")
       }),
+      removeWorktree: mock(async () => {}),
     }
     const create = mock(async () => session("s-wt"))
     const c = deps({
@@ -602,12 +606,59 @@ describe("agent manager tool start", () => {
 
     expect(client.session.create).toHaveBeenCalledTimes(1)
     expect(create).not.toHaveBeenCalled()
+    expect(manager.renameWorktree).toHaveBeenCalledWith(originalPath, "kilo/test", "feat/fix-agent-start")
     expect(c.cleanupWorktree).toHaveBeenCalledWith("wt-1", originalPath)
     expect(c.notifyReady).not.toHaveBeenCalled()
     expect(c.registerWorktreeSession).not.toHaveBeenCalled()
     expect(c.post).toHaveBeenCalledWith(
       expect.objectContaining({ type: "error", message: expect.stringContaining("rollback refused") }),
     )
+  })
+
+  it("cleans a renamed rollback target with its branch identity", async () => {
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), "tool-rollback-target-"))
+    try {
+      const originalPath = "/repo/.kilo/worktrees/wt-target"
+      const row = { id: "wt-target", branch: "kilo/test", path: originalPath, branchOwned: true }
+      const state = { addSession: mock(() => {}), renameOwnedWorktree: mock(() => true) }
+      const client = {
+        session: {
+          create: mock(async () => ({ data: { id: "scratch-session" } })),
+          delete: mock(async () => ({})),
+          promptAsync: mock(async () => ({})),
+        },
+        branchName: { generate: mock(async () => ({ data: { branch: "Fix Agent Start" } })) },
+      }
+      const manager = {
+        renameWorktree: mock(async () => {
+          throw new WorktreeRollbackError("rollback refused", {
+            source: originalPath,
+            target,
+            branch: "feat/fix-agent-start",
+          })
+        }),
+        removeWorktree: mock(async () => {}),
+      }
+      const c = deps({
+        getClient: () => client as never,
+        getState: () => state as never,
+        getWorktreeManager: () => manager as never,
+        autoName: () => ({ enabled: true, prefix: "feat" }),
+        createWorktree: async () => ({ worktree: row, result: result(originalPath) }),
+        createSessionInWorktree: async () => session("s-wt"),
+      })
+
+      await startFromTool(c, {
+        requestID: "am-target-cleanup",
+        mode: "worktree",
+        tasks: [{ prompt: "Fix Agent Start" }],
+      })
+
+      expect(manager.renameWorktree).toHaveBeenCalledWith(originalPath, "kilo/test", "feat/fix-agent-start")
+      expect(c.cleanupWorktree).toHaveBeenCalledWith("wt-target", target)
+    } finally {
+      fs.rmSync(target, { recursive: true, force: true })
+    }
   })
 
   it.each([
@@ -635,6 +686,7 @@ describe("agent manager tool start", () => {
       const prompted: string[] = []
       const state = {
         addSession: mock(() => {}),
+        armAutoName: mock(() => {}),
         renameOwnedWorktree: mock(() => true),
       }
       const client = {

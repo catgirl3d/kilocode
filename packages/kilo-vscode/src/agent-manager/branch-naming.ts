@@ -54,9 +54,11 @@ export class BranchNamingController {
 
   constructor(private readonly deps: Deps) {}
 
+  // fork_change start
   /** Called for every outgoing user message. The first message may name the
    *  branch; later messages retry while armed, and vague prompts that return
    *  null stay armed until the prompt limit is reached. */
+  // fork_change end
   prompt(input: Prompt): void {
     const { state, worktree } = this.resolve(input.sessionID)
     if (!state || !worktree || worktree.autoNameSessionId !== input.sessionID) return
@@ -88,14 +90,23 @@ export class BranchNamingController {
     this.busySessions.add(sessionID)
   }
 
+  // fork_change start
   /** Called when a session becomes idle. Retries a vague first prompt when the
    *  worktree already has changes, and applies any rename held while busy. */
+  // fork_change end
   idle(sessionID: string): void {
     this.busySessions.delete(sessionID)
     const { state, worktree } = this.resolve(sessionID)
     if (state && worktree && worktree.autoNameSessionId === sessionID) {
       const count = worktree.autoNamePromptCount ?? 0
-      if (count === 1 && !this.idleAttempted.has(worktree.id) && !this.requests.has(worktree.id)) {
+      // fork_change start
+      if (
+        count === 1 &&
+        !this.idleAttempted.has(worktree.id) &&
+        !this.requests.has(worktree.id) &&
+        !this.pending.has(worktree.id)
+      ) {
+        // fork_change end
         this.idleAttempted.add(worktree.id)
         void this.generateOnIdle(worktree.id, sessionID)
       }
@@ -157,6 +168,8 @@ export class BranchNamingController {
     const ref = this.model.get(id)
     const has = await manager.hasWork(worktree.path, remoteRef(worktree)).catch(() => false)
     if (!has) return
+    const current = state.getWorktree(id) // fork_change
+    if (!current || current.autoNameSessionId !== sessionID) return // fork_change
     if (this.requests.has(id)) return
     this.dispatch(id, { sessionID, text: "", providerID: ref?.providerID, modelID: ref?.modelID })
   }

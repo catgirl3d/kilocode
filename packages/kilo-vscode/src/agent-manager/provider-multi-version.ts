@@ -1,18 +1,12 @@
 import { getErrorMessage } from "../kilo-provider-utils"
+import * as fs from "node:fs" // fork_change
 import { PLATFORM } from "./constants"
 import type { ProjectContext } from "./project/context"
 import type { AgentManagerInMessage } from "./types"
 import { sanitizeBranchName, versionedName } from "./branch-name"
 import { resolveVersionModels, buildInitialMessages, type CreatedVersion } from "./multi-version"
 import { ensureSandbox } from "./sandbox-bootstrap"
-// fork_change start
-import {
-  beginBoot,
-  prepareSession,
-  removeWorktreeSnapshot,
-  type LifecycleHost,
-} from "./provider-lifecycle"
-// fork_change end
+import { beginBoot, prepareSession, removeWorktreeSnapshot, type LifecycleHost } from "./provider-lifecycle"
 import { plan } from "./creation-plan"
 import { Timing } from "./creation-timing"
 import { Semaphore } from "./semaphore"
@@ -100,7 +94,8 @@ export async function createMultiVersion(
   // can overlap without racing the shared worktree metadata mutation.
   const shared: { name?: Promise<string | null> } = {} // fork_change
   const provision = async (version: PreparedVersion) => {
-    const ready = await provisionVersion(ctx, host, version, shared, (session) => // fork_change
+    // fork_change start
+    const ready = await provisionVersion(ctx, host, version, shared, (session) =>
       sendInitialPrompt(
         host,
         ctx.id,
@@ -108,6 +103,7 @@ export async function createMultiVersion(
         models,
         { providerID, modelID },
         {
+          // fork_change end
           text,
           command: msg.command,
           arguments: msg.arguments,
@@ -219,7 +215,14 @@ async function nameVersion(
   ].every(Boolean)
   if (!eligible) return null
 
-  shared.name ??= generateFromPrompt(host.client(), { prompt: spec.text!, providerID, modelID }, host.log)
+  shared.name ??= (async () => {
+    try {
+      return await generateFromPrompt(host.client(), { prompt: spec.text!, providerID, modelID }, host.log)
+    } catch (error) {
+      host.log(`Skipped prompt worktree naming: ${error}`)
+      return null
+    }
+  })()
   const generated = await shared.name
   if (!generated) return null
   return renameFromPrompt({
@@ -238,8 +241,11 @@ async function cleanupNamingFailure(
   host: MultiVersionHost,
   state: ReturnType<ProjectContext["stateManager"]>,
   wt: PreparedVersion["wt"],
-  error: unknown,
+  error: WorktreeRollbackError,
 ): Promise<void> {
+  const target = error.target && fs.existsSync(error.target)
+  const dir = target ? error.target : (error.source ?? wt.result.path)
+  const branch = target ? (error.branch ?? wt.result.branch) : wt.result.branch
   host.log(`Failed to name worktree: ${error}`)
   const clean = async (name: string, run: () => Promise<void> | void) => {
     try {
@@ -248,9 +254,9 @@ async function cleanupNamingFailure(
       host.log(`Failed to ${name}: ${cleanupError}`)
     }
   }
-  await clean("remove worktree after naming failed", () => ctx.worktreeManager().removeWorktree(wt.result.path, wt.result.branch))
+  await clean("remove worktree after naming failed", () => ctx.worktreeManager().removeWorktree(dir, branch))
   await clean("remove worktree snapshot after naming failed", async () => {
-    await removeWorktreeSnapshot(host, ctx.root, wt.result.path)
+    await removeWorktreeSnapshot(host, ctx.root, dir)
   })
   await clean("remove worktree state after naming failed", () => {
     state.removeWorktree(wt.worktree.id)
@@ -340,7 +346,9 @@ async function provisionVersion(
   }
 
   state.addSession(session.id, wt.worktree.id)
-  if ([!named, !spec.branchName, !spec.worktreeName, settings.enabled].every(Boolean)) { // fork_change
+  // fork_change start
+  if ([!named, !spec.branchName, !spec.worktreeName, settings.enabled, spec.versions === 1].every(Boolean)) {
+    // fork_change end
     state.armAutoName(wt.worktree.id, session.id)
   }
   timing.mark("state")

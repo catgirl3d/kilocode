@@ -79,9 +79,16 @@ export interface WorktreeInfo {
 
 // fork_change start
 export class WorktreeRollbackError extends Error {
-  constructor(message: string) {
+  readonly source?: string
+  readonly target?: string
+  readonly branch?: string
+
+  constructor(message: string, identity?: { source?: string; target?: string; branch?: string }) {
     super(message)
     this.name = "WorktreeRollbackError"
+    this.source = identity?.source
+    this.target = identity?.target
+    this.branch = identity?.branch
   }
 }
 // fork_change end
@@ -545,12 +552,14 @@ export class WorktreeManager {
     return branch
   } // fork_change
 
-  private async validateRename( // fork_change
-    worktreePath: string, // fork_change
-    current: string, // fork_change
-    requested: string, // fork_change
-    worktreeChecks: boolean, // fork_change
-  ): Promise<{ git: SimpleGit; branch: string }> { // fork_change
+  // fork_change start
+  private async validateRename(
+    worktreePath: string,
+    current: string,
+    requested: string,
+    worktreeChecks: boolean,
+  ): Promise<{ git: SimpleGit; branch: string }> {
+    // fork_change end
     if (!this.isManagedPath(worktreePath)) throw new Error("Worktree is not managed by Agent Manager")
 
     const git = this.client(worktreePath)
@@ -619,6 +628,7 @@ export class WorktreeManager {
         const detail = restore instanceof Error ? restore.message : String(restore)
         throw new WorktreeRollbackError(
           `Worktree rollback failed for source=${worktreePath}, target=${target}, branch=${branch}: ${detail}; original move failure: ${message}`,
+          { source: worktreePath, target, branch },
         )
       }
       try {
@@ -627,6 +637,7 @@ export class WorktreeManager {
         const detail = rollback instanceof Error ? rollback.message : String(rollback)
         throw new WorktreeRollbackError(
           `Worktree rollback failed for source=${worktreePath}, target=${target}; branch rollback failed while restoring ${branch} to ${current}: ${detail}; original move failure: ${message}`,
+          { source: worktreePath, target, branch },
         )
       }
       try {
@@ -635,6 +646,7 @@ export class WorktreeManager {
         const detail = verify instanceof Error ? verify.message : String(verify)
         throw new WorktreeRollbackError(
           `Worktree rollback verification failed for source=${worktreePath}, target=${target}, branch=${current}: ${detail}; original move failure: ${message}`,
+          { source: worktreePath, target, branch: current },
         )
       }
       throw new Error(`Failed to move worktree after renaming branch "${current}" to "${branch}": ${message}`)

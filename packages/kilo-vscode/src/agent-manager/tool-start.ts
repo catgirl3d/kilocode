@@ -1,4 +1,5 @@
 import type { KiloClient, Session } from "@kilocode/sdk/v2/client"
+import * as fs from "node:fs" // fork_change
 import { sanitizeBranchName, versionedName } from "./branch-name"
 import { WorktreeRollbackError, type CreateWorktreeResult, type WorktreeManager } from "./WorktreeManager" // fork_change
 import type { WorktreeStateManager } from "./WorktreeStateManager"
@@ -248,6 +249,15 @@ async function nameWorktree(
 }
 // fork_change end
 
+// fork_change start
+function rollbackIdentity(error: WorktreeRollbackError, created: WorktreeCreated) {
+  const target = error.target && fs.existsSync(error.target)
+  return target
+    ? { path: error.target, branch: error.branch ?? created.result.branch }
+    : { path: error.source ?? created.result.path, branch: created.result.branch }
+}
+// fork_change end
+
 async function worktree(
   deps: ToolDeps,
   client: KiloClient,
@@ -289,11 +299,14 @@ async function worktree(
   } catch (error) {
     if (!(error instanceof WorktreeRollbackError)) throw error
     deps.log(`Failed to name worktree: ${error}`)
-    try {
-      await deps.cleanupWorktree(created.worktree.id, created.result.path)
-    } catch (cleanupError) {
-      deps.log(`Failed to clean up worktree after naming failed: ${cleanupError}`)
+    const identity = rollbackIdentity(error, created)
+    const manager = deps.getWorktreeManager()
+    if (manager) {
+      await manager
+        .removeWorktree(identity.path, identity.branch)
+        .catch((cleanupError) => deps.log(`Failed to remove worktree after naming failed: ${cleanupError}`))
     }
+    await deps.cleanupWorktree(created.worktree.id, identity.path)
     throw error
   }
   if (named) {
@@ -330,6 +343,12 @@ async function worktree(
   }
 
   state.addSession(session.id, created.worktree.id)
+  // fork_change start
+  const settings = deps.autoName()
+  if ([!named, !task.name, !task.branchName, settings.enabled, !versions].every(Boolean)) {
+    state.armAutoName(created.worktree.id, session.id)
+  }
+  // fork_change end
   deps.registerWorktreeSession(session.id, created.result.path)
   timing.mark("state")
   deps.notifyReady(session.id, created.result, created.worktree.id)

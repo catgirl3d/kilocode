@@ -26,11 +26,12 @@ export async function generateFromPrompt(
   input: { prompt: string; providerID?: string; modelID?: string },
   log: (message: string) => void,
 ): Promise<string | null> {
-  const scratch = path.join(os.tmpdir(), "kilo-worktree-naming")
+  const signal = AbortSignal.timeout(10_000)
+  let scratch: string | undefined
   let session: string | undefined
   try {
-    await fs.mkdir(scratch, { recursive: true })
-    const { data: created } = await client.session.create({ directory: scratch }, { throwOnError: true })
+    scratch = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-worktree-naming-"))
+    const { data: created } = await client.session.create({ directory: scratch }, { throwOnError: true, signal })
     session = created.id
     const { data } = await client.branchName.generate(
       {
@@ -40,18 +41,32 @@ export async function generateFromPrompt(
         providerID: input.providerID,
         modelID: input.modelID,
       },
-      { throwOnError: true, signal: AbortSignal.timeout(10_000) },
+      { throwOnError: true, signal },
     )
     return data.branch
   } catch (error) {
     log(`Skipped prompt worktree naming: ${error}`)
     return null
   } finally {
-    if (session) {
+    if (session && scratch) {
+      let deleted = false
+      for (let attempt = 0; attempt < 2 && !deleted; attempt++) {
+        try {
+          await client.session.delete(
+            { sessionID: session, directory: scratch },
+            { throwOnError: true, signal: attempt === 0 ? signal : AbortSignal.timeout(2_000) },
+          )
+          deleted = true
+        } catch (error) {
+          if (attempt === 1) log(`Failed to delete scratch naming session: ${error}`)
+        }
+      }
+    }
+    if (scratch) {
       try {
-        await client.session.delete({ sessionID: session, directory: scratch }, { throwOnError: true })
+        await fs.rm(scratch, { recursive: true, force: true })
       } catch (error) {
-        log(`Failed to delete scratch naming session: ${error}`)
+        log(`Failed to remove scratch naming directory: ${error}`)
       }
     }
   }

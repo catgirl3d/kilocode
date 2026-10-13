@@ -18,7 +18,6 @@ describe("worktree naming", () => {
   afterEach(async () => {
     await state.flush()
     fs.rmSync(root, { recursive: true, force: true })
-    fs.rmSync(path.join(os.tmpdir(), "kilo-worktree-naming"), { recursive: true, force: true })
   })
 
   function addWorktree(owned = true) {
@@ -35,11 +34,13 @@ describe("worktree naming", () => {
     const options: unknown[] = []
     const out = {
       session: {
-        create: mock(async (input: { directory: string }) => {
+        create: mock(async (input: { directory: string }, option: unknown) => {
+          options.push(option)
           calls.push(`create:${input.directory}`)
           return { data: { id: "scratch-session" } }
         }),
-        delete: mock(async (input: { sessionID: string; directory: string }) => {
+        delete: mock(async (input: { sessionID: string; directory: string }, option: unknown) => {
+          options.push(option)
           calls.push(`delete:${input.sessionID}:${input.directory}`)
           return {}
         }),
@@ -57,22 +58,30 @@ describe("worktree naming", () => {
 
   it("creates and deletes a scratch session around generation", async () => {
     const logs: string[] = []
-    const { calls, client, options } = makeClient()
+    const first = makeClient()
+    const second = makeClient()
 
     const result = await generateFromPrompt(
-      client,
+      first.client,
       { prompt: "Fix the token refresh", providerID: "provider-a", modelID: "model-a" },
       (message) => logs.push(message),
     )
+    await generateFromPrompt(second.client, { prompt: "Fix auth" }, () => {})
 
-    const scratch = path.join(os.tmpdir(), "kilo-worktree-naming")
+    const firstScratch = first.calls[0]!.slice("create:".length)
+    const secondScratch = second.calls[0]!.slice("create:".length)
     expect(result).toBe("fix-token-refresh")
-    expect(calls).toEqual([
-      `create:${scratch}`,
-      `generate:${scratch}:scratch-session:Fix the token refresh`,
-      `delete:scratch-session:${scratch}`,
+    expect(first.calls).toEqual([
+      `create:${firstScratch}`,
+      `generate:${firstScratch}:scratch-session:Fix the token refresh`,
+      `delete:scratch-session:${firstScratch}`,
     ])
-    expect(options[0]).toMatchObject({ throwOnError: true, signal: expect.any(AbortSignal) })
+    expect(firstScratch).toContain(path.join(os.tmpdir(), "kilo-worktree-naming-"))
+    expect(secondScratch).not.toBe(firstScratch)
+    expect(fs.existsSync(firstScratch)).toBe(false)
+    expect(fs.existsSync(secondScratch)).toBe(false)
+    expect(first.options).toHaveLength(3)
+    expect(first.options.every((option) => option && typeof option === "object" && "signal" in option)).toBe(true)
     expect(logs).toEqual([])
   })
 
@@ -84,6 +93,7 @@ describe("worktree naming", () => {
     await expect(
       generateFromPrompt(client, { prompt: "Fix the token refresh" }, (message) => logs.push(message)),
     ).resolves.toBe("fix-token-refresh")
+    expect(client.session.delete).toHaveBeenCalledTimes(2)
     expect(logs.some((message) => message.includes("delete refused"))).toBe(true)
   })
 
@@ -92,7 +102,9 @@ describe("worktree naming", () => {
     const { calls, client } = makeClient()
     client.branchName.generate.mockRejectedValue(new Error("endpoint unavailable"))
 
-    const result = await generateFromPrompt(client, { prompt: "Fix the token refresh" }, (message) => logs.push(message))
+    const result = await generateFromPrompt(client, { prompt: "Fix the token refresh" }, (message) =>
+      logs.push(message),
+    )
 
     expect(result).toBeNull()
     expect(calls[0]).toStartWith("create:")
@@ -140,7 +152,14 @@ describe("worktree naming", () => {
       }),
     }
 
-    const result = await renameFromPrompt({ manager, state, worktree, generated: "Fix auth flow", prefix: "", log: () => {} })
+    const result = await renameFromPrompt({
+      manager,
+      state,
+      worktree,
+      generated: "Fix auth flow",
+      prefix: "",
+      log: () => {},
+    })
 
     expect(result).toEqual({ branch: "fix-auth-flow", path: "/repo/worktrees/fix-auth-flow" })
     expect(calls).toBe(3)
@@ -173,9 +192,20 @@ describe("worktree naming", () => {
   it("returns null after rename retries fail", async () => {
     const worktree = addWorktree()
     const logs: string[] = []
-    const manager = { renameWorktree: mock(async () => { throw new Error("rename refused") }) }
+    const manager = {
+      renameWorktree: mock(async () => {
+        throw new Error("rename refused")
+      }),
+    }
 
-    const result = await renameFromPrompt({ manager, state, worktree, generated: "Fix auth flow", prefix: "", log: (message) => logs.push(message) })
+    const result = await renameFromPrompt({
+      manager,
+      state,
+      worktree,
+      generated: "Fix auth flow",
+      prefix: "",
+      log: (message) => logs.push(message),
+    })
 
     expect(result).toBeNull()
     expect(manager.renameWorktree).toHaveBeenCalledTimes(3)
@@ -186,9 +216,15 @@ describe("worktree naming", () => {
   it("rethrows WorktreeRollbackError immediately", async () => {
     const worktree = addWorktree()
     const fatal = new WorktreeRollbackError("rollback is ambiguous")
-    const manager = { renameWorktree: mock(async () => { throw fatal }) }
+    const manager = {
+      renameWorktree: mock(async () => {
+        throw fatal
+      }),
+    }
 
-    await expect(renameFromPrompt({ manager, state, worktree, generated: "Fix auth flow", prefix: "", log: () => {} })).rejects.toBe(fatal)
+    await expect(
+      renameFromPrompt({ manager, state, worktree, generated: "Fix auth flow", prefix: "", log: () => {} }),
+    ).rejects.toBe(fatal)
     expect(manager.renameWorktree).toHaveBeenCalledTimes(1)
   })
 
@@ -196,7 +232,9 @@ describe("worktree naming", () => {
     const worktree = addWorktree(false)
     const manager = { renameWorktree: mock(async () => ({ branch: "fix-auth-flow", path: "/repo/fix-auth-flow" })) }
 
-    await expect(renameFromPrompt({ manager, state, worktree, generated: "Fix auth flow", prefix: "", log: () => {} })).resolves.toBeNull()
+    await expect(
+      renameFromPrompt({ manager, state, worktree, generated: "Fix auth flow", prefix: "", log: () => {} }),
+    ).resolves.toBeNull()
     expect(manager.renameWorktree).not.toHaveBeenCalled()
   })
 })
