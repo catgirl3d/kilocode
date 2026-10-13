@@ -288,8 +288,9 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
   })
   const fmt = (value: number) => value.toLocaleString(language.locale())
   const count = (item: MemoryItem) => fmt(item.count)
-  const items = (item: MemoryItem) => item.items ?? []
   const verbose = createMemo(() => Boolean(mem.status()?.state.verbose))
+  const kind = (item: MemoryMarkerMeta.Item) =>
+    `${language.t(`chat.memory.kind.${item.kind}`)}${item.key ? ` · ${item.key}` : ""}`
   const tip = (item: MemoryItem) => {
     const values = MemoryMarkerMeta.snippets(item, verbose())
     return (
@@ -300,7 +301,27 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             <div>{`${language.t("chat.memory.badge.recalled")} · ${language.t("chat.memory.badge.items", { count: count(item) })}`}</div>
           }
         >
-          <For each={values}>{(value) => <div>{value}</div>}</For>
+          <For each={values}>
+            {(value) =>
+              typeof value === "string" ? (
+                <div>{value}</div>
+              ) : (
+                <div>
+                  <div style={{ color: "var(--vscode-descriptionForeground)" }}>{kind(value)}</div>
+                  <div
+                    style={{
+                      display: "-webkit-box",
+                      "-webkit-line-clamp": "2",
+                      "-webkit-box-orient": "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {value.text}
+                  </div>
+                </div>
+              )
+            }
+          </For>
         </Show>
       </div>
     )
@@ -516,7 +537,6 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
             <div data-component="assistant-memory-badge">
               {language.t("chat.memory.badge.recalled")} ·{" "}
               {language.t("chat.memory.badge.items", { count: count(item()) })}
-              <Show when={verbose() && items(item()).length > 0}> · {items(item())[0]}</Show>
             </div>
           </Tooltip>
         )}
