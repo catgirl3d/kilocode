@@ -5,6 +5,7 @@ import * as fs from "fs/promises"
 import * as os from "os"
 import * as path from "path"
 import { ProjectRouteService } from "../../src/agent-manager/project/route"
+import { initSessionFavorites, sessionFavorites } from "../../src/session-favorites"
 import { handleSessionTagsMessage, initSessionTags, sessionTags } from "../../src/session-tags"
 import type { DiffViewerProvider } from "../../src/diff/DiffViewerProvider"
 import type { PRReviewCommentData } from "../../src/shared/review-comments"
@@ -892,19 +893,30 @@ describe("KiloProvider route integration", () => {
   })
 })
 
-function tagMemory(): Memento {
+function memory() {
   const data = new Map<string, unknown>()
+  let fail = false
   return {
-    get: <T>(key: string) => data.get(key) as T | undefined,
-    update: async (key: string, value: unknown) => {
-      data.set(key, value)
+    data,
+    fail: () => {
+      fail = true
     },
-    keys: () => [...data.keys()],
-    setKeysForSync: () => {},
-  } as unknown as Memento
+    state: {
+      get: <T>(key: string) => data.get(key) as T | undefined,
+      update: async (key: string, value: unknown) => {
+        if (fail) {
+          fail = false
+          throw new Error("write failed")
+        }
+        data.set(key, value)
+      },
+      keys: () => [...data.keys()],
+      setKeysForSync: () => {},
+    } as unknown as Memento,
+  }
 }
 
-function tagRoute(provider: KiloProvider, sent: unknown[]) {
+function providerRoute(provider: KiloProvider, sent: unknown[]) {
   let receive: ((message: Record<string, unknown>) => Promise<void>) | undefined
   const webview = {
     onDidReceiveMessage: (listener: (message: Record<string, unknown>) => Promise<void>) => {
@@ -937,7 +949,7 @@ function typeList(messages: unknown[]): unknown[] {
 
 describe("session tags", () => {
   it("routes without a ready CLI, broadcasts changes, and stops after provider disposal", async () => {
-    initSessionTags(tagMemory())
+    initSessionTags(memory().state)
     const { connection } = mockConnection()
     connection.getClient = () => {
       throw new Error("CLI is not ready")
@@ -946,8 +958,8 @@ describe("session tags", () => {
     const second = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
     const a: unknown[] = []
     const b: unknown[] = []
-    const send = tagRoute(first, a)
-    tagRoute(second, b)
+    const send = providerRoute(first, a)
+    providerRoute(second, b)
     let disposed = false
 
     try {
@@ -986,7 +998,7 @@ describe("session tags", () => {
   })
 
   it("cleans assignments only after a confirmed session deletion", async () => {
-    initSessionTags(tagMemory())
+    initSessionTags(memory().state)
     await handleSessionTagsMessage(
       {
         type: "sessionTagAction",
@@ -1042,7 +1054,7 @@ describe("session tags", () => {
   })
 
   it("preserves assignments when the backend rejects session deletion", async () => {
-    initSessionTags(tagMemory())
+    initSessionTags(memory().state)
     await handleSessionTagsMessage(
       {
         type: "sessionTagAction",
@@ -1077,6 +1089,284 @@ describe("session tags", () => {
       await internal.handleDeleteSession("ses-a")
       expect(sessionTags()).toEqual({ tags: [tag], sessions: { "ses-a": [tag.id] } })
       expect(sent).toContainEqual(expect.objectContaining({ type: "error" }))
+    } finally {
+      provider.dispose()
+    }
+  })
+})
+
+describe("session favorites", () => {
+  it("routes offline requests and mutations, broadcasts committed state, and unsubscribes on disposal", async () => {
+    const saved = memory()
+    initSessionFavorites(saved.state)
+    const { connection } = mockConnection()
+    connection.getClient = () => {
+      throw new Error("CLI is not ready")
+    }
+    const first = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const second = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const a: unknown[] = []
+    const b: unknown[] = []
+    const send = providerRoute(first, a)
+    providerRoute(second, b)
+    const posted = spyOn(second, "postMessage")
+    let disposed = false
+
+    try {
+      const state = first as unknown as { client: unknown; connectionState: string }
+      expect(state.client).toBeNull()
+      expect(state.connectionState).toBe("connecting")
+
+      await send({ type: "requestSessionFavorites" })
+      expect(a).toEqual([{ type: "sessionFavoritesLoaded", state: { sessions: [] } }])
+      const snapshot = a[0] as { state: { sessions: string[] } }
+      snapshot.state.sessions.push("ses-mutated")
+      expect(sessionFavorites()).toEqual({ sessions: [] })
+
+      a.length = 0
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "add",
+        action: { type: "set", sessionID: "ses-a", favorite: true },
+      })
+      expect(sessionFavorites()).toEqual({ sessions: ["ses-a"] })
+      expect(saved.data.get("sessionFavorites")).toEqual({ sessions: ["ses-a"] })
+      expect(a).toEqual([
+        { type: "sessionFavoritesLoaded", state: { sessions: ["ses-a"] } },
+        { type: "sessionFavoriteResult", requestID: "add", ok: true },
+      ])
+      expect(b).toEqual([{ type: "sessionFavoritesLoaded", state: { sessions: ["ses-a"] } }])
+
+      second.dispose()
+      disposed = true
+      posted.mockClear()
+      a.length = 0
+      b.length = 0
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "add-second",
+        action: { type: "set", sessionID: "ses-b", favorite: true },
+      })
+      expect(a).toEqual([
+        { type: "sessionFavoritesLoaded", state: { sessions: ["ses-a", "ses-b"] } },
+        { type: "sessionFavoriteResult", requestID: "add-second", ok: true },
+      ])
+      expect(b).toEqual([])
+      expect(posted).not.toHaveBeenCalled()
+    } finally {
+      first.dispose()
+      if (!disposed) second.dispose()
+      posted.mockRestore()
+    }
+  })
+
+  it("preserves state and replies with a storage error when a routed write fails", async () => {
+    const saved = memory()
+    initSessionFavorites(saved.state)
+    const { connection } = mockConnection()
+    connection.getClient = () => {
+      throw new Error("CLI is not ready")
+    }
+    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const sent: unknown[] = []
+    const send = providerRoute(provider, sent)
+    const error = spyOn(console, "error").mockImplementation(() => {})
+
+    try {
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "initial",
+        action: { type: "set", sessionID: "ses-a", favorite: true },
+      })
+      sent.length = 0
+      saved.fail()
+
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "failed",
+        action: { type: "set", sessionID: "ses-b", favorite: true },
+      })
+
+      expect(sessionFavorites()).toEqual({ sessions: ["ses-a"] })
+      expect(saved.data.get("sessionFavorites")).toEqual({ sessions: ["ses-a"] })
+      expect(sent).toEqual([{ type: "sessionFavoriteResult", requestID: "failed", ok: false, error: "storage" }])
+      expect(error).toHaveBeenCalled()
+    } finally {
+      error.mockRestore()
+      provider.dispose()
+    }
+  })
+
+  it("prunes only the deleted session after the backend confirms deletion", async () => {
+    const saved = memory()
+    initSessionFavorites(saved.state)
+    initSessionTags(memory().state)
+    const { connection } = mockConnection()
+    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const internal = provider as unknown as {
+      webview: vscode.Webview | null
+      handleDeleteSession: (sessionID: string) => Promise<void>
+    }
+    const client = connection.getClient() as unknown as {
+      backgroundProcess: { stopSession: (input: unknown) => Promise<void> }
+      session: { delete: (input: unknown, options: unknown) => Promise<unknown> }
+    }
+    client.backgroundProcess = { stopSession: async () => {} }
+    client.session.delete = async () => ({ data: {} })
+    const sent: unknown[] = []
+    const send = providerRoute(provider, sent)
+
+    try {
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "a",
+        action: { type: "set", sessionID: "ses-a", favorite: true },
+      })
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "b",
+        action: { type: "set", sessionID: "ses-b", favorite: true },
+      })
+      sent.length = 0
+
+      await internal.handleDeleteSession("ses-a")
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "drain",
+        // This valid no-op cannot re-add ses-b if deletion over-prunes the store.
+        action: { type: "set", sessionID: "ses-never-favorited", favorite: false },
+      })
+
+      // Assert the committed state before any later mutation can mask over-pruning.
+      expect(sessionFavorites()).toEqual({ sessions: ["ses-b"] })
+      expect(saved.data.get("sessionFavorites")).toEqual({ sessions: ["ses-b"] })
+      expect(sent).toContainEqual({ type: "sessionDeleted", sessionID: "ses-a" })
+      expect(sent).toContainEqual({ type: "sessionFavoritesLoaded", state: { sessions: ["ses-b"] } })
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("keeps favorites and the write queue usable when successful deletion cleanup cannot persist", async () => {
+    const saved = memory()
+    initSessionFavorites(saved.state)
+    initSessionTags(memory().state)
+    const { connection } = mockConnection()
+    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const internal = provider as unknown as {
+      webview: vscode.Webview | null
+      handleDeleteSession: (sessionID: string) => Promise<void>
+    }
+    const client = connection.getClient() as unknown as {
+      backgroundProcess: { stopSession: (input: unknown) => Promise<void> }
+      session: { delete: (input: unknown, options: unknown) => Promise<unknown> }
+    }
+    client.backgroundProcess = { stopSession: async () => {} }
+    client.session.delete = async () => ({ data: {} })
+    const sent: unknown[] = []
+    const send = providerRoute(provider, sent)
+    const error = spyOn(console, "error").mockImplementation(() => {})
+
+    try {
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "a",
+        action: { type: "set", sessionID: "ses-a", favorite: true },
+      })
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "b",
+        action: { type: "set", sessionID: "ses-b", favorite: true },
+      })
+      expect(sessionFavorites()).toEqual({ sessions: ["ses-a", "ses-b"] })
+      expect(saved.data.get("sessionFavorites")).toEqual({ sessions: ["ses-a", "ses-b"] })
+
+      sent.length = 0
+      saved.fail()
+      await internal.handleDeleteSession("ses-a")
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "drain",
+        // This no-op observes failed cleanup without changing A+B.
+        action: { type: "set", sessionID: "ses-never-favorited", favorite: false },
+      })
+
+      expect(sent).toContainEqual({ type: "sessionDeleted", sessionID: "ses-a" })
+      expect(sent).not.toContainEqual(expect.objectContaining({ type: "sessionFavoritesLoaded" }))
+      expect(sessionFavorites()).toEqual({ sessions: ["ses-a", "ses-b"] })
+      expect(saved.data.get("sessionFavorites")).toEqual({ sessions: ["ses-a", "ses-b"] })
+      expect(error).toHaveBeenCalledWith("[Kilo New] Failed to remove session favorites:", expect.any(Error))
+
+      sent.length = 0
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "c",
+        action: { type: "set", sessionID: "ses-c", favorite: true },
+      })
+      expect(sessionFavorites()).toEqual({ sessions: ["ses-a", "ses-b", "ses-c"] })
+      expect(saved.data.get("sessionFavorites")).toEqual({ sessions: ["ses-a", "ses-b", "ses-c"] })
+      expect(sent).toContainEqual({
+        type: "sessionFavoritesLoaded",
+        state: { sessions: ["ses-a", "ses-b", "ses-c"] },
+      })
+      expect(sent).toContainEqual({ type: "sessionFavoriteResult", requestID: "c", ok: true })
+    } finally {
+      error.mockRestore()
+      provider.dispose()
+    }
+  })
+
+  it("preserves favorites when the backend rejects a routed session deletion", async () => {
+    const saved = memory()
+    initSessionFavorites(saved.state)
+    const { connection } = mockConnection()
+    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const internal = provider as unknown as {
+      webview: vscode.Webview | null
+      handleDeleteSession: (sessionID: string) => Promise<void>
+    }
+    const client = connection.getClient() as unknown as {
+      backgroundProcess: { stopSession: (input: unknown) => Promise<void> }
+      session: { delete: (input: unknown, options: unknown) => Promise<unknown> }
+    }
+    client.backgroundProcess = { stopSession: async () => {} }
+    client.session.delete = async () => {
+      throw new Error("delete failed")
+    }
+    const sent: unknown[] = []
+    const send = providerRoute(provider, sent)
+
+    try {
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "a",
+        action: { type: "set", sessionID: "ses-a", favorite: true },
+      })
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "b",
+        action: { type: "set", sessionID: "ses-b", favorite: true },
+      })
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "drain",
+        action: { type: "set", sessionID: "ses-never-favorited", favorite: false },
+      })
+      sent.length = 0
+
+      await internal.handleDeleteSession("ses-a")
+      await send({
+        type: "sessionFavoriteAction",
+        requestID: "post-failure-drain",
+        // This no-op settles any wrongly queued cleanup without repairing A+B.
+        action: { type: "set", sessionID: "ses-never-favorited", favorite: false },
+      })
+
+      expect(sessionFavorites()).toEqual({ sessions: ["ses-a", "ses-b"] })
+      expect(saved.data.get("sessionFavorites")).toEqual({ sessions: ["ses-a", "ses-b"] })
+      expect(sent).toContainEqual(expect.objectContaining({ type: "error", message: "delete failed" }))
+      expect(sent).not.toContainEqual(expect.objectContaining({ type: "sessionDeleted" }))
+      expect(sent).not.toContainEqual(expect.objectContaining({ type: "sessionFavoritesLoaded" }))
     } finally {
       provider.dispose()
     }

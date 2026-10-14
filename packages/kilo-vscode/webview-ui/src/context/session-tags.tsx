@@ -1,6 +1,7 @@
 // fork_change - new file
 import { batch, createContext, createSignal, onCleanup, onMount, useContext, type ParentComponent } from "solid-js"
 import type { SessionTagAction, SessionTagError, SessionTagsState } from "../types/messages"
+import { requestSnapshot } from "./host-snapshot"
 import { useVSCode } from "./vscode"
 
 type Result = { ok: boolean; error?: SessionTagError }
@@ -34,7 +35,13 @@ export const SessionTagsProvider: ParentComponent = (props) => {
     resolve({ ok: message.ok, error: message.error })
   })
 
-  onMount(() => vscode.postMessage({ type: "requestSessionTags" }))
+  onMount(() =>
+    requestSnapshot({
+      request: () => vscode.postMessage({ type: "requestSessionTags" }),
+      ready,
+      onMessage: vscode.onMessage,
+    }),
+  )
   onCleanup(() => {
     disposed.value = true
     unsubscribe()
