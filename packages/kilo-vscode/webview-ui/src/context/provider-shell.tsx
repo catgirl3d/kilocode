@@ -4,12 +4,15 @@ import { RichProvider } from "./rich-provider"
 import { Session } from "./provider-session"
 import { MemoryProvider } from "./memory"
 import { SessionTagsProvider } from "./session-tags" // fork_change
+import { SessionFavoritesProvider } from "./session-favorites" // fork_change
 import { FeedbackProvider } from "./feedback"
 
 // fork_change start - preserve the shared webview session tag provider lifetime
 const Root: ParentComponent = (props) => (
   <Base content={RichProvider}>
-    <SessionTagsProvider>{props.children}</SessionTagsProvider>
+    <SessionFavoritesProvider>
+      <SessionTagsProvider>{props.children}</SessionTagsProvider>
+    </SessionFavoritesProvider>
   </Base>
 )
 // fork_change end
