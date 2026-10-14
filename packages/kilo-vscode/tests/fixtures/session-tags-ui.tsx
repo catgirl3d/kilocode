@@ -4,6 +4,7 @@ import { Window } from "happy-dom"
 import type {
   ExtensionMessage,
   SessionInfo,
+  SessionFavoritesState,
   SessionTagsState,
   WebviewMessage,
 } from "../../webview-ui/src/types/messages"
@@ -17,7 +18,12 @@ Object.defineProperty(window.document, "hasFocus", { value: () => true })
 const sent: WebviewMessage[] = []
 const writes: unknown[] = []
 const empty: SessionTagsState = { tags: [], sessions: {} }
+let favoriteState: SessionFavoritesState = { sessions: [] }
 let requests = 0
+let favoriteRequests = 0
+let favoriteResponse: (() => void) | undefined
+let favoriteWritesFail = false
+const favoriteReplies: Array<"defer" | "drop" | "send"> = ["defer"]
 const dispatch = (data: ExtensionMessage) => post(data)
 const api = {
   postMessage: (message: WebviewMessage) => {
@@ -26,9 +32,33 @@ const api = {
       dispatch({ type: "sessionColorsLoaded", colors: { "ses-home": "Red", "ses-tagged": "Green" } })
       return
     }
-    if (message.type !== "requestSessionTags") return
-    requests++
-    if (requests === 1) dispatch({ type: "sessionTagsLoaded", state: empty })
+    if (message.type === "requestSessionTags") {
+      requests++
+      if (requests === 1) dispatch({ type: "sessionTagsLoaded", state: empty })
+      return
+    }
+    if (message.type === "requestSessionFavorites") {
+      favoriteRequests++
+      const mode = favoriteReplies.shift() ?? "send"
+      const send = () => dispatch({ type: "sessionFavoritesLoaded", state: favoriteState })
+      if (mode === "defer") favoriteResponse = send
+      else if (mode === "send") send()
+      return
+    }
+    if (message.type !== "sessionFavoriteAction") return
+    if (favoriteWritesFail) {
+      dispatch({ type: "sessionFavoriteResult", requestID: message.requestID, ok: false, error: "storage" })
+      return
+    }
+    if (message.action.type !== "set") {
+      dispatch({ type: "sessionFavoriteResult", requestID: message.requestID, ok: false, error: "invalid" })
+      return
+    }
+    const sessions = favoriteState.sessions.filter((id) => id !== message.action.sessionID)
+    if (message.action.favorite) sessions.push(message.action.sessionID)
+    favoriteState = { sessions }
+    dispatch({ type: "sessionFavoritesLoaded", state: favoriteState })
+    dispatch({ type: "sessionFavoriteResult", requestID: message.requestID, ok: true })
   },
   getState: () => ({ sidebarSessionTabIDs: ["ses-home"], sidebarActiveSessionTabID: "ses-home" }),
   setState: (state: unknown) => writes.push(state),
@@ -68,6 +98,7 @@ const { createSignal, Show } = await import("solid-js")
 const { render } = await import("solid-js/web")
 const { StoryProviders, mockSessionValue, t } = await import("../../webview-ui/src/stories/StoryProviders")
 const { SessionTagsProvider, useSessionTags } = await import("../../webview-ui/src/context/session-tags")
+const { SessionFavoritesProvider, useSessionFavorites } = await import("../../webview-ui/src/context/session-favorites")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
 const { LocalTabsProvider } = await import("../../webview-ui/src/context/local-tabs")
 const SessionList = (await import("../../webview-ui/src/components/history/SessionList")).default
@@ -85,6 +116,7 @@ const items: SessionInfo[] = [
 ]
 const [active, setActive] = createSignal("ses-home")
 const [secondary, setSecondary] = createSignal(false)
+const [tertiary, setTertiary] = createSignal(false)
 const [sessions] = createSignal(items)
 const selected: string[] = []
 const renamed: string[] = []
@@ -122,6 +154,9 @@ const draft = {
 
 let tags: ReturnType<typeof useSessionTags> | undefined
 let unloaded: ReturnType<typeof useSessionTags> | undefined
+let favorites: ReturnType<typeof useSessionFavorites> | undefined
+let unloadedFavorites: ReturnType<typeof useSessionFavorites> | undefined
+let tertiaryFavorites: ReturnType<typeof useSessionFavorites> | undefined
 const Probe = () => {
   tags = useSessionTags()
   return <output data-testid="tags-ready">{String(tags.ready())}</output>
@@ -130,18 +165,39 @@ const UnloadedProbe = () => {
   unloaded = useSessionTags()
   return <output data-testid="unloaded-ready">{String(unloaded.ready())}</output>
 }
+const FavoriteProbe = () => {
+  favorites = useSessionFavorites()
+  return <output data-testid="favorites-ready">{String(favorites.ready())}</output>
+}
+const UnloadedFavoriteProbe = () => {
+  unloadedFavorites = useSessionFavorites()
+  return <output data-testid="unloaded-favorites-ready">{String(unloadedFavorites.ready())}</output>
+}
+const TertiaryFavoriteProbe = () => {
+  tertiaryFavorites = useSessionFavorites()
+  return <output data-testid="tertiary-favorites-ready">{String(tertiaryFavorites.ready())}</output>
+}
 
 const root = document.createElement("div")
 document.body.append(root)
 const dispose = render(
   () => (
-    <StoryProviders sessionID="ses-home" sessionTags={null} failTags={false} noPadding>
+    <StoryProviders sessionID="ses-home" sessionTags={null} sessionFavorites={null} failTags={false} noPadding>
       <SessionContext.Provider value={session as never}>
         <Probe />
+        <FavoriteProbe />
         <Show when={secondary()}>
           <SessionTagsProvider>
             <UnloadedProbe />
           </SessionTagsProvider>
+          <SessionFavoritesProvider>
+            <UnloadedFavoriteProbe />
+          </SessionFavoritesProvider>
+        </Show>
+        <Show when={tertiary()}>
+          <SessionFavoritesProvider>
+            <TertiaryFavoriteProbe />
+          </SessionFavoritesProvider>
         </Show>
         <LocalTabsProvider>
           <section data-testid="history">
@@ -219,6 +275,36 @@ function manage(id: string) {
   return button
 }
 
+function favoriteButton(id: string, scope = "history") {
+  const row = root.querySelector<HTMLElement>(`[data-testid="${scope}"] [data-slot="list-item"][data-key="${id}"]`)
+  assert(row, `${scope} row ${id} is mounted`)
+  const button = row.parentElement?.querySelector<HTMLButtonElement>(
+    'button[data-slot="session-row-action"].session-favorite-button',
+  )
+  assert(button, `${scope} row ${id} has a favorite action`)
+  return button
+}
+
+function groupHeaders(scope: string) {
+  return [...root.querySelectorAll<HTMLElement>(`[data-testid="${scope}"] [data-slot="list-header"]`)].map((item) =>
+    item.textContent?.trim(),
+  )
+}
+
+function groupItems(scope: string) {
+  return [...root.querySelectorAll<HTMLElement>(`[data-testid="${scope}"] [data-slot="list-group"]`)].map((group) =>
+    [...group.querySelectorAll<HTMLElement>('[data-slot="list-item"][data-key]')].map((item) => item.dataset.key),
+  )
+}
+
+function filterTag(name: string) {
+  const button = root.querySelector<HTMLButtonElement>(
+    `[data-testid="history"] [data-slot="session-tag-filters"] button[aria-label="${name}"]`,
+  )
+  assert(button, `the history filter exposes ${name}`)
+  return button
+}
+
 function dialog() {
   const value = document.querySelector<HTMLElement>('[role="dialog"]')
   assert(value, "tag editor is open")
@@ -253,14 +339,42 @@ assert(tags, "the real provider is available to its consumers")
 assert.equal(requests, 1, "the real provider requests one host snapshot")
 assert.equal(tags.ready(), true, "the provider catches a snapshot delivered synchronously with its request")
 assert.deepEqual(tags.state(), empty, "a loaded empty catalog differs from an unloaded catalog")
+assert(favorites, "the real favorites provider is available to its consumers")
+assert.equal(favoriteRequests, 1, "the real favorites provider requests one host snapshot")
+await settle()
+assert.equal(favoriteButton("ses-home").disabled, true, "the favorite action stays disabled until its snapshot arrives")
+favoriteResponse?.()
+await settle()
+assert.equal(favorites.ready(), true, "the favorites provider accepts its delayed snapshot")
+assert.equal(favoriteButton("ses-home").disabled, false, "the favorite action enables after the snapshot arrives")
 setSecondary(true)
 await settle()
 assert(unloaded, "the nested real provider is available to its consumer")
 assert.equal(requests, 2, "the second provider requests one host snapshot")
 assert.equal(unloaded.ready(), false, "the second provider remains unloaded until its host response")
 assert.deepEqual(unloaded.state(), empty, "an unloaded provider still exposes the empty initial value")
+assert(unloadedFavorites, "the nested favorites provider is available to its consumer")
+assert.equal(favoriteRequests, 2, "the second favorites provider requests one host snapshot")
+assert.equal(unloadedFavorites.ready(), true, "an early synchronous favorites snapshot is not lost")
 response(empty)
 assert.equal(unloaded.ready(), true, "an empty host snapshot marks the provider ready")
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"]'),
+  null,
+  "an empty loaded catalog does not render tag filters",
+)
+
+favoriteReplies.push("drop")
+setTertiary(true)
+await settle()
+assert(tertiaryFavorites, "the retry probe is available to its consumer")
+assert.equal(favoriteRequests, 3, "the third favorites provider requests one host snapshot")
+assert.equal(tertiaryFavorites.ready(), false, "a lost snapshot response leaves the provider unloaded")
+dispatch({ type: "extensionDataReady" })
+await settle()
+assert.equal(favoriteRequests, 4, "extensionDataReady retries the lost snapshot request")
+assert.equal(tertiaryFavorites.ready(), true, "the retried request loads the pending snapshot")
+assert.equal(requests, 2, "ready tag providers ignore extensionDataReady")
 
 const initial: SessionTagsState = {
   tags: [
@@ -277,10 +391,206 @@ const initial: SessionTagsState = {
 }
 response(initial)
 await settle()
+const filterRoot = root.querySelector<HTMLElement>('[data-testid="history"] [data-slot="session-tag-filters"]')
+assert(filterRoot, "a non-empty loaded catalog renders the history tag filters")
+const ordered = [
+  ...root.querySelectorAll<HTMLElement>(
+    '[data-testid="history"] [data-slot="list-search-wrapper"], [data-testid="history"] [data-slot="session-tag-filters"], [data-testid="history"] [data-slot="list-scroll"]',
+  ),
+].map((el) => el.getAttribute("data-slot"))
+assert.deepEqual(
+  ordered,
+  ["list-search-wrapper", "session-tag-filters", "list-scroll"],
+  "the search field sits above the tag filters and the tag filters above the list",
+)
+assert.equal(filterRoot.getAttribute("aria-label"), "Tags", "the filter row reuses the tags label")
+const filterButtons = [...filterRoot.querySelectorAll<HTMLButtonElement>("button.session-tag-filter")]
+assert.equal(filterButtons.length, 5, "the filter row renders every tag assigned to a current session")
+assert.equal(
+  filterButtons.every((button) => button.tagName === "BUTTON"),
+  true,
+  "tag filters are actual buttons rather than passive chip elements",
+)
+assert.equal(filterButtons[0]?.getAttribute("aria-label"), "Urgent")
+assert.equal(filterButtons[0]?.getAttribute("aria-pressed"), "false")
+assert.equal(filterButtons[0]?.style.getPropertyValue("--session-tag-color"), "#e5534b")
+assert.equal(
+  root.querySelector('[data-testid="welcome"] [data-slot="session-tag-filters"]'),
+  null,
+  "tag filters do not enter the welcome screen",
+)
+assert.equal(
+  root.querySelector('[data-testid="header"] [data-slot="session-tag-filters"]'),
+  null,
+  "tag filters do not enter the task header",
+)
+assert.equal(
+  root.querySelector('[data-testid="tabs"] [data-slot="session-tag-filters"]'),
+  null,
+  "tag filters do not enter the tab strip",
+)
+const selectToggle = root.querySelector<HTMLButtonElement>('[data-testid="history"] .session-select-toggle')
+assert(selectToggle, "history exposes the bulk-select toggle")
+selectToggle.click()
+await settle()
+assert(
+  root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"]'),
+  "tag filters remain visible in bulk-select mode",
+)
+const cancelSelect = root.querySelector<HTMLButtonElement>('[data-testid="history"] .session-select-bar button')
+assert(cancelSelect, "bulk-select mode exposes its cancel action")
+cancelSelect.click()
+await settle()
+
+filterTag("Urgent").click()
+await settle()
+assert.equal(filterTag("Urgent").getAttribute("aria-pressed"), "true")
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-home", "ses-tagged"],
+  "one selected tag keeps only sessions assigned to it",
+)
+filterTag("Review").click()
+await settle()
+assert.deepEqual(groupItems("history").flat(), ["ses-home", "ses-tagged"], "multiple selected tags use OR semantics")
+filterTag("Urgent").click()
+await settle()
+assert.deepEqual(groupItems("history").flat(), ["ses-home"], "removing one tag keeps the other selected tag active")
+filterTag("Review").click()
+await settle()
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-home", "ses-tagged", "ses-plain"],
+  "removing every tag restores the complete session list",
+)
+
+const searchInput = filter("Check release notes")
+await settle()
+assert.deepEqual(groupItems("history").flat(), ["ses-plain"], "text search still finds the unfiltered session")
+filterTag("Urgent").click()
+await settle()
+assert.deepEqual(groupItems("history").flat(), [], "tag filtering runs before the List text search")
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
+  "No sessions match the selected tags.",
+  "an active tag filter uses the dedicated empty result message",
+)
+filterTag("Urgent").click()
+searchInput.value = ""
+searchInput.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }))
+searchInput.dispatchEvent(new Event("change", { bubbles: true }))
+await settle()
+assert.deepEqual(groupItems("history").flat(), ["ses-home", "ses-tagged", "ses-plain"])
+
+filterTag("Urgent").click()
+await settle()
+response({ tags: initial.tags.filter((tag) => tag.id !== "tag-urgent"), sessions: initial.sessions })
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"] button[aria-label="Urgent"]'),
+  null,
+  "deleting a catalog tag removes its filter chip",
+)
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-home", "ses-tagged", "ses-plain"],
+  "deleting an active filter tag restores the list without breaking it",
+)
+response(initial)
+await settle()
+assert.equal(
+  filterTag("Urgent").getAttribute("aria-pressed"),
+  "false",
+  "a recreated tag is not selected after deletion",
+)
+
+response({
+  tags: [...initial.tags, { id: "tag-idle", name: "Idle", color: "Cyan" }],
+  sessions: initial.sessions,
+})
+await settle()
+const usedFilterRoot = root.querySelector<HTMLElement>('[data-testid="history"] [data-slot="session-tag-filters"]')
+assert(usedFilterRoot, "tags assigned to current sessions keep the filter row visible")
+assert.equal(
+  usedFilterRoot.querySelectorAll("button.session-tag-filter").length,
+  5,
+  "an unused catalog tag does not increase the filter row",
+)
+assert.equal(
+  usedFilterRoot.querySelector('button.session-tag-filter[aria-label="Idle"]'),
+  null,
+  "an unused catalog tag is absent from the filter row",
+)
+
+response({ tags: initial.tags, sessions: {} })
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"]'),
+  null,
+  "a project without tags does not render the filter row",
+)
+
+response(initial)
+await settle()
+filterTag("Urgent").click()
+await settle()
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-home", "ses-tagged"],
+  "the selected tag filters the current session list",
+)
+response({ tags: initial.tags, sessions: { "ses-home": ["tag-review"] } })
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"] button[aria-label="Urgent"]'),
+  null,
+  "a tag with no remaining session assignment leaves the filter row",
+)
+assert.equal(filterTag("Review").getAttribute("aria-pressed"), "false", "the hidden tag selection is cleared")
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-home", "ses-tagged", "ses-plain"],
+  "removing the last assignment of a selected tag restores the session list",
+)
+response(initial)
+await settle()
+
 assert.deepEqual(
   tags.forSession("ses-home").map((tag) => tag.name),
   ["Urgent", "Review", "Follow-up", "Очень длинное русское название очереди"],
 )
+const initialFavorite = favoriteButton("ses-home")
+assert.equal(initialFavorite.getAttribute("data-icon"), "star", "an unmarked session shows the empty star")
+assert.equal(initialFavorite.getAttribute("aria-pressed"), "false", "an unmarked session is not pressed")
+assert.equal(initialFavorite.getAttribute("data-slot"), "session-row-action", "the star uses the history action slot")
+
+favoriteWritesFail = true
+initialFavorite.click()
+await settle()
+const toastTitles = [...document.querySelectorAll<HTMLElement>('[data-component="toast"] [data-slot="toast-title"]')]
+assert.equal(
+  toastTitles.at(-1)?.textContent?.trim(),
+  "Could not update favorites. Try again.",
+  "a failed favorite write shows an error toast",
+)
+assert.deepEqual(favorites.state(), { sessions: [] }, "a failed favorite write keeps provider state unchanged")
+assert.equal(favoriteButton("ses-home").getAttribute("data-icon"), "star", "a failed favorite write keeps the star")
+favoriteWritesFail = false
+
+const favoriteActions = () => sent.filter((message) => message.type === "sessionFavoriteAction").length
+const actionsBefore = favoriteActions()
+favoriteButton("ses-home").click()
+favoriteButton("ses-home").click()
+await settle()
+assert.equal(
+  favoriteActions() - actionsBefore,
+  1,
+  "a second click while the first favorite mutation is in flight is ignored",
+)
+assert.deepEqual(favorites.state(), { sessions: ["ses-home"] }, "the guarded click still applies the first toggle")
+favoriteButton("ses-home").click()
+await settle()
+assert.deepEqual(favorites.state(), { sessions: [] }, "after the guard clears, the next click toggles the favorite off")
 
 const welcome = root.querySelector<HTMLElement>('[data-testid="welcome"]')
 assert(welcome)
@@ -333,6 +643,37 @@ assert.equal(
   "the shared store updates history stripes reactively",
 )
 
+favoriteButton("ses-tagged").click()
+await settle()
+assert.deepEqual(favorites.state(), { sessions: ["ses-tagged"] })
+assert.equal(favoriteButton("ses-tagged").getAttribute("data-icon"), "star-filled")
+assert.equal(favoriteButton("ses-tagged").getAttribute("aria-pressed"), "true")
+assert.equal(groupHeaders("history")[0], "Favorites", "the favorites group is rendered first")
+assert.deepEqual(groupItems("history")[0], ["ses-tagged"], "favorites are not duplicated into a date group")
+filterTag("Urgent").click()
+await settle()
+assert.equal(groupHeaders("history")[0], "Favorites", "favorites stay first after tag filtering")
+assert.deepEqual(groupItems("history")[0], ["ses-tagged"], "the matching favorite remains in the favorites group")
+assert.equal(item("ses-home") !== null, true, "the other session with the selected tag remains visible")
+filterTag("Urgent").click()
+filterTag("Review").click()
+await settle()
+assert.equal(item("ses-tagged"), null, "a favorite without the selected tag is filtered out before grouping")
+assert.equal(groupHeaders("history").includes("Favorites"), false, "an empty favorites group is not rendered")
+filterTag("Review").click()
+await settle()
+assert.equal(welcome.querySelector(".session-favorite-button"), null, "welcome sessions have no favorite action")
+assert.equal(root.querySelector('[data-testid="header"] .session-favorite-button'), null)
+assert.equal(root.querySelector('[data-testid="tabs"] .session-favorite-button'), null)
+
+favoriteButton("ses-tagged").click()
+await settle()
+assert.deepEqual(favorites.state(), { sessions: [] })
+assert.equal(favoriteButton("ses-tagged").getAttribute("data-icon"), "star")
+assert.equal(favoriteButton("ses-tagged").getAttribute("aria-pressed"), "false")
+assert.equal(groupHeaders("history")[0], "Today", "removing a favorite returns it to its date group")
+assert.equal(groupItems("history")[0]?.includes("ses-tagged"), true)
+
 function rowTrigger(id: string, scope: string) {
   const row = root.querySelector<HTMLElement>(`[data-testid="${scope}"] [data-slot="list-item"][data-key="${id}"]`)
   assert(row, `${scope} row ${id} is mounted`)
@@ -344,7 +685,9 @@ function rowTrigger(id: string, scope: string) {
 function openRowMenu(id: string, scope: string) {
   const before = new Set(document.querySelectorAll<HTMLElement>(".session-list-menu"))
   rowTrigger(id, scope).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
-  return () => [...document.querySelectorAll<HTMLElement>(".session-list-menu")].find((menu) => !before.has(menu))
+  return () =>
+    [...document.querySelectorAll<HTMLElement>(".session-list-menu")].find((menu) => !before.has(menu)) ??
+    document.querySelector<HTMLElement>('.session-list-menu[data-expanded="true"]')
 }
 
 function purpleSwatch(menu: HTMLElement) {
@@ -362,8 +705,31 @@ assert.equal(
   SECTION_COLORS.length + 1,
   "the menu exposes the full palette plus the clear entry",
 )
-assert(purpleSwatch(historyMenu), "the menu offers the shared color palette")
-purpleSwatch(historyMenu)!.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
+const addFavorite = [...historyMenu.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]')].find(
+  (item) => item.textContent?.trim() === "Add to favorites",
+)
+assert(addFavorite, "an unmarked session offers Add to favorites")
+addFavorite.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
+await settle()
+assert.deepEqual(favorites.state(), { sessions: ["ses-plain"] })
+
+const findRemoveMenu = openRowMenu("ses-plain", "history")
+await settle()
+const removeMenu = findRemoveMenu()
+assert(removeMenu, "the history menu remains available for a marked session")
+const removeFavorite = [...removeMenu.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]')].find(
+  (item) => item.textContent?.trim() === "Remove from favorites",
+)
+assert(removeFavorite, "a marked session offers Remove from favorites")
+removeFavorite.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
+await settle()
+assert.deepEqual(favorites.state(), { sessions: [] })
+const findColorMenu = openRowMenu("ses-plain", "history")
+await settle()
+const colorMenu = findColorMenu()
+assert(colorMenu, "the history menu remains available for colors")
+assert(purpleSwatch(colorMenu), "the menu offers the shared color palette")
+purpleSwatch(colorMenu)!.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
 await settle()
 const colorWrites = sent.filter((message) => message.type === "setSessionColor")
 assert.deepEqual(colorWrites.at(-1), { type: "setSessionColor", sessionId: "ses-plain", color: "Purple" })
@@ -758,8 +1124,16 @@ assert.equal(editorHome.hasAttribute("data-closed"), true, "deleting the edited 
 const snapshot = tags.state()
 const pending = tags.mutate({ type: "assign", sessionID: "ses-home", id: "tag-review", assigned: false })
 assert(sent.at(-1)?.type === "sessionTagAction")
+let settled = false
+let result: Awaited<typeof pending> | undefined
+void pending.then((value) => {
+  settled = true
+  result = value
+})
 dispose()
-assert.equal((await pending).ok, false, "disposing the provider settles pending mutations")
+await settle()
+assert.equal(settled, true, "disposing the provider settles pending mutations")
+assert.deepEqual(result, { ok: false }, "disposing the provider resolves pending mutations as rejected")
 dispatch({ type: "sessionTagsLoaded", state: empty })
 assert.deepEqual(tags.state(), snapshot, "disposed providers ignore later snapshots")
 assert.equal(root.childNodes.length, 0, "disposing the tree removes the real UI")
