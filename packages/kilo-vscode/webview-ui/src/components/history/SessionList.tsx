@@ -5,20 +5,35 @@
  * Header/back button are owned by the parent HistoryView.
  */
 
-import { Component, Show, createMemo, createSignal, onMount, type Accessor, type JSX } from "solid-js"
+// fork_change start - reactive tag filter imports
+import {
+  Component,
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  onMount,
+  type Accessor,
+  type JSX,
+} from "solid-js"
+// fork_change end
 import { List } from "@kilocode/kilo-ui/list"
 import { ContextMenu } from "@kilocode/kilo-ui/context-menu"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox" // fork_change
+import { showToast } from "@kilocode/kilo-ui/toast" // fork_change
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useSession } from "../../context/session"
 import { rootSessions } from "../../context/session-utils" // fork_change
 import { useLanguage } from "../../context/language"
 import { useSessionTags } from "../../context/session-tags" // fork_change
+import { useSessionFavorites } from "../../context/session-favorites" // fork_change
 import { useLocalTabs } from "../../context/local-tabs" // fork_change
 import { ColorMenuItems } from "../../../agent-manager/color-menu" // fork_change
+import { colorCss } from "../../../agent-manager/section-colors" // fork_change
 import { formatRelativeDate } from "../../utils/date"
 import { DATE_GROUP_KEYS, dateGroupKey } from "../../utils/date" // fork_change
 import type { SessionInfo } from "../../types/messages"
@@ -44,6 +59,7 @@ const SessionList: Component<SessionListProps> = (props) => {
   // fork_change start - wire session tags and colors into the history view
   const tabs = useLocalTabs()
   const tags = useSessionTags()
+  const favorites = useSessionFavorites()
   const openTags = useSessionTagsDialog()
   const colorOf = (id: string) => props.sessionColor?.(id) ?? tabs?.sessionColor(id)
   const setColor = (id: string, color: string | null) => (props.setSessionColor ?? tabs?.setSessionColor)?.(id, color)
@@ -52,23 +68,83 @@ const SessionList: Component<SessionListProps> = (props) => {
   const [renamingId, setRenamingId] = createSignal<string | null>(null)
   const [pendingRenameId, setPendingRenameId] = createSignal<string | null>(null)
   const [notice, setNotice] = createSignal("")
+  // fork_change start - selected history tag filters
+  const [chosenTags, setChosenTags] = createSignal<Set<string>>(new Set())
+  // fork_change end
   let seq = 0
 
-  // fork_change start - derive tag search values without mutating SessionInfo
+  // fork_change start - derive tag search and favorite values without mutating SessionInfo
   const tagged = createMemo(() =>
-    rootSessions(session.sessions()).map((item) => ({
-      ...item,
-      tags: tags
-        .forSession(item.id)
-        .map((tag) => tag.name)
-        .join(" "),
-    })),
+    rootSessions(session.sessions()).map((item) => {
+      const sessionTags = tags.forSession(item.id)
+      return {
+        ...item,
+        tags: sessionTags.map((tag) => tag.name).join(" "),
+        tagIds: sessionTags.map((tag) => tag.id),
+        favorite: favorites.isFavorite(item.id),
+      }
+    }),
   )
   // fork_change end
-  const items = createMemo(() => {
+
+  // fork_change start - scope tag filters and sessions to the current session list
+  const base = createMemo(() => {
     const ids = props.sessionIds?.()
-    return ids ? tagged().filter((item) => ids.has(item.id)) : tagged() // fork_change
+    return ids ? tagged().filter((item) => ids.has(item.id)) : tagged()
   })
+  const filterTags = createMemo(() => {
+    const ids = new Set(base().flatMap((item) => item.tagIds))
+    return tags.state().tags.filter((tag) => ids.has(tag.id))
+  })
+  const items = createMemo(() => {
+    const source = base()
+    const chosen = chosenTags()
+    if (chosen.size === 0) return source
+    return source.filter((item) => item.tagIds.some((id) => chosen.has(id)))
+  })
+  // fork_change end
+
+  // fork_change start - keep tag filters valid when the visible tag catalog changes
+  createEffect(() => {
+    const ids = new Set(filterTags().map((tag) => tag.id))
+    setChosenTags((current) => {
+      const next = new Set([...current].filter((id) => ids.has(id)))
+      return next.size === current.size ? current : next
+    })
+  })
+
+  function toggleTag(id: string) {
+    setChosenTags((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  // fork_change end
+
+  // fork_change start - single favorite toggle that surfaces write failures
+  const [pending, setPending] = createSignal<ReadonlySet<string>>(new Set())
+
+  function toggleFavorite(item: SessionInfo) {
+    if (pending().has(item.id)) return
+    const favorite = !favorites.isFavorite(item.id)
+    setPending((current) => new Set(current).add(item.id))
+    void favorites
+      .mutate({ type: "set", sessionID: item.id, favorite })
+      .then((result) => {
+        if (result.ok) return
+        showToast({ variant: "error", title: language.t("session.favorites.error") })
+      })
+      .finally(() => {
+        setPending((current) => {
+          const next = new Set(current)
+          next.delete(item.id)
+          return next
+        })
+      })
+  }
+  // fork_change end
 
   onMount(() => {
     console.log("[Kilo New] SessionList mounted, loading sessions")
@@ -76,7 +152,7 @@ const SessionList: Component<SessionListProps> = (props) => {
   })
 
   // fork_change start - current selection must use the derived List item
-  const currentSession = (): (SessionInfo & { tags: string }) | undefined => {
+  const currentSession = (): (SessionInfo & { tags: string; tagIds: string[]; favorite: boolean }) | undefined => {
     // fork_change end
     const id = session.currentSessionID()
     return items().find((s) => s.id === id)
@@ -239,6 +315,25 @@ const SessionList: Component<SessionListProps> = (props) => {
                   onClick={(event) => openTags(item.id, event.currentTarget)}
                 />
                 {/* fork_change end */}
+                {/* fork_change start - toggle local session favorites from history rows */}
+                <IconButton
+                  data-slot="session-row-action"
+                  class="session-favorite-button"
+                  icon={favorites.isFavorite(item.id) ? "star-filled" : "star"}
+                  size="small"
+                  variant="ghost"
+                  disabled={!favorites.ready() || pending().has(item.id)}
+                  aria-pressed={favorites.isFavorite(item.id)}
+                  aria-label={label(
+                    language.t(favorites.isFavorite(item.id) ? "session.favorites.remove" : "session.favorites.add"),
+                    item,
+                  )}
+                  title={language.t(
+                    favorites.isFavorite(item.id) ? "session.favorites.remove" : "session.favorites.add",
+                  )}
+                  onClick={() => toggleFavorite(item)}
+                />
+                {/* fork_change end */}
                 <IconButton
                   data-slot="session-row-action"
                   icon="trash"
@@ -277,6 +372,16 @@ const SessionList: Component<SessionListProps> = (props) => {
               <ContextMenu.ItemLabel>{language.t("session.tags.manage")}</ContextMenu.ItemLabel>
             </ContextMenu.Item>
             {/* fork_change end */}
+            {/* fork_change start - toggle local session favorites from the row menu */}
+            <ContextMenu.Item
+              disabled={!favorites.ready() || pending().has(item.id)}
+              onSelect={() => toggleFavorite(item)}
+            >
+              <ContextMenu.ItemLabel>
+                {language.t(favorites.isFavorite(item.id) ? "session.favorites.remove" : "session.favorites.add")}
+              </ContextMenu.ItemLabel>
+            </ContextMenu.Item>
+            {/* fork_change end */}
             {/* fork_change start - assign a session color from the row menu (local sessions only) */}
             <Show when={(props.setSessionColor ?? tabs?.setSessionColor) && !item.id.startsWith("cloud:")}>
               <ContextMenu.Separator />
@@ -299,7 +404,7 @@ const SessionList: Component<SessionListProps> = (props) => {
 
   return (
     <div class="session-list">
-      <List<SessionInfo & { tags: string }> /* fork_change */
+      <List<SessionInfo & { tags: string; tagIds: string[]; favorite: boolean }> /* fork_change */
         items={items()}
         key={(s) => s.id}
         filterKeys={["title", "tags"]} /* fork_change - include session tags in local search and rows */
@@ -343,11 +448,42 @@ const SessionList: Component<SessionListProps> = (props) => {
               </div>
             </Show>
           ),
+          below: (
+            <Show when={tags.ready() && filterTags().length > 0}>
+              <div data-slot="session-tag-filters" role="group" aria-label={language.t("session.tags.title")}>
+                <For each={filterTags()}>
+                  {(tag) => (
+                    <Button
+                      type="button"
+                      class="session-tag-filter"
+                      size="small"
+                      variant="ghost"
+                      aria-label={tag.name}
+                      aria-pressed={chosenTags().has(tag.id)}
+                      style={{ "--session-tag-color": colorCss(tag.color) ?? "var(--text-weak)" } as JSX.CSSProperties}
+                      onClick={() => toggleTag(tag.id)}
+                    >
+                      <span data-slot="session-tag-filter-name">{tag.name}</span>
+                    </Button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          ),
         }}
         /* fork_change end */
-        emptyMessage={language.t("session.empty")}
-        groupBy={(s) => language.t(dateGroupKey(s.updatedAt))}
+        /* fork_change start - dynamic empty message for tag filtering */
+        emptyMessage={language.t(chosenTags().size > 0 ? "session.tags.filter.empty" : "session.empty")}
+        /* fork_change end */
+        /* fork_change start - group favorites before date groups */
+        groupBy={(s) => (s.favorite ? language.t("session.favorites.group") : language.t(dateGroupKey(s.updatedAt)))}
+        /* fork_change end */
         sortGroupsBy={(a, b) => {
+          /* fork_change start - sort the favorites group before date groups */
+          const favorite = language.t("session.favorites.group")
+          if (a.category === favorite) return b.category === favorite ? 0 : -1
+          if (b.category === favorite) return 1
+          /* fork_change end */
           const rank = Object.fromEntries(DATE_GROUP_KEYS.map((k, i) => [language.t(k), i]))
           return (rank[a.category] ?? 99) - (rank[b.category] ?? 99)
         }}

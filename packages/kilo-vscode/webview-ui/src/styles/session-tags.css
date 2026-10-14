@@ -10,6 +10,51 @@
   white-space: nowrap;
 }
 
+/* fork_change start - history tag filter chips */
+.session-list [data-slot="session-tag-filters"] {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 0 4px 6px;
+}
+
+.session-list .session-tag-filter {
+  justify-content: flex-start !important;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  border-color: var(--vscode-contrastBorder, color-mix(in srgb, var(--session-tag-color) 55%, transparent)) !important;
+  background: color-mix(in srgb, var(--session-tag-color) 12%, var(--surface-raised-base)) !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-list .session-tag-filter::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  margin-inline-end: 5px;
+  border-radius: 50%;
+  background: var(--session-tag-color);
+}
+
+.session-list .session-tag-filter > [data-slot="session-tag-filter-name"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-list .session-tag-filter[aria-pressed="true"] {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+/* fork_change end */
+
 .session-tag-chip {
   justify-content: flex-start !important;
   flex: 0 1 auto;

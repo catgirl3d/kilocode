@@ -47,6 +47,7 @@ import { showAuthUrl } from "./kilo-provider/mcp-oauth"
 // fork_change start
 import { initSessionColors } from "./session-colors"
 import { initSessionTags } from "./session-tags"
+import { initSessionFavorites } from "./session-favorites"
 // fork_change end
 
 let agentManager: AgentManagerProvider | undefined
@@ -72,6 +73,7 @@ export async function activate(context: vscode.ExtensionContext) {
   shuttingDown = false
   initSessionColors(context.globalState) // fork_change
   initSessionTags(context.globalState) // fork_change
+  initSessionFavorites(context.globalState) // fork_change
 
   // Drives the "!kilo-code.new.isCursor" guards on the native view/title and
   // editor/title menu contributions — see isCursorHost() for why.
