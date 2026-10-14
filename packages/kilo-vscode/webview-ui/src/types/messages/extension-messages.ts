@@ -16,6 +16,8 @@ import type {
   // fork_change start - local session tag contracts
   SessionTagError,
   SessionTagsState,
+  SessionFavoriteError,
+  SessionFavoritesState,
   // fork_change end
   SessionUpdate,
 } from "./sessions"
@@ -1385,6 +1387,18 @@ export interface SessionTagResultMessage {
   ok: boolean
   error?: SessionTagError
 }
+
+export interface SessionFavoritesLoadedMessage {
+  type: "sessionFavoritesLoaded"
+  state: SessionFavoritesState
+}
+
+export interface SessionFavoriteResultMessage {
+  type: "sessionFavoriteResult"
+  requestID: string
+  ok: boolean
+  error?: SessionFavoriteError
+}
 // fork_change end
 export interface AgentManagerBranchesMessage {
   type: "agentManager.branches"
@@ -2203,6 +2217,8 @@ export type ExtensionMessage =
   // fork_change start - local session metadata
   | SessionTagsLoadedMessage
   | SessionTagResultMessage
+  | SessionFavoritesLoadedMessage
+  | SessionFavoriteResultMessage
   // fork_change end
   | LanguageChangedMessage
   | ContinueInWorktreeProgressMessage

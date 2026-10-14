@@ -92,6 +92,7 @@ import { childID } from "./kilo-provider/task-session"
 // fork_change start
 import { onSessionColorsChanged, sessionColors, setSessionColor } from "./session-colors"
 import { onSessionTagsChanged, removeSessionTags } from "./session-tags"
+import { onSessionFavoritesChanged, removeSessionFavorites } from "./session-favorites"
 // fork_change end
 import { VisibleTaskStreams } from "./kilo-provider/visible-task-streams"
 import { handleNetworkEvent, clearNetworkWaits } from "./kilo-provider/network"
@@ -587,6 +588,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private unsubscribeSandboxPreference: (() => void) | null = null
   private unsubscribeSessionColors: (() => void) | null = null // fork_change
   private unsubscribeSessionTags: (() => void) | null = null // fork_change
+  private unsubscribeSessionFavorites: (() => void) | null = null // fork_change
   private initConnectionPromise: Promise<void> | null = null
   private webviewMessageDisposable: vscode.Disposable | null = null
   private autocompleteConfigDisposable: vscode.Disposable | null = null
@@ -683,6 +685,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     })
     this.unsubscribeSessionTags = onSessionTagsChanged((state) => {
       this.postMessage({ type: "sessionTagsLoaded", state })
+    })
+    this.unsubscribeSessionFavorites = onSessionFavoritesChanged((state) => {
+      this.postMessage({ type: "sessionFavoritesLoaded", state })
     })
     // fork_change end
     this.latch = watchRestore({
@@ -2847,6 +2852,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private pruneDeletedSession(sessionID: string): void {
     this.removedSessionIds.add(sessionID)
     void removeSessionTags(sessionID) // fork_change
+    void removeSessionFavorites(sessionID) // fork_change
     this.trackedSessionIds.delete(sessionID)
     this.openSessionIds.delete(sessionID)
     for (const [key, session] of this.draftSessions) {
@@ -6885,6 +6891,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.unsubscribeSandboxPreference?.()
     this.unsubscribeSessionColors?.() // fork_change
     this.unsubscribeSessionTags?.() // fork_change
+    this.unsubscribeSessionFavorites?.() // fork_change
     this.unsubscribeAcknowledged?.()
     this.viewStateDisposable?.dispose()
     this.visibilityDisposable?.dispose()
