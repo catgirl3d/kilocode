@@ -20,6 +20,9 @@ export interface ListSearchProps {
   hideIcon?: boolean
   class?: string
   action?: JSX.Element
+  // kilocode_change start - [fork] expose an optional slot below the list search
+  below?: JSX.Element
+  // kilocode_change end
 }
 
 export interface ListAddProps {
@@ -316,6 +319,9 @@ export function List<T>(props: ListProps<T> & { ref?: (ref: ListRef) => void }) 
           </div>
           {searchAction()}
         </div>
+        {/* kilocode_change start - [fork] render optional content below the list search */}
+        {searchProps().below}
+        {/* kilocode_change end */}
       </Show>
       <div ref={setScrollRef} data-slot="list-scroll">
         <Show
