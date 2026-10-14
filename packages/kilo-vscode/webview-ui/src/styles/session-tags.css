@@ -136,6 +136,12 @@
   overflow-y: auto;
 }
 
+/* fork_change start - keep editor children at natural height so the editor scrolls instead of squeezing the list */
+.session-tags-editor > * {
+  flex-shrink: 0;
+}
+/* fork_change end */
+
 [data-slot="session-tags-new"] {
   align-self: flex-start;
 }
