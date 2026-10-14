@@ -143,6 +143,7 @@ function SessionTagsEditor(props: {
   const [gone, setGone] = createSignal(false)
   const [error, setError] = createSignal<SessionTagError>()
   const [query, setQuery] = createSignal("") // fork_change
+  let editor: HTMLDivElement | undefined // fork_change
 
   const editing = () => {
     const value = mode()
@@ -188,6 +189,7 @@ function SessionTagsEditor(props: {
     setColor("Blue")
     setConfirm(false)
     setError(undefined)
+    if (editor) editor.scrollTop = 0 // fork_change
   }
 
   function create() {
@@ -250,7 +252,7 @@ function SessionTagsEditor(props: {
 
   return (
     <Dialog title={props.language.t("session.tags.title")} size="normal" fit class="session-tags-dialog">
-      <div class="session-tags-editor">
+      <div class="session-tags-editor" ref={(el) => (editor = el)} /* fork_change */>
         <Show
           when={props.tags.ready()}
           fallback={<div data-slot="session-tags-loading">{props.language.t("common.loading")}</div>}
