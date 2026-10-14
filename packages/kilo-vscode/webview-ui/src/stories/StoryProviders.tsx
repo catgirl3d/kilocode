@@ -13,6 +13,7 @@
 import { createSignal, createMemo, onCleanup, onMount, type Component, type ParentComponent } from "solid-js"
 import { getVSCodeAPI, VSCodeProvider } from "../context/vscode"
 import { SessionTagsProvider } from "../context/session-tags"
+import { SessionFavoritesProvider } from "../context/session-favorites" // fork_change
 import { post } from "../utils/webview-message"
 import { ServerProvider } from "../context/server"
 import { FeedbackProvider } from "../context/feedback"
@@ -26,6 +27,7 @@ import { DiffComponentProvider } from "@kilocode/kilo-ui/context/diff"
 import { CodeComponentProvider } from "@kilocode/kilo-ui/context/code"
 import { FileComponentProvider } from "@kilocode/kilo-ui/context/file"
 import { DialogProvider } from "@kilocode/kilo-ui/context/dialog"
+import { Toast } from "@kilocode/kilo-ui/toast" // fork_change
 import { MarkedProvider } from "@kilocode/kilo-ui/context/marked"
 import { I18nProvider, pluralCategory, pluralKey } from "@kilocode/kilo-ui/context"
 import type { UiI18nPluralKey } from "@kilocode/kilo-ui/context"
@@ -54,11 +56,17 @@ import type {
   SessionCloseReason,
   QuestionRequest,
   SuggestionRequest,
+  // fork_change start - local session favorites story state
+  SessionFavoritesState,
+  // fork_change end
   SessionTagsState,
 } from "../types/messages"
 
 type PluginSpec = string | [string, Record<string, unknown>]
 const empty: SessionTagsState = { tags: [], sessions: {} }
+// fork_change start - local session favorites story state
+const emptyFavorites: SessionFavoritesState = { sessions: [] }
+// fork_change end
 
 // Merged English dictionary (same merge order as the real LanguageProvider)
 const dict: Record<string, string> = { ...appEn, ...amEn, ...uiEn, ...kiloEn }
@@ -174,6 +182,30 @@ export const StorySessionTags: Component<{ state: SessionTagsState; fail?: boole
   })
   return null
 }
+
+// fork_change start - mock local session favorites host responses
+export const StorySessionFavorites: Component<{ state: SessionFavoritesState; fail?: boolean }> = (props) => {
+  onMount(() => {
+    if (props.fail) {
+      const api = getVSCodeAPI()
+      const original = api.postMessage.bind(api)
+      const fail = (message: Parameters<typeof api.postMessage>[0]) => {
+        original(message)
+        if (message.type !== "sessionFavoriteAction") return
+        queueMicrotask(() =>
+          post({ type: "sessionFavoriteResult", requestID: message.requestID, ok: false, error: "storage" }),
+        )
+      }
+      api.postMessage = fail
+      onCleanup(() => {
+        if (api.postMessage === fail) api.postMessage = original
+      })
+    }
+    queueMicrotask(() => post({ type: "sessionFavoritesLoaded", state: props.state }))
+  })
+  return null
+}
+// fork_change end
 
 function mockNotificationsValue(items: KilocodeNotification[] = []) {
   return {
@@ -366,6 +398,10 @@ interface StoryProvidersProps {
   sessionID?: string
   sessionTags?: SessionTagsState | null
   failTags?: boolean
+  // fork_change start - local session favorites story controls
+  sessionFavorites?: SessionFavoritesState | null
+  failFavorites?: boolean
+  // fork_change end
   /** When provided, injects a mock ConfigContext with this config instead of the real ConfigProvider. */
   config?: Config
   features?: Partial<FeatureFlags>
@@ -511,46 +547,59 @@ export const StoryProviders: ParentComponent<StoryProvidersProps> = (props) => {
                       t,
                     }}
                   >
-                    <SessionTagsProvider>
-                      {props.sessionTags === null ? null : (
-                        <StorySessionTags state={props.sessionTags ?? empty} fail={props.failTags ?? true} />
+                    {/* fork_change start - provide local session favorites to stories */}
+                    <SessionFavoritesProvider>
+                      {props.sessionFavorites === null ? null : (
+                        <StorySessionFavorites
+                          state={props.sessionFavorites ?? emptyFavorites}
+                          fail={props.failFavorites ?? true}
+                        />
                       )}
-                      <I18nProvider value={{ locale: () => "en", t, plural }}>
-                        <NotificationsContext.Provider value={notifications}>
-                          <SessionContext.Provider value={session as any}>
-                            <MemoryProvider>
-                              <IndexingProvider>
-                                <KiloEmbeddingModelsProvider>
-                                  <DataProvider
-                                    data={data()}
-                                    directory="/project/"
-                                    onOpenDiff={props.onOpenDiff}
-                                    onOpenFile={props.onOpenFile}
-                                  >
-                                    <DiffComponentProvider component={Diff}>
-                                      <CodeComponentProvider component={Code}>
-                                        <FileComponentProvider component={File}>
-                                          <MarkedProvider>
-                                            <TranscriptSearchProvider>
-                                              {props.noPadding ? (
-                                                props.children
-                                              ) : (
-                                                <div style={{ padding: "12px" }}>{props.children}</div>
-                                              )}
-                                            </TranscriptSearchProvider>
-                                          </MarkedProvider>
-                                        </FileComponentProvider>
-                                      </CodeComponentProvider>
-                                    </DiffComponentProvider>
-                                  </DataProvider>
-                                </KiloEmbeddingModelsProvider>
-                              </IndexingProvider>
-                            </MemoryProvider>
-                          </SessionContext.Provider>
-                        </NotificationsContext.Provider>
-                      </I18nProvider>
-                    </SessionTagsProvider>
+                      <SessionTagsProvider>
+                        {props.sessionTags === null ? null : (
+                          <StorySessionTags state={props.sessionTags ?? empty} fail={props.failTags ?? true} />
+                        )}
+                        <I18nProvider value={{ locale: () => "en", t, plural }}>
+                          <NotificationsContext.Provider value={notifications}>
+                            <SessionContext.Provider value={session as any}>
+                              <MemoryProvider>
+                                <IndexingProvider>
+                                  <KiloEmbeddingModelsProvider>
+                                    <DataProvider
+                                      data={data()}
+                                      directory="/project/"
+                                      onOpenDiff={props.onOpenDiff}
+                                      onOpenFile={props.onOpenFile}
+                                    >
+                                      <DiffComponentProvider component={Diff}>
+                                        <CodeComponentProvider component={Code}>
+                                          <FileComponentProvider component={File}>
+                                            <MarkedProvider>
+                                              <TranscriptSearchProvider>
+                                                {props.noPadding ? (
+                                                  props.children
+                                                ) : (
+                                                  <div style={{ padding: "12px" }}>{props.children}</div>
+                                                )}
+                                              </TranscriptSearchProvider>
+                                            </MarkedProvider>
+                                          </FileComponentProvider>
+                                        </CodeComponentProvider>
+                                      </DiffComponentProvider>
+                                    </DataProvider>
+                                  </KiloEmbeddingModelsProvider>
+                                </IndexingProvider>
+                              </MemoryProvider>
+                            </SessionContext.Provider>
+                          </NotificationsContext.Provider>
+                        </I18nProvider>
+                      </SessionTagsProvider>
+                    </SessionFavoritesProvider>
+                    {/* fork_change end */}
                   </LanguageContext.Provider>
+                  {/* fork_change start - mount the toast region used by story error feedback */}
+                  <Toast.Region />
+                  {/* fork_change end */}
                 </DialogProvider>
               </MockProviderProvider>
             </DisplayProvider>

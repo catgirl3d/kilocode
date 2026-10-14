@@ -7,9 +7,17 @@ Object.defineProperty(window, "origin", { value: window.location.origin })
 const focused = { value: true }
 Object.defineProperty(window.document, "hasFocus", { value: () => focused.value })
 const sent: WebviewMessage[] = []
+const favoriteSnapshot: ModelSelection[] = [
+  { providerID: "kilo", modelID: "fixture-first" },
+  { providerID: "openai", modelID: "fixture-second" },
+]
 const api = {
   postMessage: (message: WebviewMessage) => {
     sent.push(message.type === "agentManager.updateFromBase" ? structuredClone(message) : message)
+    if (message.type === "requestFavorites") {
+      queueMicrotask(() => post({ type: "favoritesLoaded", favorites: favoriteSnapshot }))
+      return
+    }
     if (message.type === "acknowledgeSession") {
       queueMicrotask(() => post({ ...message, type: "sessionAcknowledged" }))
     }
@@ -501,6 +509,65 @@ try {
 
   const value = ref.value
   assert(value)
+  assert.deepEqual(
+    sent.findLast((message) => message.type === "requestFavorites"),
+    { type: "requestFavorites" },
+    "SessionProvider requests model favorites through the host",
+  )
+  assert.deepEqual(
+    unwrap(value.favoriteModels()),
+    [
+      { providerID: "kilo", modelID: "fixture-first" },
+      { providerID: "openai", modelID: "fixture-second" },
+    ],
+    "the host snapshot reaches SessionProvider",
+  )
+
+  value.toggleFavorite("openai", "fixture-toggle")
+  assert.deepEqual(unwrap(value.favoriteModels()), [
+    { providerID: "kilo", modelID: "fixture-first" },
+    { providerID: "openai", modelID: "fixture-second" },
+    { providerID: "openai", modelID: "fixture-toggle" },
+  ])
+  assert.deepEqual(
+    sent.findLast((message) => message.type === "toggleFavorite"),
+    {
+      type: "toggleFavorite",
+      action: "add",
+      providerID: "openai",
+      modelID: "fixture-toggle",
+    },
+  )
+
+  value.toggleFavorite("openai", "fixture-toggle")
+  assert.deepEqual(unwrap(value.favoriteModels()), [
+    { providerID: "kilo", modelID: "fixture-first" },
+    { providerID: "openai", modelID: "fixture-second" },
+  ])
+  assert.deepEqual(
+    sent.findLast((message) => message.type === "toggleFavorite"),
+    {
+      type: "toggleFavorite",
+      action: "remove",
+      providerID: "openai",
+      modelID: "fixture-toggle",
+    },
+  )
+
+  value.moveFavorite("openai", "fixture-second", "up")
+  const reordered: ModelSelection[] = [
+    { providerID: "openai", modelID: "fixture-second" },
+    { providerID: "kilo", modelID: "fixture-first" },
+  ]
+  assert.deepEqual(unwrap(value.favoriteModels()), reordered)
+  assert.deepEqual(
+    sent.findLast((message) => message.type === "moveFavorite"),
+    {
+      type: "moveFavorite",
+      favorites: reordered,
+    },
+  )
+
   {
     const original = Date.now
     const time = { now: 10_000 }
