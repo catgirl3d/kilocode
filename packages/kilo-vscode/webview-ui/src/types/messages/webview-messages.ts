@@ -1,6 +1,6 @@
 import type { InstallMarketplaceItemOptions, MarketplaceItem } from "../marketplace"
 import type { FileAttachment } from "./parts"
-import type { MessageLoadMode, SessionTagAction } from "./sessions" // fork_change
+import type { MessageLoadMode, SessionFavoriteAction, SessionTagAction } from "./sessions" // fork_change
 import type { PermissionFileDiff } from "./permissions"
 import type { ModelSelection, ProviderConfig } from "./providers"
 import type { Config } from "./config"
@@ -1738,6 +1738,16 @@ export interface SessionTagActionMessage {
   action: SessionTagAction
 }
 
+export interface RequestSessionFavoritesMessage {
+  type: "requestSessionFavorites"
+}
+
+export interface SessionFavoriteActionMessage {
+  type: "sessionFavoriteAction"
+  requestID: string
+  action: SessionFavoriteAction
+}
+
 export interface SetSessionColorMessage {
   type: "setSessionColor"
   sessionId: string
@@ -2097,6 +2107,8 @@ export type WebviewMessage =
   // fork_change start - local session metadata
   | RequestSessionTagsMessage
   | SessionTagActionMessage
+  | RequestSessionFavoritesMessage
+  | SessionFavoriteActionMessage
   // fork_change end
   | ToggleRemoteMessage
   | ToggleCaffeinationMessage

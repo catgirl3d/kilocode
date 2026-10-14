@@ -594,6 +594,13 @@ export const dict = {
   "session.tags.color.Teal": "Teal",
   "session.tags.color.Indigo": "Indigo",
   // fork_change end
+  // fork_change start - local session favorites
+  "session.tags.filter.empty": "No sessions match the selected tags.",
+  "session.favorites.group": "Favorites",
+  "session.favorites.add": "Add to favorites",
+  "session.favorites.remove": "Remove from favorites",
+  "session.favorites.error": "Could not update favorites. Try again.",
+  // fork_change end
   "session.empty": "No sessions yet. Click + to start a new conversation.",
   "session.tabs.switcher.open": "Show open tabs",
   "session.tabs.switcher.search": "Search open tabs...",

@@ -27,7 +27,7 @@ import { useLanguage } from "./language"
 import { createCostAlertHandler } from "./cost-alert"
 import { createMcpAuth } from "./mcp-auth"
 import { createSessionModelActions } from "./session-model-actions" // fork_change
-import { createSessionFavorites } from "./session-favorites" // fork_change
+import { createSessionFavorites } from "./model-favorites" // fork_change
 import { createSessionShake } from "./session-shake" // fork_change
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { touch } from "@kilocode/kilo-ui/tool-motion"

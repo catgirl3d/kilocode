@@ -9,6 +9,7 @@ import { buildThroughputSettingMessage } from "./throughput-settings"
 import { buildAutoApprovalReasonSettingMessage } from "./auto-approval-reason-settings"
 import type { ModelUsageMessage } from "./model-usage"
 import { handleSessionTagsMessage } from "../session-tags" // fork_change
+import { handleSessionFavoritesMessage } from "../session-favorites" // fork_change
 
 type Ctx = {
   question: SuggestionContext
@@ -92,6 +93,7 @@ async function routeSessionMessage(
   },
   ctx: Ctx,
 ): Promise<boolean | undefined> {
+  if (await handleSessionFavoritesMessage(message, ctx.post)) return true
   if (await handleSessionTagsMessage(message, ctx.post)) return true
   if (message.type === "resumeSession") {
     if (isResume(message)) await ctx.resume(message.sessionID, message.messageID, message.requestID)
