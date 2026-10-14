@@ -3,30 +3,36 @@ import { randomUUID } from "node:crypto"
 import type { Memento } from "vscode"
 import { SECTION_COLORS } from "../webview-ui/agent-manager/section-colors"
 import type { SessionTag, SessionTagError, SessionTagsState } from "../webview-ui/src/types/messages/sessions"
+import { createMementoStore } from "./memento-store"
 
 const KEY = "sessionTags"
 const COLORS = new Set<string>(SECTION_COLORS.map((color) => color.label))
 const EMPTY: SessionTagsState = { tags: [], sessions: {} }
+const store = createMementoStore<SessionTagsState>({
+  key: KEY,
+  empty: EMPTY,
+  sanitize,
+  copy,
+})
 
 type Change = { next?: SessionTagsState; error?: SessionTagError }
 
-let memento: Memento | undefined
-let state = EMPTY
-let queue = Promise.resolve()
-const listeners = new Set<(state: SessionTagsState) => void>()
-
 export function initSessionTags(value: Memento): void {
-  memento = value
-  state = sanitize(value.get(KEY))
+  store.init(value)
 }
 
 export function sessionTags(): SessionTagsState {
-  return copy(state)
+  return store.snapshot()
 }
 
 export function onSessionTagsChanged(listener: (state: SessionTagsState) => void): () => void {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
+  return store.onChange((state) => {
+    try {
+      listener(state)
+    } catch (error) {
+      console.error("[Kilo New] Session tag listener failed:", error)
+    }
+  })
 }
 
 export async function handleSessionTagsMessage(message: unknown, post: (message: unknown) => void): Promise<boolean> {
@@ -38,58 +44,47 @@ export async function handleSessionTagsMessage(message: unknown, post: (message:
   if (message.type !== "sessionTagAction") return false
   if (typeof message.requestID !== "string" || !message.requestID) return true
   const requestID = message.requestID
+  const result: { error?: SessionTagError } = {}
 
-  return enqueue(async () => {
-    const change = apply(message.action)
-    if (change.error) {
-      send(post, { type: "sessionTagResult", requestID, ok: false, error: change.error })
-      return true
-    }
-    if (!change.next) {
-      send(post, { type: "sessionTagResult", requestID, ok: true })
-      return true
-    }
-
-    if (!memento) {
-      const error = new Error("Session tag storage is not initialized")
-      console.error("[Kilo New] Failed to persist session tags:", error)
-      send(post, { type: "sessionTagResult", requestID, ok: false, error: "storage" })
-      return true
-    }
-    try {
-      await memento.update(KEY, change.next)
-    } catch (error) {
-      console.error("[Kilo New] Failed to persist session tags:", error)
-      send(post, { type: "sessionTagResult", requestID, ok: false, error: "storage" })
-      return true
-    }
-
-    state = change.next
-    publish()
-    send(post, { type: "sessionTagResult", requestID, ok: true })
+  try {
+    await store.write((state) => {
+      const change = apply(state, message.action)
+      if (change.error) {
+        result.error = change.error
+        return
+      }
+      if (!change.next) return
+      return { next: change.next }
+    })
+  } catch (error) {
+    console.error("[Kilo New] Failed to persist session tags:", error)
+    send(post, { type: "sessionTagResult", requestID, ok: false, error: "storage" })
     return true
-  })
+  }
+  if (result.error) {
+    send(post, { type: "sessionTagResult", requestID, ok: false, error: result.error })
+    return true
+  }
+  send(post, { type: "sessionTagResult", requestID, ok: true })
+  return true
 }
 
 export async function removeSessionTags(sessionID: string): Promise<void> {
   if (!localID(sessionID)) return
   try {
-    await enqueue(async () => {
+    await store.write((state) => {
       if (!Object.hasOwn(state.sessions, sessionID)) return
-      if (!memento) throw new Error("Session tag storage is not initialized")
       const sessions = { ...state.sessions }
       delete sessions[sessionID]
       const next = { ...state, sessions }
-      await memento.update(KEY, next)
-      state = next
-      publish()
+      return { next }
     })
   } catch (error) {
     console.error("[Kilo New] Failed to remove session tags:", error)
   }
 }
 
-function create(action: Record<string, unknown>): Change {
+function create(state: SessionTagsState, action: Record<string, unknown>): Change {
   const sessionID = action.sessionID
   const name = action.name
   const color = action.color
@@ -106,7 +101,7 @@ function create(action: Record<string, unknown>): Change {
   return { next: { tags: [...state.tags, tag], sessions } }
 }
 
-function update(action: Record<string, unknown>): Change {
+function update(state: SessionTagsState, action: Record<string, unknown>): Change {
   const id = action.id
   if (typeof id !== "string") return { error: "missing" }
   const tag = state.tags.find((item) => item.id === id)
@@ -132,10 +127,10 @@ function update(action: Record<string, unknown>): Change {
   return { next: { ...state, tags: state.tags.map((item) => (item.id === tag.id ? { ...item, ...patch } : item)) } }
 }
 
-function apply(action: unknown): Change {
+function apply(state: SessionTagsState, action: unknown): Change {
   if (!record(action) || typeof action.type !== "string") return { error: "invalid" }
-  if (action.type === "create") return create(action)
-  if (action.type === "update") return update(action)
+  if (action.type === "create") return create(state, action)
+  if (action.type === "update") return update(state, action)
   if (action.type === "assign") {
     const sessionID = action.sessionID
     const id = action.id
@@ -206,31 +201,12 @@ function copy(value: SessionTagsState): SessionTagsState {
   }
 }
 
-function publish(): void {
-  for (const listener of listeners) {
-    try {
-      listener(sessionTags())
-    } catch (error) {
-      console.error("[Kilo New] Session tag listener failed:", error)
-    }
-  }
-}
-
 function send(post: (message: unknown) => void, message: unknown): void {
   try {
     post(message)
   } catch (error) {
     console.error("[Kilo New] Session tag message delivery failed:", error)
   }
-}
-
-function enqueue<T>(run: () => Promise<T>): Promise<T> {
-  const result = queue.then(run)
-  queue = result.then(
-    () => undefined,
-    () => undefined,
-  )
-  return result
 }
 
 function localID(value: string): boolean {
