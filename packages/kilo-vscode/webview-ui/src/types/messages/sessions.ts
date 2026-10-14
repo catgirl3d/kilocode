@@ -104,3 +104,11 @@ export type SessionTagAction =
 
 export type SessionTagError = "name" | "duplicate" | "missing" | "invalid" | "storage"
 // fork_change end
+
+// fork_change start - local session favorites
+export type SessionFavoritesState = { sessions: string[] }
+
+export type SessionFavoriteAction = { type: "set"; sessionID: string; favorite: boolean }
+
+export type SessionFavoriteError = "invalid" | "storage"
+// fork_change end
