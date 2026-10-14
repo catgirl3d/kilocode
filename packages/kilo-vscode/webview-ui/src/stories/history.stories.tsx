@@ -21,10 +21,14 @@ import { ServerProvider } from "../context/server"
 import { ConfigProvider } from "../context/config"
 import { ProviderProvider } from "../context/provider"
 import { SessionTagsProvider } from "../context/session-tags"
+import { SessionFavoritesProvider } from "../context/session-favorites" // fork_change
 import { SessionContext } from "../context/session"
 import { LanguageContext } from "../context/language"
-import { StorySessionTags } from "./StoryProviders"
+import { StorySessionFavorites, StorySessionTags } from "./StoryProviders"
 import type { SessionTagsState } from "../types/messages"
+// fork_change start - local session favorites story state
+import type { SessionFavoritesState } from "../types/messages"
+// fork_change end
 import { dict as uiEn } from "@kilocode/kilo-ui/i18n/en"
 import { dict as appEn } from "../i18n/en"
 import { dict as kiloEn } from "@kilocode/kilo-i18n/en"
@@ -68,11 +72,18 @@ const overflow: SessionTagsState = {
   ],
   sessions: { s1: ["tag-priority", "tag-review", "tag-release", "tag-russian"] },
 }
+// fork_change start - local session favorites story state
+const favorites: SessionFavoritesState = { sessions: ["s1"] }
+// fork_change end
 
 const WithSessions: ParentComponent<{
   sessions?: typeof mockSessions
   sessionTags?: SessionTagsState
   failTags?: boolean
+  // fork_change start - local session favorites story controls
+  sessionFavorites?: SessionFavoritesState
+  failFavorites?: boolean
+  // fork_change end
 }> = (props) => {
   const [locale] = createSignal<"en">("en")
   const sessions = props.sessions ?? []
@@ -141,38 +152,46 @@ const WithSessions: ParentComponent<{
           <ProviderProvider>
             <DialogProvider>
               <LanguageContext.Provider value={{ locale, setLocale: noop, userOverride: () => "" as any, t }}>
-                <SessionTagsProvider>
-                  <StorySessionTags state={props.sessionTags ?? empty} fail={props.failTags ?? true} />
-                  <I18nProvider value={{ locale: () => "en", t, plural }}>
-                    <SessionContext.Provider value={session as any}>
-                      <DataProvider
-                        data={{
-                          session: sessions as any,
-                          session_status: {},
-                          session_diff: {},
-                          message: {},
-                          part: {},
-                          provider: {
-                            all: new Map(),
-                            connected: [] as string[],
-                            default: {} as any,
-                          },
-                        }}
-                        directory="/project/"
-                      >
-                        <DiffComponentProvider component={Diff}>
-                          <CodeComponentProvider component={Code}>
-                            <FileComponentProvider component={File}>
-                              <MarkedProvider>
-                                <div style={{ padding: "12px" }}>{props.children}</div>
-                              </MarkedProvider>
-                            </FileComponentProvider>
-                          </CodeComponentProvider>
-                        </DiffComponentProvider>
-                      </DataProvider>
-                    </SessionContext.Provider>
-                  </I18nProvider>
-                </SessionTagsProvider>
+                {/* fork_change start - provide local session favorites to stories */}
+                <SessionFavoritesProvider>
+                  <StorySessionFavorites
+                    state={props.sessionFavorites ?? { sessions: [] }}
+                    fail={props.failFavorites ?? true}
+                  />
+                  <SessionTagsProvider>
+                    <StorySessionTags state={props.sessionTags ?? empty} fail={props.failTags ?? true} />
+                    <I18nProvider value={{ locale: () => "en", t, plural }}>
+                      <SessionContext.Provider value={session as any}>
+                        <DataProvider
+                          data={{
+                            session: sessions as any,
+                            session_status: {},
+                            session_diff: {},
+                            message: {},
+                            part: {},
+                            provider: {
+                              all: new Map(),
+                              connected: [] as string[],
+                              default: {} as any,
+                            },
+                          }}
+                          directory="/project/"
+                        >
+                          <DiffComponentProvider component={Diff}>
+                            <CodeComponentProvider component={Code}>
+                              <FileComponentProvider component={File}>
+                                <MarkedProvider>
+                                  <div style={{ padding: "12px" }}>{props.children}</div>
+                                </MarkedProvider>
+                              </FileComponentProvider>
+                            </CodeComponentProvider>
+                          </DiffComponentProvider>
+                        </DataProvider>
+                      </SessionContext.Provider>
+                    </I18nProvider>
+                  </SessionTagsProvider>
+                </SessionFavoritesProvider>
+                {/* fork_change end */}
               </LanguageContext.Provider>
             </DialogProvider>
           </ProviderProvider>
@@ -189,11 +208,24 @@ const meta: Meta = {
 export default meta
 type Story = StoryObj
 
-const SessionListDemo = (props: { state: SessionTagsState; fail?: boolean }) => {
+const SessionListDemo = (props: {
+  state: SessionTagsState
+  fail?: boolean
+  // fork_change start - local session favorites story controls
+  favorites?: SessionFavoritesState
+  failFavorites?: boolean
+  // fork_change end
+}) => {
   const [selected, setSelected] = createSignal("")
 
   return (
-    <WithSessions sessions={mockSessions as any} sessionTags={props.state} failTags={props.fail}>
+    <WithSessions
+      sessions={mockSessions as any}
+      sessionTags={props.state}
+      failTags={props.fail}
+      sessionFavorites={props.favorites} /* fork_change */
+      failFavorites={props.failFavorites} /* fork_change */
+    >
       <div style={{ height: "500px" }}>
         <SessionList onSelectSession={setSelected} />
         <output class="sr-only" data-slot="selected-session">
@@ -285,6 +317,13 @@ export const SessionTagsOverflowCyrillic: Story = {
 export const SessionTagsEmptyWriteFailure: Story = {
   name: "Session tags — empty catalog and failed save",
   render: () => <SessionListDemo state={empty} fail />,
+}
+
+export const Favorites: Story = {
+  // fork_change start - local session favorites story
+  name: "Favorites",
+  render: () => <SessionListDemo state={empty} favorites={favorites} failFavorites={false} />,
+  // fork_change end
 }
 
 export const Sources: Story = {
