@@ -937,8 +937,22 @@ await settle()
 
 const count = selected.length
 const before = item("ses-plain")?.querySelector('[data-slot="list-item-title"]')?.textContent
+const fresh = {
+  tags: tags.state().tags.map((tag) => (tag.id === "tag-urgent" ? { ...tag, color: "Green" } : tag)),
+  sessions: tags.state().sessions,
+}
+const tagRequests = requests
 manage("ses-plain").click()
 await settle()
+assert.equal(requests, tagRequests + 1, "opening the tag editor requests one fresh host snapshot")
+response(fresh)
+await settle()
+assert.equal(tags.ready(), true, "the editor refresh keeps the tag provider ready")
+assert.equal(
+  tags.state().tags.find((tag) => tag.id === "tag-urgent")?.color,
+  "Green",
+  "the editor applies the fresh host snapshot",
+)
 assert.equal(selected.length, count, "opening tag management does not select the session")
 assert.deepEqual(renamed, [], "opening tag management does not rename the session")
 assert.equal(item("ses-plain")?.querySelector('[data-slot="list-item-title"]')?.textContent, before)
