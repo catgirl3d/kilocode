@@ -4,6 +4,7 @@ import {
   handleSessionTagsMessage,
   initSessionTags,
   onSessionTagsChanged,
+  refreshSessionTags,
   removeSessionTags,
   sessionTags,
   sessionTagsFor,
@@ -441,6 +442,76 @@ describe("session tags store", () => {
     const writes = saved.writes()
     await removeSessionTags("ses-a")
     expect(saved.writes()).toBe(writes)
+  })
+
+  it("preserves an external tag when cleanup writes from a stale local snapshot", async () => {
+    const y = { id: "y", name: "Y", color: "Blue" }
+    const ref1 = { id: "ref1", name: "Ref 1", color: "Red" }
+    saved = memory(state([], { p1: { tags: [y], sessions: { "ses-y": [y.id] } } }))
+    initSessionTags(saved.state)
+
+    await saved.state.update(
+      "sessionTags",
+      state([], {
+        p1: {
+          tags: [y, ref1],
+          sessions: { "ses-y": [y.id], "ses-ref1": [ref1.id] },
+        },
+      }),
+    )
+    await removeSessionTags("ses-y")
+
+    const result = saved.data.get("sessionTags") as StoredState
+    expect(result.projects.p1?.tags).toEqual([y, ref1])
+    expect(result.projects.p1?.sessions).toEqual({ "ses-ref1": [ref1.id] })
+  })
+
+  it("refreshes state and publishes once without writing the external snapshot after queued work settles", async () => {
+    const ref1 = { id: "ref1", name: "Ref 1", color: "Red" }
+    saved = memory(state())
+    initSessionTags(saved.state)
+    const seen: SessionTagsState[] = []
+    const off = onSessionTagsChanged((view) => seen.push(view("p1")))
+
+    try {
+      await saved.state.update("sessionTags", state([], { p1: { tags: [ref1], sessions: {} } }))
+      const writes = saved.writesFor("sessionTags")
+
+      refreshSessionTags()
+      await removeSessionTags("ses-flush")
+      expect(sessionTagsFor("p1")).toEqual({ tags: [ref1], sessions: {} })
+      expect(seen).toEqual([{ tags: [ref1], sessions: {} }])
+      expect(saved.writesFor("sessionTags")).toBe(writes)
+
+      refreshSessionTags()
+      await removeSessionTags("ses-flush")
+      expect(seen).toHaveLength(1)
+      expect(saved.writesFor("sessionTags")).toBe(writes)
+    } finally {
+      off()
+    }
+  })
+
+  it("refreshes state for a no-op action after an external update", async () => {
+    const y = { id: "y", name: "Y", color: "Blue" }
+    const ref1 = { id: "ref1", name: "Ref 1", color: "Red" }
+    saved = memory(state([], { p1: { tags: [y], sessions: { "ses-y": [y.id] } } }))
+    initSessionTags(saved.state)
+    const seen: SessionTagsState[] = []
+    const off = onSessionTagsChanged((view) => seen.push(view("p1")))
+
+    try {
+      await saved.state.update("sessionTags", state([], { p1: { tags: [y, ref1], sessions: { "ses-y": [y.id] } } }))
+      const writes = saved.writesFor("sessionTags")
+
+      await act({ type: "assign", sessionID: "ses-y", id: y.id, assigned: true }, "p1")
+
+      expect(sessionTagsFor("p1").tags).toEqual([y, ref1])
+      expect(seen).toEqual([{ tags: [y, ref1], sessions: { "ses-y": [y.id] } }])
+      expect(saved.writesFor("sessionTags")).toBe(writes)
+    } finally {
+      off()
+    }
   })
 
   it("contains cleanup failures and keeps the write queue usable", async () => {
