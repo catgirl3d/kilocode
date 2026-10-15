@@ -35,6 +35,7 @@ type Ctx = {
   shake: (sessionID: string) => Promise<void>
   sessionColors: () => void
   setSessionColor: (sessionID: string, color: string | null) => Promise<void>
+  sessionTagProject: () => string | undefined
   // fork_change end
 }
 
@@ -94,7 +95,8 @@ async function routeSessionMessage(
   ctx: Ctx,
 ): Promise<boolean | undefined> {
   if (await handleSessionFavoritesMessage(message, ctx.post)) return true
-  if (await handleSessionTagsMessage(message, ctx.post)) return true
+  if (await handleSessionTagsMessage(message, ctx.post, ctx.sessionTagProject ? ctx.sessionTagProject() : undefined))
+    return true
   if (message.type === "resumeSession") {
     if (isResume(message)) await ctx.resume(message.sessionID, message.messageID, message.requestID)
     return true
