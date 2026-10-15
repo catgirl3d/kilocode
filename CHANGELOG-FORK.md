@@ -27,6 +27,7 @@
 - Allow sending an empty prompt as `continue` when no media or review comments are attached.
 - Clear heavy tool outputs from the active session context on demand.
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
+- Copy the current session ID from the chat header's More actions menu.
 - Show live sub-agent status dots on task cards: green while running, gray when completed, and red on error.
 - Add an on-demand consult_advisor tool with in-progress assistant context and a proposal channel, so agents can request a second opinion from a configured advisor model and reasoning variant during planning, when stuck, or before completing complex tasks.
 - Support on-demand MCP servers that load only when the agent connects them, with catalog descriptions, configurable connection permission, and agent-controlled disconnects to release resources when they are no longer needed.
