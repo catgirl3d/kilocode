@@ -95,7 +95,7 @@ import {
 import { childID } from "./kilo-provider/task-session"
 // fork_change start
 import { onSessionColorsChanged, sessionColors, setSessionColor } from "./session-colors"
-import { onSessionTagsChanged, removeSessionTags, sessionTagsFor } from "./session-tags"
+import { onSessionTagsChanged, refreshSessionTags, removeSessionTags, sessionTagsFor } from "./session-tags"
 import { onSessionFavoritesChanged, removeSessionFavorites } from "./session-favorites"
 // fork_change end
 import { VisibleTaskStreams } from "./kilo-provider/visible-task-streams"
@@ -678,7 +678,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     TelemetryProxy.getInstance().setProvider(this)
     this.latch = watchRestore({
       focused: () => vscode.window.state.focused,
-      onChange: (listener) => vscode.window.onDidChangeWindowState(listener),
+      // fork_change start - refresh shared session tags when a window gains focus
+      onChange: (listener) =>
+        vscode.window.onDidChangeWindowState((state) => {
+          if (state.focused) refreshSessionTags()
+          listener(state)
+        }),
+      // fork_change end
       enabled: () => !this.opts.hideTopBar,
       restore: (live) => {
         if (!live) this.revealHost()
@@ -983,6 +989,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.setSidebarVisible(webviewView.visible)
     this.visibilityDisposable?.dispose()
     this.visibilityDisposable = webviewView.onDidChangeVisibility(() => {
+      // fork_change start - refresh shared session tags when the sidebar becomes visible
+      if (webviewView.visible) refreshSessionTags()
+      // fork_change end
       this.setSidebarVisible(webviewView.visible)
       this.focusSession(webviewView.visible ? this.contextSessionID : undefined)
     })
@@ -1017,6 +1026,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.setupWebviewMessageHandler(panel.webview)
     this.viewStateDisposable?.dispose()
     this.viewStateDisposable = this.visibleTaskStreams.bindPanel(panel, () => {
+      // fork_change start - refresh shared session tags when an editor panel is visible
+      if (panel.visible) refreshSessionTags()
+      // fork_change end
       this.setStatsVisible(panel.visible)
       this.setStreamVisibility(panel.active && panel.visible)
       if (this.opts.disableViewedRegistration) return
