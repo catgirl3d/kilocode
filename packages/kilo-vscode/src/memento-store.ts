@@ -26,13 +26,25 @@ export function createMementoStore<T>(options: Options<T>) {
     return () => listeners.delete(listener)
   }
 
+  // fork_change start - read fresh Memento state before queued writes
   const write = (run: (current: T) => { next?: T } | undefined): Promise<void> => {
     const result = queue.then(async () => {
-      const change = run(options.copy(state))
-      if (!change || change.next === undefined) return
-      if (!memento) throw new Error(`Memento store ${options.key} is not initialized`)
+      const current = memento
+      if (!current) {
+        const change = run(options.copy(state))
+        if (!change || change.next === undefined) return
+        throw new Error(`Memento store ${options.key} is not initialized`)
+      }
+      const fresh = options.sanitize(current.get(options.key))
+      const change = run(options.copy(fresh))
+      if (!change || change.next === undefined) {
+        if (JSON.stringify(fresh) === JSON.stringify(state)) return
+        state = options.copy(fresh)
+        publish()
+        return
+      }
       const next = options.copy(change.next)
-      await memento.update(options.key, next)
+      await current.update(options.key, next)
       state = options.copy(next)
       publish()
     })
@@ -42,6 +54,16 @@ export function createMementoStore<T>(options: Options<T>) {
     )
     return result
   }
+
+  const refresh = (): void => {
+    const current = memento
+    if (!current) return
+    const fresh = options.sanitize(current.get(options.key))
+    if (JSON.stringify(fresh) === JSON.stringify(state)) return
+    state = options.copy(fresh)
+    publish()
+  }
+  // fork_change end
 
   const publish = (): void => {
     for (const listener of listeners) {
@@ -54,5 +76,5 @@ export function createMementoStore<T>(options: Options<T>) {
     }
   }
 
-  return { init, snapshot, onChange, write }
+  return { init, snapshot, onChange, write, refresh }
 }
