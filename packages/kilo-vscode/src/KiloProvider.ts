@@ -90,7 +90,7 @@ import {
 import { childID } from "./kilo-provider/task-session"
 // fork_change start
 import { onSessionColorsChanged, sessionColors, setSessionColor } from "./session-colors"
-import { onSessionTagsChanged, removeSessionTags } from "./session-tags"
+import { onSessionTagsChanged, removeSessionTags, sessionTagsFor } from "./session-tags"
 import { onSessionFavoritesChanged, removeSessionFavorites } from "./session-favorites"
 // fork_change end
 import { VisibleTaskStreams } from "./kilo-provider/visible-task-streams"
@@ -523,6 +523,21 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private undoCompactingSessions = new Set<string>() // fork_change - sessions with an in-flight compaction undo.
   private readonly aborts = new SessionAbort()
   private projectID: string | undefined // Current workspace project ID used to filter sessions.
+  // fork_change start - session tag project key (backend project id; shared by sidebar and Agent Manager)
+  private tagProjectSent: string | undefined
+  private tagProject(): string | undefined {
+    const id = this.projectID
+    if (!id) return undefined
+    return id === "global" ? this.getWorkspaceDirectory() : id
+  }
+
+  private syncTagProject(): void {
+    const key = this.tagProject()
+    if (key === this.tagProjectSent) return
+    this.tagProjectSent = key
+    this.postMessage({ type: "sessionTagsLoaded", state: sessionTagsFor(key) })
+  }
+  // fork_change end
   private loadMessagesAbort: AbortController | null = null // Current load request cancellation.
   private lastReconciledAt = new Map<string, number>() // Per-session focus-mode reconcile timestamp.
   private pendingSessionRefresh = false // Refresh requested before the client is ready.
@@ -652,8 +667,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.unsubscribeSessionColors = onSessionColorsChanged((colors) => {
       this.postMessage({ type: "sessionColorsLoaded", colors })
     })
-    this.unsubscribeSessionTags = onSessionTagsChanged((state) => {
-      this.postMessage({ type: "sessionTagsLoaded", state })
+    this.unsubscribeSessionTags = onSessionTagsChanged((view) => {
+      this.postMessage({ type: "sessionTagsLoaded", state: view(this.tagProject()) })
     })
     this.unsubscribeSessionFavorites = onSessionFavoritesChanged((state) => {
       this.postMessage({ type: "sessionFavoritesLoaded", state })
@@ -1355,6 +1370,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           // fork_change start
           sessionColors: () => this.postMessage({ type: "sessionColorsLoaded", colors: sessionColors() }),
           setSessionColor: (sessionID, color) => setSessionColor(sessionID, color),
+          sessionTagProject: () => this.tagProject(),
           // fork_change end
         })
       ) {
@@ -2341,6 +2357,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         { throwOnError: true },
       )
       if (project === this.opts.projectQualifier?.()?.projectId) {
+        // fork_change start - adopt the backend project ID from the first created session
+        if (!this.projectID && session.projectID) {
+          this.projectID = session.projectID
+          this.syncTagProject()
+        }
+        // fork_change end
         this.stopCurrentSessionProcesses(session.id)
         this.setCurrentSession(session)
         this.contextSessionID = session.id
@@ -2697,7 +2719,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     const ctx = this.getSessionRefreshContext(revision)
     try {
       const resolved = await flushPendingSessionRefreshUtil(ctx)
-      if (resolved && scope === this.opts.projectQualifier?.()?.projectId) this.projectID = resolved
+      // fork_change start
+      if (resolved && scope === this.opts.projectQualifier?.()?.projectId) {
+        this.projectID = resolved
+      }
+      this.syncTagProject()
+      // fork_change end
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to flush session refresh:", error)
     }
@@ -2717,7 +2744,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         await loadMoreSessionsUtil(ctx)
       } else {
         const resolved = await loadSessionsUtil(ctx)
-        if (resolved && scope === this.opts.projectQualifier?.()?.projectId) this.projectID = resolved
+        // fork_change start
+        if (resolved && scope === this.opts.projectQualifier?.()?.projectId) {
+          this.projectID = resolved
+        }
+        this.syncTagProject()
+        // fork_change end
       }
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to load sessions:", error)
@@ -4236,11 +4268,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           this.validConfigProject(project),
         )
       : undefined
+    // fork_change start
     if ((hasGlobal && !globalBinding) || (hasProject && !projectBinding)) {
       this.postMessage({ type: "configUpdateFailed", message: "Settings changed or expired. Reload before saving." })
-      void this.fetchAndSendConfig() // fork_change
+      void this.fetchAndSendConfig()
       return
     }
+    // fork_change end
 
     // fork_change start
     if (hasProject && this.projectDirectory === null) {
