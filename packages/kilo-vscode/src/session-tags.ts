@@ -61,6 +61,12 @@ export function initSessionTags(value: Memento): void {
   store.init(storeMemento)
 }
 
+// fork_change start - expose a read-only refresh for cross-window state
+export function refreshSessionTags(): void {
+  store.refresh()
+}
+// fork_change end
+
 export function sessionTags(): StoredState {
   return publicState(store.snapshot())
 }
@@ -105,6 +111,7 @@ export async function handleSessionTagsMessage(
 ): Promise<boolean> {
   if (!record(message)) return false
   if (message.type === "requestSessionTags") {
+    refreshSessionTags()
     send(post, { type: "sessionTagsLoaded", state: sessionTagsFor(project) })
     return true
   }

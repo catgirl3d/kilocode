@@ -140,6 +140,8 @@ type ProviderInternals = {
   contextSessionID: string | undefined
   handleLoadSessions: (more?: boolean) => Promise<void>
   flushPendingSessionRefresh: (reason: string) => Promise<void>
+  _getHtmlForWebview: (webview: vscode.Webview, sidebar?: boolean) => string
+  resolveWebviewPanel: (panel: vscode.WebviewPanel) => void
   resolveSession: (sessionID?: string, draftID?: string, context?: string, directory?: string) => Promise<unknown>
   handleCreateSession: () => Promise<void>
   checkpoints: Map<string, Promise<void>>
@@ -1206,6 +1208,136 @@ describe("session tags", () => {
       await internal.handleLoadSessions(false)
 
       expect(posted.filter((message) => (message as { type?: string }).type === "sessionTagsLoaded")).toHaveLength(1)
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("serves a fresh tag snapshot when another window writes before a request", async () => {
+    const ref1 = { id: "ref1", name: "Ref 1", color: "Red" }
+    const saved = memory()
+    initSessionTags(saved.state)
+    await saved.state.update("sessionTags", {
+      version: 2,
+      global: [],
+      projects: { repo: { tags: [ref1], sessions: {} } },
+      legacy: { sessions: {} },
+    })
+    const { connection } = mockConnection()
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "repo" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    internal.projectID = "repo"
+    const posted: unknown[] = []
+
+    try {
+      const send = providerRoute(provider, posted)
+      await send({ type: "requestSessionTags" })
+
+      expect(posted).toContainEqual({
+        type: "sessionTagsLoaded",
+        state: { tags: [ref1], sessions: {} },
+      })
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("refreshes the webview tag snapshot when the window regains focus", async () => {
+    const ref1 = { id: "ref1", name: "Ref 1", color: "Red" }
+    const saved = memory()
+    initSessionTags(saved.state)
+    const window = vscode.window as unknown as {
+      onDidChangeWindowState: (listener: (state: { focused: boolean }) => void) => { dispose(): void }
+    }
+    const original = window.onDidChangeWindowState
+    let listener: ((state: { focused: boolean }) => void) | undefined
+    window.onDidChangeWindowState = (callback) => {
+      listener = callback
+      return { dispose: () => {} }
+    }
+    const { connection } = mockConnection()
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "repo" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    internal.projectID = "repo"
+    const posted: unknown[] = []
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    try {
+      await saved.state.update("sessionTags", {
+        version: 2,
+        global: [],
+        projects: { repo: { tags: [ref1], sessions: {} } },
+        legacy: { sessions: {} },
+      })
+      posted.length = 0
+      listener?.({ focused: true })
+
+      expect(posted).toContainEqual({
+        type: "sessionTagsLoaded",
+        state: { tags: [ref1], sessions: {} },
+      })
+    } finally {
+      provider.dispose()
+      window.onDidChangeWindowState = original
+    }
+  })
+
+  it("refreshes the webview tag snapshot when an editor panel becomes visible", async () => {
+    const ref1 = { id: "ref1", name: "Ref 1", color: "Red" }
+    const saved = memory()
+    initSessionTags(saved.state)
+    const posted: unknown[] = []
+    const changed = Promise.withResolvers<() => void>()
+    const { connection } = mockConnection()
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "repo" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    const panel = {
+      active: false,
+      visible: false,
+      webview: {
+        options: {},
+        html: "",
+        onDidReceiveMessage: () => ({ dispose: () => {} }),
+        postMessage: async (message: unknown) => {
+          posted.push(message)
+          return true
+        },
+      },
+      onDidChangeViewState: (listener: () => void) => {
+        changed.resolve(listener)
+        return { dispose: () => {} }
+      },
+    } as unknown as vscode.WebviewPanel
+    connect(internal)
+    internal.projectID = "repo"
+    internal._getHtmlForWebview = () => ""
+
+    try {
+      internal.resolveWebviewPanel(panel)
+      const onChange = await changed.promise
+      await saved.state.update("sessionTags", {
+        version: 2,
+        global: [],
+        projects: { repo: { tags: [ref1], sessions: {} } },
+        legacy: { sessions: {} },
+      })
+      posted.length = 0
+      panel.visible = true
+      onChange()
+
+      expect(posted).toContainEqual({
+        type: "sessionTagsLoaded",
+        state: { tags: [ref1], sessions: {} },
+      })
     } finally {
       provider.dispose()
     }
