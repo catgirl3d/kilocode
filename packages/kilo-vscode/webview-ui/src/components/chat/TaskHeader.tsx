@@ -39,6 +39,8 @@ import { SessionTags, SessionTagsButton } from "../shared/SessionTags"
 import { isPendingTab } from "../../utils/local-tabs"
 import type { MemoryActivity } from "../../utils/memory-activity"
 import { PromptOverflow, type OverflowItem } from "./PromptOverflow"
+import { useClipboard } from "@kilocode/kilo-ui/context/clipboard"
+import { showToast } from "@kilocode/kilo-ui/toast"
 // fork_change end
 
 interface TaskHeaderProps {
@@ -54,7 +56,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
 
   const title = createMemo(() => session.currentSession()?.title ?? language.t("command.session.new"))
   const canRename = createMemo(() => !props.readonly && !!session.currentSession())
-  // fork_change start - tags belong only to an existing local session
+  // fork_change start - tags and the session ID action belong only to an existing local session
   const sid = createMemo(() => {
     const id = session.currentSession()?.id
     if (!id || id.startsWith("cloud:") || isPendingTab(id)) return undefined
@@ -72,6 +74,14 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const compact = createMemo(() => Boolean(settings()["chat.compactHeaderActions"] ?? true)) // fork_change
 
   // fork_change start - session actions fold into the "..." menu
+  const clipboard = useClipboard()
+  const copyId = () => {
+    const id = sid()
+    if (!id) return
+    void Promise.resolve(clipboard.write(id)).catch(() =>
+      showToast({ variant: "error", title: language.t("session.action.copyId.failed") }),
+    )
+  }
   const actions = createMemo<OverflowItem[]>(() => [
     {
       key: "search",
@@ -93,6 +103,13 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       label: language.t("command.session.shake"),
       disabled: !canShake(),
       run: () => session.shake(),
+    },
+    {
+      key: "copyId",
+      icon: "copy",
+      label: language.t("session.action.copyId"),
+      disabled: !sid(),
+      run: copyId,
     },
     {
       key: "disconnectCli",
