@@ -11,6 +11,9 @@ const Context = createContext<{
   ready: () => boolean
   forSession: (id: string) => SessionTagsState["tags"]
   mutate: (action: SessionTagAction) => Promise<Result>
+  // fork_change start - request a fresh host snapshot on demand
+  refresh: () => void
+  // fork_change end
 }>()
 
 export const SessionTagsProvider: ParentComponent = (props) => {
@@ -67,6 +70,9 @@ export const SessionTagsProvider: ParentComponent = (props) => {
       vscode.postMessage({ type: "sessionTagAction", requestID: id, action })
       return request.promise
     },
+    // fork_change start - request a fresh host snapshot on demand
+    refresh: () => vscode.postMessage({ type: "requestSessionTags" }),
+    // fork_change end
   }
 
   return <Context.Provider value={value}>{props.children}</Context.Provider>

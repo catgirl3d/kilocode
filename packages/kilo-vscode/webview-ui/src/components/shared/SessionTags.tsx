@@ -1,5 +1,5 @@
 // fork_change - new file
-import { For, Show, createSignal, onCleanup, type Component, type JSX } from "solid-js"
+import { For, Show, createSignal, onCleanup, onMount, type Component, type JSX } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { Checkbox } from "@kilocode/kilo-ui/checkbox"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
@@ -177,6 +177,9 @@ function SessionTagsEditor(props: {
   })
   props.life.unsubscribe = unsubscribe
   if (props.life.closed) unsubscribe()
+  // fork_change start - refresh the catalog for each newly opened editor
+  onMount(() => props.tags.refresh())
+  // fork_change end
   onCleanup(() => {
     props.life.closed = true
     unsubscribe()
