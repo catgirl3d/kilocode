@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Add a Session changes mode to the Agent Manager apply dialog: copy the active session's changed files from a worktree into the local branch as-is, alongside the existing branch patch apply. Files with uncommitted local changes are only overwritten after confirmation.
 - Favorite local sessions from the history panel and keep them grouped at the top.
 - Filter history sessions by one or more tags in the history panel.
 - Scope session tags to a project or make them visible in every project; existing tags keep working everywhere after the upgrade.

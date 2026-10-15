@@ -110,7 +110,9 @@ export class WorktreeDiffController {
     return shouldStopDiffPolling(path, sessions, this.target, ctxId)
   }
 
-  public async apply(worktreeId: string, value?: unknown): Promise<void> {
+  // fork_change start - session apply mode
+  public async apply(worktreeId: string, value?: unknown, mode?: "branch" | "session", force?: unknown): Promise<void> {
+    // fork_change end
     if (this.applying) {
       this.postApplyResult(worktreeId, "error", "Another apply operation is already in progress")
       return
@@ -121,6 +123,14 @@ export class WorktreeDiffController {
       this.postApplyResult(worktreeId, "error", "Select at least one file to apply")
       return
     }
+
+    // fork_change start - session apply needs an explicit selection: unlike the
+    // branch patch, no selection cannot fall back to every changed file.
+    if (mode === "session" && !files) {
+      this.postApplyResult(worktreeId, "error", "Select at least one file to apply")
+      return
+    }
+    // fork_change end
 
     const state = this.ctx.getState()
     const root = this.ctx.getRoot()
@@ -138,6 +148,42 @@ export class WorktreeDiffController {
     this.applying = worktreeId
 
     try {
+      // fork_change start - copy the session's changed files as-is instead of
+      // building a merge-base patch
+      if (mode === "session") {
+        const selected = files ?? []
+        // Local content the copy would destroy needs an explicit overwrite:
+        // `force` lists the conflicting files the user confirmed.
+        this.postApplyResult(worktreeId, "checking", "Checking for local changes...")
+        const confirmed = new Set(selectedDiffFiles(force) ?? [])
+        const dirty = (await this.ctx.git.dirtyTargets(worktree.path, root, selected)).filter(
+          (file) => !confirmed.has(file),
+        )
+        if (dirty.length > 0) {
+          this.postApplyResult(
+            worktreeId,
+            "conflict",
+            `${dirty.length} local files have uncommitted changes that the copy would overwrite`,
+            dirty.map((file) => ({ file, reason: "Uncommitted local changes" })),
+          )
+          return
+        }
+        this.postApplyResult(worktreeId, "applying", "Copying session files to local branch...")
+        const result = await this.ctx.git.copyWorktreeFiles(worktree.path, root, selected)
+        const first = result.failed.at(0)
+        if (!first) {
+          this.postApplyResult(worktreeId, "success", `Copied ${result.applied} files from session to local branch`)
+          return
+        }
+        this.postApplyResult(
+          worktreeId,
+          "error",
+          `Copied ${result.applied} of ${selected.length} files; ${first.file}: ${first.message}`,
+        )
+        return
+      }
+      // fork_change end
+
       this.postApplyResult(worktreeId, "checking", "Checking for conflicts...")
       const patch = await this.ctx.git.buildWorktreePatch(worktree.path, remoteRef(worktree), files)
 

@@ -291,6 +291,15 @@ export const dict = {
   "agentManager.apply.reason.patch": "Patch cannot be applied cleanly",
   "agentManager.apply.reason.contents": "Cannot read current local file contents",
   "agentManager.apply.reason.unknown": "Conflict detected",
+  // fork_change start - branch | session apply modes
+  "agentManager.apply.mode.branch": "Branch changes",
+  "agentManager.apply.mode.session": "Session changes",
+  "agentManager.apply.mode.tooltip": "Choose which changes to apply",
+  "agentManager.apply.sessionHint":
+    "Worktree files replace local files as-is; no merge. Uncommitted local changes are kept unless you confirm the overwrite.",
+  "agentManager.apply.confirmSession": "Copy to local branch",
+  "agentManager.apply.confirmOverwrite": "Overwrite local changes",
+  // fork_change end
   "agentManager.shortcuts.toggleDiff": "Toggle diff panel",
   "agentManager.shortcuts.category.quickSwitch": "Quick Switch",
   "agentManager.shortcuts.jumpToItem": "Jump to item 1\u20139",

@@ -289,3 +289,130 @@ describe("WorktreeDiffController.setBase", () => {
     controller.stop()
   })
 })
+
+describe("WorktreeDiffController.apply", () => {
+  const results = (posted: unknown[]) =>
+    byType(posted, "agentManager.applyWorktreeDiffResult") as unknown as {
+      status: string
+      message: string
+      conflicts?: { file?: string }[]
+    }[]
+
+  it("keeps the branch patch flow for the default mode", async () => {
+    const calls: unknown[][] = []
+    const git = {
+      buildWorktreePatch: async (path: string, base: string, files: string[]) => {
+        calls.push(["patch", path, base, files])
+        return "patch-text"
+      },
+      checkApplyPatch: async () => ({ ok: true, conflicts: [], message: "clean" }),
+      applyPatch: async () => ({ ok: true, conflicts: [], message: "applied" }),
+    } as unknown as GitOps
+    const { controller, posted } = make({ git })
+
+    await controller.apply("w1", ["a.ts"])
+
+    expect(calls).toEqual([["patch", "/wt", "origin/main", ["a.ts"]]])
+    expect(results(posted).at(-1)).toMatchObject({ status: "success" })
+  })
+
+  it("copies session files without building a patch in session mode", async () => {
+    const calls: unknown[][] = []
+    const git = {
+      buildWorktreePatch: async () => {
+        throw new Error("branch patch must not be built in session mode")
+      },
+      dirtyTargets: async () => [],
+      copyWorktreeFiles: async (path: string, root: string, files: string[]) => {
+        calls.push(["copy", path, root, files])
+        return { applied: 2, failed: [] }
+      },
+    } as unknown as GitOps
+    const { controller, posted } = make({ git })
+
+    await controller.apply("w1", ["a.ts", "b.ts"], "session")
+
+    expect(calls).toEqual([["copy", "/wt", "/repo", ["a.ts", "b.ts"]]])
+    const last = results(posted).at(-1)
+    expect(last?.status).toBe("success")
+    expect(last?.message).toContain("2")
+  })
+
+  it("reports partial session copies as an error", async () => {
+    const git = {
+      dirtyTargets: async () => [],
+      copyWorktreeFiles: async () => ({ applied: 1, failed: [{ file: "b.ts", message: "denied" }] }),
+    } as unknown as GitOps
+    const { controller, posted } = make({ git })
+
+    await controller.apply("w1", ["a.ts", "b.ts"], "session")
+
+    const last = results(posted).at(-1)
+    expect(last?.status).toBe("error")
+    expect(last?.message).toContain("b.ts")
+  })
+
+  it("requires an explicit file selection in session mode", async () => {
+    let called = 0
+    const git = {
+      copyWorktreeFiles: async () => {
+        called++
+        return { applied: 0, failed: [] }
+      },
+    } as unknown as GitOps
+    const { controller, posted } = make({ git })
+
+    await controller.apply("w1", undefined, "session")
+
+    expect(called).toBe(0)
+    const last = results(posted).at(-1)
+    expect(last?.status).toBe("error")
+    expect(last?.message).toContain("Select at least one file")
+  })
+
+  it("blocks the session copy when local files have uncommitted changes", async () => {
+    const checks: unknown[][] = []
+    let copies = 0
+    const git = {
+      dirtyTargets: async (path: string, root: string, files: string[]) => {
+        checks.push([path, root, files])
+        return ["b.ts"]
+      },
+      copyWorktreeFiles: async () => {
+        copies++
+        return { applied: 0, failed: [] }
+      },
+    } as unknown as GitOps
+    const { controller, posted } = make({ git })
+
+    await controller.apply("w1", ["a.ts", "b.ts"], "session")
+
+    expect(checks).toEqual([["/wt", "/repo", ["a.ts", "b.ts"]]])
+    expect(copies).toBe(0)
+    const last = results(posted).at(-1)
+    expect(last?.status).toBe("conflict")
+    expect(last?.conflicts?.map((entry) => entry.file)).toEqual(["b.ts"])
+  })
+
+  it("copies over local changes the user confirmed and still blocks the rest", async () => {
+    let copies = 0
+    const git = {
+      dirtyTargets: async () => ["b.ts", "c.ts"],
+      copyWorktreeFiles: async (_path: string, _root: string, files: string[]) => {
+        copies++
+        return { applied: files.length, failed: [] }
+      },
+    } as unknown as GitOps
+    const { controller, posted } = make({ git })
+
+    await controller.apply("w1", ["a.ts", "b.ts", "c.ts"], "session", ["b.ts"])
+    const partial = results(posted).at(-1)
+    expect(partial?.status).toBe("conflict")
+    expect(partial?.conflicts?.map((entry) => entry.file)).toEqual(["c.ts"])
+    expect(copies).toBe(0)
+
+    await controller.apply("w1", ["a.ts", "b.ts", "c.ts"], "session", ["b.ts", "c.ts"])
+    expect(copies).toBe(1)
+    expect(results(posted).at(-1)).toMatchObject({ status: "success" })
+  })
+})

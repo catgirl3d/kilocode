@@ -460,6 +460,133 @@ export class GitOps {
     }
   }
 
+  // fork_change start - session apply copies the session's changed files as-is:
+  // existing files are overwritten byte for byte, files missing in the worktree
+  // are removed from the target. No patch, no merge.
+  async copyWorktreeFiles(
+    sourcePath: string,
+    targetRoot: string,
+    files: string[],
+  ): Promise<{ applied: number; failed: { file: string; message: string }[] }> {
+    const failed: { file: string; message: string }[] = []
+    let applied = 0
+    const rootReal = await fs.realpath(targetRoot).catch(() => undefined)
+    const insideRoot = async (target: string): Promise<boolean> => {
+      if (!rootReal) return false
+      let probe = nodePath.dirname(target)
+      while (probe && probe !== nodePath.dirname(probe)) {
+        const real = await fs.realpath(probe).catch(() => undefined)
+        if (real) return real === rootReal || real.startsWith(rootReal + nodePath.sep)
+        probe = nodePath.dirname(probe)
+      }
+      return false
+    }
+    const within = (root: string, full: string) => {
+      const base = nodePath.resolve(root)
+      return full === base || full.startsWith(base + nodePath.sep)
+    }
+    const blocked = (file: string) => {
+      // Windows strips trailing dots and spaces per segment, so ".. " and
+      // ".git." must be rejected alongside their plain forms.
+      const parts = file.split(/[\\/]/)
+      const low = parts.map((part) => part.toLowerCase())
+      const spaced = low.map((part) => part.replace(/ +$/, ""))
+      const squashed = low.map((part) => part.replace(/[ .]+$/, ""))
+      const hit = (list: string[]) => list.some((part) => part === ".." || part === ".git")
+      return nodePath.isAbsolute(file) || /^[a-zA-Z]:/.test(file) || hit(low) || hit(spaced) || hit(squashed)
+    }
+    const lstatOrMissing = (path: string) =>
+      fs.lstat(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined
+        throw error
+      })
+
+    for (const raw of files) {
+      const file = raw.trim()
+      if (!file) continue
+      if (blocked(file)) {
+        failed.push({ file, message: "Invalid file path" })
+        continue
+      }
+
+      const src = nodePath.resolve(sourcePath, file)
+      const dst = nodePath.resolve(targetRoot, file)
+      if (!within(sourcePath, src) || !within(targetRoot, dst)) {
+        failed.push({ file, message: "Invalid file path" })
+        continue
+      }
+
+      try {
+        if (!(await insideRoot(dst))) {
+          failed.push({ file, message: "File path outside workspace" })
+          continue
+        }
+        const stat = await lstatOrMissing(src)
+        if (stat?.isSymbolicLink()) {
+          const link = await fs.readlink(src)
+          const existing = await lstatOrMissing(dst)
+          if (existing) await fs.rm(dst, { force: true })
+          await fs.mkdir(nodePath.dirname(dst), { recursive: true })
+          const linkTarget = await fs.stat(src).catch(() => undefined)
+          await fs.symlink(link, dst, linkTarget?.isDirectory() ? "dir" : "file")
+          applied++
+          continue
+        }
+        if (stat?.isFile()) {
+          const existing = await lstatOrMissing(dst)
+          if (existing && !existing.isFile()) await fs.rm(dst, { force: true })
+          await fs.mkdir(nodePath.dirname(dst), { recursive: true })
+          await fs.copyFile(src, dst)
+          applied++
+          continue
+        }
+        if (stat) {
+          failed.push({ file, message: "Not a file" })
+          continue
+        }
+        await fs.rm(dst, { force: true })
+        applied++
+      } catch (error) {
+        failed.push({ file, message: error instanceof Error ? error.message : String(error) })
+      }
+    }
+
+    return { applied, failed }
+  }
+
+  /**
+   * Selected targets whose local copy holds content a session copy would
+   * destroy: unstaged edits or untracked/ignored files that differ from the
+   * worktree source. Missing and byte-identical targets have nothing to lose;
+   * staged-only edits stay recoverable from the index, which the copy never
+   * touches.
+   */
+  async dirtyTargets(sourcePath: string, targetRoot: string, files: string[]): Promise<string[]> {
+    const list = files
+      .map((file) => file.trim())
+      .filter((file) => file.length > 0 && !nodePath.isAbsolute(file) && !file.split(/[\\/]/).includes(".."))
+    if (list.length === 0) return []
+    const result = await this.exec(
+      ["--literal-pathspecs", "ls-files", "--modified", "--others", "-z", "--", ...list],
+      targetRoot,
+    )
+    if (result.code !== 0) throw new Error(result.stderr.trim() || "Failed to check local changes")
+    const dirty = new Set(result.stdout.split("\0").filter(Boolean))
+    const read = (path: string) => fs.readFile(path).catch(() => undefined)
+    const hits = await Promise.all(
+      list.map(async (file) => {
+        if (!dirty.has(file.replace(/\\/g, "/"))) return undefined
+        const local = await read(nodePath.resolve(targetRoot, file))
+        if (!local) return undefined
+        const source = await read(nodePath.resolve(sourcePath, file))
+        if (source?.equals(local)) return undefined
+        return file
+      }),
+    )
+    return hits.filter((file): file is string => file !== undefined)
+  }
+  // fork_change end
+
   /**
    * Revert a single file in a worktree back to the merge-base state.
    * For modified/deleted files: restores the file from the merge-base commit.

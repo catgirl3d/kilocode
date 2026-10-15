@@ -440,6 +440,194 @@ describe("GitOps", () => {
     })
   })
 
+  describe("copyWorktreeFiles", () => {
+    async function withDirs(run: (src: string, dst: string) => Promise<void>): Promise<void> {
+      const src = await fs.mkdtemp(nodePath.join(os.tmpdir(), "kilo-copy-src-"))
+      const dst = await fs.mkdtemp(nodePath.join(os.tmpdir(), "kilo-copy-dst-"))
+      try {
+        await run(src, dst)
+      } finally {
+        await fs.rm(src, { recursive: true, force: true })
+        await fs.rm(dst, { recursive: true, force: true })
+      }
+    }
+
+    it("copies modified and added files and mirrors deletions", async () => {
+      await withDirs(async (src, dst) => {
+        const git = new GitOps({ log: () => undefined })
+        await fs.writeFile(nodePath.join(src, "keep.txt"), "new content\n", "utf8")
+        await fs.writeFile(nodePath.join(src, "added.txt"), "fresh\n", "utf8")
+        await fs.writeFile(nodePath.join(dst, "keep.txt"), "old content\n", "utf8")
+        await fs.writeFile(nodePath.join(dst, "deleted.txt"), "to be removed\n", "utf8")
+        await fs.writeFile(nodePath.join(dst, "untouched.txt"), "same\n", "utf8")
+
+        const result = await git.copyWorktreeFiles(src, dst, ["keep.txt", "added.txt", "deleted.txt"])
+
+        expect(result).toEqual({ applied: 3, failed: [] })
+        expect(await fs.readFile(nodePath.join(dst, "keep.txt"), "utf8")).toBe("new content\n")
+        expect(await fs.readFile(nodePath.join(dst, "added.txt"), "utf8")).toBe("fresh\n")
+        expect(
+          await fs
+            .access(nodePath.join(dst, "deleted.txt"))
+            .then(() => true)
+            .catch(() => false),
+        ).toBe(false)
+        expect(await fs.readFile(nodePath.join(dst, "untouched.txt"), "utf8")).toBe("same\n")
+      })
+    })
+
+    it("rejects absolute, traversal and .git paths without writing", async () => {
+      await withDirs(async (src, dst) => {
+        const git = new GitOps({ log: () => undefined })
+        await fs.writeFile(nodePath.join(src, "safe.txt"), "x\n", "utf8")
+
+        const result = await git.copyWorktreeFiles(src, dst, [
+          "/abs.txt",
+          "../escape.txt",
+          ".git/config",
+          "dir/../x.txt",
+          "C:evil.txt",
+          ".git./config",
+          ".. /escaped.txt",
+        ])
+
+        expect(result.applied).toBe(0)
+        expect(result.failed.map((entry) => entry.file)).toEqual([
+          "/abs.txt",
+          "../escape.txt",
+          ".git/config",
+          "dir/../x.txt",
+          "C:evil.txt",
+          ".git./config",
+          ".. /escaped.txt",
+        ])
+        expect(await fs.readdir(dst)).toEqual([])
+      })
+    })
+
+    it("records a per-file failure and continues with the rest", async () => {
+      await withDirs(async (src, dst) => {
+        const git = new GitOps({ log: () => undefined })
+        await fs.mkdir(nodePath.join(src, "weird"), { recursive: true })
+        await fs.writeFile(nodePath.join(src, "ok.txt"), "ok\n", "utf8")
+
+        const result = await git.copyWorktreeFiles(src, dst, ["weird", "ok.txt"])
+
+        expect(result.applied).toBe(1)
+        expect(result.failed.map((entry) => entry.file)).toEqual(["weird"])
+        expect(await fs.readFile(nodePath.join(dst, "ok.txt"), "utf8")).toBe("ok\n")
+      })
+    })
+
+    // Windows maps lstat's not-a-directory failure to ENOENT, so this case cannot
+    // be distinguished from a missing source there.
+    it.skipIf(process.platform === "win32")("keeps the target file when the source path cannot be read", async () => {
+      await withDirs(async (src, dst) => {
+        const git = new GitOps({ log: () => undefined })
+        await fs.writeFile(nodePath.join(src, "block.txt"), "file\n", "utf8")
+        await fs.mkdir(nodePath.join(dst, "block.txt"), { recursive: true })
+        await fs.writeFile(nodePath.join(dst, "block.txt", "child.txt"), "keep me\n", "utf8")
+
+        const result = await git.copyWorktreeFiles(src, dst, ["block.txt/child.txt"])
+
+        expect(result.applied).toBe(0)
+        expect(result.failed.map((entry) => entry.file)).toEqual(["block.txt/child.txt"])
+        expect(await fs.readFile(nodePath.join(dst, "block.txt", "child.txt"), "utf8")).toBe("keep me\n")
+      })
+    })
+
+    it("rejects writes through a symlinked target directory", async () => {
+      await withDirs(async (src, dst) => {
+        const git = new GitOps({ log: () => undefined })
+        await fs.mkdir(nodePath.join(src, "link"), { recursive: true })
+        await fs.writeFile(nodePath.join(src, "link", "evil.txt"), "boom\n", "utf8")
+        const outside = await fs.mkdtemp(nodePath.join(os.tmpdir(), "kilo-copy-out-"))
+        try {
+          const linked = await fs
+            .symlink(outside, nodePath.join(dst, "link"), "dir")
+            .then(() => true)
+            .catch(() => false)
+          if (!linked) return
+
+          const result = await git.copyWorktreeFiles(src, dst, ["link/evil.txt"])
+
+          expect(result.applied).toBe(0)
+          expect(result.failed.map((entry) => entry.file)).toEqual(["link/evil.txt"])
+          expect(await fs.readdir(outside)).toEqual([])
+        } finally {
+          await fs.rm(outside, { recursive: true, force: true })
+        }
+      })
+    })
+
+    it("recreates file symlinks instead of copying their content", async () => {
+      await withDirs(async (src, dst) => {
+        const git = new GitOps({ log: () => undefined })
+        await fs.writeFile(nodePath.join(src, "target.txt"), "raw\n", "utf8")
+        const linked = await fs
+          .symlink("target.txt", nodePath.join(src, "link.txt"))
+          .then(() => true)
+          .catch(() => false)
+        if (!linked) return
+
+        const result = await git.copyWorktreeFiles(src, dst, ["link.txt"])
+
+        expect(result).toEqual({ applied: 1, failed: [] })
+        const stat = await fs.lstat(nodePath.join(dst, "link.txt"))
+        expect(stat.isSymbolicLink()).toBe(true)
+        expect(await fs.readlink(nodePath.join(dst, "link.txt"))).toBe("target.txt")
+      })
+    })
+  })
+
+  describe("dirtyTargets", () => {
+    it("reports only local content the session copy would destroy", async () => {
+      await withRepo(async (cwd) => {
+        const src = await fs.mkdtemp(nodePath.join(os.tmpdir(), "kilo-dirty-src-"))
+        try {
+          const git = new GitOps({ log: () => undefined })
+          const tracked = ["clean.txt", "edited.txt", "same.txt", "gone.txt", "removed.txt", "staged.txt", "a[1].txt"]
+          for (const file of tracked) await fs.writeFile(nodePath.join(cwd, file), "base\n", "utf8")
+          await fs.writeFile(nodePath.join(cwd, ".gitignore"), "*.log\n", "utf8")
+          runGit(cwd, ["add", "-A"])
+          runGit(cwd, ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init"])
+
+          await fs.writeFile(nodePath.join(cwd, "edited.txt"), "local edit\n", "utf8")
+          await fs.writeFile(nodePath.join(cwd, "same.txt"), "worktree\n", "utf8")
+          await fs.rm(nodePath.join(cwd, "gone.txt"))
+          await fs.writeFile(nodePath.join(cwd, "removed.txt"), "local edit\n", "utf8")
+          await fs.writeFile(nodePath.join(cwd, "staged.txt"), "staged edit\n", "utf8")
+          runGit(cwd, ["add", "staged.txt"])
+          await fs.writeFile(nodePath.join(cwd, "a[1].txt"), "local edit\n", "utf8")
+          await fs.writeFile(nodePath.join(cwd, "untracked.txt"), "local\n", "utf8")
+          await fs.writeFile(nodePath.join(cwd, "x.log"), "local\n", "utf8")
+
+          const sources = ["clean.txt", "edited.txt", "same.txt", "gone.txt", "staged.txt", "a[1].txt"]
+          for (const file of [...sources, "untracked.txt", "x.log"]) {
+            await fs.writeFile(nodePath.join(src, file), "worktree\n", "utf8")
+          }
+
+          const result = await git.dirtyTargets(src, cwd, [
+            "clean.txt",
+            "edited.txt",
+            "same.txt",
+            "gone.txt",
+            "removed.txt",
+            "staged.txt",
+            "a[1].txt",
+            "untracked.txt",
+            "x.log",
+            "missing.txt",
+          ])
+
+          expect(result).toEqual(["edited.txt", "removed.txt", "a[1].txt", "untracked.txt", "x.log"])
+        } finally {
+          await fs.rm(src, { recursive: true, force: true })
+        }
+      })
+    })
+  })
+
   describe("checkApplyPatch", () => {
     it("returns ok for a clean patch", async () => {
       await withRepo(async (cwd) => {

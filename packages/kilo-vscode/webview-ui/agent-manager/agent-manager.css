@@ -4745,6 +4745,21 @@ body.am-wt-dragging-active * {
   gap: 8px;
 }
 
+/* fork_change start - branch | session apply source switch */
+.am-apply-dialog-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.am-apply-session-hint {
+  font-size: var(--kilo-font-size-11);
+  color: var(--text-weak);
+  line-height: 1.35;
+}
+/* fork_change end */
+
 .am-apply-dialog-summary {
   display: inline-flex;
   align-items: center;

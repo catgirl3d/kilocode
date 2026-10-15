@@ -850,7 +850,7 @@ export class AgentManagerProvider implements Disposable {
   private onDiffMessage(m: AgentManagerInMessage): Record<string, unknown> | null | undefined {
     if ("projectId" in m && m.projectId && m.projectId !== this.context?.id) return null
     if (m.type === "agentManager.requestWorktreeDiff") {
-      void this.diffs.request(composeDiffId(m.sessionId, normalizeScope(m.scope)))
+      void this.diffs.request(composeDiffId(m.sessionId, normalizeScope(m.scope), m.diffSessionId)) // fork_change
       return null
     }
     if (m.type === "agentManager.requestWorktreeDiffFile") {
@@ -858,7 +858,7 @@ export class AgentManagerProvider implements Disposable {
       return null
     }
     if (m.type === "agentManager.applyWorktreeDiff") {
-      void this.diffs.apply(m.worktreeId, m.selectedFiles)
+      void this.diffs.apply(m.worktreeId, m.selectedFiles, m.mode, m.force) // fork_change
       return null
     }
     if (m.type === "agentManager.revertWorktreeFile") {

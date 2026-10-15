@@ -5,6 +5,8 @@ import { Spinner } from "@kilocode/kilo-ui/spinner"
 import type { AgentManagerApplyWorktreeDiffStatus, WorktreeFileDiff } from "../src/types/messages"
 import { useLanguage } from "../src/context/language"
 import { FileTree } from "../diff-viewer/FileTree"
+import { InlineSelect } from "../diff-viewer/InlineSelect" // fork_change
+import { notice as sourceNotice } from "../diff-viewer/review-setup" // fork_change
 import { mapApplyConflictReason, type ApplyConflictRow } from "./apply-conflicts"
 
 interface ApplyDialogProps {
@@ -16,12 +18,23 @@ interface ApplyDialogProps {
   deletions: number
   busy: boolean
   hasSelection: boolean
+  // fork_change start - branch | session apply source switch
+  /** Active apply source: "branch" patches against the base, "session" copies session files as-is. */
+  mode: "branch" | "session"
+  /** Whether the context has an active session, making the session mode selectable. */
+  canSession: boolean
+  /** Source notice for the active mode (e.g. snapshots-disabled). */
+  notice?: string
+  /** Selected session conflicts are listed: confirming overwrites their local changes. */
+  overwrite: boolean
+  // fork_change end
   status?: AgentManagerApplyWorktreeDiffStatus
   message?: string
   conflictRows: ApplyConflictRow[]
   onSelectAll: () => void
   onSelectNone: () => void
   onToggleFile: (file: string, checked: boolean) => void
+  onSelectMode: (mode: "branch" | "session") => void // fork_change
   onApply: () => void
   onClose: () => void
 }
@@ -36,6 +49,14 @@ export const ApplyDialog: Component<ApplyDialogProps> = (props) => {
     if (mapped === "contents") return t("agentManager.apply.reason.contents")
     return reason || t("agentManager.apply.reason.unknown")
   }
+
+  // fork_change start - confirm label per apply mode and the session overwrite step
+  const confirm = () => {
+    if (props.overwrite) return t("agentManager.apply.confirmOverwrite")
+    if (props.mode === "session") return t("agentManager.apply.confirmSession")
+    return t("agentManager.apply.confirm")
+  }
+  // fork_change end
 
   return (
     <Dialog title={t("agentManager.apply.dialogTitle")} size="large">
@@ -56,14 +77,30 @@ export const ApplyDialog: Component<ApplyDialogProps> = (props) => {
         }}
       >
         <div class="am-apply-dialog-toolbar">
-          <div class="am-apply-dialog-summary">
-            {t("agentManager.apply.selectionSummary", {
-              selected: props.selectedCount,
-              total: props.diffs.length,
-            })}
-            <span class="am-stat-additions">+{props.additions}</span>
-            <span class="am-stat-deletions">-{props.deletions}</span>
+          {/* fork_change start - apply source switch and its summary */}
+          <div class="am-apply-dialog-head">
+            <Show when={props.canSession}>
+              <InlineSelect
+                options={[
+                  { value: "branch", label: t("agentManager.apply.mode.branch") },
+                  { value: "session", label: t("agentManager.apply.mode.session") },
+                ]}
+                value={props.mode}
+                onSelect={props.onSelectMode}
+                title={t("agentManager.apply.mode.tooltip")}
+                compact
+              />
+            </Show>
+            <div class="am-apply-dialog-summary">
+              {t("agentManager.apply.selectionSummary", {
+                selected: props.selectedCount,
+                total: props.diffs.length,
+              })}
+              <span class="am-stat-additions">+{props.additions}</span>
+              <span class="am-stat-deletions">-{props.deletions}</span>
+            </div>
           </div>
+          {/* fork_change end */}
           <div class="am-apply-dialog-actions">
             <Button
               size="small"
@@ -83,6 +120,15 @@ export const ApplyDialog: Component<ApplyDialogProps> = (props) => {
             </Button>
           </div>
         </div>
+
+        {/* fork_change start - session mode hint and source notice */}
+        <Show when={props.notice}>
+          <div class="am-apply-session-hint">{sourceNotice(t, props.notice)}</div>
+        </Show>
+        <Show when={props.mode === "session" && !props.notice}>
+          <div class="am-apply-session-hint">{t("agentManager.apply.sessionHint")}</div>
+        </Show>
+        {/* fork_change end */}
 
         <div class="am-apply-dialog-tree">
           <Show
@@ -130,7 +176,9 @@ export const ApplyDialog: Component<ApplyDialogProps> = (props) => {
             {t("common.close")}
           </Button>
           <Button variant="primary" size="large" disabled={!props.hasSelection || props.busy} onClick={props.onApply}>
-            <Show when={props.busy} fallback={t("agentManager.apply.confirm")}>
+            {/* fork_change start - distinct confirm label for the session copy and its overwrite step */}
+            <Show when={props.busy} fallback={confirm()}>
+              {/* fork_change end */}
               <>
                 <Spinner class="am-apply-spinner" />
                 {t("agentManager.apply.applying")}

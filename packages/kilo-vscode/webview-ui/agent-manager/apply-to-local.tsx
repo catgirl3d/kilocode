@@ -15,7 +15,7 @@ import { showToast } from "@kilocode/kilo-ui/toast"
 import { groupApplyConflicts } from "./apply-conflicts"
 import { ApplyDialog } from "./ApplyDialog"
 import { composeDiffId } from "./diff-scope-state"
-import { diffDataKey } from "./worktree-diffs"
+import { diffDataKey, wireDiffId } from "./worktree-diffs" // fork_change
 import type { tracker } from "./telemetry"
 import type { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import type { useLanguage } from "../src/context/language"
@@ -39,6 +39,12 @@ interface ApplyToLocalOptions {
   worktrees: Accessor<{ id: string }[]>
   diffDatas: Accessor<Record<string, WorktreeFileDiff[]>>
   diffLoading: Accessor<boolean>
+  // fork_change start - session apply mode needs the active session and its source notice
+  /** Active session of the selected context; the session apply mode lists its changes. */
+  session: Accessor<string | undefined>
+  /** Source notices keyed by data id (e.g. snapshots-disabled), shown in the dialog. */
+  notices: Accessor<Record<string, string | undefined>>
+  // fork_change end
   /** Telemetry: metrics.track(name, surface, data). */
   track: ReturnType<typeof tracker>["track"]
   projectId?: Accessor<string | undefined>
@@ -51,6 +57,27 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
   const [applyTarget, setApplyTarget] = createSignal<string | undefined>()
   const [applySelectedFiles, setApplySelectedFiles] = createSignal<string[]>([])
   const [applySelectionTouched, setApplySelectionTouched] = createSignal(false)
+  // fork_change start - branch | session apply modes
+  const [applyMode, setApplyMode] = createSignal<"branch" | "session">("branch")
+
+  const applySessionId = createMemo(() => {
+    const target = applyTarget()
+    if (!target || target === local) return undefined
+    return opts.session()
+  })
+
+  const applyCanSession = createMemo(() => applySessionId() !== undefined)
+
+  // Fall back to branch mode when the active session disappears mid-dialog, so
+  // the mode never diverges from the branch data shown after the fallback.
+  createEffect(() => {
+    if (applyTarget() && applyMode() === "session" && !applySessionId()) {
+      setApplyMode("branch")
+      setApplySelectionTouched(false)
+      setApplySelectedFiles([])
+    }
+  })
+  // fork_change end
 
   const applyStateForSelection = createMemo(() => {
     const sel = selection()
@@ -69,6 +96,10 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
   const applyDiffKey = createMemo(() => {
     const target = applyTarget()
     if (!target) return undefined
+    // fork_change start - the session mode uses the session-scope data id
+    const sid = applySessionId()
+    if (applyMode() === "session" && sid) return composeDiffId(target, "session", sid)
+    // fork_change end
     return composeDiffId(target, "branch")
   })
 
@@ -77,6 +108,14 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
     if (!key) return [] as WorktreeFileDiff[]
     return diffDatas()[diffDataKey(opts.projectId?.(), key)] ?? ([] as WorktreeFileDiff[])
   })
+
+  // fork_change start - source notice (e.g. snapshots-disabled) for the active data id
+  const applyNotice = createMemo(() => {
+    const key = applyDiffKey()
+    if (!key) return undefined
+    return opts.notices()[diffDataKey(opts.projectId?.(), key)]
+  })
+  // fork_change end
 
   const applyStateForTarget = createMemo(() => {
     const target = applyTarget()
@@ -109,7 +148,18 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
 
   const applyConflictRows = createMemo(() => groupApplyConflicts(applyStateForTarget()?.conflicts ?? []))
 
-  const applyToLocal = (worktreeId: string, selectedFiles: string[]) => {
+  // fork_change start - selected session conflicts the next apply confirms to overwrite
+  const applyOverwrite = createMemo(() => {
+    const state = applyStateForTarget()
+    if (applyMode() !== "session" || state?.status !== "conflict") return []
+    const set = applySelectedSet()
+    return state.conflicts.flatMap((entry) => (entry.file && set.has(entry.file) ? [entry.file] : []))
+  })
+  // fork_change end
+
+  // fork_change start - mode selects the patched branch diff or the session copy
+  const applyToLocal = (worktreeId: string, selectedFiles: string[], mode: "branch" | "session", force: string[]) => {
+    // fork_change end
     setApplyStates((prev) => ({
       ...prev,
       [worktreeId]: {
@@ -123,6 +173,8 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
       projectId: opts.projectId?.(),
       worktreeId,
       selectedFiles,
+      mode, // fork_change
+      force, // fork_change
     })
   }
 
@@ -130,6 +182,7 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
     setApplyTarget(undefined)
     setApplySelectedFiles([])
     setApplySelectionTouched(false)
+    setApplyMode("branch") // fork_change
   }
 
   const closeApplyDialog = () => {
@@ -169,8 +222,28 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
     if (!applyHasSelection()) return
     if (applyBusyForTarget()) return
     opts.track("apply_to_local", "apply_dialog", { fileCount: applySelectedFiles().length })
-    applyToLocal(target, applySelectedFiles())
+    applyToLocal(target, applySelectedFiles(), applyMode(), applyOverwrite()) // fork_change
+  } // fork_change
+
+  // fork_change start - switching modes swaps the file list source and refetches it
+  const applySelectMode = (mode: "branch" | "session") => {
+    if (mode === applyMode()) return
+    // A conflict from the other mode must not carry over or confirm an overwrite.
+    const target = applyTarget()
+    setApplyStates((prev) => {
+      if (!target || prev[target]?.status !== "conflict") return prev
+      const next = { ...prev }
+      delete next[target]
+      return next
+    })
+    setApplyMode(mode)
+    setApplySelectionTouched(false)
+    setApplySelectedFiles([])
+    const id = applyDiffKey()
+    if (!id) return
+    vscode.postMessage({ type: "agentManager.requestWorktreeDiff", projectId: opts.projectId?.(), ...wireDiffId(id) })
   }
+  // fork_change end
 
   const openApplyDialog = () => {
     const sel = selection()
@@ -181,10 +254,16 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
       delete next[sel]
       return next
     })
+    setApplyMode("branch") // fork_change
     setApplyTarget(sel)
     setApplySelectionTouched(false)
     setApplySelectedFiles([])
-    vscode.postMessage({ type: "agentManager.requestWorktreeDiff", projectId: opts.projectId?.(), sessionId: sel })
+    // fork_change start - request the active mode's data id (branch or session)
+    const id = applyDiffKey()
+    if (id) {
+      vscode.postMessage({ type: "agentManager.requestWorktreeDiff", projectId: opts.projectId?.(), ...wireDiffId(id) })
+    }
+    // fork_change end
 
     setApplySelectedFiles(applyDiffs().map((diff) => diff.file))
 
@@ -199,12 +278,17 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
           deletions={applySelectionStats().deletions}
           busy={applyBusyForTarget()}
           hasSelection={applyHasSelection()}
+          mode={applyMode()} // fork_change
+          canSession={applyCanSession()} // fork_change
+          notice={applyNotice()} // fork_change
+          overwrite={applyOverwrite().length > 0} // fork_change
           status={applyStateForTarget()?.status}
           message={applyStateForTarget()?.message}
           conflictRows={applyConflictRows()}
           onSelectAll={applySelectAll}
           onSelectNone={applySelectNone}
           onToggleFile={applyToggleFile}
+          onSelectMode={applySelectMode} // fork_change
           onApply={triggerApply}
           onClose={closeApplyDialog}
         />

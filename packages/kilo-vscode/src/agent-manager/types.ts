@@ -918,6 +918,7 @@ interface RequestWorktreeDiffIn {
   projectId?: string
   sessionId: string
   scope?: string
+  diffSessionId?: string // fork_change - active session for the session scope (ctx alone is a worktree/local id)
 }
 
 interface ApplyWorktreeDiffIn {
@@ -925,6 +926,8 @@ interface ApplyWorktreeDiffIn {
   projectId?: string
   worktreeId: string
   selectedFiles?: string[]
+  mode?: "branch" | "session" // fork_change - "session" copies the session's changed files as-is instead of patching
+  force?: string[] // fork_change - session mode: conflicting files the user confirmed to overwrite
 }
 
 interface RequestWorktreeDiffFileIn {

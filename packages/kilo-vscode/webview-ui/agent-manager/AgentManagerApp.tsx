@@ -608,6 +608,10 @@ const AgentManagerContent: Component = () => {
     worktrees,
     diffDatas,
     diffLoading,
+    // fork_change start - session apply mode follows the active session of the selection
+    session: () => activeDiffSession(),
+    notices: diffNotices,
+    // fork_change end
     track: metrics.track,
     projectId: activeProjectId,
   })
