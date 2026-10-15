@@ -50,6 +50,11 @@ function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs
       }),
       command: async (_p: unknown) => ({ data: {} }),
     },
+    experimental: {
+      session: {
+        list: async (_p: unknown) => ({ data: [], response: { headers: new Headers() } }),
+      },
+    },
     project: {
       current: async (p: { directory: string }) => {
         projectCalls.push(p.directory)
@@ -93,6 +98,8 @@ function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs
       onModelSelectorExpandedChanged: () => () => undefined,
       onClearPendingPrompts: () => () => undefined,
       registerDirectoryProvider: () => () => undefined,
+      registerVisible: () => undefined,
+      registerAttached: () => undefined,
       unregisterVisible: () => undefined,
       unregisterAttached: () => undefined,
       getServerInfo: () => ({ port: 12345 }),
@@ -122,12 +129,17 @@ async function withNestedRepo(run: (root: string) => Promise<void>): Promise<voi
 
 type ProviderInternals = {
   client: unknown
+  projectID: string | undefined
+  tagProjectSent: string | undefined
   connectionState: "connecting" | "connected" | "disconnected" | "error"
   initConnectionPromise: Promise<void> | null
   isWebviewReady: boolean
   webview: { postMessage: (message: unknown) => Promise<unknown> } | null
+  pendingSessionRefresh: boolean
   startStatsPolling: () => void
   contextSessionID: string | undefined
+  handleLoadSessions: (more?: boolean) => Promise<void>
+  flushPendingSessionRefresh: (reason: string) => Promise<void>
   resolveSession: (sessionID?: string, draftID?: string, context?: string, directory?: string) => Promise<unknown>
   handleCreateSession: () => Promise<void>
   checkpoints: Map<string, Promise<void>>
@@ -893,8 +905,9 @@ describe("KiloProvider route integration", () => {
   })
 })
 
-function memory() {
+function memory(seed?: unknown) {
   const data = new Map<string, unknown>()
+  if (seed !== undefined) data.set("sessionTags", seed)
   let fail = false
   return {
     data,
@@ -948,14 +961,272 @@ function typeList(messages: unknown[]): unknown[] {
 }
 
 describe("session tags", () => {
+  it("uses the backend project ID returned by the session load for tag views", async () => {
+    const tag = { id: "backend-tag", name: "Backend", color: "Blue" }
+    initSessionTags(
+      memory({
+        version: 2,
+        global: [],
+        projects: { "backend-a": { tags: [tag], sessions: { "ses-root": [tag.id] } } },
+        legacy: { sessions: {} },
+      }).state,
+    )
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      experimental: { session: { list: (input: unknown, options?: unknown) => Promise<unknown> } }
+    }
+    client.experimental.session.list = async () => ({
+      data: [{ id: "ses-root", projectID: "backend-a", directory: "/repo", time: { created: 1, updated: 1 } }],
+      response: { headers: new Headers() },
+    })
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "prj-agent-manager" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    const posted: unknown[] = []
+    connect(internal)
+    internal.isWebviewReady = true
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    try {
+      await internal.handleLoadSessions(false)
+
+      expect(internal.projectID).toBe("backend-a")
+      expect(posted).toContainEqual({
+        type: "sessionTagsLoaded",
+        state: { tags: [tag], sessions: { "ses-root": [tag.id] } },
+      })
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("uses a workspace directory session as the canonical project ID", async () => {
+    const tag = { id: "backend-root", name: "Backend root", color: "Blue" }
+    initSessionTags(
+      memory({
+        version: 2,
+        global: [],
+        projects: { "backend-root": { tags: [tag], sessions: { "ses-root": [tag.id] } } },
+        legacy: { sessions: {} },
+      }).state,
+    )
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      experimental: { session: { list: (input: { directory: string }, options?: unknown) => Promise<unknown> } }
+    }
+    client.experimental.session.list = async ({ directory }) => ({
+      data:
+        directory === "/repo"
+          ? [{ id: "ses-root", projectID: "backend-root", directory, time: { created: 1, updated: 1 } }]
+          : [],
+      response: { headers: new Headers() },
+    })
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "prj-agent-manager" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    const posted: unknown[] = []
+    connect(internal)
+    internal.isWebviewReady = true
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    try {
+      await internal.handleLoadSessions(false)
+
+      expect(internal.projectID).toBe("backend-root")
+      expect(posted).toContainEqual({
+        type: "sessionTagsLoaded",
+        state: { tags: [tag], sessions: { "ses-root": [tag.id] } },
+      })
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("clears the previous project tag view after a qualifier switch with an empty load", async () => {
+    const local = { id: "local", name: "Local", color: "Blue" }
+    const global = { id: "global", name: "Global", color: "Red", scope: "global" as const }
+    initSessionTags(
+      memory({
+        version: 2,
+        global: [global],
+        projects: { "backend-a": { tags: [local], sessions: { "ses-a": [local.id] } } },
+        legacy: { sessions: {} },
+      }).state,
+    )
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      experimental: { session: { list: (input: unknown, options?: unknown) => Promise<unknown> } }
+    }
+    let calls = 0
+    client.experimental.session.list = async () => {
+      calls++
+      return {
+        data:
+          calls === 1
+            ? [{ id: "ses-a", projectID: "backend-a", directory: "/repo", time: { created: 1, updated: 1 } }]
+            : [],
+        response: { headers: new Headers() },
+      }
+    }
+    let qualifier = "prj-a"
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: qualifier }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    const posted: unknown[] = []
+    connect(internal)
+    internal.isWebviewReady = true
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    try {
+      await internal.handleLoadSessions(false)
+      posted.length = 0
+      qualifier = "prj-b"
+      await internal.handleLoadSessions(false)
+
+      expect(internal.projectID).toBeUndefined()
+      expect(posted.filter((message) => (message as { type?: string }).type === "sessionTagsLoaded")).toEqual([
+        { type: "sessionTagsLoaded", state: { tags: [global], sessions: {} } },
+      ])
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("adopts the backend project ID from the first created session", async () => {
+    const tag = { id: "backend-tag", name: "Backend", color: "Blue" }
+    initSessionTags(
+      memory({
+        version: 2,
+        global: [],
+        projects: { "backend-a": { tags: [tag], sessions: {} } },
+        legacy: { sessions: {} },
+      }).state,
+    )
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      session: { create: (input: unknown, options?: unknown) => Promise<unknown> }
+    }
+    client.session.create = async () => ({
+      data: {
+        id: "ses-new",
+        projectID: "backend-a",
+        slug: "new",
+        directory: "/repo",
+        title: "New",
+        version: "1",
+        time: { created: 1, updated: 1 },
+      },
+    })
+    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const internal = provider as unknown as ProviderInternals
+    const posted: unknown[] = []
+    connect(internal)
+    internal.isWebviewReady = true
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    try {
+      await internal.handleCreateSession()
+
+      expect(internal.projectID).toBe("backend-a")
+      expect(posted).toContainEqual({ type: "sessionTagsLoaded", state: { tags: [tag], sessions: {} } })
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("clears the tag view when a pending refresh resolves no project ID", async () => {
+    const local = { id: "local", name: "Local", color: "Blue" }
+    const global = { id: "global", name: "Global", color: "Red", scope: "global" as const }
+    initSessionTags(
+      memory({
+        version: 2,
+        global: [global],
+        projects: { "backend-a": { tags: [local], sessions: {} } },
+        legacy: { sessions: {} },
+      }).state,
+    )
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      experimental: { session: { list: (input: unknown, options?: unknown) => Promise<unknown> } }
+    }
+    client.experimental.session.list = async () => ({ data: [], response: { headers: new Headers() } })
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "prj-next" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    const posted: unknown[] = []
+    connect(internal)
+    internal.isWebviewReady = true
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+    internal.projectID = "backend-a"
+    internal.tagProjectSent = "backend-a"
+    internal.pendingSessionRefresh = true
+
+    try {
+      await internal.flushPendingSessionRefresh("test")
+
+      expect(internal.projectID).toBeUndefined()
+      expect(posted.filter((message) => (message as { type?: string }).type === "sessionTagsLoaded")).toEqual([
+        { type: "sessionTagsLoaded", state: { tags: [global], sessions: {} } },
+      ])
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("does not repost the tag view when the resolved key is unchanged", async () => {
+    initSessionTags(memory().state)
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      experimental: { session: { list: (input: unknown, options?: unknown) => Promise<unknown> } }
+    }
+    client.experimental.session.list = async () => ({
+      data: [{ id: "ses-root", projectID: "backend-a", directory: "/repo", time: { created: 1, updated: 1 } }],
+      response: { headers: new Headers() },
+    })
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "prj-a" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    const posted: unknown[] = []
+    connect(internal)
+    internal.isWebviewReady = true
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    try {
+      await internal.handleLoadSessions(false)
+      await internal.handleLoadSessions(false)
+
+      expect(posted.filter((message) => (message as { type?: string }).type === "sessionTagsLoaded")).toHaveLength(1)
+    } finally {
+      provider.dispose()
+    }
+  })
+
   it("routes without a ready CLI, broadcasts changes, and stops after provider disposal", async () => {
     initSessionTags(memory().state)
     const { connection } = mockConnection()
     connection.getClient = () => {
       throw new Error("CLI is not ready")
     }
-    const first = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
-    const second = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const first = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "repo" }),
+    })
+    const second = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "repo" }),
+    })
+    ;(first as unknown as ProviderInternals).projectID = "repo"
+    ;(second as unknown as ProviderInternals).projectID = "repo"
     const a: unknown[] = []
     const b: unknown[] = []
     const send = providerRoute(first, a)
@@ -982,7 +1253,7 @@ describe("session tags", () => {
 
       second.dispose()
       disposed = true
-      const tag = sessionTags().tags.at(0)
+      const tag = sessionTags().projects.repo?.tags.at(0)
       if (!tag) throw new Error("Expected the host to save the new tag")
       await send({
         type: "sessionTagAction",
@@ -1006,8 +1277,9 @@ describe("session tags", () => {
         action: { type: "create", sessionID: "ses-a", name: "Alpha", color: "Blue" },
       },
       () => {},
+      "repo",
     )
-    const tag = sessionTags().tags.at(0)
+    const tag = sessionTags().projects.repo?.tags.at(0)
     if (!tag) throw new Error("Expected the host to save the new tag")
     await handleSessionTagsMessage(
       {
@@ -1016,10 +1288,14 @@ describe("session tags", () => {
         action: { type: "assign", sessionID: "ses-b", id: tag.id, assigned: true },
       },
       () => {},
+      "repo",
     )
 
     const { connection } = mockConnection()
-    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "repo" }),
+    })
     const internal = provider as unknown as {
       webview: vscode.Webview | null
       handleDeleteSession: (sessionID: string) => Promise<void>
@@ -1044,9 +1320,15 @@ describe("session tags", () => {
           action: { type: "assign", sessionID: "ses-b", id: tag.id, assigned: true },
         },
         () => {},
+        "repo",
       )
 
-      expect(sessionTags()).toEqual({ tags: [tag], sessions: { "ses-b": [tag.id] } })
+      expect(sessionTags()).toEqual({
+        version: 2,
+        global: [],
+        projects: { repo: { tags: [tag], sessions: { "ses-b": [tag.id] } } },
+        legacy: { sessions: {} },
+      })
       expect(sent).toContainEqual({ type: "sessionDeleted", sessionID: "ses-a" })
     } finally {
       provider.dispose()
@@ -1062,12 +1344,16 @@ describe("session tags", () => {
         action: { type: "create", sessionID: "ses-a", name: "Alpha", color: "Blue" },
       },
       () => {},
+      "repo",
     )
-    const tag = sessionTags().tags.at(0)
+    const tag = sessionTags().projects.repo?.tags.at(0)
     if (!tag) throw new Error("Expected the host to save the new tag")
 
     const { connection } = mockConnection()
-    const provider = new KiloProvider({} as never, connection, undefined, { rootDirectory: () => "/repo" })
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "repo" }),
+    })
     const internal = provider as unknown as {
       webview: vscode.Webview | null
       handleDeleteSession: (sessionID: string) => Promise<void>
@@ -1087,10 +1373,92 @@ describe("session tags", () => {
 
     try {
       await internal.handleDeleteSession("ses-a")
-      expect(sessionTags()).toEqual({ tags: [tag], sessions: { "ses-a": [tag.id] } })
+      expect(sessionTags()).toEqual({
+        version: 2,
+        global: [],
+        projects: { repo: { tags: [tag], sessions: { "ses-a": [tag.id] } } },
+        legacy: { sessions: {} },
+      })
       expect(sent).toContainEqual(expect.objectContaining({ type: "error" }))
     } finally {
       provider.dispose()
+    }
+  })
+
+  it("keeps provider tag broadcasts isolated by project", async () => {
+    const local = { id: "b-tag", name: "Beta", color: "Red" }
+    initSessionTags(
+      memory({
+        version: 2,
+        global: [],
+        projects: { b: { tags: [local], sessions: { "ses-b": [local.id] } } },
+        legacy: { sessions: {} },
+      }).state,
+    )
+    const { connection } = mockConnection()
+    connection.getClient = () => {
+      throw new Error("CLI is not ready")
+    }
+    const first = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo/a",
+      projectQualifier: () => ({ projectId: "a" }),
+    })
+    const second = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo/b",
+      projectQualifier: () => ({ projectId: "b" }),
+    })
+    ;(first as unknown as ProviderInternals).projectID = "a"
+    ;(second as unknown as ProviderInternals).projectID = "b"
+    const a: unknown[] = []
+    const b: unknown[] = []
+    const sendA = providerRoute(first, a)
+    const sendB = providerRoute(second, b)
+
+    try {
+      await sendB({ type: "requestSessionTags" })
+      expect(b).toContainEqual({
+        type: "sessionTagsLoaded",
+        state: { tags: [{ ...local }], sessions: { "ses-b": [local.id] } },
+      })
+      b.length = 0
+
+      await sendA({
+        type: "sessionTagAction",
+        requestID: "create-a",
+        action: { type: "create", sessionID: "ses-a", name: "Alpha", color: "Blue" },
+      })
+      const loadedA = a.find(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as { type?: string }).type === "sessionTagsLoaded",
+      )
+      const loadedB = b.find(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as { type?: string }).type === "sessionTagsLoaded",
+      )
+      expect(loadedA).toEqual({
+        type: "sessionTagsLoaded",
+        state: {
+          tags: [{ id: expect.any(String), name: "Alpha", color: "Blue" }],
+          sessions: { "ses-a": [expect.any(String)] },
+        },
+      })
+      expect(loadedB).toEqual({
+        type: "sessionTagsLoaded",
+        state: { tags: [{ ...local }], sessions: { "ses-b": [local.id] } },
+      })
+
+      b.length = 0
+      await sendB({ type: "requestSessionTags" })
+      expect(b).toEqual([
+        { type: "sessionTagsLoaded", state: { tags: [{ ...local }], sessions: { "ses-b": [local.id] } } },
+      ])
+    } finally {
+      first.dispose()
+      second.dispose()
     }
   })
 })
