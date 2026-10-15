@@ -89,7 +89,7 @@ export interface CloudSessionInfo {
 export type MessageLoadMode = "replace" | "prepend" | "focus" | "reconcile"
 
 // fork_change start - local session tags
-export type SessionTag = { id: string; name: string; color: string }
+export type SessionTag = { id: string; name: string; color: string; scope?: "global" }
 
 export type SessionTagsState = {
   tags: SessionTag[]
@@ -97,12 +97,16 @@ export type SessionTagsState = {
 }
 
 export type SessionTagAction =
-  | { type: "create"; sessionID: string; name: string; color: string }
-  | { type: "update"; id: string; patch: Partial<Pick<SessionTag, "name" | "color">> }
+  | { type: "create"; sessionID: string; name: string; color: string; scope?: "global" | "project" }
+  | {
+      type: "update"
+      id: string
+      patch: Partial<Pick<SessionTag, "name" | "color">> & { scope?: "global" | "project" }
+    }
   | { type: "assign"; sessionID: string; id: string; assigned: boolean }
   | { type: "delete"; id: string }
 
-export type SessionTagError = "name" | "duplicate" | "missing" | "invalid" | "storage"
+export type SessionTagError = "name" | "duplicate" | "missing" | "invalid" | "storage" | "project"
 // fork_change end
 
 // fork_change start - local session favorites

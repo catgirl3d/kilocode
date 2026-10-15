@@ -117,7 +117,10 @@ const items: SessionInfo[] = [
 const [active, setActive] = createSignal("ses-home")
 const [secondary, setSecondary] = createSignal(false)
 const [tertiary, setTertiary] = createSignal(false)
-const [sessions] = createSignal(items)
+const [sessions, setSessions] = createSignal(items)
+const [hasMore, setHasMore] = createSignal(false)
+const [loadingMore, setLoadingMore] = createSignal(false)
+let loadMoreCalls = 0
 const selected: string[] = []
 const renamed: string[] = []
 const [amColors, setAmColors] = createSignal<Record<string, string>>({ "ses-home": "Purple", "ses-plain": "Blue" })
@@ -136,6 +139,12 @@ const session = {
   activityFor: () => "idle" as const,
   messages: () => [{ id: "home-message", sessionID: "ses-home", role: "user", createdAt: now }],
   visibleMessages: () => [],
+  loadMoreSessions: () => {
+    loadMoreCalls++
+    setLoadingMore(true)
+  },
+  sessionsHasMore: hasMore,
+  sessionsLoadingMore: loadingMore,
 }
 const cloudID = "cloud:preview"
 const draftID = `${PENDING_TAB_PREFIX}test`
@@ -331,6 +340,14 @@ function field(editor: HTMLElement) {
   const input = label.closest('[data-component="input"]')?.querySelector<HTMLInputElement>('[data-slot="input-input"]')
   assert(input)
   return input
+}
+
+function scopeButton(editor: HTMLElement, label: string) {
+  const button = [...editor.querySelectorAll<HTMLButtonElement>('[data-slot="session-tags-scope"] button')].find(
+    (item) => item.textContent?.trim() === label,
+  )
+  assert(button, `the editor exposes the ${label} scope choice`)
+  return button
 }
 
 const response = (state: SessionTagsState) => dispatch({ type: "sessionTagsLoaded", state })
@@ -539,8 +556,15 @@ assert.deepEqual(
   ["ses-home", "ses-tagged"],
   "the selected tag filters the current session list",
 )
+setHasMore(true)
+const beforeNormalization = loadMoreCalls
 response({ tags: initial.tags, sessions: { "ses-home": ["tag-review"] } })
 await settle()
+assert.equal(
+  loadMoreCalls,
+  beforeNormalization,
+  "removing the selected tag does not load a page before selection normalization",
+)
 assert.equal(
   root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"] button[aria-label="Urgent"]'),
   null,
@@ -554,6 +578,8 @@ assert.deepEqual(
 )
 response(initial)
 await settle()
+assert.equal(filterTag("Urgent").getAttribute("aria-pressed"), "false", "the removed selected tag stays cleared")
+setHasMore(false)
 
 assert.deepEqual(
   tags.forSession("ses-home").map((tag) => tag.name),
@@ -828,6 +854,87 @@ assert.equal(item("ses-tagged"), null, "deleting a tag removes its session from 
 
 filter("")
 await settle()
+setHasMore(true)
+const searchOnlyCalls = loadMoreCalls
+filter("text without a selected tag")
+await settle()
+assert.equal(loadMoreCalls, searchOnlyCalls, "searching without a selected tag does not load another history page")
+filter("")
+setHasMore(false)
+await settle()
+const older: SessionInfo = {
+  id: "ses-older",
+  title: "Older tagged session",
+  createdAt: now,
+  updatedAt: now,
+}
+setSessions(items)
+setHasMore(true)
+loadMoreCalls = 0
+response({
+  tags: [...initial.tags, { id: "tag-older", name: "Older", color: "Cyan" }],
+  sessions: { ...initial.sessions, [older.id]: ["tag-older"] },
+})
+await settle()
+assert(filterTag("Older"), "an assignment-only tag remains visible before its session page is loaded")
+filterTag("Older").click()
+await settle()
+assert.equal(loadMoreCalls, 1, "selecting an unmatched tag loads the next history page")
+assert.equal(item(older.id), null, "the unloaded tagged session is not rendered before its page arrives")
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
+  "Searching older sessions…",
+  "tag filtering reports that it is searching older sessions",
+)
+setSessions([...items])
+setLoadingMore(false)
+await settle()
+assert.equal(loadMoreCalls, 2, "an unmatched first page loads the next history page while more pages remain")
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
+  "Searching older sessions…",
+  "the second page keeps the searching message while it is still inconclusive",
+)
+const terminalCalls = loadMoreCalls
+setHasMore(false)
+setLoadingMore(false)
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
+  "No sessions match the selected tags.",
+  "an exhausted tag search reports that there are no matching sessions",
+)
+await settle()
+assert.equal(loadMoreCalls, terminalCalls, "an exhausted tag search does not request another page")
+setSessions([...items, older])
+await settle()
+assert(item(older.id), "the appended tagged session appears after the page is loaded")
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
+  undefined,
+  "the searching message clears after a matching session is loaded",
+)
+assert.equal(loadMoreCalls, 2, "matching the selected tag stops further page loading")
+filterTag("Older").click()
+setSessions(items)
+setHasMore(true)
+await settle()
+filterTag("Older").click()
+await settle()
+const deselectedCalls = loadMoreCalls
+filterTag("Older").click()
+setSessions([...items])
+setLoadingMore(false)
+await settle()
+assert.equal(deselectedCalls, 3, "selecting the distant tag starts one in-flight page request")
+assert.equal(loadMoreCalls, deselectedCalls, "deselecting a tag during loading prevents another page request")
+setHasMore(false)
+response({
+  tags: ops.tags.filter((tag) => tag.id !== "tag-ops"),
+  sessions: { ...ops.sessions, "ses-tagged": ["tag-urgent"] },
+})
+await settle()
+
 const count = selected.length
 const before = item("ses-plain")?.querySelector('[data-slot="list-item-title"]')?.textContent
 manage("ses-plain").click()
@@ -889,7 +996,6 @@ await settle()
 assert.deepEqual(tags.forSession("ses-plain"), [], "a failed assignment leaves committed tags unchanged")
 assert.equal(checkbox(editor, "Urgent").input.checked, false)
 
-const cancelled = sent.length
 openCreate.click()
 await settle()
 assert(editor.querySelector('[data-slot="session-tags-editor-form"]'), "the create action reveals the inline form")
@@ -898,6 +1004,24 @@ assert.equal(
   undefined,
   "the create action is replaced by the inline form",
 )
+const projectFailure = checkbox(editor, "Review")
+projectFailure.label.click()
+const projectErrorAction = sent.filter((message) => message.type === "sessionTagAction").at(-1)
+assert(projectErrorAction?.type === "sessionTagAction")
+assert.deepEqual(projectErrorAction.action, {
+  type: "assign",
+  sessionID: "ses-plain",
+  id: "tag-review",
+  assigned: true,
+})
+dispatch({ type: "sessionTagResult", requestID: projectErrorAction.requestID, ok: false, error: "project" })
+await settle()
+assert.equal(
+  editor.querySelector('[data-slot="session-tags-error"]')?.textContent?.trim(),
+  "Could not determine the project. Try again.",
+  "a project routing error uses the translated project error",
+)
+const cancelled = sent.length
 const cancel = [...editor.querySelectorAll<HTMLButtonElement>("button")].find(
   (button) => button.textContent?.trim() === "Cancel",
 )
@@ -912,6 +1036,12 @@ const reopen = [...editor.querySelectorAll<HTMLButtonElement>("button")].find(
 assert(reopen, "cancelling restores the create action")
 reopen.click()
 await settle()
+assert.equal(scopeButton(editor, "Only this project").getAttribute("aria-pressed"), "true")
+assert.equal(
+  editor.querySelector('[data-slot="session-tags-scope-note"]')?.textContent?.trim(),
+  "Renaming or recoloring changes the tag only in this project.",
+  "a new tag defaults to project scope and explains it",
+)
 
 const buttons = editor.querySelectorAll<HTMLButtonElement>(
   '[data-slot="session-tags-color-picker"] .session-tags-color',
@@ -948,6 +1078,7 @@ assert.deepEqual(failed.action, {
   sessionID: "ses-plain",
   name: "Temporary label",
   color: "Teal",
+  scope: "project",
 })
 dispatch({ type: "sessionTagResult", requestID: failed.requestID, ok: false, error: "storage" })
 await settle()
@@ -962,14 +1093,28 @@ const retry = [...editor.querySelectorAll<HTMLButtonElement>("button")].find(
   (button) => button.textContent?.trim() === "Add",
 )
 assert(retry)
+scopeButton(editor, "Visible everywhere").click()
+await settle()
+assert.equal(
+  editor.querySelector('[data-slot="session-tags-scope-note"]')?.textContent?.trim(),
+  "Renaming or recoloring changes the tag in every project.",
+  "switching scope updates the editor note",
+)
 retry.click()
 const created = sent.filter((message) => message.type === "sessionTagAction").at(-1)
 assert(created?.type === "sessionTagAction")
 assert.equal(created.action.type, "create")
+assert.deepEqual(created.action, {
+  type: "create",
+  sessionID: "ses-plain",
+  name: "Temporary label",
+  color: "Teal",
+  scope: "global",
+})
 const committed: SessionTagsState = {
   tags: [
     ...ops.tags.filter((tag) => tag.id !== "tag-ops"),
-    { id: "tag-created", name: "Temporary label", color: "Blue" },
+    { id: "tag-created", name: "Temporary label", color: "Blue", scope: "global" },
   ],
   sessions: { ...ops.sessions, "ses-tagged": ["tag-urgent"], "ses-plain": ["tag-created"] },
 }
@@ -987,6 +1132,120 @@ assert.equal(
   "a completed create collapses the form",
 )
 const current = dialog()
+const projectRow = [...current.querySelectorAll<HTMLElement>('[data-slot="session-tags-editor-row"]')].find(
+  (row) => row.querySelector('[data-slot="session-tags-editor-name"]')?.textContent?.trim() === "Urgent",
+)
+assert(projectRow, "a project-scoped catalog row is present")
+assert.equal(projectRow.dataset.scope, "project", "a tag without scope is rendered as project-scoped")
+const globalRow = [...current.querySelectorAll<HTMLElement>('[data-slot="session-tags-editor-row"]')].find(
+  (row) => row.dataset.scope === "global",
+)
+assert(globalRow, "global catalog rows expose their scope")
+assert.equal(globalRow.querySelector('[data-slot="session-tags-scope-badge"]')?.textContent?.trim(), "global")
+const editGlobal = current.querySelector<HTMLButtonElement>('button[aria-label="Edit: Temporary label"]')
+assert(editGlobal, "the global catalog tag exposes an edit action")
+editGlobal.click()
+await settle()
+assert.equal(scopeButton(current, "Visible everywhere").getAttribute("aria-pressed"), "true")
+assert.equal(
+  current.querySelector('[data-slot="session-tags-scope-note"]')?.textContent?.trim(),
+  "Renaming or recoloring changes the tag in every project.",
+  "editing a global tag prefills global scope",
+)
+const globalName = field(current)
+globalName.value = "Renamed global"
+globalName.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "Renamed global" }))
+globalName.dispatchEvent(new Event("change", { bubbles: true }))
+const globalSave = [...current.querySelectorAll<HTMLButtonElement>("button")].find(
+  (button) => button.textContent?.trim() === "Save",
+)
+assert(globalSave, "editing a global tag exposes a save action")
+globalSave.click()
+const globalUpdate = sent.filter((message) => message.type === "sessionTagAction").at(-1)
+assert(globalUpdate?.type === "sessionTagAction")
+assert.deepEqual(
+  globalUpdate.action,
+  { type: "update", id: "tag-created", patch: { name: "Renamed global" } },
+  "renaming a global tag does not send its unchanged scope",
+)
+const globalCommitted: SessionTagsState = {
+  ...committed,
+  tags: committed.tags.map((tag) => (tag.id === "tag-created" ? { ...tag, name: "Renamed global" } : tag)),
+}
+response(globalCommitted)
+await settle()
+dispatch({ type: "sessionTagResult", requestID: globalUpdate.requestID, ok: true })
+await settle()
+assert.equal(current.querySelector('[data-slot="session-tags-editor-form"]'), null)
+const editRenamed = current.querySelector<HTMLButtonElement>('button[aria-label="Edit: Renamed global"]')
+assert(editRenamed, "the renamed global tag can be opened again")
+editRenamed.click()
+await settle()
+const globalNoopSize = sent.filter((message) => message.type === "sessionTagAction").length
+const globalNoop = [...current.querySelectorAll<HTMLButtonElement>("button")].find(
+  (button) => button.textContent?.trim() === "Save",
+)
+assert(globalNoop, "a global tag exposes a save action for the no-op check")
+globalNoop.click()
+await settle()
+assert.equal(current.querySelector('[data-slot="session-tags-editor-form"]'), null)
+assert.equal(
+  sent.filter((message) => message.type === "sessionTagAction").length,
+  globalNoopSize,
+  "saving an unchanged global tag sends no tag action",
+)
+const editRenamedAgain = current.querySelector<HTMLButtonElement>('button[aria-label="Edit: Renamed global"]')
+assert(editRenamedAgain)
+editRenamedAgain.click()
+await settle()
+const globalDelete = [...current.querySelectorAll<HTMLButtonElement>("button")].find(
+  (button) => button.textContent?.trim() === "Delete from every project",
+)
+assert(globalDelete, "a global tag uses the global delete label")
+scopeButton(current, "Only this project").click()
+await settle()
+assert.equal(
+  globalDelete.textContent?.trim(),
+  "Delete from every project",
+  "an unsaved project scope does not change the saved global delete label",
+)
+globalDelete.click()
+const globalConfirm = current.querySelector('[data-slot="session-tags-delete-confirm"]')
+assert(globalConfirm)
+assert.equal(
+  globalConfirm.querySelector("p")?.textContent?.trim(),
+  'Delete "Renamed global" from every session in every project?',
+  "global deletion explains its project-wide scope",
+)
+const cancelGlobalDelete = [...current.querySelectorAll<HTMLButtonElement>("button")].find(
+  (button) => button.textContent?.trim() === "Cancel",
+)
+assert(cancelGlobalDelete)
+cancelGlobalDelete.click()
+await settle()
+assert.equal(
+  current.querySelector('[data-slot="session-tags-scope-note"]')?.textContent?.trim(),
+  "Renaming or recoloring changes the tag only in this project.",
+)
+const saveScope = [...current.querySelectorAll<HTMLButtonElement>("button")].find(
+  (button) => button.textContent?.trim() === "Save",
+)
+assert(saveScope)
+saveScope.click()
+const scopeUpdate = sent.filter((message) => message.type === "sessionTagAction").at(-1)
+assert(scopeUpdate?.type === "sessionTagAction")
+assert.deepEqual(scopeUpdate.action, { type: "update", id: "tag-created", patch: { scope: "project" } })
+const projectCommitted: SessionTagsState = {
+  ...globalCommitted,
+  tags: globalCommitted.tags.map((tag) =>
+    tag.id === "tag-created" ? { id: tag.id, name: tag.name, color: tag.color } : tag,
+  ),
+}
+response(projectCommitted)
+await settle()
+dispatch({ type: "sessionTagResult", requestID: scopeUpdate.requestID, ok: true })
+await settle()
+assert.equal(current.querySelector('[data-slot="session-tags-editor-form"]'), null)
 dispatch({ type: "sessionDeleted", sessionID: "ses-home" })
 assert.equal(current.isConnected, true, "deleting a different session does not close the captured editor")
 dispatch({ type: "sessionDeleted", sessionID: "ses-plain" })
@@ -1081,12 +1340,18 @@ assert.equal(
 editAgain.click()
 const size = sent.filter((message) => message.type === "sessionTagAction").length
 const del = [...editorHome.querySelectorAll<HTMLButtonElement>("button")].find(
-  (button) => button.textContent?.trim() === "Delete from all sessions",
+  (button) => button.textContent?.trim() === "Delete from this project",
 )
-assert(del, "the editor exposes global deletion")
+assert(del, "the editor exposes project-scoped deletion")
 del.click()
 assert.equal(sent.filter((message) => message.type === "sessionTagAction").length, size)
-assert(editorHome.querySelector('[data-slot="session-tags-delete-confirm"]'), "global deletion asks for confirmation")
+const projectConfirm = editorHome.querySelector('[data-slot="session-tags-delete-confirm"]')
+assert(projectConfirm, "project deletion asks for confirmation")
+assert.equal(
+  projectConfirm.querySelector("p")?.textContent?.trim(),
+  'Delete "Priority" from every session in this project?',
+  "project deletion explains its project-scoped scope",
+)
 const confirm = [...editorHome.querySelectorAll<HTMLButtonElement>("button")].find(
   (button) => button.textContent?.trim() === "Delete tag",
 )
@@ -1120,6 +1385,57 @@ await settle()
 dispatch({ type: "sessionDeleted", sessionID: "ses-home" })
 await settle()
 assert.equal(editorHome.hasAttribute("data-closed"), true, "deleting the edited session starts closing its dialog")
+
+const pinnedState: SessionTagsState = {
+  tags: [
+    { id: "tag-alpha", name: "Alpha", color: "Red" },
+    { id: "tag-beta", name: "Beta", color: "Blue" },
+    { id: "tag-epsilon", name: "Epsilon", color: "Purple" },
+    { id: "tag-delta", name: "Delta", color: "Green" },
+  ],
+  sessions: { "ses-tagged": ["tag-beta", "tag-delta"] },
+}
+response(pinnedState)
+await settle()
+manage("ses-tagged").click()
+await settle()
+const pinnedEditor = dialog()
+const pinnedNames = () =>
+  [...pinnedEditor.querySelectorAll<HTMLElement>('[data-slot="session-tags-editor-name"]')].map((item) =>
+    item.textContent?.trim(),
+  )
+assert.deepEqual(
+  pinnedNames(),
+  ["Beta", "Delta", "Alpha", "Epsilon"],
+  "assigned tags are first when the tag editor opens",
+)
+const pinnedBeta = checkbox(pinnedEditor, "Beta")
+pinnedBeta.label.click()
+const pinnedBetaAction = sent.filter((message) => message.type === "sessionTagAction").at(-1)
+assert(pinnedBetaAction?.type === "sessionTagAction")
+response({ ...pinnedState, sessions: { "ses-tagged": ["tag-delta"] } })
+await settle()
+dispatch({ type: "sessionTagResult", requestID: pinnedBetaAction.requestID, ok: true })
+await settle()
+assert.equal(pinnedBeta.input.checked, false, "unassigning a tag updates its live checkbox")
+assert.deepEqual(pinnedNames(), ["Beta", "Delta", "Alpha", "Epsilon"], "unassigning a tag does not reorder the editor")
+const pinnedAlpha = checkbox(pinnedEditor, "Alpha")
+pinnedAlpha.label.click()
+const pinnedAlphaAction = sent.filter((message) => message.type === "sessionTagAction").at(-1)
+assert(pinnedAlphaAction?.type === "sessionTagAction")
+response({ ...pinnedState, sessions: { "ses-tagged": ["tag-delta", "tag-alpha"] } })
+await settle()
+dispatch({ type: "sessionTagResult", requestID: pinnedAlphaAction.requestID, ok: true })
+await settle()
+assert.equal(pinnedAlpha.input.checked, true, "assigning a tag updates its live checkbox")
+assert.deepEqual(pinnedNames(), ["Beta", "Delta", "Alpha", "Epsilon"], "assigning a tag does not reorder the editor")
+const pinnedSearch = pinnedEditor.querySelector<HTMLInputElement>('input[placeholder="Search tags..."]')
+assert(pinnedSearch, "the pinned-tag editor exposes its search field")
+pinnedSearch.value = "a"
+pinnedSearch.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "a" }))
+pinnedSearch.dispatchEvent(new Event("change", { bubbles: true }))
+await settle()
+assert.deepEqual(pinnedNames(), ["Beta", "Delta", "Alpha"], "search results keep the initially assigned tags first")
 
 const snapshot = tags.state()
 const pending = tags.mutate({ type: "assign", sessionID: "ses-home", id: "tag-review", assigned: false })
