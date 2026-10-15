@@ -18,6 +18,12 @@ type SessionTagsProps = { sessionID: string; compact?: boolean }
 type SessionTagsStore = ReturnType<typeof useSessionTags>
 type SessionTagsLanguage = ReturnType<typeof useLanguage>
 type SessionTagsVSCode = ReturnType<typeof useVSCode>
+// fork_change start - tag scope helpers
+type TagScope = "project" | "global"
+
+const tagScope = (tag: Pick<SessionTag, "scope">): TagScope => (tag.scope === "global" ? "global" : "project")
+const globalTag = (tag: Pick<SessionTag, "scope">) => tagScope(tag) === "global"
+// fork_change end
 
 export const SessionTags: Component<SessionTagsProps> = (props) => {
   const tags = useSessionTags()
@@ -138,6 +144,7 @@ function SessionTagsEditor(props: {
   const [mode, setMode] = createSignal<"closed" | "create" | SessionTag>("closed")
   const [name, setName] = createSignal("")
   const [color, setColor] = createSignal("Blue")
+  const [scope, setScope] = createSignal<"project" | "global">("project") // fork_change
   const [confirm, setConfirm] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
   const [gone, setGone] = createSignal(false)
@@ -149,6 +156,19 @@ function SessionTagsEditor(props: {
     const value = mode()
     return typeof value === "string" ? undefined : value
   }
+  // fork_change start - selected scope presentation and translations
+  const selectedScope = (value: TagScope) => scope() === value
+  const scopeText = () => {
+    const value = scope()
+    const base = editing()
+    const saved = base ? tagScope(base) : "project"
+    return {
+      note: props.language.t(`session.tags.note.${value}`),
+      delete: props.language.t(`session.tags.delete.${saved}`),
+      confirm: props.language.t(`session.tags.delete.confirm.${saved}`, { name: base?.name ?? "" }),
+    }
+  }
+  // fork_change end
 
   const unsubscribe = props.vscode.onMessage((message) => {
     if (props.life.closed || message.type !== "sessionDeleted" || message.sessionID !== props.sessionID) return
@@ -187,6 +207,7 @@ function SessionTagsEditor(props: {
     setMode("closed")
     setName("")
     setColor("Blue")
+    setScope("project") // fork_change
     setConfirm(false)
     setError(undefined)
     if (editor) editor.scrollTop = 0 // fork_change
@@ -196,6 +217,7 @@ function SessionTagsEditor(props: {
     setMode("create")
     setName("")
     setColor("Blue")
+    setScope("project") // fork_change
     setConfirm(false)
     setError(undefined)
   }
@@ -204,6 +226,7 @@ function SessionTagsEditor(props: {
     setMode({ ...tag })
     setName(tag.name)
     setColor(tag.color)
+    setScope(tagScope(tag)) // fork_change
     setConfirm(false)
     setError(undefined)
   }
@@ -212,15 +235,23 @@ function SessionTagsEditor(props: {
     if (mode() === "closed") return
     const base = editing()
     if (!base) {
-      if (await run({ type: "create", sessionID: props.sessionID, name: name().trim(), color: color() })) reset()
+      // fork_change start - include scope in create actions
+      if (
+        await run({ type: "create", sessionID: props.sessionID, name: name().trim(), color: color(), scope: scope() })
+      ) {
+        reset()
+      }
+      // fork_change end
       return
     }
 
-    const patch: Partial<Pick<SessionTag, "name" | "color">> = {}
+    const patch: Partial<Pick<SessionTag, "name" | "color">> & { scope?: "global" | "project" } = {} // fork_change
     const next = name().trim()
     if (next !== base.name) patch.name = next
     if (color() !== base.color) patch.color = color()
-    if (patch.name === undefined && patch.color === undefined) {
+    const previous = tagScope(base) // fork_change
+    if (scope() !== previous) patch.scope = scope() // fork_change
+    if (patch.name === undefined && patch.color === undefined && patch.scope === undefined) {
       reset()
       return
     }
@@ -243,10 +274,12 @@ function SessionTagsEditor(props: {
     return code ? props.language.t(`session.tags.error.${code}`) : undefined
   }
 
-  // fork_change start - local tag search
+  // fork_change start - keep assigned tags on top without reordering while toggling
+  const pinned = new Set(props.tags.forSession(props.sessionID).map((tag) => tag.id))
   const matches = () => {
     const value = query().trim().toLowerCase()
-    return props.tags.state().tags.filter((tag) => tag.name.toLowerCase().includes(value))
+    const found = props.tags.state().tags.filter((tag) => tag.name.toLowerCase().includes(value))
+    return [...found.filter((tag) => pinned.has(tag.id)), ...found.filter((tag) => !pinned.has(tag.id))]
   }
   // fork_change end
 
@@ -276,7 +309,7 @@ function SessionTagsEditor(props: {
               <div data-slot="session-tags-editor-list">
                 <For each={matches()}>
                   {(tag) => (
-                    <div data-slot="session-tags-editor-row">
+                    <div data-slot="session-tags-editor-row" data-scope={tagScope(tag)}>
                       <Checkbox
                         checked={props.tags.forSession(props.sessionID).some((item) => item.id === tag.id)}
                         disabled={busy() || gone() || confirm()}
@@ -292,6 +325,11 @@ function SessionTagsEditor(props: {
                             }
                           />
                           <span data-slot="session-tags-editor-name">{tag.name}</span>
+                          <Show when={globalTag(tag)}>
+                            <span data-slot="session-tags-scope-badge">
+                              {props.language.t("session.tags.scope.globalShort")}
+                            </span>
+                          </Show>
                         </span>
                       </Checkbox>
                       <IconButton
@@ -335,9 +373,8 @@ function SessionTagsEditor(props: {
               <div data-slot="session-tags-editor-heading">
                 {props.language.t(editing() ? "session.tags.edit" : "session.tags.new")}
               </div>
-              <Show when={editing()}>
-                <p data-slot="session-tags-global-note">{props.language.t("session.tags.globalNote")}</p>
-              </Show>
+              {/* fork_change start - scope-aware editor controls */}
+              <p data-slot="session-tags-scope-note">{scopeText().note}</p>
               <TextField
                 label={props.language.t("session.tags.name")}
                 placeholder={props.language.t("session.tags.name.placeholder")}
@@ -350,6 +387,34 @@ function SessionTagsEditor(props: {
                   void save()
                 }}
               />
+              <div data-slot="session-tags-scope">
+                <div data-slot="session-tags-color-label">{props.language.t("session.tags.scope.label")}</div>
+                <div role="group" aria-label={props.language.t("session.tags.scope.label")}>
+                  <Button
+                    type="button"
+                    class="session-tags-scope"
+                    variant="ghost"
+                    size="small"
+                    disabled={busy() || gone() || confirm()}
+                    aria-pressed={selectedScope("project")}
+                    onClick={() => setScope("project")}
+                  >
+                    {props.language.t("session.tags.scope.project")}
+                  </Button>
+                  <Button
+                    type="button"
+                    class="session-tags-scope"
+                    variant="ghost"
+                    size="small"
+                    disabled={busy() || gone() || confirm()}
+                    aria-pressed={selectedScope("global")}
+                    onClick={() => setScope("global")}
+                  >
+                    {props.language.t("session.tags.scope.global")}
+                  </Button>
+                </div>
+              </div>
+              {/* fork_change end */}
               <div data-slot="session-tags-color-label">{props.language.t("session.tags.color")}</div>
               <div
                 data-slot="session-tags-color-picker"
@@ -381,7 +446,9 @@ function SessionTagsEditor(props: {
               </Show>
               <Show when={editing() && confirm()}>
                 <div data-slot="session-tags-delete-confirm">
-                  <p>{props.language.t("session.tags.delete.confirm", { name: editing()?.name ?? "" })}</p>
+                  {/* fork_change start - scope-aware delete confirmation */}
+                  <p>{scopeText().confirm}</p>
+                  {/* fork_change end */}
                   <div data-slot="session-tags-editor-actions">
                     <Button
                       type="button"
@@ -417,7 +484,9 @@ function SessionTagsEditor(props: {
                   disabled={busy() || gone()}
                   onClick={() => void remove()}
                 >
-                  {props.language.t("session.tags.deleteEverywhere")}
+                  {/* fork_change start - scope-aware delete action */}
+                  {scopeText().delete}
+                  {/* fork_change end */}
                 </Button>
               </Show>
               <span data-slot="session-tags-editor-spacer" />
