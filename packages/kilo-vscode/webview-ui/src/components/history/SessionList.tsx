@@ -93,7 +93,11 @@ const SessionList: Component<SessionListProps> = (props) => {
     return ids ? tagged().filter((item) => ids.has(item.id)) : tagged()
   })
   const filterTags = createMemo(() => {
-    const ids = new Set(base().flatMap((item) => item.tagIds))
+    const scoped = props.sessionIds?.()
+    const ids =
+      scoped === undefined
+        ? new Set(Object.values(tags.state().sessions).flat())
+        : new Set(base().flatMap((item) => item.tagIds))
     return tags.state().tags.filter((tag) => ids.has(tag.id))
   })
   const items = createMemo(() => {
@@ -101,6 +105,19 @@ const SessionList: Component<SessionListProps> = (props) => {
     const chosen = chosenTags()
     if (chosen.size === 0) return source
     return source.filter((item) => item.tagIds.some((id) => chosen.has(id)))
+  })
+  const match = createMemo(() => {
+    const chosen = chosenTags()
+    return chosen.size > 0 && base().some((item) => item.tagIds.some((id) => chosen.has(id)))
+  })
+  // fork_change end
+
+  // fork_change start - load older sessions for unscoped tag filters
+  createEffect(() => {
+    if (props.sessionIds?.() !== undefined) return
+    if (!filterTags().some((tag) => chosenTags().has(tag.id))) return
+    if (chosenTags().size === 0 || match() || !session.sessionsHasMore() || session.sessionsLoadingMore()) return
+    session.loadMoreSessions()
   })
   // fork_change end
 
@@ -473,7 +490,13 @@ const SessionList: Component<SessionListProps> = (props) => {
         }}
         /* fork_change end */
         /* fork_change start - dynamic empty message for tag filtering */
-        emptyMessage={language.t(chosenTags().size > 0 ? "session.tags.filter.empty" : "session.empty")}
+        emptyMessage={language.t(
+          chosenTags().size > 0 && !match() && session.sessionsHasMore()
+            ? "session.tags.filter.searching"
+            : chosenTags().size > 0
+              ? "session.tags.filter.empty"
+              : "session.empty",
+        )}
         /* fork_change end */
         /* fork_change start - group favorites before date groups */
         groupBy={(s) => (s.favorite ? language.t("session.favorites.group") : language.t(dateGroupKey(s.updatedAt)))}
