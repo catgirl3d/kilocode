@@ -97,11 +97,17 @@ const source: SessionInfo[] = [
 const sourceBefore = structuredClone(source)
 const [scope, setScope] = createSignal<ReadonlySet<string>>(new Set([favoriteID, plainID, childID]))
 const base = mockSessionValue({ id: "not-in-history" })
+let loadMoreCalls = 0
 const session = {
   ...base,
   currentSessionID: () => undefined,
   currentSession: () => undefined,
   sessions: () => source,
+  loadMoreSessions: () => {
+    loadMoreCalls++
+  },
+  sessionsHasMore: () => true,
+  sessionsLoadingMore: () => false,
 }
 const selected: string[] = []
 const root = document.createElement("div")
@@ -268,8 +274,10 @@ assert.equal(
 )
 assert.deepEqual(selected, [], "favorite retries still do not select or open a session")
 
+const beforeScopedTagLoad = loadMoreCalls
 tag("Favorite tag").click()
 await settle()
+assert.equal(loadMoreCalls, beforeScopedTagLoad, "selecting a scoped tag does not load another history page")
 assert.deepEqual([...ids()].sort(), [favoriteID], "one selected tag keeps only its matching root")
 tag("Plain tag").click()
 await settle()
@@ -283,8 +291,10 @@ tag("Favorite tag").click()
 await settle()
 assert.deepEqual([...ids()].sort(), [favoriteID], "the chosen tag is active before a scope change")
 
+const beforeScopeChangeLoad = loadMoreCalls
 setScope(new Set([plainID]))
 await settle()
+assert.equal(loadMoreCalls, beforeScopeChangeLoad, "a scoped tag disappearing does not trigger history pagination")
 assert.equal(hasTag("Favorite tag"), false, "a tag outside the new scope is removed from the filter chips")
 assert.equal(tag("Plain tag").getAttribute("aria-pressed"), "false", "the removed chosen tag selection is cleared")
 assert.deepEqual([...ids()].sort(), [plainID], "clearing the removed chosen tag restores the scoped root")

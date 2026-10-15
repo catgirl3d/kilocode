@@ -6,6 +6,8 @@
 
 - Favorite local sessions from the history panel and keep them grouped at the top.
 - Filter history sessions by one or more tags in the history panel.
+- Scope session tags to a project or make them visible in every project; existing tags keep working everywhere after the upgrade.
+- Let the history tag filter find matching sessions beyond the loaded pages by loading older history on demand.
 - Let the agent ask a short clarifying question when a request, term, or choice is genuinely unclear instead of guessing; the `question` tool is a normal part of the work, not a last resort.
 - Show a "Session compacted" divider in VS Code chat instead of a blank message, with an Undo compaction action that deletes the newest compaction so the model sees the full message history again.
 - Organize local sessions with reusable colored tags in recent sessions, local history/search, and the active session header; keep session tabs uncluttered.
