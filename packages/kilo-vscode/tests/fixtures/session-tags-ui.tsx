@@ -446,9 +446,13 @@ assert.equal(
   null,
   "tag filters do not enter the tab strip",
 )
-const selectToggle = root.querySelector<HTMLButtonElement>('[data-testid="history"] .session-select-toggle')
-assert(selectToggle, "history exposes the bulk-select toggle")
-selectToggle.click()
+const findSelectMenu = openRowMenu("ses-plain", "history")
+await settle()
+const selectItem = [...(findSelectMenu()?.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]') ?? [])].find(
+  (item) => item.textContent?.trim() === "Select",
+)
+assert(selectItem, "history rows offer bulk select in their menu")
+selectItem.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
 await settle()
 assert(
   root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"]'),

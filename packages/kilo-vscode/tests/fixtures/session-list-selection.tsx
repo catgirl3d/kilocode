@@ -102,10 +102,30 @@ function item(id: string) {
   return history().querySelector<HTMLButtonElement>(`[data-slot="list-item"][data-key="${id}"]`)
 }
 
-function toggle() {
-  const value = history().querySelector<HTMLButtonElement>(".session-select-toggle")
-  assert(value, "the select-mode toggle is mounted")
+async function menu(id: string) {
+  const trigger = item(id)?.parentElement
+  assert(trigger, `row ${id} exposes a context-menu trigger`)
+  const before = new Set(document.querySelectorAll<HTMLElement>(".session-list-menu"))
+  trigger.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+  await settle()
+  const value =
+    [...document.querySelectorAll<HTMLElement>(".session-list-menu")].find((entry) => !before.has(entry)) ??
+    document.querySelector<HTMLElement>('.session-list-menu[data-expanded="true"]')
+  assert(value, `row ${id} opens its context menu`)
   return value
+}
+
+function entry(root: HTMLElement) {
+  return [...root.querySelectorAll<HTMLElement>('[data-slot="context-menu-item"]')].find(
+    (node) => node.textContent?.trim() === "Select",
+  )
+}
+
+async function enter(id: string) {
+  const found = entry(await menu(id))
+  assert(found, `row ${id} offers Select in its context menu`)
+  found.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
+  await settle()
 }
 
 function bar() {
@@ -151,7 +171,7 @@ function dialogButtons() {
 }
 
 // default state: no selection affordances until the user opts in
-assert.equal(toggle().textContent?.trim(), "Select", "the list starts with the translated select action")
+assert.equal(history().querySelector(".session-select-toggle"), null, "the list has no persistent select button")
 assert.equal(
   history().querySelectorAll(".session-select-check").length,
   0,
@@ -166,12 +186,17 @@ setSessions((prev) => [
 await settle()
 assert.equal(item("ses-late-child"), null, "sub-agent sessions stay out of the history list after a live update")
 
-// enter select mode
-toggle().click()
-await settle()
+// enter select mode from a row's context menu
+await enter("ses-one")
 assert.equal(item("ses-child"), null, "sub-agent sessions stay out of the history list")
 assert.equal(history().querySelectorAll(".session-select-check").length, 5, "select mode shows a checkbox on every row")
-assert.equal(count(), "Selected: 0", "select mode starts with an empty selection")
+assert.equal(count(), "Selected: 1", "entering from a row menu selects that row")
+assert.equal(check("ses-one").input.checked, true, "the entry row is checked")
+assert.equal(barButtons()[1]?.disabled, false, "delete is enabled for the entry row")
+assert.equal(entry(await menu("ses-two")), undefined, "the row menu stops offering Select once select mode is on")
+check("ses-one").label.click()
+await settle()
+assert.equal(count(), "Selected: 0", "clearing the entry row leaves an empty selection")
 assert.equal(barButtons()[1]?.disabled, true, "delete stays disabled while nothing is selected")
 assert.equal(check("ses-one").label.textContent, "Alpha session", "each checkbox is labelled with its session title")
 assert.equal(
@@ -232,10 +257,22 @@ item("ses-two")!.click()
 await settle()
 assert.deepEqual(opened, ["ses-two"], "a normal row click opens the session again")
 
-// bulk deletion asks for confirmation first
-toggle().click()
+// the hover action enters select mode with its row checked, without opening the session
+const hover = item("ses-two")!.parentElement?.querySelector<HTMLButtonElement>(".session-select-button")
+assert(hover, "each row has a Select hover action")
+assert(hover.getAttribute("aria-label")?.startsWith("Select: "), "the hover action names its session")
+assert.equal(hover.getAttribute("data-slot"), "session-row-action", "the hover action shares the row action slot")
+hover.click()
 await settle()
-check("ses-one").label.click()
+assert.equal(count(), "Selected: 1", "the hover action selects its row")
+assert.equal(check("ses-two").input.checked, true, "the hover action checks its own row")
+assert.deepEqual(opened, ["ses-two"], "the hover action does not open the session")
+barButtons()[0]!.click()
+await settle()
+assert.equal(bar(), null, "cancel leaves select mode after the hover action")
+
+// bulk deletion asks for confirmation first
+await enter("ses-one")
 check("ses-two").label.click()
 await settle()
 assert.equal(count(), "Selected: 2")
@@ -273,9 +310,7 @@ assert.equal(history().querySelectorAll(".session-select-check").length, 0, "con
 
 // a session that disappears while the confirmation is open drops out of the pending selection
 removed.length = 0
-toggle().click()
-await settle()
-check("ses-three").label.click()
+await enter("ses-three")
 check("ses-four").label.click()
 await settle()
 assert.equal(count(), "Selected: 2")
@@ -296,10 +331,7 @@ assert.equal(bar(), null, "confirming leaves select mode")
 
 // confirming an emptied selection deletes nothing
 removed.length = 0
-toggle().click()
-await settle()
-check("ses-five").label.click()
-await settle()
+await enter("ses-five")
 barButtons()[1]!.click()
 await settle()
 setSessions((prev) => prev.filter((entry) => entry.id !== "ses-five"))
