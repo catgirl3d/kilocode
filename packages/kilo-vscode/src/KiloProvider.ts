@@ -95,7 +95,14 @@ import {
 import { childID } from "./kilo-provider/task-session"
 // fork_change start
 import { onSessionColorsChanged, sessionColors, setSessionColor } from "./session-colors"
-import { onSessionTagsChanged, refreshSessionTags, removeSessionTags, sessionTagsFor } from "./session-tags"
+import {
+  claimLegacySessions,
+  hasLegacySessions,
+  onSessionTagsChanged,
+  refreshSessionTags,
+  removeSessionTags,
+  sessionTagsFor,
+} from "./session-tags"
 import { onSessionFavoritesChanged, removeSessionFavorites } from "./session-favorites"
 // fork_change end
 import { VisibleTaskStreams } from "./kilo-provider/visible-task-streams"
@@ -528,6 +535,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private undoCompactingSessions = new Set<string>() // fork_change - sessions with an in-flight compaction undo.
   private readonly aborts = new SessionAbort()
   private projectID: string | undefined // Current workspace project ID used to filter sessions.
+  private readonly pendingClaimIDs = new Set<string>() // fork_change - legacy sessions seen during refresh
+  private legacyDrainStarted = false // fork_change - one legacy drain attempt per provider
   // fork_change start - session tag project key (backend project id; shared by sidebar and Agent Manager)
   private tagProjectSent: string | undefined
   private tagProject(): string | undefined {
@@ -541,6 +550,38 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (key === this.tagProjectSent) return
     this.tagProjectSent = key
     this.postMessage({ type: "sessionTagsLoaded", state: sessionTagsFor(key) })
+  }
+  // fork_change end
+
+  // fork_change start - claim legacy session assignments after refresh
+  private claimPendingSessions(): void {
+    const project = this.projectID
+    const ids = [...this.pendingClaimIDs]
+    this.pendingClaimIDs.clear()
+    if (!project || ids.length === 0) return
+    void claimLegacySessions(project, ids).catch((error) => {
+      console.error("[Kilo New] Failed to claim legacy session tags:", error)
+    })
+  }
+
+  private async maybeDrainLegacy(): Promise<void> {
+    const client = this.client
+    const project = this.projectID
+    if (this.legacyDrainStarted || !client || !project || !hasLegacySessions()) return
+    this.legacyDrainStarted = true
+    const dir = this.getWorkspaceDirectory()
+    try {
+      const result = await client.experimental.session.list(
+        { worktrees: true, roots: true, directory: dir, limit: 5_000 },
+        { throwOnError: true },
+      )
+      await claimLegacySessions(
+        project,
+        result.data.map((session) => session.id),
+      )
+    } catch (error) {
+      console.error("[Kilo New] Failed to drain legacy session tags:", error)
+    }
   }
   // fork_change end
   private loadMessagesAbort: AbortController | null = null // Current load request cancellation.
@@ -2362,6 +2403,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         if (!this.projectID && session.projectID) {
           this.projectID = session.projectID
           this.syncTagProject()
+          void this.maybeDrainLegacy()
         }
         // fork_change end
         this.stopCurrentSessionProcesses(session.id)
@@ -2703,6 +2745,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       worktreeDirectories: this.opts.worktreeDirectories,
       workspaceDirectory: this.getWorkspaceDirectory(),
       isCurrent: () => revision === this.sessionRefreshRevision,
+      // fork_change start - track sessions for legacy assignment claims
+      track: (sessions) => {
+        for (const session of sessions) this.pendingClaimIDs.add(session.id)
+      },
+      // fork_change end
       postMessage: (msg: unknown) =>
         this.postMessage(project && typeof msg === "object" && msg !== null ? { ...msg, ...project } : msg),
     }
@@ -2725,6 +2772,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         this.projectID = resolved
       }
       this.syncTagProject()
+      this.claimPendingSessions()
+      void this.maybeDrainLegacy()
       // fork_change end
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to flush session refresh:", error)
@@ -2743,6 +2792,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     try {
       if (more) {
         await loadMoreSessionsUtil(ctx)
+        this.claimPendingSessions() // fork_change
       } else {
         const resolved = await loadSessionsUtil(ctx)
         // fork_change start
@@ -2750,6 +2800,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           this.projectID = resolved
         }
         this.syncTagProject()
+        this.claimPendingSessions()
+        void this.maybeDrainLegacy()
         // fork_change end
       }
     } catch (error) {
