@@ -92,6 +92,7 @@ const WithSessions: ParentComponent<{
     currentSession: () => sessions[0],
     setCurrentSessionID: noop,
     sessions: () => sessions as any,
+    removedSessions: () => new Set<string>(),
     status: () => "idle" as const,
     statusInfo: () => ({ type: "idle" }),
     statusText: () => undefined,
