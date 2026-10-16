@@ -41,6 +41,10 @@ import type { MemoryActivity } from "../../utils/memory-activity"
 import { PromptOverflow, type OverflowItem } from "./PromptOverflow"
 import { useClipboard } from "@kilocode/kilo-ui/context/clipboard"
 import { showToast } from "@kilocode/kilo-ui/toast"
+import { useDialog } from "@kilocode/kilo-ui/context/dialog"
+import { Dialog } from "@kilocode/kilo-ui/dialog"
+import { Button } from "@kilocode/kilo-ui/button"
+import { focusPrompt } from "../../utils/tab-navigation"
 // fork_change end
 
 interface TaskHeaderProps {
@@ -75,11 +79,44 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
 
   // fork_change start - session actions fold into the "..." menu
   const clipboard = useClipboard()
+  const dialog = useDialog()
   const copyId = () => {
     const id = sid()
     if (!id) return
     void Promise.resolve(clipboard.write(id)).catch(() =>
       showToast({ variant: "error", title: language.t("session.action.copyId.failed") }),
+    )
+  }
+  // The dialog keeps the session it was opened for, even if the current session changes meanwhile.
+  // Nothing restores focus when the dialog unmounts, so it returns to the prompt once the focus trap lifts.
+  const remove = () => {
+    const id = sid()
+    if (!id) return
+    const name = session.currentSession()?.title || language.t("session.untitled")
+    dialog.show(
+      () => (
+        <Dialog title={language.t("session.delete.title")} fit>
+          <div class="dialog-confirm-body">
+            <span>{language.t("session.delete.confirm", { name })}</span>
+            <div class="dialog-confirm-actions">
+              <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+                {language.t("common.cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                size="large"
+                onClick={() => {
+                  session.deleteSession(id)
+                  dialog.close()
+                }}
+              >
+                {language.t("session.delete.button")}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      ),
+      () => requestAnimationFrame(focusPrompt),
     )
   }
   const actions = createMemo<OverflowItem[]>(() => [
@@ -117,6 +154,13 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       label: language.t("chat.action.disconnectCli"),
       run: () => vscode.postMessage({ type: "disconnectCli" }),
     },
+    {
+      key: "delete",
+      icon: "trash",
+      label: language.t("session.delete.title"),
+      disabled: !sid(),
+      run: remove,
+    } satisfies OverflowItem,
   ])
   // fork_change end
 
