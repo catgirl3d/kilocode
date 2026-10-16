@@ -1,6 +1,8 @@
 import type { ModelMessage } from "ai"
 import { Cause, Effect, Scope } from "effect" // fork_change
 import { Database } from "@opencode-ai/core/database/database"
+import { EventV2Bridge } from "@/event-v2-bridge" // fork_change
+import { TuiEvent } from "@/server/tui-event" // fork_change
 import { MessageV2 } from "@/session/message-v2"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
@@ -23,6 +25,7 @@ const MAX_TRACKED = 2_048
 
 const attempts = new Map<string, number>()
 const inFlight = new Set<string>() // fork_change
+const reported = new Set<string>() // fork_change - one visible title-failure report per session
 
 // fork_change start - keep title failure logs actionable without logging error messages
 function details(cause: Cause.Cause<unknown>) {
@@ -45,6 +48,14 @@ function details(cause: Cause.Cause<unknown>) {
 // fork_change end
 
 function prune() {
+  // fork_change start - prune reported sessions together with attempts
+  if (reported.size > MAX_TRACKED) {
+    for (const key of reported) {
+      if (reported.size <= MAX_TRACKED) break
+      reported.delete(key)
+    }
+  }
+  // fork_change end
   if (attempts.size <= MAX_TRACKED) return
   for (const key of attempts.keys()) {
     if (attempts.size <= MAX_TRACKED) break
@@ -97,11 +108,13 @@ export namespace KiloSessionTitle {
   /** Drop the attempt counter for one session. */
   export function clear(sessionID: string) {
     attempts.delete(sessionID)
+    reported.delete(sessionID) // fork_change
   }
 
   /** Drop every attempt counter (tests). */
   export function clearAll() {
     attempts.clear()
+    reported.clear() // fork_change
   }
 
   /** Consume one title-generation attempt when history contains a real user turn. */ // fork_change
@@ -168,6 +181,7 @@ export namespace KiloSessionTitle {
     return Effect.gen(function* () {
       if (inFlight.has(input.sessionID)) return
       inFlight.add(input.sessionID)
+      const events = yield* EventV2Bridge.Service
       let forked = false
       yield* Effect.gen(function* () {
         const titled = yield* input.sessions.get(input.sessionID).pipe(Effect.orDie)
@@ -194,7 +208,22 @@ export namespace KiloSessionTitle {
           .pipe(
             Effect.catchCause((cause) => {
               if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
-              return Effect.logError("failed to generate title", { sessionID: input.sessionID, ...details(cause) })
+              return Effect.gen(function* () {
+                // Surface the first failure of a session; later attempts stay log-only.
+                if (!reported.has(input.sessionID)) {
+                  reported.add(input.sessionID)
+                  const err = Cause.squash(cause)
+                  yield* events
+                    .publish(TuiEvent.ToastShow, {
+                      title: "Title generation failed",
+                      message: err instanceof Error ? err.message : String(err),
+                      variant: "error",
+                      duration: 5_000,
+                    })
+                    .pipe(Effect.ignore)
+                }
+                yield* Effect.logError("failed to generate title", { sessionID: input.sessionID, ...details(cause) })
+              })
             }),
             Effect.ensuring(Effect.sync(() => inFlight.delete(input.sessionID))),
             Effect.forkIn(input.scope),
