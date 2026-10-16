@@ -48,6 +48,7 @@ import { MessageV2 } from "../../../src/session/message-v2"
 import { SessionStatus } from "../../../src/session/status"
 import { SessionSummary } from "../../../src/session/summary"
 import { SystemPrompt } from "../../../src/session/system"
+import { TuiEvent } from "../../../src/server/tui-event"
 import { Todo } from "../../../src/session/todo"
 import { Skill } from "../../../src/skill"
 import { Snapshot } from "../../../src/snapshot"
@@ -528,6 +529,74 @@ it.instance(
       expect(output).not.toContain("api-key-secret")
     }),
   40_000,
+)
+
+it.instance(
+  "surfaces a title generation failure once per session as a TUI toast",
+  () =>
+    Effect.gen(function* () {
+      resetHooks()
+      yield* installHooks()
+      const { llm } = yield* useServerConfig()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const events = yield* EventV2Bridge.Service
+
+      const chat = yield* sessions.create({})
+      const toasts: { title?: string; message: string }[] = []
+      const unsub = yield* events.listen((event) => {
+        if (event.type === TuiEvent.ToastShow.type) {
+          toasts.push(event.data as { title?: string; message: string })
+        }
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => unsub)
+
+      // The failure handler publishes the toast before it logs, so a new title-failure
+      // log entry proves the handler already ran — a deterministic signal for dedup.
+      const logs: { message: unknown }[] = []
+      const logger = Logger.make((input) => logs.push({ message: input.message }))
+      const handled = () =>
+        logs.filter((entry) => JSON.stringify(entry.message).includes("failed to generate title")).length
+
+      hooks.failTitle = new ProviderFailure("title provider is capped")
+      yield* llm.text("assistant reply")
+
+      const first = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "first title prompt" }],
+        })
+        .pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false })), Effect.forkChild)
+      yield* Fiber.join(first)
+      yield* pollWithTimeout(
+        Effect.sync(() => (handled() >= 1 ? true : undefined)),
+        "title failure was not handled",
+      )
+      expect(toasts).toHaveLength(1)
+      expect(toasts[0]!.title).toBe("Title generation failed")
+      expect(toasts[0]!.message).toContain("title provider is capped")
+
+      // A later failure in the same session stays log-only; the toast must not repeat.
+      yield* llm.text("assistant reply")
+      const second = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "second title prompt" }],
+        })
+        .pipe(Effect.provide(Logger.layer([logger], { mergeWithExisting: false })), Effect.forkChild)
+      yield* Fiber.join(second)
+      yield* pollWithTimeout(
+        Effect.sync(() => (handled() >= 2 ? true : undefined)),
+        `second title failure was not handled; handled=${handled()}`,
+      )
+      expect(toasts).toHaveLength(1)
+    }),
+  50_000,
 )
 
 it.instance(
