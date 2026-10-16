@@ -362,6 +362,7 @@ export class AgentManagerProvider implements Disposable {
       contexts: this.contexts,
       closeBrowser: (id) => this.browserLifecycle.close(id),
       post: (message) => this.postToWebview(message),
+      push: (ctx) => this.pushState(ctx), // fork_change
     })
   }
   private onSessionStatus(event: unknown): void {

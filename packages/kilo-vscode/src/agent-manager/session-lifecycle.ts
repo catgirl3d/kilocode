@@ -3,12 +3,14 @@ import { sessionToWebview } from "../kilo-provider-utils"
 import { removeSessionColor } from "../session-colors" // fork_change
 import { samePath } from "./project/paths"
 import type { ProjectContexts } from "./project/contexts"
+import type { ProjectContext } from "./project/context" // fork_change
 import type { AgentManagerOutMessage } from "./types"
 
 type Deps = {
   busy: Set<string>
   removed: Set<string>
   contexts: ProjectContexts
+  push: (ctx: ProjectContext) => void // fork_change
   closeBrowser: (sessionId: string) => void
   post: (message: AgentManagerOutMessage) => void
 }
@@ -23,6 +25,8 @@ function remove(id: string, deps: Deps): void {
   const ctx = deps.contexts.byLiveSession(id)
   if (!ctx) return
   ctx.removeLiveSession(id)
+  ctx.peekState()?.removeSession(id) // fork_change
+  deps.push(ctx) // fork_change
   deps.post({ type: "agentManager.projectSessions", projectId: ctx.id, sessions: [...ctx.sessions()] })
 }
 
