@@ -90,8 +90,16 @@ export function sessionTagsFor(project?: string, value: StoredState = store.snap
     }
   }
   add(value.legacy.sessions)
-  add(project ? value.projects[project]?.sessions : undefined)
-  return { tags, sessions: publicSessions(sessions) }
+  const bucket = project ? value.projects[project]?.sessions : undefined
+  add(bucket)
+  const legacySessions = Object.keys(value.legacy.sessions).filter(
+    (sessionID) => !bucket || !Object.hasOwn(bucket, sessionID),
+  )
+  return {
+    tags,
+    sessions: publicSessions(sessions),
+    ...(legacySessions.length ? { legacySessions } : {}),
+  }
 }
 
 export function onSessionTagsChanged(listener: (view: (project?: string) => SessionTagsState) => void): () => void {
@@ -161,6 +169,34 @@ export async function removeSessionTags(sessionID: string): Promise<void> {
   } catch (error) {
     console.error("[Kilo New] Failed to remove session tags:", error)
   }
+}
+
+export async function claimLegacySessions(project: string | undefined, sessionIDs: Iterable<string>): Promise<void> {
+  if (!project) return
+  await store.write((value) => {
+    const legacy = copySessions(value.legacy.sessions)
+    const current = value.projects[project] ?? { tags: [], sessions: dict<string[]>() }
+    const sessions = copySessions(current.sessions)
+    let changed = false
+    for (const sessionID of sessionIDs) {
+      if (!Object.hasOwn(legacy, sessionID)) continue
+      sessions[sessionID] = [...new Set([...(sessions[sessionID] ?? []), ...legacy[sessionID]!])]
+      delete legacy[sessionID]
+      changed = true
+    }
+    if (!changed) return
+    return {
+      next: {
+        ...value,
+        projects: putProject(value.projects, project, { ...current, sessions }),
+        legacy: { sessions: legacy },
+      },
+    }
+  })
+}
+
+export function hasLegacySessions(): boolean {
+  return Object.keys(sessionTags().legacy.sessions).length > 0
 }
 
 function create(state: StoredState, action: Record<string, unknown>, project: string | undefined): Change {
