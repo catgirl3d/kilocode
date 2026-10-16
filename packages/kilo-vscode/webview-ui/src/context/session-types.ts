@@ -37,6 +37,7 @@ export interface SessionContextValue {
 
   // All sessions (sorted most recent first)
   sessions: Accessor<SessionInfo[]>
+  removedSessions: Accessor<ReadonlySet<string>> // fork_change
   // Project whose session list is complete enough for absence-based tab cleanup.
   sessionsProject: Accessor<string | undefined>
 
