@@ -205,6 +205,11 @@ const SessionList: Component<SessionListProps> = (props) => {
     })
   }
 
+  function startSelect(id: string) {
+    setSelected(new Set([id]))
+    setSelecting(true)
+  }
+
   function stopSelect() {
     setSelecting(false)
     setSelected(new Set<string>())
@@ -353,6 +358,16 @@ const SessionList: Component<SessionListProps> = (props) => {
                   />
                   <IconButton
                     data-slot="session-row-action"
+                    class="session-select-button"
+                    icon="checklist"
+                    size="small"
+                    variant="ghost"
+                    aria-label={label(language.t("session.select.enter"), item)}
+                    title={language.t("session.select.enter")}
+                    onClick={() => startSelect(item.id)}
+                  />
+                  <IconButton
+                    data-slot="session-row-action"
                     icon="trash"
                     size="small"
                     variant="ghost"
@@ -401,6 +416,13 @@ const SessionList: Component<SessionListProps> = (props) => {
               </ContextMenu.ItemLabel>
             </ContextMenu.Item>
             {/* fork_change end */}
+            {/* fork_change start - enter bulk selection from the row menu */}
+            <Show when={!selecting()}>
+              <ContextMenu.Item onSelect={() => startSelect(item.id)}>
+                <ContextMenu.ItemLabel>{language.t("session.select.enter")}</ContextMenu.ItemLabel>
+              </ContextMenu.Item>
+            </Show>
+            {/* fork_change end */}
             {/* fork_change start - assign a session color from the row menu (local sessions only) */}
             <Show when={(props.setSessionColor ?? tabs?.setSessionColor) && !item.id.startsWith("cloud:")}>
               <ContextMenu.Separator />
@@ -446,14 +468,7 @@ const SessionList: Component<SessionListProps> = (props) => {
           placeholder: language.t("session.search.placeholder"),
           autofocus: true,
           action: (
-            <Show
-              when={selecting()}
-              fallback={
-                <Button class="session-select-toggle" variant="ghost" size="small" onClick={() => setSelecting(true)}>
-                  {language.t("session.select.enter")}
-                </Button>
-              }
-            >
+            <Show when={selecting()}>
               <div class="session-select-bar">
                 <span class="session-select-count">
                   {language.t("session.select.count", { count: chosen().length })}
