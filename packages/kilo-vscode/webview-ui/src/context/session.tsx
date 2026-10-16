@@ -182,7 +182,20 @@ export const SessionProvider: ParentComponent = (props) => {
   const [submissionMap, setSubmissionMap] = createStore<Record<string, number>>({})
   const pendingSubmissions = new Map<string, string>()
   const recoveries = new Map<string, Set<string>>()
-  const removedSessions = new Set<string>()
+  // fork_change start - reactive session deletion tombstones
+  const [removedSet, setRemovedSet] = createSignal<ReadonlySet<string>>(new Set())
+  const removedSessions = {
+    has: (id: string) => removedSet().has(id),
+    add: (id: string) => setRemovedSet((prev) => (prev.has(id) ? prev : new Set(prev).add(id))),
+    delete: (id: string) =>
+      setRemovedSet((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      }),
+  }
+  // fork_change end
   // Sessions whose cached transcript a closed panel released. Transcript events
   // are dropped for them until the session is selected, so a child that keeps
   // running cannot refill the cache that release dropped.
@@ -1087,11 +1100,11 @@ export const SessionProvider: ParentComponent = (props) => {
 
   // Event handlers
   function handleSessionCreated(session: SessionInfo, draftID?: string) {
-    removedSessions.delete(session.id)
     releasedTranscripts.delete(session.id)
     freshSessions.add(session.id)
     if (draftID) aborts.move(draftID, session.id)
     batch(() => {
+      removedSessions.delete(session.id) // fork_change
       setStore("sessions", session.id, session)
 
       if (draftID && submissionMap[draftID]) {
@@ -1946,12 +1959,12 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function handleSessionDeleted(sessionID: string) {
-    removedSessions.add(sessionID)
     releasedTranscripts.delete(sessionID)
     freshSessions.delete(sessionID)
     aborts.clear(sessionID)
     confirmSubmissions(sessionID)
     batch(() => {
+      removedSessions.add(sessionID) // fork_change
       dropTranscript(sessionID)
       setStore(
         produce((s) => {
@@ -3021,6 +3034,7 @@ export const SessionProvider: ParentComponent = (props) => {
     currentSession,
     setCurrentSessionID,
     sessions,
+    removedSessions: removedSet, // fork_change
     status,
     statusInfo,
     closeReason,

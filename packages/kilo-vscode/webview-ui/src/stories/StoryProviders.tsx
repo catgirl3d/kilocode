@@ -263,6 +263,7 @@ export function mockSessionValue(overrides?: {
     }),
     setCurrentSessionID: noop,
     sessions: () => [],
+    removedSessions: () => new Set<string>(),
     status: () => status,
     statusInfo: () => ({ type: status }),
     closeReason: () => overrides?.closeReason,
