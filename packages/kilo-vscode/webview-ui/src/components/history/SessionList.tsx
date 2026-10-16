@@ -308,58 +308,60 @@ const SessionList: Component<SessionListProps> = (props) => {
                   </div>
                 </Show>
                 {/* fork_change end */}
-                <IconButton
-                  data-slot="session-row-action"
-                  icon="edit"
-                  size="small"
-                  variant="ghost"
-                  aria-label={label(language.t("common.rename"), item)}
-                  onClick={() => startRename(item)}
-                />
-                {/* fork_change start - keep the tag action outside the List button */}
-                <IconButton
-                  ref={(el) => {
-                    trigger = el
-                  }}
-                  data-slot="session-row-action"
-                  class="session-tags-button"
-                  icon="bullet-list"
-                  size="small"
-                  variant="ghost"
-                  disabled={!tags.ready()}
-                  aria-label={label(language.t("session.tags.manage"), item)}
-                  title={language.t("session.tags.manage")}
-                  onClick={(event) => openTags(item.id, event.currentTarget)}
-                />
+                {/* fork_change start - overlay the hover actions instead of reserving row space */}
+                <div data-slot="session-row-actions">
+                  <IconButton
+                    data-slot="session-row-action"
+                    icon="edit"
+                    size="small"
+                    variant="ghost"
+                    aria-label={label(language.t("common.rename"), item)}
+                    onClick={() => startRename(item)}
+                  />
+                  {/* keep the tag action outside the List button */}
+                  <IconButton
+                    ref={(el) => {
+                      trigger = el
+                    }}
+                    data-slot="session-row-action"
+                    class="session-tags-button"
+                    icon="bullet-list"
+                    size="small"
+                    variant="ghost"
+                    disabled={!tags.ready()}
+                    aria-label={label(language.t("session.tags.manage"), item)}
+                    title={language.t("session.tags.manage")}
+                    onClick={(event) => openTags(item.id, event.currentTarget)}
+                  />
+                  {/* toggle local session favorites from history rows */}
+                  <IconButton
+                    data-slot="session-row-action"
+                    class="session-favorite-button"
+                    icon={favorites.isFavorite(item.id) ? "star-filled" : "star"}
+                    size="small"
+                    variant="ghost"
+                    disabled={!favorites.ready() || pending().has(item.id)}
+                    aria-pressed={favorites.isFavorite(item.id)}
+                    aria-label={label(
+                      language.t(favorites.isFavorite(item.id) ? "session.favorites.remove" : "session.favorites.add"),
+                      item,
+                    )}
+                    title={language.t(
+                      favorites.isFavorite(item.id) ? "session.favorites.remove" : "session.favorites.add",
+                    )}
+                    onClick={() => toggleFavorite(item)}
+                  />
+                  <IconButton
+                    data-slot="session-row-action"
+                    icon="trash"
+                    size="small"
+                    variant="ghost"
+                    aria-label={label(language.t("session.delete.title"), item)}
+                    onClick={(event) => confirmDelete(item, event.currentTarget)}
+                  />
+                  <Show when={props.rowActions}>{props.rowActions?.(item)}</Show>
+                </div>
                 {/* fork_change end */}
-                {/* fork_change start - toggle local session favorites from history rows */}
-                <IconButton
-                  data-slot="session-row-action"
-                  class="session-favorite-button"
-                  icon={favorites.isFavorite(item.id) ? "star-filled" : "star"}
-                  size="small"
-                  variant="ghost"
-                  disabled={!favorites.ready() || pending().has(item.id)}
-                  aria-pressed={favorites.isFavorite(item.id)}
-                  aria-label={label(
-                    language.t(favorites.isFavorite(item.id) ? "session.favorites.remove" : "session.favorites.add"),
-                    item,
-                  )}
-                  title={language.t(
-                    favorites.isFavorite(item.id) ? "session.favorites.remove" : "session.favorites.add",
-                  )}
-                  onClick={() => toggleFavorite(item)}
-                />
-                {/* fork_change end */}
-                <IconButton
-                  data-slot="session-row-action"
-                  icon="trash"
-                  size="small"
-                  variant="ghost"
-                  aria-label={label(language.t("session.delete.title"), item)}
-                  onClick={(event) => confirmDelete(item, event.currentTarget)}
-                />
-                <Show when={props.rowActions}>{props.rowActions?.(item)}</Show>
               </>
             }
           >
