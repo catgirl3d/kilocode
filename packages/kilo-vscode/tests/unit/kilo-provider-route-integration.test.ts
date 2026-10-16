@@ -180,6 +180,12 @@ function connect(internal: ProviderInternals): void {
   internal.initConnectionPromise = Promise.resolve()
 }
 
+async function settle(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 describe("KiloProvider route integration", () => {
   const session = {
     id: "ses-background",
@@ -963,6 +969,137 @@ function typeList(messages: unknown[]): unknown[] {
 }
 
 describe("session tags", () => {
+  it("claims legacy assignments seen during a full session load", async () => {
+    const tag = { id: "legacy-tag", name: "Legacy", color: "Blue" }
+    initSessionTags(
+      memory({
+        version: 2,
+        global: [tag],
+        projects: {},
+        legacy: { sessions: { "ses-match": [tag.id], "ses-foreign": [tag.id] } },
+      }).state,
+    )
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      experimental: { session: { list: (input: { limit?: number }, options?: unknown) => Promise<unknown> } }
+    }
+    client.experimental.session.list = async (input) => ({
+      data:
+        input.limit === 5_000
+          ? []
+          : [{ id: "ses-match", projectID: "backend-a", directory: "/repo", time: { created: 1, updated: 1 } }],
+      response: { headers: new Headers() },
+    })
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "prj-agent-manager" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    const posted: unknown[] = []
+    connect(internal)
+    internal.isWebviewReady = true
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    try {
+      await internal.handleLoadSessions(false)
+      await settle()
+
+      expect(sessionTags().projects["backend-a"]?.sessions).toEqual({ "ses-match": [tag.id] })
+      expect(sessionTags().legacy.sessions).toEqual({ "ses-foreign": [tag.id] })
+      expect(posted.filter((message) => (message as { type?: string }).type === "sessionTagsLoaded").at(-1)).toEqual({
+        type: "sessionTagsLoaded",
+        state: {
+          tags: [{ ...tag, scope: "global" }],
+          sessions: { "ses-foreign": [tag.id], "ses-match": [tag.id] },
+          legacySessions: ["ses-foreign"],
+        },
+      })
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("drains remaining legacy assignments once after resolving a project", async () => {
+    const tag = { id: "drain-tag", name: "Drain", color: "Green" }
+    initSessionTags(
+      memory({
+        version: 2,
+        global: [tag],
+        projects: {},
+        legacy: { sessions: { "ses-drain": [tag.id], "ses-stays": [tag.id] } },
+      }).state,
+    )
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      experimental: { session: { list: (input: { limit?: number; directory?: string }) => Promise<unknown> } }
+    }
+    let drainCalls = 0
+    let drainInput: { limit?: number; directory?: string } | undefined
+    client.experimental.session.list = async (input) => {
+      if (input.limit === 5_000) {
+        drainCalls++
+        drainInput = input
+        return {
+          data: [{ id: "ses-drain", directory: "/repo", time: { created: 1, updated: 1 } }],
+          response: { headers: new Headers() },
+        }
+      }
+      return {
+        data: [{ id: "ses-root", projectID: "backend-a", directory: "/repo", time: { created: 1, updated: 1 } }],
+        response: { headers: new Headers() },
+      }
+    }
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "prj-agent-manager" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    connect(internal)
+
+    try {
+      await internal.handleLoadSessions(false)
+      await settle()
+      await internal.handleLoadSessions(false)
+      await settle()
+
+      expect(drainCalls).toBe(1)
+      expect(drainInput).toEqual({ directory: "/repo", roots: true, worktrees: true, limit: 5_000 })
+      expect(sessionTags().projects["backend-a"]?.sessions).toEqual({ "ses-drain": [tag.id] })
+      expect(sessionTags().legacy.sessions).toEqual({ "ses-stays": [tag.id] })
+    } finally {
+      provider.dispose()
+    }
+  })
+
+  it("does not run the legacy drain listing when there is no legacy state", async () => {
+    initSessionTags(memory().state)
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      experimental: { session: { list: (input: { limit?: number }) => Promise<unknown> } }
+    }
+    let drainCalls = 0
+    client.experimental.session.list = async (input) => {
+      if (input.limit === 5_000) drainCalls++
+      return {
+        data: [{ id: "ses-root", projectID: "backend-a", directory: "/repo", time: { created: 1, updated: 1 } }],
+        response: { headers: new Headers() },
+      }
+    }
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo",
+      projectQualifier: () => ({ projectId: "prj-agent-manager" }),
+    })
+    const internal = provider as unknown as ProviderInternals
+    connect(internal)
+
+    try {
+      await internal.handleLoadSessions(false)
+      expect(drainCalls).toBe(0)
+    } finally {
+      provider.dispose()
+    }
+  })
+
   it("uses the backend project ID returned by the session load for tag views", async () => {
     const tag = { id: "backend-tag", name: "Backend", color: "Blue" }
     initSessionTags(
