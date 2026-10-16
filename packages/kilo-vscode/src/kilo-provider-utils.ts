@@ -276,6 +276,7 @@ export interface SessionRefreshContext {
   worktreeDirectories?: () => string[]
   workspaceDirectory: string
   isCurrent?: () => boolean
+  track?: (sessions: { id: string }[]) => void // fork_change
   postMessage(message: unknown): void
 }
 
@@ -360,6 +361,7 @@ async function loadPage(ctx: SessionRefreshContext, more: boolean): Promise<stri
   if (fatal !== undefined && failed.has(fatal)) {
     throw cause ?? new Error("Failed to list workspace sessions")
   }
+  ctx.track?.(results.flatMap((result) => result?.sessions ?? [])) // fork_change
 
   const batches: Session[][] = []
   targets.forEach((target, index) => {
