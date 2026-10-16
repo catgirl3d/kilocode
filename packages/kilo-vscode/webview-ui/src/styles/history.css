@@ -43,6 +43,7 @@ body.vscode-light
 }
 
 .session-list .session-row {
+  position: relative;
   display: flex;
   align-items: center;
   align-self: stretch;
@@ -74,20 +75,44 @@ body.vscode-light
   color: var(--text-on-interactive-base, white);
 }
 
+/* fork_change start - hover actions overlay the row end instead of reserving space */
+.session-list [data-slot="session-row-actions"] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  display: flex;
+  align-items: center;
+  padding-inline: 16px 4px;
+  background: linear-gradient(to right, transparent, var(--surface-interactive-base) 16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
 .session-list [data-slot="session-row-action"] {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  margin-left: 4px;
-  opacity: 0;
-  transition: opacity 0.15s;
 }
 
-.session-list .session-row:hover [data-slot="session-row-action"],
-.session-list .session-row:focus-within [data-slot="session-row-action"],
-.session-list .session-row:has([data-slot="list-item"][data-active="true"]) [data-slot="session-row-action"] {
+.session-list .session-row:hover [data-slot="session-row-actions"],
+.session-list .session-row:has(:focus-visible) [data-slot="session-row-actions"],
+.session-list .session-row:has([data-slot="list-item"][data-active="true"]) [data-slot="session-row-actions"] {
   opacity: 1;
+  pointer-events: auto;
 }
+
+/* The List drops its active state once the pointer moves onto the actions, so keep the whole row highlighted. */
+.session-list .session-row:hover > [data-slot="list-item"] {
+  background-color: var(--surface-interactive-base);
+  color: var(--text-on-interactive-base, var(--text-strong));
+}
+
+body.vscode-light .session-list .session-row:hover > [data-slot="list-item"] [data-slot="list-item-description"],
+body.vscode-light .session-list .session-row:hover [data-slot="session-row-action"] [data-slot="icon-svg"] {
+  color: var(--text-on-interactive-base, white);
+}
+/* fork_change end */
 
 .session-list-menu {
   min-width: 180px;
@@ -131,7 +156,7 @@ body.vscode-light
   gap: 0;
 }
 
-.session-list .session-row:has(.session-select-check) [data-slot="session-row-action"] {
+.session-list .session-row:has(.session-select-check) [data-slot="session-row-actions"] {
   display: none;
 }
 
