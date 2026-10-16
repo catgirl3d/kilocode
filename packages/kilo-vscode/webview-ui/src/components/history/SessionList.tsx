@@ -116,7 +116,7 @@ const SessionList: Component<SessionListProps> = (props) => {
   createEffect(() => {
     if (props.sessionIds?.() !== undefined) return
     if (!filterTags().some((tag) => chosenTags().has(tag.id))) return
-    if (chosenTags().size === 0 || match() || !session.sessionsHasMore() || session.sessionsLoadingMore()) return
+    if (chosenTags().size === 0 || !session.sessionsHasMore() || session.sessionsLoadingMore()) return
     session.loadMoreSessions()
   })
   // fork_change end
