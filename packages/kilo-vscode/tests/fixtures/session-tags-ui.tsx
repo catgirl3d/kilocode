@@ -24,7 +24,11 @@ let favoriteRequests = 0
 let favoriteResponse: (() => void) | undefined
 let favoriteWritesFail = false
 const favoriteReplies: Array<"defer" | "drop" | "send"> = ["defer"]
-const dispatch = (data: ExtensionMessage) => post(data)
+let markDeleted: (id: string) => void = () => {}
+const dispatch = (data: ExtensionMessage) => {
+  if (data.type === "sessionDeleted") markDeleted(data.sessionID)
+  post(data)
+}
 const api = {
   postMessage: (message: WebviewMessage) => {
     sent.push(message)
@@ -118,6 +122,12 @@ const [active, setActive] = createSignal("ses-home")
 const [secondary, setSecondary] = createSignal(false)
 const [tertiary, setTertiary] = createSignal(false)
 const [sessions, setSessions] = createSignal(items)
+const [removedSessions, setRemovedSessions] = createSignal<ReadonlySet<string>>(new Set())
+markDeleted = (id) =>
+  setRemovedSessions((prev) => {
+    if (prev.has(id)) return prev
+    return new Set(prev).add(id)
+  })
 const [hasMore, setHasMore] = createSignal(false)
 const [loadingMore, setLoadingMore] = createSignal(false)
 let loadMoreCalls = 0
@@ -131,6 +141,11 @@ const session = {
   currentSessionID: active,
   currentSession: () => sessions().find((item) => item.id === active()),
   sessions,
+  removedSessions,
+  deleteSession: (id: string) => {
+    setSessions((prev) => prev.filter((item) => item.id !== id))
+    api.postMessage({ type: "deleteSession", sessionID: id })
+  },
   selectSession: (id: string) => {
     selected.push(id)
     setActive(id)
@@ -999,6 +1014,107 @@ response({
   tags: ops.tags.filter((tag) => tag.id !== "tag-ops"),
   sessions: { ...ops.sessions, "ses-tagged": ["tag-urgent"] },
 })
+await settle()
+
+setRemovedSessions(new Set<string>())
+setSessions(items)
+setHasMore(false)
+setLoadingMore(false)
+response({
+  tags: initial.tags,
+  sessions: { "ses-home": ["tag-urgent"], "ses-tagged": ["tag-urgent"] },
+})
+await settle()
+filterTag("Urgent").click()
+await settle()
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-home", "ses-tagged"],
+  "the deletion scenario starts with tagged sessions",
+)
+session.deleteSession("ses-home")
+session.deleteSession("ses-tagged")
+await settle()
+assert.deepEqual(groupItems("history").flat(), [], "deletion removes rows before confirmations arrive")
+dispatch({ type: "sessionDeleted", sessionID: "ses-home" })
+await settle()
+assert.equal(
+  filterTag("Urgent").getAttribute("aria-pressed"),
+  "true",
+  "a tag remains while one tagged deletion is unconfirmed",
+)
+dispatch({ type: "sessionDeleted", sessionID: "ses-tagged" })
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"] button[aria-label="Urgent"]'),
+  null,
+  "the last confirmed tagged deletion removes the stale filter chip",
+)
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-plain"],
+  "the remaining untagged session is visible after the filter is released",
+)
+
+response({
+  tags: initial.tags,
+  sessions: { "ses-home": ["tag-urgent"], "ses-tagged": ["tag-urgent"] },
+})
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"] button[aria-label="Urgent"]'),
+  null,
+  "a stale tag snapshot does not resurrect a deleted-session filter chip",
+)
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-plain"],
+  "a stale tag snapshot does not hide the remaining session",
+)
+
+setRemovedSessions(new Set<string>())
+setSessions(items)
+setHasMore(true)
+setLoadingMore(false)
+loadMoreCalls = 0
+response({
+  tags: initial.tags,
+  sessions: {
+    "ses-home": ["tag-urgent"],
+    "ses-tagged": ["tag-urgent"],
+    "ses-unloaded": ["tag-urgent"],
+  },
+})
+await settle()
+filterTag("Urgent").click()
+await settle()
+session.deleteSession("ses-home")
+session.deleteSession("ses-tagged")
+dispatch({ type: "sessionDeleted", sessionID: "ses-home" })
+dispatch({ type: "sessionDeleted", sessionID: "ses-tagged" })
+await settle()
+assert.equal(
+  filterTag("Urgent").getAttribute("aria-pressed"),
+  "true",
+  "an unloaded tagged session keeps the filter selected",
+)
+assert.deepEqual(groupItems("history").flat(), [], "an unloaded tagged session is not rendered before it is loaded")
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
+  "Searching older sessions…",
+  "an unloaded tagged session keeps the older-session search indication",
+)
+
+setRemovedSessions(new Set<string>())
+setSessions(items)
+setHasMore(false)
+setLoadingMore(false)
+response({
+  tags: ops.tags.filter((tag) => tag.id !== "tag-ops"),
+  sessions: { ...ops.sessions, "ses-tagged": ["tag-urgent"] },
+})
+await settle()
+filterTag("Urgent").click()
 await settle()
 
 const count = selected.length

@@ -182,7 +182,20 @@ export const SessionProvider: ParentComponent = (props) => {
   const [submissionMap, setSubmissionMap] = createStore<Record<string, number>>({})
   const pendingSubmissions = new Map<string, string>()
   const recoveries = new Map<string, Set<string>>()
-  const removedSessions = new Set<string>()
+  // fork_change start - reactive session deletion tombstones
+  const [removedSet, setRemovedSet] = createSignal<ReadonlySet<string>>(new Set())
+  const removedSessions = {
+    has: (id: string) => removedSet().has(id),
+    add: (id: string) => setRemovedSet((prev) => (prev.has(id) ? prev : new Set(prev).add(id))),
+    delete: (id: string) =>
+      setRemovedSet((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      }),
+  }
+  // fork_change end
   const terminalPermissions = new Map<string, undefined>()
   const aborts = createAbortState()
 
@@ -1079,10 +1092,10 @@ export const SessionProvider: ParentComponent = (props) => {
 
   // Event handlers
   function handleSessionCreated(session: SessionInfo, draftID?: string) {
-    removedSessions.delete(session.id)
     freshSessions.add(session.id)
     if (draftID) aborts.move(draftID, session.id)
     batch(() => {
+      removedSessions.delete(session.id) // fork_change
       setStore("sessions", session.id, session)
 
       if (draftID && submissionMap[draftID]) {
@@ -1900,12 +1913,12 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function handleSessionDeleted(sessionID: string) {
-    removedSessions.add(sessionID)
     pendingOptimistic.delete(sessionID)
     freshSessions.delete(sessionID)
     aborts.clear(sessionID)
     confirmSubmissions(sessionID)
     batch(() => {
+      removedSessions.add(sessionID) // fork_change
       // Collect message IDs so we can clean up their parts (store + stash)
       const msgs = store.messages[sessionID] ?? []
       const msgIds = msgs.map((m) => m.id)
@@ -2996,6 +3009,7 @@ export const SessionProvider: ParentComponent = (props) => {
     currentSession,
     setCurrentSessionID,
     sessions,
+    removedSessions: removedSet, // fork_change
     status,
     statusInfo,
     closeReason,
