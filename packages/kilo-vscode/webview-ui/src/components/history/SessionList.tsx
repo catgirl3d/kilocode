@@ -97,33 +97,39 @@ const SessionList: Component<SessionListProps> = (props) => {
     const state = tags.state()
     const loaded = new Set(session.sessions().map((item) => item.id))
     const legacy = new Set(state.legacySessions ?? [])
+    const removed = session.removedSessions()
     const ids =
       scoped === undefined
         ? new Set(
             Object.entries(state.sessions).flatMap(([id, tagIds]) => {
+              if (removed.has(id)) return []
               return !legacy.has(id) || loaded.has(id) ? tagIds : []
             }),
           )
         : new Set(base().flatMap((item) => item.tagIds))
     return state.tags.filter((tag) => ids.has(tag.id))
   })
+  const activeTags = createMemo(() => {
+    const catalog = new Set(filterTags().map((tag) => tag.id))
+    return new Set([...chosenTags()].filter((id) => catalog.has(id)))
+  })
   const items = createMemo(() => {
     const source = base()
-    const chosen = chosenTags()
-    if (chosen.size === 0) return source
-    return source.filter((item) => item.tagIds.some((id) => chosen.has(id)))
+    const active = activeTags()
+    if (active.size === 0) return source
+    return source.filter((item) => item.tagIds.some((id) => active.has(id)))
   })
   const match = createMemo(() => {
-    const chosen = chosenTags()
-    return chosen.size > 0 && base().some((item) => item.tagIds.some((id) => chosen.has(id)))
+    const active = activeTags()
+    return active.size > 0 && base().some((item) => item.tagIds.some((id) => active.has(id)))
   })
   // fork_change end
 
   // fork_change start - load older sessions for unscoped tag filters
   createEffect(() => {
     if (props.sessionIds?.() !== undefined) return
-    if (!filterTags().some((tag) => chosenTags().has(tag.id))) return
-    if (chosenTags().size === 0 || !session.sessionsHasMore() || session.sessionsLoadingMore()) return
+    if (activeTags().size === 0) return
+    if (!session.sessionsHasMore() || session.sessionsLoadingMore()) return
     session.loadMoreSessions()
   })
   // fork_change end
@@ -515,9 +521,9 @@ const SessionList: Component<SessionListProps> = (props) => {
         /* fork_change end */
         /* fork_change start - dynamic empty message for tag filtering */
         emptyMessage={language.t(
-          chosenTags().size > 0 && !match() && session.sessionsHasMore()
+          activeTags().size > 0 && !match() && session.sessionsHasMore()
             ? "session.tags.filter.searching"
-            : chosenTags().size > 0
+            : activeTags().size > 0
               ? "session.tags.filter.empty"
               : "session.empty",
         )}
