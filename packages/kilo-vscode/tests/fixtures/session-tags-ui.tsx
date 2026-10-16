@@ -563,6 +563,7 @@ assert.deepEqual(
 setHasMore(true)
 const beforeNormalization = loadMoreCalls
 response({ tags: initial.tags, sessions: { "ses-home": ["tag-review"] } })
+setLoadingMore(false)
 await settle()
 assert.equal(
   loadMoreCalls,
@@ -866,6 +867,30 @@ assert.equal(loadMoreCalls, searchOnlyCalls, "searching without a selected tag d
 filter("")
 setHasMore(false)
 await settle()
+const page: SessionInfo = {
+  id: "ses-page",
+  title: "Another loaded page",
+  createdAt: now,
+  updatedAt: now,
+}
+setSessions(items)
+setHasMore(true)
+loadMoreCalls = 0
+filterTag("Urgent").click()
+await settle()
+assert.equal(loadMoreCalls, 1, "a selected tag with a loaded match still requests the next page")
+setSessions([...items, page])
+setLoadingMore(false)
+await settle()
+assert.equal(loadMoreCalls, 2, "a matching page does not stop tag history pagination")
+setHasMore(false)
+setLoadingMore(false)
+await settle()
+assert.equal(loadMoreCalls, 2, "tag history pagination stops after hasMore becomes false")
+await settle()
+assert.equal(loadMoreCalls, 2, "no extra page is requested after the terminal page")
+filterTag("Urgent").click()
+
 const older: SessionInfo = {
   id: "ses-older",
   title: "Older tagged session",
@@ -899,29 +924,40 @@ assert.equal(
   "Searching older sessions…",
   "the second page keeps the searching message while it is still inconclusive",
 )
-const terminalCalls = loadMoreCalls
-setHasMore(false)
+setSessions([...items, older])
 setLoadingMore(false)
 await settle()
-assert.equal(
-  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
-  "No sessions match the selected tags.",
-  "an exhausted tag search reports that there are no matching sessions",
-)
-await settle()
-assert.equal(loadMoreCalls, terminalCalls, "an exhausted tag search does not request another page")
-setSessions([...items, older])
-await settle()
+assert.equal(loadMoreCalls, 3, "tag history pagination continues after the first matching page")
 assert(item(older.id), "the appended tagged session appears after the page is loaded")
 assert.equal(
   root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
   undefined,
   "the searching message clears after a matching session is loaded",
 )
-assert.equal(loadMoreCalls, 2, "matching the selected tag stops further page loading")
+const terminalCalls = loadMoreCalls
+setHasMore(false)
+setLoadingMore(false)
+await settle()
+assert.equal(loadMoreCalls, terminalCalls, "an exhausted tag search does not request another page")
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
+  undefined,
+  "the terminal page keeps the matching session visible",
+)
+setSessions(items)
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="list-message"]')?.textContent?.trim(),
+  "No sessions match the selected tags.",
+  "an exhausted tag search reports no matching sessions",
+)
+setSessions([...items, older])
+await settle()
 filterTag("Older").click()
 setSessions(items)
 setHasMore(true)
+loadMoreCalls = 0
 await settle()
 filterTag("Older").click()
 await settle()
@@ -930,7 +966,7 @@ filterTag("Older").click()
 setSessions([...items])
 setLoadingMore(false)
 await settle()
-assert.equal(deselectedCalls, 3, "selecting the distant tag starts one in-flight page request")
+assert.equal(deselectedCalls, 1, "selecting the distant tag starts one in-flight page request")
 assert.equal(loadMoreCalls, deselectedCalls, "deselecting a tag during loading prevents another page request")
 setHasMore(false)
 response({
