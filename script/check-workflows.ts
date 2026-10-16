@@ -63,6 +63,7 @@ const active = new Set([
   "test.yml",
   "typecheck.yml",
   "ui-browser-tests.yml",
+  "upstream-conflict-watch.yml", // kilocode_change - [fork] upstream conflict watch
   "validate-cli-smoke.yml",
   "v2-port-tracker.yml",
   "v2-upstream-release-notify.yml",
