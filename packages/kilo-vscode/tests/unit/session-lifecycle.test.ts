@@ -20,11 +20,18 @@ describe("session lifecycle merge integration", () => {
   test.each(["sessionID", "info"])("preserves deletion guards and browser cleanup for %s events", (shape) => {
     const sessions: Array<{ id: string }> = []
     const closed: string[] = []
+    const persisted: string[] = []
+    const pushed: unknown[] = []
     const posted: AgentManagerOutMessage[] = []
+    const state = {
+      getSession: () => undefined,
+      getWorktrees: () => [],
+      removeSession: (id: string) => persisted.push(id),
+    }
     const context = {
       id: "project",
       lifecycle: "ready",
-      peekState: () => undefined,
+      peekState: () => state,
       sessions: () => sessions,
       upsertSession: (session: { id: string }) => sessions.push(session),
       removeLiveSession: (id: string) =>
@@ -43,6 +50,7 @@ describe("session lifecycle merge integration", () => {
       } as unknown as ProjectContexts,
       closeBrowser: (id: string) => closed.push(id),
       post: (message: AgentManagerOutMessage) => posted.push(message),
+      push: (ctx: unknown) => pushed.push(ctx),
     }
     handleSessionLifecycle({ type: "session.created", properties: { info } }, deps)
     expect(sessions).toHaveLength(1)
@@ -54,6 +62,8 @@ describe("session lifecycle merge integration", () => {
     expect(deps.removed.has(info.id)).toBe(true)
     expect(deps.busy.has(info.id)).toBe(false)
     expect(sessions).toHaveLength(0)
+    expect(persisted).toEqual([info.id])
+    expect(pushed).toEqual([context])
     const count = posted.length
     handleSessionLifecycle({ type: "session.updated", properties: { info } }, deps)
     expect(sessions).toHaveLength(0)
@@ -81,6 +91,7 @@ describe("session lifecycle merge integration", () => {
       contexts: { byDirectory: () => undefined, byLiveSession: () => undefined } as unknown as ProjectContexts,
       closeBrowser: () => {},
       post: () => {},
+      push: () => {},
     }
     handleSessionLifecycle({ type: "session.deleted", properties: { sessionID: info.id } }, deps)
     await Bun.sleep(0)
