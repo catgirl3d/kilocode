@@ -1,0 +1,38 @@
+name: Upstream conflict watch
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the plan from the probe and the issue, no issue writes"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+
+concurrency:
+  group: upstream-conflict-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    if: github.repository == 'catgirl3d/kilocode'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-bun
+        with:
+          install: false
+      - run: bun script/upstream-conflict-watch.ts ${{ inputs.dry_run == true && '--dry-run' || '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ vars.UPSTREAM_CONFLICT_ISSUE_NUMBER }}
