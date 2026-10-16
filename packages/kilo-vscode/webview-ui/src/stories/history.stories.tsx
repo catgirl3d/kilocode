@@ -241,10 +241,11 @@ export const WithItems: Story = {
   render: () => <SessionListDemo state={empty} fail />,
 }
 
-// Enters select mode and chooses two sessions so the visual baseline captures the
-// checkbox toolbar state. The observer applies the state in the same task that
-// inserts the rows, so the screenshot cannot catch a half-applied story; failures
-// throw instead of silently screenshotting the default list.
+// Enters select mode from the first row's context menu (which checks that row) and
+// chooses a second session so the visual baseline captures the checkbox toolbar
+// state. The observer applies the state in the same task that inserts the rows, so
+// the screenshot cannot catch a half-applied story; failures throw instead of
+// silently screenshotting the default list.
 const SelectionModeDemo = () => {
   let host: HTMLDivElement | undefined
   const [selected, setSelected] = createSignal("")
@@ -252,20 +253,29 @@ const SelectionModeDemo = () => {
   onMount(() => {
     let done = false
     let timer: ReturnType<typeof setTimeout> | undefined
+    let retry: ReturnType<typeof setTimeout> | undefined
     let observer: MutationObserver | undefined
 
     const apply = () => {
       if (done || !host) return
       if (!host.querySelector(".session-select-bar")) {
-        const toggle = host.querySelector<HTMLButtonElement>(".session-select-toggle")
-        if (!toggle) return
-        toggle.click()
+        const row = host.querySelector<HTMLElement>(".session-row")
+        if (!row) return
+        // the menu renders in a portal outside the host, so the observer cannot see it
+        const choose = [
+          ...document.querySelectorAll<HTMLElement>('.session-list-menu [data-slot="context-menu-item"]'),
+        ].find((node) => node.textContent?.trim() === "Select")
+        if (!choose) {
+          row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))
+          retry = setTimeout(apply, 50)
+          return
+        }
+        choose.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }))
+        return
       }
       const boxes = [...host.querySelectorAll<HTMLElement>(".session-select-check")]
       if (boxes.length < 2) return
-      for (const box of boxes.slice(0, 2)) {
-        box.querySelector<HTMLElement>('[data-slot="checkbox-checkbox-label"]')?.click()
-      }
+      boxes[1]?.querySelector<HTMLElement>('[data-slot="checkbox-checkbox-label"]')?.click()
       const action = host.querySelector<HTMLButtonElement>(".session-select-bar button:last-child")
       if (!action || action.disabled) {
         throw new Error("[Kilo New] selection story: the chosen sessions were not applied")
@@ -273,6 +283,7 @@ const SelectionModeDemo = () => {
       done = true
       observer?.disconnect()
       clearTimeout(timer)
+      clearTimeout(retry)
     }
 
     observer = new MutationObserver(apply)
@@ -284,6 +295,7 @@ const SelectionModeDemo = () => {
     onCleanup(() => {
       observer?.disconnect()
       clearTimeout(timer)
+      clearTimeout(retry)
     })
   })
 
