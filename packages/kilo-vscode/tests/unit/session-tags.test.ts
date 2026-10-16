@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, spyOn } from "bun:test"
 import type { Memento } from "vscode"
 import {
   handleSessionTagsMessage,
+  claimLegacySessions,
+  hasLegacySessions,
   initSessionTags,
   onSessionTagsChanged,
   refreshSessionTags,
@@ -99,6 +101,7 @@ describe("session tags store", () => {
     expect(sessionTagsFor("p1")).toEqual({
       tags: [{ id: "global", name: "Global", color: "Blue", scope: "global" }],
       sessions: { "ses-a": ["global"], "ses-b": ["global"] },
+      legacySessions: ["ses-a", "ses-b"],
     })
     expect(sessionTagsFor("p2")).toEqual(sessionTagsFor("p1"))
 
@@ -217,6 +220,75 @@ describe("session tags store", () => {
         sessions: { "ses-p2": [p2.id] },
       })
       expect(seen.at(-1)).toEqual(sessionTagsFor("p1"))
+    } finally {
+      off()
+    }
+  })
+
+  it("exposes only legacy-only session keys in a project view", () => {
+    const global = { id: "global", name: "Global", color: "Blue", scope: "global" as const }
+    const local = { id: "local", name: "Local", color: "Red" }
+    saved = memory(
+      state([global], { p1: { tags: [local], sessions: { "ses-bucket": [local.id], "ses-both": [local.id] } } }, [
+        ["ses-legacy", global.id],
+        ["ses-both", global.id],
+      ]),
+    )
+    initSessionTags(saved.state)
+
+    expect(sessionTagsFor("p1")).toEqual({
+      tags: [local, global],
+      sessions: {
+        "ses-legacy": [global.id],
+        "ses-both": [global.id, local.id],
+        "ses-bucket": [local.id],
+      },
+      legacySessions: ["ses-legacy"],
+    })
+    expect(sessionTagsFor()).toEqual({
+      tags: [global],
+      sessions: { "ses-legacy": [global.id], "ses-both": [global.id] },
+      legacySessions: ["ses-legacy", "ses-both"],
+    })
+
+    saved = memory(state([global]))
+    initSessionTags(saved.state)
+    expect(sessionTagsFor("p1").legacySessions).toBeUndefined()
+    expect(hasLegacySessions()).toBe(false)
+  })
+
+  it("claims legacy assignments into a project once with a single broadcast", async () => {
+    const first = { id: "first", name: "First", color: "Blue", scope: "global" as const }
+    const second = { id: "second", name: "Second", color: "Red", scope: "global" as const }
+    saved = memory(
+      state([first, second], { p1: { tags: [], sessions: { "ses-merge": [first.id] } } }, [
+        ["ses-merge", first.id, second.id, first.id],
+        ["ses-move", second.id],
+      ]),
+    )
+    initSessionTags(saved.state)
+    const seen: SessionTagsState[] = []
+    const off = onSessionTagsChanged((view) => seen.push(view("p1")))
+
+    try {
+      const before = saved.writes()
+      await claimLegacySessions(undefined, ["ses-merge"])
+      expect(saved.writes()).toBe(before)
+      expect(hasLegacySessions()).toBe(true)
+
+      await claimLegacySessions("p1", ["ses-merge", "ses-move", "ses-missing"])
+      expect(sessionTags()).toEqual({
+        version: 2,
+        global: [first, second],
+        projects: { p1: { tags: [], sessions: { "ses-merge": [first.id, second.id], "ses-move": [second.id] } } },
+        legacy: { sessions: {} },
+      })
+      expect(saved.writes()).toBe(before + 1)
+      expect(seen).toHaveLength(1)
+
+      await claimLegacySessions("p1", ["ses-merge", "ses-move"])
+      expect(saved.writes()).toBe(before + 1)
+      expect(seen).toHaveLength(1)
     } finally {
       off()
     }
@@ -385,6 +457,7 @@ describe("session tags store", () => {
     expect(sessionTagsFor("p1")).toEqual({
       tags: [{ id: "good", name: "Good", color: "Blue", scope: "global" }],
       sessions: { "ses-good": ["good"] },
+      legacySessions: ["ses-good"],
     })
     await act({ type: "assign", sessionID: "ses-next", id: "good", assigned: true }, "p1")
 
@@ -675,6 +748,7 @@ describe("session tags store", () => {
     expect(sessionTagsFor("p1", value)).toEqual({
       tags: [local, global],
       sessions: { "ses-legacy": [global.id], "ses-project": [local.id] },
+      legacySessions: ["ses-legacy", "ses-empty-legacy"],
     })
     expect(value).toEqual(before)
   })

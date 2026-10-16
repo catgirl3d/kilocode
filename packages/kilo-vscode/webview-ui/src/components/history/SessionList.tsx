@@ -94,11 +94,18 @@ const SessionList: Component<SessionListProps> = (props) => {
   })
   const filterTags = createMemo(() => {
     const scoped = props.sessionIds?.()
+    const state = tags.state()
+    const loaded = new Set(session.sessions().map((item) => item.id))
+    const legacy = new Set(state.legacySessions ?? [])
     const ids =
       scoped === undefined
-        ? new Set(Object.values(tags.state().sessions).flat())
+        ? new Set(
+            Object.entries(state.sessions).flatMap(([id, tagIds]) => {
+              return !legacy.has(id) || loaded.has(id) ? tagIds : []
+            }),
+          )
         : new Set(base().flatMap((item) => item.tagIds))
-    return tags.state().tags.filter((tag) => ids.has(tag.id))
+    return state.tags.filter((tag) => ids.has(tag.id))
   })
   const items = createMemo(() => {
     const source = base()

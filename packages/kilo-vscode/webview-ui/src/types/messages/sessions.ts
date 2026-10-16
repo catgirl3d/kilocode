@@ -94,6 +94,8 @@ export type SessionTag = { id: string; name: string; color: string; scope?: "glo
 export type SessionTagsState = {
   tags: SessionTag[]
   sessions: Record<string, string[]>
+  /** Session IDs present only in legacy assignments for this view. */
+  legacySessions?: string[]
 }
 
 export type SessionTagAction =
