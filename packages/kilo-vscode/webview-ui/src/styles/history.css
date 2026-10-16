@@ -139,10 +139,6 @@ body.vscode-light .session-list .session-row:hover [data-slot="session-row-actio
   flex-wrap: wrap;
 }
 
-.session-select-toggle {
-  flex-shrink: 0;
-}
-
 .session-list .session-select-check {
   display: flex;
   align-items: center;
