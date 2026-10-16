@@ -1736,6 +1736,7 @@ export const layer = Layer.effect(
         // kilocode_change start - [fork] start title generation on the first prompt-loop step
         if (step === 1)
           yield* KiloSessionTitle.deferred({ sessionID, scope, sessions, database, generate: title }).pipe(
+            Effect.provideService(EventV2Bridge.Service, events),
             Effect.ignore,
           )
         // kilocode_change end
