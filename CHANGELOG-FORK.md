@@ -38,6 +38,7 @@
 - Add an "Attach staged diff" button to the chat prompt: it writes `git diff --staged` to `staged_diff_output.txt` in the session directory and inserts the file as a mention for the next message, with a notice when there is nothing staged.
 - Restore the git commits picker in the VS Code chat `@` menu: search repository history, insert a full commit hash, and attach the commit's `git show` details to the next message.
 - Select multiple local sessions in the history list and delete them together after a single confirmation.
+- Delete the current session from the chat header's More actions menu after a confirmation prompt; the action stays out of Agent Manager, which closes sessions through its own flow.
 
 ### Fixes & Enhancements
 

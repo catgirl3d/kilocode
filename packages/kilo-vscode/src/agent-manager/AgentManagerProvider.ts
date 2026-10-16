@@ -350,6 +350,7 @@ export class AgentManagerProvider implements Disposable {
       contexts: this.contexts,
       closeBrowser: (id) => this.browserLifecycle.close(id),
       post: (message) => this.postToWebview(message),
+      push: (ctx) => this.pushState(ctx), // fork_change
     })
   }
   private onSessionStatus(event: unknown): void {
@@ -812,11 +813,7 @@ export class AgentManagerProvider implements Disposable {
       this.state?.setSidebarCollapsed(m.collapsed)
       return null
     }
-    // fork_change start
-    const push = () => this.pushState()
-    const log = (...args: unknown[]) => this.log(...args)
-    if (handleSection(this.state, m, push, log)) return null
-    // fork_change end
+    if (handleSection(this.state, m, this.pushState.bind(this), this.log.bind(this))) return null // fork_change
     if (m.type === "agentManager.setReviewDiffStyle") {
       this.state?.setReviewDiffStyle(m.style)
       return null
