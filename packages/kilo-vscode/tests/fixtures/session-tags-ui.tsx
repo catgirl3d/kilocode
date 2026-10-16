@@ -431,6 +431,32 @@ assert.equal(
 assert.equal(filterButtons[0]?.getAttribute("aria-label"), "Urgent")
 assert.equal(filterButtons[0]?.getAttribute("aria-pressed"), "false")
 assert.equal(filterButtons[0]?.style.getPropertyValue("--session-tag-color"), "#e5534b")
+
+const foreignTag = { id: "tag-foreign", name: "Foreign", color: "Purple" }
+const foreignSession: SessionInfo = {
+  id: "ses-foreign",
+  title: "Foreign legacy session",
+  createdAt: now,
+  updatedAt: now,
+}
+response({
+  tags: [foreignTag],
+  sessions: { [foreignSession.id]: [foreignTag.id] },
+  legacySessions: [foreignSession.id],
+})
+await settle()
+assert.equal(
+  root.querySelector('[data-testid="history"] [data-slot="session-tag-filters"]'),
+  null,
+  "foreign legacy assignments do not create chips for an unloaded session",
+)
+setSessions([...items, foreignSession])
+await settle()
+assert(filterTag("Foreign"), "a legacy assignment becomes a chip after its session is loaded")
+response(initial)
+setSessions(items)
+await settle()
+
 assert.equal(
   root.querySelector('[data-testid="welcome"] [data-slot="session-tag-filters"]'),
   null,
