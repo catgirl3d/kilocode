@@ -41,6 +41,7 @@
 
 ### Fixes & Enhancements
 
+- Show session row actions in the history list (Agent Manager sidebar and chat history) as a hover overlay at the row end instead of reserving space for them, so titles and tags use the full row width and no gap remains.
 - Report an explicit forget status when a memory query matches nothing, and identify queries that address session digests (which cannot be forgotten) instead of silently succeeding.
 - Retry transient Windows file-replace failures when writing project memory files, so concurrent reads no longer surface EPERM and leave the index stale.
 - Block Compact while an undo is active so the hidden redo history is not finalized and deleted silently.
