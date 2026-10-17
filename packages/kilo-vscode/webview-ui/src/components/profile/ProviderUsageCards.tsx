@@ -50,6 +50,8 @@ const labels = (language: Language) => ({
   scoped: (resource: string, period: string) => language.t("profile.usage.window.scoped", { resource, period }),
 })
 
+export { labels as usageLabels } // fork_change
+
 const variant = (item: ProviderUsageSnapshot) => {
   if (item.fetchState === "error") return "error" as const
   if (item.fetchState !== "ready" || item.planState === "past_due") return "warning" as const
