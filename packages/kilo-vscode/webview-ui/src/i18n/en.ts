@@ -1477,6 +1477,38 @@ export const dict = {
   "settings.providers.advisor.description": "Enable the consult_advisor tool.",
   "settings.providers.advisorModel.title": "Advisor Model",
   "settings.providers.advisorModel.description": "Choose the model and reasoning effort for second opinions.",
+  "settings.providers.advisors.new": "New advisor",
+  "settings.providers.advisors.default": "Default",
+  "settings.providers.advisors.add": "Add advisor",
+  "settings.providers.advisors.template": "Template",
+  "settings.providers.advisors.moveUp": "Move advisor up",
+  "settings.providers.advisors.moveUp.locked":
+    "Add a description and role prompt to the default advisor before moving it down.",
+  "settings.providers.advisors.remove": "Remove advisor",
+  "settings.providers.advisors.name": "Name",
+  "settings.providers.advisors.name.placeholder": "critic",
+  "settings.providers.advisors.summary": "Description (optional)",
+  "settings.providers.advisors.summary.required": "Description",
+  "settings.providers.advisors.summary.placeholder": "Shown to the main agent when it chooses an advisor",
+  "settings.providers.advisors.prompt": "Role prompt (optional)",
+  "settings.providers.advisors.prompt.required": "Role prompt",
+  "settings.providers.advisors.prompt.description":
+    "Uses the built-in engineering advisor role. No custom prompt is needed.",
+  "settings.providers.advisors.prompt.placeholder": "Enter a custom role to replace the built-in role.",
+  "settings.providers.advisors.prompt.placeholder.required": "Instructions sent only to this advisor",
+  "settings.providers.advisors.customize": "Customize",
+  "settings.providers.advisors.model": "Model",
+  "settings.providers.advisors.role.standard": "Role: Standard engineering advisor",
+  "settings.providers.advisors.role.custom": "Role: Custom",
+  "settings.providers.advisors.role.missing": "Role: Not set",
+  "settings.providers.advisors.error.empty": "Enter a name to save this advisor.",
+  "settings.providers.advisors.error.format":
+    "Use up to 32 lowercase letters, numbers, hyphens or underscores, starting with a letter or number.",
+  "settings.providers.advisors.error.duplicate": "Another advisor already uses this name.",
+  "settings.providers.advisors.error.model": "Choose a model to save this advisor.",
+  "settings.providers.advisors.error.summary":
+    "Enter a description so the main agent knows when to consult this advisor.",
+  "settings.providers.advisors.error.prompt": "Enter a role prompt to define what this advisor does.",
   // fork_change end
   "settings.models.hidePromptTraining.title": "Hide Prompt-Training Models",
   "settings.models.hidePromptTraining.description":

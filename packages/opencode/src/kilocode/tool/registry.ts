@@ -19,6 +19,7 @@ import { OpenPlanTool } from "./open-plan"
 import { ScheduleWakeupTool } from "./schedule-wakeup"
 import { SendFileTool } from "./send-file"
 import { ConsultAdvisorTool } from "./consult-advisor" // fork_change
+import * as AdvisorSlots from "./advisor-slots" // fork_change
 import * as Tool from "../../tool/tool"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Effect } from "effect"
@@ -369,12 +370,15 @@ export namespace KiloToolRegistry {
         native_notebook_tools?: boolean
         shared_agent_board?: boolean // fork_change
         advisor_model?: string // fork_change
+        advisor_variant?: string // fork_change
+        advisors?: AdvisorSlots.Source["advisors"] // fork_change
       }
       shared_agent_board?: boolean
     },
     flags: Pick<RuntimeFlags.Info, "experimentalSharedAgentBoard">,
   ): Tool.Def[] {
     const enabled = BoardEnabled.on(cfg, flags)
+    const advisors = AdvisorSlots.resolve(cfg.experimental) // fork_change
     return [
       ...(tools.goalReport ? [tools.goalReport] : []),
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.goal ? [tools.goal] : []),
@@ -406,7 +410,7 @@ export namespace KiloToolRegistry {
       ...(Flag.KILO_CLIENT === "vscode" && tools.openPlan ? [tools.openPlan] : []),
       tools.send,
       ...(prEnabled() ? [tools.linkPr] : []),
-      ...(cfg.experimental?.advisor_model && tools.advisor ? [tools.advisor] : []), // fork_change
+      ...(advisors.length > 0 && tools.advisor ? [AdvisorSlots.describe(tools.advisor, advisors)] : []), // fork_change
     ]
   }
 
