@@ -8,7 +8,7 @@
  * changes into a single write (which triggers disposeAll on the CLI).
  */
 
-import { createContext, useContext, createSignal, createMemo, onCleanup } from "solid-js"
+import { createContext, useContext, createSignal, createMemo, onCleanup, batch } from "solid-js" // fork_change
 import type { ParentComponent, Accessor } from "solid-js"
 import { useVSCode } from "./vscode"
 import type {
@@ -63,6 +63,7 @@ interface ConfigContextValue {
   loading: Accessor<boolean>
   isDirty: Accessor<boolean>
   saving: Accessor<boolean>
+  discarded: Accessor<number> // fork_change
   // fork_change start
   blocked: Accessor<boolean>
   // fork_change end
@@ -148,6 +149,7 @@ export const ConfigProvider: ParentComponent = (props) => {
   // True while a saveConfig() write is in-flight — used to clear draft on success
   // and to guard against stale configLoaded messages overwriting optimistic state.
   const [saving, setSaving] = createSignal(false)
+  const [discarded, setDiscarded] = createSignal(0) // fork_change
   const [blocked, setBlocked] = createSignal(false) // fork_change
   // Error from the most recent saveConfig() attempt, or null if no error.
   // Cleared when the user edits the draft again or starts a new save.
@@ -483,22 +485,27 @@ export const ConfigProvider: ParentComponent = (props) => {
 
   function discardConfig() {
     const reload = blocked() // fork_change
-    setConfig(saved())
-    setGlobalConfig(savedGlobal())
-    setProjectConfig(savedProject())
-    setDraft({})
-    setGlobalDraft({})
-    setProjectDraft({})
-    setSettings(savedSettings())
-    setSettingsDraft({})
-    setBlocked(false) // fork_change
-    setSaveError(null)
     // fork_change start
-    if (reload) {
-      setLoading(true)
-      vscode.postMessage({ type: "requestConfig" })
-    }
-    // fork_change end
+    batch(() => {
+      // fork_change end
+      setConfig(saved())
+      setGlobalConfig(savedGlobal())
+      setProjectConfig(savedProject())
+      setDraft({})
+      setGlobalDraft({})
+      setProjectDraft({})
+      setSettings(savedSettings())
+      setSettingsDraft({})
+      setBlocked(false) // fork_change
+      setSaveError(null)
+      // fork_change start
+      if (reload) {
+        setLoading(true)
+        vscode.postMessage({ type: "requestConfig" })
+      }
+      // fork_change end
+      setDiscarded((value) => value + 1) // fork_change
+    }) // fork_change
   }
 
   const value: ConfigContextValue = {
@@ -518,6 +525,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     loading,
     isDirty,
     saving,
+    discarded, // fork_change
     blocked, // fork_change
     saveError,
     updateConfig,
