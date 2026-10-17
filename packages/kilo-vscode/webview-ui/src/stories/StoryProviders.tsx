@@ -464,6 +464,7 @@ const ConfigWrapper: ParentComponent<{
       loading: () => false,
       isDirty: dirty,
       saving: () => false,
+      discarded: () => 0,
       blocked: () => false, // fork_change
       saveError: () => null,
       updateConfig: (partial: Partial<Config>) => {
