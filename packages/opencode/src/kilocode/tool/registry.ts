@@ -368,6 +368,7 @@ export namespace KiloToolRegistry {
       experimental?: {
         image_generation?: boolean
         native_notebook_tools?: boolean
+        task_model_selection?: boolean // fork_change
         shared_agent_board?: boolean // fork_change
         advisor_model?: string // fork_change
         advisor_variant?: string // fork_change
@@ -395,7 +396,11 @@ export namespace KiloToolRegistry {
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronCreate ? [tools.cronCreate] : []),
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronList ? [tools.cronList] : []),
       ...((Flag.KILO_CLIENT === "cli" || Flag.KILO_CLIENT === "vscode") && tools.cronDelete ? [tools.cronDelete] : []),
-      tools.managerModels,
+      // fork_change start - restore opt-in task model selection registration
+      ...(Flag.KILO_CLIENT === "vscode" || cfg.experimental?.task_model_selection === true
+        ? [tools.managerModels]
+        : []),
+      // fork_change end
       ...(Flag.KILO_CLIENT === "vscode" ? [tools.manager] : []),
       ...(Flag.KILO_CLIENT === "vscode" && tools.browser ? [tools.browser] : []),
       ...(Flag.KILO_CLIENT === "vscode" &&
