@@ -356,6 +356,21 @@ const ExperimentalTab: Component = () => {
           </Switch>
         </SettingsRow>
 
+        {/* fork_change start */}
+        <SettingsRow
+          title={language.t("settings.experimental.taskModelSelection.title")}
+          description={language.t("settings.experimental.taskModelSelection.description")}
+        >
+          <Switch
+            checked={experimental().task_model_selection ?? false}
+            onChange={(checked) => updateExperimental("task_model_selection", checked)}
+            hideLabel
+          >
+            {language.t("settings.experimental.taskModelSelection.title")}
+          </Switch>
+        </SettingsRow>
+        {/* fork_change end */}
+
         {/* MCP timeout */}
         <SettingsRow
           title={language.t("settings.experimental.mcpTimeout.title")}
