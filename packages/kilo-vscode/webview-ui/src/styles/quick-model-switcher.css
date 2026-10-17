@@ -131,3 +131,61 @@ body.vscode-high-contrast .prompt-selectors .prompt-selector [data-component="bu
 body.vscode-high-contrast-light .prompt-selectors .prompt-selector [data-component="button"] {
   border-color: var(--vscode-contrastBorder, transparent) !important;
 }
+
+/* Provider usage ring: the trigger sits in the model slot, the tooltip renders in a portal. */
+.model-quick-switcher > .provider-usage-indicator {
+  flex: 0 0 auto;
+  align-self: stretch;
+  align-items: center;
+  padding: 0 5px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.provider-usage-indicator-target {
+  display: flex;
+  border-radius: 50%;
+}
+
+.provider-usage-indicator-target:focus-visible {
+  outline: 1px solid var(--border-focus, var(--vscode-focusBorder));
+  outline-offset: 2px;
+}
+
+.provider-usage-indicator-ring {
+  --progress-circle-progress: var(--icon-base);
+}
+
+.provider-usage-indicator-ring--success {
+  --progress-circle-progress: var(--icon-success-base);
+}
+
+.provider-usage-indicator-ring--warning {
+  --progress-circle-progress: var(--icon-warning-base);
+}
+
+.provider-usage-indicator-ring--critical {
+  --progress-circle-progress: var(--icon-critical-base);
+}
+
+.provider-usage-indicator-ring--muted {
+  opacity: 0.6;
+}
+
+.provider-usage-indicator-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+  text-align: left;
+}
+
+.provider-usage-indicator-tooltip-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.provider-usage-indicator-tooltip-note {
+  color: var(--text-invert-weak);
+  font-weight: var(--font-weight-normal);
+}

@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Show a small quota ring in the chat model selector for providers that report usage limits, with used and remaining percentages and reset times in its tooltip.
 - Restore the opt-in Task Subagent Model Selection experiment — subagent model overrides only work when the setting is enabled and explicitly requested — and align tool guidance so agents never receive conflicting instructions.
 - Favorite local sessions from the history panel and keep them grouped at the top.
 - Filter history sessions by one or more tags in the history panel.
