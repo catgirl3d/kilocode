@@ -403,12 +403,20 @@ export namespace KiloTask {
 
   export const resolveModel = Effect.fn("KiloTask.resolveModel")(function* (
     input: Parameters<typeof defaults>[0] & {
+      enabled?: boolean // fork_change
       selection?: { model?: string | null; provider?: string | null; variant?: string | null }
       resume?: Session.Info["model"]
     },
   ) {
     const selection = input.selection ?? {}
     const requested = Object.values(selection).some((value) => value != null)
+    // fork_change start - reject explicit task model overrides unless enabled
+    if (requested && !input.enabled) {
+      return yield* Effect.fail(
+        new Error("Task model selection requires experimental.task_model_selection=true in Kilo config"),
+      )
+    }
+    // fork_change end
     if (requested && Object.values(selection).some((value) => value != null && !value.trim())) {
       return yield* Effect.fail(new Error("Task model, provider, and variant must not be empty when specified"))
     }
