@@ -70,13 +70,32 @@ const ctx = {
   ask: () => Effect.void,
 }
 
-function run(params: Record<string, unknown>) {
+function config(selection?: boolean) {
+  return selection === undefined ? {} : { experimental: { task_model_selection: selection } }
+}
+
+function run(params: Record<string, unknown>, selection?: boolean) {
   return runtime.runPromise(
-    provideTmpdirInstance(() =>
-      Effect.gen(function* () {
-        const tool = yield* Tool.init(yield* AgentManagerModelsTool)
-        return yield* tool.execute(params, ctx)
-      }),
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const tool = yield* Tool.init(yield* AgentManagerModelsTool)
+          return yield* tool.execute(params, ctx)
+        }),
+      { config: config(selection) },
+    ).pipe(Effect.scoped),
+  )
+}
+
+function description(selection?: boolean) {
+  return runtime.runPromise(
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const tool = yield* Tool.init(yield* AgentManagerModelsTool)
+          return tool.description
+        }),
+      { config: config(selection) },
     ).pipe(Effect.scoped),
   )
 }
@@ -86,9 +105,24 @@ function json<T>(value: string): T {
 }
 
 describe("agent_manager_models tool", () => {
-  test("explains Task selection", async () => {
-    const result = await run({ query: "shared" })
-    expect(json<{ hint: string }>(result.output).hint).toContain("to task or agent_manager")
+  test("gates Task selection guidance behind the opt-in flag", async () => {
+    const disabled = json<{ hint: string }>((await run({ query: "shared" }, false)).output).hint
+    expect(disabled).not.toContain("to task or agent_manager")
+    expect(await description(false)).not.toContain("Experimental Task model selection is enabled")
+
+    const enabled = json<{ hint: string }>((await run({ query: "shared" }, true)).output).hint
+    expect(enabled).toContain(
+      "only when the user explicitly requests an override; never choose these settings on your own",
+    )
+    expect(enabled).not.toContain("You may choose these settings")
+    expect(enabled).toContain("Task selection does not create Agent Manager sessions")
+    expect(await description(true)).toContain("Experimental Task model selection is enabled")
+    expect(await description(true)).toContain("only when the user explicitly requests an override")
+    expect(await description(true)).not.toContain("You may choose these settings")
+
+    const unset = json<{ hint: string }>((await run({ query: "shared" })).output).hint
+    expect(unset).not.toContain("to task or agent_manager")
+    expect(await description()).not.toContain("Experimental Task model selection is enabled")
   })
 
   test("returns models grouped by name, capped at 20", async () => {

@@ -1,4 +1,5 @@
 import { Provider } from "@/provider/provider"
+import { Config } from "@/config/config" // fork_change
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Tool } from "@/tool/tool"
 import { Effect, Schema } from "effect"
@@ -61,39 +62,50 @@ function view(entry: Entry) {
 export const AgentManagerModelsTool = Tool.define<
   typeof Params,
   { count: number; total: number },
-  Provider.Service,
+  Provider.Service | Config.Service, // fork_change
   "agent_manager_models"
 >(
   "agent_manager_models",
   Effect.gen(function* () {
     const provider = yield* Provider.Service
-    return {
-      description: `${DESCRIPTION}\n\nAlso use this tool before choosing model, provider, or variant for the task subagent tool. You may choose these settings to suit the subagent task without creating an Agent Manager session.`,
-      parameters: Params,
-      execute: (params) =>
-        Effect.gen(function* () {
-          const providers = yield* provider.list()
-          const all = entries(providers)
-          const query = params.query?.trim()
-          const matches = query ? all.filter((entry) => matchesQuery([entry.name, ...entry.ids], query)) : all
-          const offset = params.offset ?? 0
-          const limit = Math.min(params.limit ?? MAX_LIMIT, MAX_LIMIT)
-          const models = matches.slice(offset, offset + limit).map(view)
-          const nextOffset = offset + models.length < matches.length ? offset + models.length : undefined
-          return {
-            title: query
-              ? `${matches.length} model${matches.length === 1 ? "" : "s"} matching "${params.query?.trim()}"`
-              : `${matches.length} available models`,
-            output: JSON.stringify({
-              models,
-              offset,
-              total: matches.length,
-              nextOffset,
-              hint: "Pass a model name as `model`, a listed provider ID as `provider`, and a supported reasoning effort as `variant` to task or agent_manager. Task selection does not create Agent Manager sessions.",
+    const config = yield* Config.Service // fork_change
+    // fork_change start - [fork] restore flag-aware model guidance
+    return () =>
+      Effect.gen(function* () {
+        const selection = (yield* config.get()).experimental?.task_model_selection === true
+        return {
+          description: selection
+            ? `${DESCRIPTION}\n\nExperimental Task model selection is enabled. Also use this tool before choosing model, provider, or variant for the task subagent tool, and only when the user explicitly requests an override; never choose these settings on your own. Task selection does not create Agent Manager sessions.`
+            : DESCRIPTION,
+          parameters: Params,
+          execute: (params) =>
+            Effect.gen(function* () {
+              const providers = yield* provider.list()
+              const all = entries(providers)
+              const query = params.query?.trim()
+              const matches = query ? all.filter((entry) => matchesQuery([entry.name, ...entry.ids], query)) : all
+              const offset = params.offset ?? 0
+              const limit = Math.min(params.limit ?? MAX_LIMIT, MAX_LIMIT)
+              const models = matches.slice(offset, offset + limit).map(view)
+              const nextOffset = offset + models.length < matches.length ? offset + models.length : undefined
+              return {
+                title: query
+                  ? `${matches.length} model${matches.length === 1 ? "" : "s"} matching "${params.query?.trim()}"`
+                  : `${matches.length} available models`,
+                output: JSON.stringify({
+                  models,
+                  offset,
+                  total: matches.length,
+                  nextOffset,
+                  hint: selection
+                    ? "Pass a model name as `model`, a listed provider ID as `provider`, and a supported reasoning effort as `variant` to task or agent_manager only when the user explicitly requests an override; never choose these settings on your own. Task selection does not create Agent Manager sessions."
+                    : "Pass a model name (or one of its providers/IDs) as the agent_manager task `model`. Add the task `provider` to force one of the listed providers; otherwise Agent Manager prefers the provider used by the current turn.",
+                }),
+                metadata: { count: models.length, total: matches.length },
+              }
             }),
-            metadata: { count: models.length, total: matches.length },
-          }
-        }),
-    }
+        }
+      })
+    // fork_change end
   }),
 )

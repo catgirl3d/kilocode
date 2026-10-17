@@ -35142,6 +35142,9 @@
               "native_notebook_tools": {
                 "type": "boolean"
               },
+              "task_model_selection": {
+                "type": "boolean"
+              },
               "glob_include_ignored": {
                 "type": "array",
                 "items": {

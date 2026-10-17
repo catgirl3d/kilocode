@@ -1717,6 +1717,7 @@ export type Config = {
     image_generation?: boolean
     image_generation_model?: string
     native_notebook_tools?: boolean
+    task_model_selection?: boolean
     glob_include_ignored?: Array<string>
     swe_pruner?: boolean
     swe_pruner_model?: string
