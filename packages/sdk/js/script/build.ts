@@ -196,14 +196,47 @@ try {
   if (!patched.includes(advisorVariant)) {
     throw new Error(`Legacy Config advisor_variant patch did not apply (${legacyTypesPath})`)
   }
+  // [fork] advisor slots legacy Config patch
+  const advisors = `    /**
+     * Up to three named advisor slots for on-demand consultations. When at least one slot is valid, advisor_model and advisor_variant are ignored
+     */
+    advisors?: Array<{
+      /**
+       * Advisor slot ID passed in consult_advisor \`advisors\`, such as security
+       */
+      name: string
+      /**
+       * Short description shown to the main agent (up to 200 characters)
+       */
+      description?: string
+      /**
+       * Role prompt sent only to this advisor (up to 20000 characters)
+       */
+      prompt?: string
+      /**
+       * Model ID (provider/model) for this advisor
+       */
+      model: string
+      /**
+       * Model variant for this advisor
+       */
+      variant?: string
+    }>
+`
+  const withAdvisors = patched.includes(advisors)
+    ? patched
+    : patched.replace("    advisor_variant?: string\n", "    advisor_variant?: string\n" + advisors)
+  if (!withAdvisors.includes(advisors)) {
+    throw new Error(`Legacy Config advisors patch did not apply (${legacyTypesPath})`)
+  }
   const pruner = `    /**
      * Enable task-aware pruning for large read, grep, and bash tool outputs
      */
     swe_pruner?: boolean
 `
-  const enabled = patched.includes(pruner)
-    ? patched
-    : patched.replace("  experimental?: {\n", "  experimental?: {\n" + pruner)
+  const enabled = withAdvisors.includes(pruner)
+    ? withAdvisors
+    : withAdvisors.replace("  experimental?: {\n", "  experimental?: {\n" + pruner)
   if (!enabled.includes(pruner)) {
     throw new Error(`Legacy Config swe_pruner patch did not apply (${legacyTypesPath})`)
   }
