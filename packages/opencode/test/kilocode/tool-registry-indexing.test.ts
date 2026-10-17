@@ -596,6 +596,62 @@ describe("kilocode tool registry indexing", () => {
     }
   })
 
+  test("exposes configured advisor slots by name and description without role prompts", () => {
+    const def = (id: string): Tool.Def => ({
+      id,
+      description: id,
+      parameters: Schema.String,
+      execute: () => Effect.succeed({ title: id, output: id, metadata: {} }),
+    })
+    const tools = {
+      recall: def("recall"),
+      managerModels: def("agent_manager_models"),
+      memory: def("kilo_memory_recall"),
+      save: def("kilo_memory_save"),
+      manager: def("agent_manager"),
+      process: def("background_process"),
+      chart: def("chart"),
+      image: def("generate_image"),
+      notify: def("notify_user"),
+      send: def("send_file"),
+      linkPr: def("link_pr"),
+      advisor: def("consult_advisor"),
+    }
+    const flags = { experimentalSharedAgentBoard: false }
+    const advisor = (cfg: Parameters<typeof KiloToolRegistry.extra>[1]) =>
+      KiloToolRegistry.extra(tools, cfg, flags).find((tool) => tool.id === "consult_advisor")
+    const header =
+      'Configured advisors (pass names in `advisors`, or "all"; without it the first one answers; each additional advisor is a separate model call):'
+
+    const slots = advisor({
+      experimental: {
+        advisors: [
+          {
+            name: "security",
+            description: "finds\n  vulnerabilities",
+            prompt: "SECRET ROLE PROMPT",
+            model: "provider/model",
+          },
+          { name: "fast", model: "provider/fast", prompt: "ANOTHER SECRET" },
+          { name: "long", model: "provider/long", description: "d".repeat(300) },
+        ],
+      },
+    })
+    expect(slots?.description).toBe(
+      ["consult_advisor", "", header, "- security: finds vulnerabilities", "- fast", `- long: ${"d".repeat(200)}`].join(
+        "\n",
+      ),
+    )
+    expect(slots?.description).not.toContain("SECRET")
+
+    expect(advisor({ experimental: { advisor_model: "provider/model" } })?.description).toBe(
+      ["consult_advisor", "", header, "- advisor"].join("\n"),
+    )
+    expect(advisor({ experimental: { advisors: [{ name: "Not Valid", model: "provider/model" }] } })).toBeUndefined()
+    expect(advisor({ experimental: { advisors: [{ name: "empty", model: "" }] } })).toBeUndefined()
+    expect(advisor({})).toBeUndefined()
+  })
+
   test("logs indexing bootstrap failures without blocking session bootstrap", async () => {
     const platform = process.env["KILO_PLATFORM"]
     process.env["KILO_PLATFORM"] = "cli"

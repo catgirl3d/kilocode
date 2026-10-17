@@ -388,6 +388,50 @@ export const Info = Schema.Struct({
       advisor_variant: Schema.optional(Schema.String).annotate({
         description: "Model variant to use for on-demand advisor consultations",
       }),
+      // [fork]
+      advisors: Schema.optional(
+        // [fork]
+        Schema.mutable(
+          // [fork]
+          Schema.Array(
+            // [fork]
+            Schema.Struct({
+              // [fork]
+              name: Schema.String.annotate({
+                // [fork]
+                description: "Advisor slot ID passed in consult_advisor `advisors`, such as security",
+                // [fork]
+              }),
+              // [fork]
+              description: Schema.optional(Schema.String).annotate({
+                // [fork]
+                description: "Short description shown to the main agent (up to 200 characters)",
+                // [fork]
+              }),
+              // [fork]
+              prompt: Schema.optional(Schema.String).annotate({
+                // [fork]
+                description: "Role prompt sent only to this advisor (up to 20000 characters)",
+                // [fork]
+              }),
+              // [fork]
+              model: Schema.String.annotate({ description: "Model ID (provider/model) for this advisor" }),
+              // [fork]
+              variant: Schema.optional(Schema.String).annotate({ description: "Model variant for this advisor" }),
+              // [fork]
+            }),
+            // [fork]
+          ),
+          // [fork]
+        ),
+        // [fork]
+      ).annotate({
+        // [fork]
+        description:
+          // [fork]
+          "Up to three named advisor slots for on-demand consultations. When at least one slot is valid, advisor_model and advisor_variant are ignored",
+        // [fork]
+      }),
       openTelemetry: Schema.Boolean.pipe(Schema.optional, Schema.withDecodingDefault(Effect.succeed(true))).annotate({
         description: "Enable telemetry. Set to false to opt-out.",
       }),
