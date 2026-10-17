@@ -68,11 +68,14 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     ),
     // kilocode_change start - [fork] preserve advisor fields alongside migrated provider policies
     experimental:
-      info.experimental?.advisor_model !== undefined || info.experimental?.advisor_variant !== undefined
+      info.experimental?.advisor_model !== undefined ||
+      info.experimental?.advisor_variant !== undefined ||
+      info.experimental?.advisors !== undefined
         ? {
             ...policies(info),
             advisor_model: info.experimental.advisor_model,
             advisor_variant: info.experimental.advisor_variant,
+            advisors: info.experimental.advisors,
           }
         : policies(info),
     // kilocode_change end
