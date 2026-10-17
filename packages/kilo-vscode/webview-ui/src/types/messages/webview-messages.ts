@@ -1317,6 +1317,22 @@ export interface ApplyWorktreeDiffMessage {
   selectedFiles?: string[]
 }
 
+// fork_change start - changed-files apply requests
+export interface RequestSessionFilesMessage {
+  type: "agentManager.requestSessionFiles"
+  projectId?: string
+  worktreeId: string
+}
+
+export interface CopySessionFilesMessage {
+  type: "agentManager.copySessionFiles"
+  projectId?: string
+  worktreeId: string
+  files: string[]
+  force?: boolean
+}
+// fork_change end
+
 // Agent Manager: Revert a single file in a worktree (webview → extension)
 export interface RevertWorktreeFileMessage {
   type: "agentManager.revertWorktreeFile"
@@ -2045,6 +2061,8 @@ export type WebviewMessage =
   | RequestMigrationDataMessage
   | StartMigrationMessage
   | ApplyWorktreeDiffMessage
+  | RequestSessionFilesMessage // fork_change
+  | CopySessionFilesMessage // fork_change
   | RevertWorktreeFileMessage
   | EnhancePromptRequest
   | OpenChangesRequest
