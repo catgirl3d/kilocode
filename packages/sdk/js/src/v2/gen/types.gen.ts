@@ -1725,6 +1725,19 @@ export type Config = {
     speech_to_text_mode?: "transcribe" | "translate"
     advisor_model?: string
     advisor_variant?: string
+    advisors?: Array<{
+      /**
+       * Advisor slot ID passed in consult_advisor `advisors`, such as security
+       */
+      name: string
+      description?: string
+      prompt?: string
+      /**
+       * Model ID (provider/model) for this advisor
+       */
+      model: string
+      variant?: string
+    }>
     openTelemetry?: boolean
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean

@@ -33004,6 +33004,33 @@
               "advisor_variant": {
                 "type": "string"
               },
+              "advisors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "Advisor slot ID passed in consult_advisor `advisors`, such as security"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "prompt": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "Model ID (provider/model) for this advisor"
+                    },
+                    "variant": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["name", "model"],
+                  "additionalProperties": false
+                }
+              },
               "openTelemetry": {
                 "type": "boolean"
               },
