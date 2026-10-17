@@ -1206,8 +1206,8 @@ const VSCODE_ALLOWED: Record<string, { note: string }> = {
  */
 const MAX_LINES: Record<string, { maxLines: number; note: string }> = {
   "AgentManagerProvider.ts": {
-    maxLines: 1900,
-    note: "worktree lifecycle handlers extracted into provider-lifecycle.ts; extract more orchestration next",
+    maxLines: 1910,
+    note: "worktree lifecycle handlers extracted into provider-lifecycle.ts; extract more orchestration next; raised for the changed-files dispatcher branch",
   },
 }
 

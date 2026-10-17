@@ -10,6 +10,14 @@ import { remoteRef, type ManagedSession, type WorktreeStateManager } from "./Wor
 import { parseDiffId, scopeToSourceId } from "./diff-scope"
 import { readDocument } from "../documents/document-reader"
 import type { AgentManagerOutMessage, WorktreeDiffEntry } from "./types"
+import { handleSessionFiles } from "./session-files-controller" // fork_change
+
+// fork_change start - changed-files request contract
+type SessionFilesRequest = Extract<
+  import("./types").AgentManagerInMessage,
+  { type: "agentManager.requestSessionFiles" | "agentManager.copySessionFiles" }
+>
+// fork_change end
 
 const LOCAL_DIFF_ID = "local" as const
 
@@ -170,6 +178,19 @@ export class WorktreeDiffController {
       this.applying = undefined
     }
   }
+
+  // fork_change start - copy worktree changed files into the local branch
+  public sessionFiles(input: SessionFilesRequest): undefined {
+    void handleSessionFiles(input, {
+      state: this.ctx.getState(),
+      root: this.ctx.getRoot(),
+      projectId: this.ctx.projectId?.(),
+      post: this.ctx.post,
+      log: this.ctx.log,
+    })
+    return undefined
+  }
+  // fork_change end
 
   public async revert(id: string, file: string): Promise<void> {
     if (!file) return
