@@ -11,6 +11,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { Effect, Layer } from "effect"
 import { HttpServer } from "effect/unstable/http"
 import { ChildProcessSpawner } from "effect/unstable/process"
+import path from "node:path"
 import { createKiloClient } from "@kilocode/sdk/v2"
 import { MessageV2 } from "../../../src/session/message-v2"
 import { MessageID, PartID, SessionID } from "../../../src/session/schema"
@@ -97,6 +98,52 @@ function seedTools(directory: string, sessionID: string) {
   )
 }
 
+function seedPatches(directory: string, sessionID: string) {
+  return InstanceStore.Service.use((store) =>
+    store.provide(
+      { directory },
+      Session.Service.use((session) =>
+        Effect.gen(function* () {
+          const id = SessionID.make(sessionID)
+          const message = yield* session.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: id,
+            role: "assistant",
+            parentID: MessageID.ascending(),
+            mode: "code",
+            agent: "code",
+            path: { cwd: directory, root: directory },
+            modelID: ModelV2.ID.make("model"),
+            providerID: ProviderV2.ID.make("provider"),
+            time: { created: Date.now() },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          } satisfies SessionV1.Assistant)
+          const z = path.join(directory, "src", "z.ts").replaceAll("\\", "/")
+          const a = path.join(directory, "src", "a.ts").replaceAll("\\", "/")
+
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            sessionID: id,
+            messageID: message.id,
+            type: "patch",
+            hash: "hash-one",
+            files: [z, a],
+          })
+          yield* session.updatePart({
+            id: PartID.ascending(),
+            sessionID: id,
+            messageID: message.id,
+            type: "patch",
+            hash: "hash-two",
+            files: [z],
+          })
+        }),
+      ),
+    ),
+  )
+}
+
 afterEach(async () => {
   Flag.KILO_SERVER_PASSWORD = undefined
   Flag.KILO_SERVER_USERNAME = undefined
@@ -144,6 +191,22 @@ describe("shake HTTP API", () => {
       expect(projectedJson).toContain("[Old tool result content cleared]")
       expect(projectedJson).not.toContain("tool output 0")
       expect(projectedJson).toContain("tool output 7")
+    }),
+  )
+
+  it.instance("returns files recorded by session patch parts", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const sdk = yield* client(instance.directory)
+      const created = yield* Effect.promise(() => sdk.session.create({ title: "changed files" }))
+      const sessionID = created.data!.id
+      yield* seedPatches(instance.directory, sessionID)
+
+      const files = yield* Effect.promise(() => sdk.session.files({ sessionID }))
+
+      expect(files.response!.status).toBe(200)
+      expect(files.error).toBeUndefined()
+      expect(files.data).toEqual({ files: ["src/a.ts", "src/z.ts"] })
     }),
   )
 

@@ -16004,6 +16004,42 @@ export type SessionShakeResponses = {
 
 export type SessionShakeResponse = SessionShakeResponses[keyof SessionShakeResponses]
 
+export type SessionFilesData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/files"
+}
+
+export type SessionFilesErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionFilesError = SessionFilesErrors[keyof SessionFilesErrors]
+
+export type SessionFilesResponses = {
+  /**
+   * List of changed files
+   */
+  200: {
+    files: Array<string>
+  }
+}
+
+export type SessionFilesResponse = SessionFilesResponses[keyof SessionFilesResponses]
+
 export type KilocodeMigrateSessionsData = {
   body?: {
     cwd?: string

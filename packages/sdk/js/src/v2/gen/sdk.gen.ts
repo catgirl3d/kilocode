@@ -404,6 +404,8 @@ import type {
   SessionDeleteResponses,
   SessionDiffErrors,
   SessionDiffResponses,
+  SessionFilesErrors,
+  SessionFilesResponses,
   SessionForkErrors,
   SessionForkResponses,
   SessionGetErrors,
@@ -5352,6 +5354,38 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionShakeResponses, SessionShakeErrors, ThrowOnError>({
       url: "/session/{sessionID}/shake",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List changed files
+   *
+   * List files written during the session, relative to its working directory.
+   */
+  public files<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionFilesResponses, SessionFilesErrors, ThrowOnError>({
+      url: "/session/{sessionID}/files",
       ...options,
       ...params,
     })

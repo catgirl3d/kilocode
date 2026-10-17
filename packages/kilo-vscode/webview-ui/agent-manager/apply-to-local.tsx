@@ -10,7 +10,7 @@
  * `AgentManagerApp.tsx` so the app component only wires the workflow in.
  */
 
-import { createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js" // fork_change
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { groupApplyConflicts } from "./apply-conflicts"
 import { ApplyDialog } from "./ApplyDialog"
@@ -20,7 +20,15 @@ import type { tracker } from "./telemetry"
 import type { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import type { useLanguage } from "../src/context/language"
 import type { useVSCode } from "../src/context/vscode"
-import type { AgentManagerApplyWorktreeDiffResultMessage, WorktreeFileDiff } from "../src/types/messages"
+// fork_change start - changed-files apply state and messages
+import type {
+  AgentManagerApplyWorktreeDiffResultMessage,
+  AgentManagerSessionFilesMessage,
+  WorktreeFileDiff,
+} from "../src/types/messages"
+
+type ApplyMode = "branch" | "files"
+// fork_change end
 
 interface ApplyState {
   status: AgentManagerApplyWorktreeDiffResultMessage["status"]
@@ -51,6 +59,15 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
   const [applyTarget, setApplyTarget] = createSignal<string | undefined>()
   const [applySelectedFiles, setApplySelectedFiles] = createSignal<string[]>([])
   const [applySelectionTouched, setApplySelectionTouched] = createSignal(false)
+  // fork_change start - changed-files apply state
+  const [applyMode, setApplyMode] = createSignal<ApplyMode>("branch")
+  const [applyForce, setApplyForce] = createSignal(false)
+  const [sessionFiles, setSessionFiles] = createSignal<Record<string, string[]>>({})
+  const [sessionLoading, setSessionLoading] = createSignal<Record<string, boolean>>({})
+  const [sessionErrors, setSessionErrors] = createSignal<Record<string, string | undefined>>({})
+  const [sessionNotes, setSessionNotes] = createSignal<Record<string, string | undefined>>({}) // [fork]
+  const requested = new Set<string>()
+  // fork_change end
 
   const applyStateForSelection = createMemo(() => {
     const sel = selection()
@@ -78,6 +95,40 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
     return diffDatas()[diffDataKey(opts.projectId?.(), key)] ?? ([] as WorktreeFileDiff[])
   })
 
+  // fork_change start - changed-files list and fetch state
+  const applyFiles = createMemo(() => {
+    const target = applyTarget()
+    if (!target) return [] as WorktreeFileDiff[]
+    return (sessionFiles()[target] ?? []).map((file) => ({
+      file,
+      before: "",
+      after: "",
+      additions: 0,
+      deletions: 0,
+    }))
+  })
+
+  const applyItems = createMemo(() => (applyMode() === "files" ? applyFiles() : applyDiffs()))
+
+  const applyLoading = createMemo(() => {
+    if (applyMode() === "branch") return diffLoading()
+    const target = applyTarget()
+    return target ? (sessionLoading()[target] ?? false) : false
+  })
+
+  const applyFetchError = createMemo(() => {
+    if (applyMode() === "branch") return undefined
+    const target = applyTarget()
+    return target ? sessionErrors()[target] : undefined
+  })
+
+  const applyFetchNote = createMemo(() => {
+    if (applyMode() === "branch") return undefined
+    const target = applyTarget()
+    return target ? sessionNotes()[target] : undefined
+  }) // [fork]
+  // fork_change end
+
   const applyStateForTarget = createMemo(() => {
     const target = applyTarget()
     if (!target) return undefined
@@ -94,11 +145,11 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
 
   const applySelectionStats = createMemo(() => {
     const set = applySelectedSet()
-    const selected = applyDiffs().filter((diff) => set.has(diff.file))
+    const selected = applyItems().filter((diff) => set.has(diff.file)) // fork_change
     const additions = selected.reduce((sum, diff) => sum + diff.additions, 0)
     const deletions = selected.reduce((sum, diff) => sum + diff.deletions, 0)
     return {
-      total: applyDiffs().length,
+      total: applyItems().length, // fork_change
       selected: selected.length,
       additions,
       deletions,
@@ -109,7 +160,34 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
 
   const applyConflictRows = createMemo(() => groupApplyConflicts(applyStateForTarget()?.conflicts ?? []))
 
-  const applyToLocal = (worktreeId: string, selectedFiles: string[]) => {
+  // fork_change start - changed-files clear action
+  const clearApplyResult = () => {
+    const target = applyTarget()
+    setApplyForce(false)
+    if (!target) return
+    setApplyStates((prev) => {
+      if (!prev[target]) return prev
+      const next = { ...prev }
+      delete next[target]
+      return next
+    })
+  }
+  // fork_change end
+
+  // fork_change start - changed-files request action
+  const requestSessionFiles = (worktreeId: string) => {
+    if (requested.has(worktreeId)) return
+    requested.add(worktreeId)
+    setSessionLoading((prev) => ({ ...prev, [worktreeId]: true }))
+    setSessionErrors((prev) => ({ ...prev, [worktreeId]: undefined }))
+    setSessionNotes((prev) => ({ ...prev, [worktreeId]: undefined })) // [fork]
+    vscode.postMessage({ type: "agentManager.requestSessionFiles", projectId: opts.projectId?.(), worktreeId })
+  }
+  // fork_change end
+
+  // fork_change start - apply mode signature
+  const applyToLocal = (worktreeId: string, selectedFiles: string[], mode: ApplyMode, force: boolean) => {
+    // fork_change end
     setApplyStates((prev) => ({
       ...prev,
       [worktreeId]: {
@@ -118,6 +196,18 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
         conflicts: [],
       },
     }))
+    // fork_change start - changed-files apply request
+    if (mode === "files") {
+      vscode.postMessage({
+        type: "agentManager.copySessionFiles",
+        projectId: opts.projectId?.(),
+        worktreeId,
+        files: selectedFiles,
+        force,
+      })
+      return
+    }
+    // fork_change end
     vscode.postMessage({
       type: "agentManager.applyWorktreeDiff",
       projectId: opts.projectId?.(),
@@ -130,6 +220,10 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
     setApplyTarget(undefined)
     setApplySelectedFiles([])
     setApplySelectionTouched(false)
+    // fork_change start - reset changed-files mode
+    setApplyMode("branch")
+    setApplyForce(false)
+    // fork_change end
   }
 
   const closeApplyDialog = () => {
@@ -138,25 +232,30 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
   }
 
   const applySelectAll = () => {
+    clearApplyResult() // fork_change
     setApplySelectionTouched(true)
-    setApplySelectedFiles(applyDiffs().map((diff) => diff.file))
+    setApplySelectedFiles(applyItems().map((diff) => diff.file)) // fork_change
   }
 
   const applySelectNone = () => {
+    clearApplyResult() // fork_change
     setApplySelectionTouched(true)
     setApplySelectedFiles([])
   }
 
   const applyToggleFile = (file: string, checked: boolean) => {
+    clearApplyResult() // fork_change
     setApplySelectionTouched(true)
     setApplySelectedFiles((prev) => {
       if (checked) {
         if (prev.includes(file)) return prev
         const set = new Set(prev)
         set.add(file)
-        return applyDiffs()
+        // fork_change start - keep file selection in current mode
+        return applyItems()
           .map((diff) => diff.file)
           .filter((path) => set.has(path))
+        // fork_change end
       }
       if (!prev.includes(file)) return prev
       return prev.filter((path) => path !== file)
@@ -168,9 +267,25 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
     if (!target) return
     if (!applyHasSelection()) return
     if (applyBusyForTarget()) return
-    opts.track("apply_to_local", "apply_dialog", { fileCount: applySelectedFiles().length })
-    applyToLocal(target, applySelectedFiles())
+    // fork_change start - changed-files apply mode
+    const mode = applyMode()
+    const force = mode === "files" && applyForce()
+    opts.track("apply_to_local", "apply_dialog", { fileCount: applySelectedFiles().length, mode })
+    applyToLocal(target, applySelectedFiles(), mode, force)
+    // fork_change end
   }
+
+  // fork_change start - changed-files mode selection
+  const changeMode = (mode: ApplyMode) => {
+    if (mode === applyMode()) return
+    clearApplyResult()
+    setApplyMode(mode)
+    setApplySelectionTouched(false)
+    setApplySelectedFiles([])
+    const target = applyTarget()
+    if (mode === "files" && target) requestSessionFiles(target)
+  }
+  // fork_change end
 
   const openApplyDialog = () => {
     const sel = selection()
@@ -182,17 +297,24 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
       return next
     })
     setApplyTarget(sel)
+    // fork_change start - branch diff remains the default mode
+    setApplyMode("branch")
+    setApplyForce(false)
+    // fork_change end
     setApplySelectionTouched(false)
     setApplySelectedFiles([])
+    requested.delete(sel) // fork_change
     vscode.postMessage({ type: "agentManager.requestWorktreeDiff", projectId: opts.projectId?.(), sessionId: sel })
-
-    setApplySelectedFiles(applyDiffs().map((diff) => diff.file))
 
     dialog.show(
       () => (
         <ApplyDialog
-          diffs={applyDiffs()}
-          loading={diffLoading()}
+          diffs={applyItems() /* fork_change */}
+          loading={applyLoading() /* fork_change */}
+          fetchError={applyFetchError() /* fork_change */}
+          fetchNote={applyFetchNote() /* fork_change */}
+          mode={applyMode() /* fork_change */}
+          force={applyForce() /* fork_change */}
           selectedFiles={applySelectedSet()}
           selectedCount={applySelectionStats().selected}
           additions={applySelectionStats().additions}
@@ -202,6 +324,7 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
           status={applyStateForTarget()?.status}
           message={applyStateForTarget()?.message}
           conflictRows={applyConflictRows()}
+          onModeChange={changeMode /* fork_change */}
           onSelectAll={applySelectAll}
           onSelectNone={applySelectNone}
           onToggleFile={applyToggleFile}
@@ -218,7 +341,7 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
   // a selection the user has already made.
   createEffect(
     on(
-      () => [applyTarget(), applyDiffs(), applySelectionTouched()] as const,
+      () => [applyTarget(), applyItems(), applySelectionTouched()] as const, // fork_change
       ([target, diffs, touched]) => {
         if (!target) return
         const files = diffs.map((diff) => diff.file)
@@ -267,6 +390,7 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
         conflicts: ev.conflicts ?? [],
       },
     }))
+    if (ev.status === "conflict" && applyMode() === "files" && applyTarget() === ev.worktreeId) setApplyForce(true) // fork_change
 
     if (ev.status === "success") {
       showToast({ variant: "success", title: t("agentManager.apply.success"), description: ev.message })
@@ -281,6 +405,23 @@ export function createApplyToLocal(opts: ApplyToLocalOptions) {
       showToast({ variant: "error", title: t("agentManager.apply.error"), description: ev.message })
     }
   }
+
+  // fork_change start - changed-files response subscription
+  const onSessionFiles = (ev: AgentManagerSessionFilesMessage) => {
+    if (ev.projectId !== opts.projectId?.() || ev.worktreeId !== applyTarget()) return
+    setSessionLoading((prev) => ({ ...prev, [ev.worktreeId]: false }))
+    setSessionErrors((prev) => ({ ...prev, [ev.worktreeId]: ev.error }))
+    setSessionNotes((prev) => ({ ...prev, [ev.worktreeId]: ev.note })) // [fork]
+    setSessionFiles((prev) => ({ ...prev, [ev.worktreeId]: ev.files }))
+    if (ev.error) requested.delete(ev.worktreeId)
+  }
+
+  onCleanup(
+    vscode.onMessage((message) => {
+      if (message.type === "agentManager.sessionFiles") onSessionFiles(message)
+    }),
+  )
+  // fork_change end
 
   return {
     applyStateForSelection,

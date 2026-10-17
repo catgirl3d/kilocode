@@ -5093,6 +5093,14 @@ body.am-wt-dragging-active * {
   line-height: 1.35;
 }
 
+/* fork_change start - changed-files source note */
+.am-apply-note {
+  font-size: var(--kilo-font-size-11);
+  color: var(--text-weaker);
+  line-height: 1.35;
+}
+/* fork_change end */
+
 .am-apply-dialog-footer {
   display: flex;
   justify-content: flex-end;

@@ -265,6 +265,7 @@ export class AgentManagerProvider implements Disposable {
       post: (msg) => this.postToWebview(msg),
       log: (...args) => this.log(...args),
       projectId: () => this.context?.id,
+      client: () => this.connectionService.getClient(), // fork_change
     })
     const pollers = createPollers({
       dirtyFiles: () => this.host.dirtyFiles(),
@@ -858,6 +859,12 @@ export class AgentManagerProvider implements Disposable {
       void this.diffs.apply(m.worktreeId, m.selectedFiles)
       return null
     }
+    // fork_change start - session files requests are handled by the session files controller
+    if (m.type === "agentManager.requestSessionFiles" || m.type === "agentManager.copySessionFiles") {
+      void this.diffs.sessionFiles(m)
+      return null
+    }
+    // fork_change end
     if (m.type === "agentManager.revertWorktreeFile") {
       void this.diffs.revert(composeDiffId(m.sessionId, normalizeScope(m.scope)), m.file)
       return null

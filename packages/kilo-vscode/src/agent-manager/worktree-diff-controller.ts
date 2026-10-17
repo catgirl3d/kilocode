@@ -1,4 +1,5 @@
 import { SourceController } from "../diff/SourceController"
+import type { KiloClient } from "@kilocode/sdk/v2/client" // fork_change
 import { resolveLocalDiffTarget } from "../diff/shared/target"
 import { WorktreeDiffReverter, type StatusResolver } from "../diff/shared/reverter"
 import type { DiffFile, PanelContext } from "../diff/types"
@@ -10,6 +11,14 @@ import { remoteRef, type ManagedSession, type WorktreeStateManager } from "./Wor
 import { parseDiffId, scopeToSourceId } from "./diff-scope"
 import { readDocument } from "../documents/document-reader"
 import type { AgentManagerOutMessage, WorktreeDiffEntry } from "./types"
+import { handleSessionFiles } from "./session-files-controller" // fork_change
+
+// fork_change start - changed-files request contract
+type SessionFilesRequest = Extract<
+  import("./types").AgentManagerInMessage,
+  { type: "agentManager.requestSessionFiles" | "agentManager.copySessionFiles" }
+>
+// fork_change end
 
 const LOCAL_DIFF_ID = "local" as const
 
@@ -30,6 +39,7 @@ export interface WorktreeDiffControllerContext {
   post: (msg: AgentManagerOutMessage) => void
   log: (...args: unknown[]) => void
   projectId?: () => string | undefined
+  client: () => KiloClient // fork_change
 }
 
 export class WorktreeDiffController {
@@ -170,6 +180,20 @@ export class WorktreeDiffController {
       this.applying = undefined
     }
   }
+
+  // fork_change start - copy session-owned files into the local branch
+  public sessionFiles(input: SessionFilesRequest): undefined {
+    void handleSessionFiles(input, {
+      state: this.ctx.getState(),
+      root: this.ctx.getRoot(),
+      client: this.ctx.client,
+      projectId: this.ctx.projectId?.(),
+      post: this.ctx.post,
+      log: this.ctx.log,
+    })
+    return undefined
+  }
+  // fork_change end
 
   public async revert(id: string, file: string): Promise<void> {
     if (!file) return

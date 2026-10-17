@@ -12,10 +12,12 @@ import {
 import { ApiNotFoundError } from "@/server/routes/instance/httpapi/errors"
 import { described } from "@/server/routes/instance/httpapi/groups/metadata"
 
-const path = "/session/:sessionID/shake"
+const shakePath = "/session/:sessionID/shake"
+const filesPath = "/session/:sessionID/files"
 
 export const KiloSessionPaths = {
-  shake: path,
+  shake: shakePath,
+  files: filesPath,
 } as const
 
 export const KiloSessionApi = HttpApi.make("kilocode-session")
@@ -32,6 +34,18 @@ export const KiloSessionApi = HttpApi.make("kilocode-session")
             identifier: "session.shake",
             summary: "Clear tool output",
             description: "Clear all eligible tool output in the current context without invoking an LLM.",
+          }),
+        ),
+        HttpApiEndpoint.get("files", KiloSessionPaths.files, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Struct({ files: Schema.Array(Schema.String) }), "List of changed files"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.files",
+            summary: "List changed files",
+            description: "List files written during the session, relative to its working directory.",
           }),
         ),
       )

@@ -178,6 +178,17 @@ export interface AgentManagerApplyWorktreeDiffConflict {
   reason: string
 }
 
+// fork_change start - changed-files apply messages
+export interface AgentManagerSessionFilesMessage {
+  type: "agentManager.sessionFiles"
+  projectId?: string
+  worktreeId: string
+  files: string[]
+  error?: string
+  note?: string // [fork]
+}
+// fork_change end
+
 // Per-worktree git stats: diff additions/deletions and ahead/behind counts
 export interface WorktreeGitStats {
   worktreeId: string

@@ -279,6 +279,14 @@ export const dict = {
   "agentManager.apply.globalButton": "Apply",
   "agentManager.apply.tooltip": "Apply selected worktree changes to local branch",
   "agentManager.apply.dialogTitle": "Apply changes to local branch",
+  // fork_change start - changed-files apply labels
+  "agentManager.apply.mode.branch": "Branch diff",
+  "agentManager.apply.mode.files": "Changed files",
+  "agentManager.apply.filesSummary": "{{selected}} of {{total}} files",
+  "agentManager.apply.noChangedFiles": "No changed files",
+  "agentManager.apply.overwrite": "Overwrite",
+  "agentManager.apply.sourceNote": "Note: {{note}}",
+  // fork_change end
   "agentManager.apply.confirm": "Apply now",
   "agentManager.apply.selectionSummary": "{{selected}} of {{total}} files selected",
   "agentManager.apply.selectAll": "Select all",

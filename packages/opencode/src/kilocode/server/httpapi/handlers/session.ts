@@ -4,6 +4,7 @@ import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
 import { SessionID } from "@/session/schema"
+import { collect } from "@/kilocode/session/files"
 import * as ManualShake from "@/kilocode/session/shake"
 import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 import * as SessionError from "@/server/routes/instance/httpapi/handlers/session-errors"
@@ -21,6 +22,12 @@ export const sessionShakeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo-
       )
     })
 
-    return handlers.handle("shake", shake)
+    const files = Effect.fn("KiloSessionHttpApi.files")(function* (ctx: { params: { sessionID: SessionID } }) {
+      const info = yield* SessionError.mapStorageNotFound(session.get(ctx.params.sessionID))
+      const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
+      return { files: collect(messages, info.directory) }
+    })
+
+    return handlers.handle("shake", shake).handle("files", files)
   }),
 )
