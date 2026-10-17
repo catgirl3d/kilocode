@@ -284,6 +284,67 @@ describe("config overlay routes", () => {
     expect(saved.indexing.ollama.baseUrl).toBe("http://127.0.0.1:11434")
   })
 
+  test("replaces advisor slots wholesale and unsets advisor keys through the global overlay", async () => {
+    await using global = await tmpdir()
+    await using project = await tmpdir()
+    ;(Global.Path as { config: string }).config = global.path
+    const file = path.join(global.path, "kilo.jsonc")
+    const slot = (name: string) => ({ name, model: `provider/${name}` })
+    const seed = (experimental: Record<string, unknown>) =>
+      Filesystem.write(file, `// keep this comment\n${JSON.stringify({ username: "marius", experimental }, null, 2)}\n`)
+    const patch = (body: unknown) =>
+      req(project.path, "/config/overlay", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    // These are the exact payloads the VS Code advisor settings send: nulls arrive as unset paths.
+    const change = (advisors: unknown[]) => ({
+      scope: "global",
+      set: { experimental: { advisors } },
+      unset: [
+        ["experimental", "advisor_model"],
+        ["experimental", "advisor_variant"],
+      ],
+    })
+    const disable = {
+      scope: "global",
+      set: { experimental: {} },
+      unset: [
+        ["experimental", "advisors"],
+        ["experimental", "advisor_model"],
+        ["experimental", "advisor_variant"],
+      ],
+    }
+
+    await seed({
+      advisors: [slot("a"), slot("b"), slot("c")],
+      advisor_model: "provider/legacy",
+      advisor_variant: "high",
+    })
+    const saved = await json<Overlay>(await patch(change([slot("solo")])))
+    expect(saved.targets.global.raw.experimental).toEqual({ advisors: [slot("solo")] })
+    expect(saved.targets.global.raw.username).toBe("marius")
+    expect(saved.effective?.experimental?.advisors).toEqual([slot("solo")])
+    expect(await Bun.file(file).text()).toContain("// keep this comment")
+
+    const disabled = await json<Overlay>(await patch(disable))
+    expect(disabled.targets.global.raw.experimental).toEqual({})
+    expect(disabled.targets.global.raw.username).toBe("marius")
+    expect(disabled.effective?.experimental?.advisors).toBeUndefined()
+
+    // A legacy-only config never had advisors; disabling must still succeed and drop the legacy keys.
+    await seed({ advisor_model: "provider/legacy", advisor_variant: "high" })
+    const legacy = await json<Overlay>(await patch(disable))
+    expect(legacy.targets.global.raw.experimental).toEqual({})
+
+    // Without any experimental section the disable payload is a no-op instead of an error.
+    await Filesystem.write(file, '{ "username": "marius" }\n')
+    const empty = await json<Overlay>(await patch(disable))
+    expect(empty.targets.global.raw.experimental).toBeUndefined()
+    expect(empty.targets.global.raw.username).toBe("marius")
+  })
+
   test("returns exact raw target data and a stable missing-file revision", async () => {
     await using project = await tmpdir()
     const first = await KilocodeConfigOverlay.target({ scope: "project", directory: project.path })

@@ -1381,6 +1381,31 @@ export type Config = {
      * Model variant to use for on-demand advisor consultations
      */
     advisor_variant?: string
+    /**
+     * Up to three named advisor slots for on-demand consultations. When at least one slot is valid, advisor_model and advisor_variant are ignored
+     */
+    advisors?: Array<{
+      /**
+       * Advisor slot ID passed in consult_advisor `advisors`, such as security
+       */
+      name: string
+      /**
+       * Short description shown to the main agent (up to 200 characters)
+       */
+      description?: string
+      /**
+       * Role prompt sent only to this advisor (up to 20000 characters)
+       */
+      prompt?: string
+      /**
+       * Model ID (provider/model) for this advisor
+       */
+      model: string
+      /**
+       * Model variant for this advisor
+       */
+      variant?: string
+    }>
     hook?: {
       file_edited?: {
         [key: string]: Array<{

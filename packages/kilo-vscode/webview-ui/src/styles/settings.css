@@ -216,25 +216,243 @@
   max-width: none;
 }
 
-.settings-advisor-model-row [data-slot="settings-row-input"] {
+/* fork_change start - advisor slot cards */
+.settings-advisor-slots {
   display: flex;
-  flex: 1 1 0%;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.settings-advisor-slot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised-base);
+}
+
+.settings-advisor-slot-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px 8px;
+  padding: 12px 12px 0;
+}
+
+.settings-advisor-slot-heading {
+  display: flex;
+  flex: 1 1 96px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-advisor-slot-name {
+  display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 8px;
   min-width: 0;
-  max-width: none;
 }
 
-.settings-advisor-model-row [data-slot="settings-row-input"] > [data-component="tooltip-trigger"] {
+.settings-advisor-slot-title {
   min-width: 0;
-  max-width: 160px;
+  overflow: hidden;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.settings-advisor-model-row [data-slot="popover-trigger"] {
+.settings-advisor-slot-role {
+  min-width: 0;
+  color: var(--text-weak-base, var(--vscode-descriptionForeground));
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+
+.settings-advisor-slot-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.settings-advisor-slot-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.settings-advisor-slot-model {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-advisor-slot-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-advisor-slot-field[data-field="model"] {
+  flex: 1 1 160px;
+}
+
+.settings-advisor-slot-field[data-field="thinking"] {
+  flex: 0 1 140px;
+  min-width: 120px;
+}
+
+.settings-advisor-slot-label {
+  color: var(--text-weak-base, var(--vscode-descriptionForeground));
+  font-size: var(--font-size-small);
+  line-height: 1.2;
+}
+
+/* Both pickers open downward here, so the chevron points down and flips while open. */
+.settings-advisor-slot-field [data-slot="popover-trigger"] {
+  width: 100%;
   min-width: 0;
   max-width: 100%;
+  justify-content: flex-start;
 }
+
+.settings-advisor-slot-field :is(.model-selector-trigger-label, .thinking-selector-trigger-label) {
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-advisor-slot-field :is(.selector-trigger-chevron, .model-selector-trigger-chevron) {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--text-weak-base, var(--vscode-descriptionForeground));
+  transform: rotate(180deg);
+}
+
+.settings-advisor-slot-field
+  [data-slot="popover-trigger"][data-expanded]
+  :is(.selector-trigger-chevron, .model-selector-trigger-chevron) {
+  transform: none;
+}
+
+.settings-advisor-slot-hint {
+  color: var(--text-weak-base, var(--vscode-descriptionForeground));
+  font-size: var(--font-size-small);
+}
+
+.settings-advisor-slot-disclosure {
+  min-width: 0;
+  border-top: 1px solid var(--border-weak-base);
+}
+
+.settings-advisor-slot-disclosure[data-variant="ghost"]
+  > [data-slot="collapsible-trigger"].settings-advisor-slot-customize {
+  height: 36px;
+  padding: 0 12px;
+  justify-content: space-between;
+  color: var(--text-weak-base, var(--vscode-descriptionForeground));
+  text-align: left;
+}
+
+.settings-advisor-slot-disclosure[data-variant="ghost"]
+  > [data-slot="collapsible-trigger"][aria-expanded="false"].settings-advisor-slot-customize {
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.settings-advisor-slot-disclosure[data-variant="ghost"]
+  > [data-slot="collapsible-trigger"].settings-advisor-slot-customize:hover {
+  background-color: var(--surface-raised-base-hover);
+  color: var(--text-base);
+}
+
+.settings-advisor-slot-disclosure[data-variant="ghost"]
+  > [data-slot="collapsible-trigger"].settings-advisor-slot-customize
+  [data-slot="collapsible-arrow"] {
+  opacity: 1;
+}
+
+.settings-advisor-slot-customization {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 12px 12px;
+}
+
+.settings-advisor-slot-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-advisor-slot-fields > [data-component="input"] {
+  flex: 3 1 240px;
+  min-width: 0;
+}
+
+.settings-advisor-slot-fields > [data-component="input"]:first-child {
+  flex: 1 1 140px;
+}
+
+.settings-advisor-slot textarea[data-slot="input-input"] {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.settings-advisor-slots .settings-advisor-add[data-component="button"] {
+  min-height: 32px;
+  justify-content: center;
+  border: 1px dashed var(--border-strong-base);
+  background: transparent;
+  color: var(--text-weak-base, var(--vscode-descriptionForeground));
+}
+
+.settings-advisor-slots .settings-advisor-add[data-component="button"]:hover:not(:disabled) {
+  background: var(--surface-raised-base-hover);
+  color: var(--text-base);
+}
+
+[data-component="dropdown-menu-content"].settings-advisor-template-menu {
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 4px;
+}
+
+[data-component="dropdown-menu-content"].settings-advisor-template-menu [data-slot="dropdown-menu-item"] {
+  padding: 6px 8px;
+}
+
+.settings-advisor-template-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-advisor-template-menu [data-slot="dropdown-menu-item-label"] {
+  font-weight: 500;
+}
+
+.settings-advisor-template-menu [data-slot="dropdown-menu-item-description"] {
+  font-size: var(--font-size-small);
+  line-height: 1.35;
+  color: inherit;
+  opacity: 0.7;
+  white-space: normal;
+}
+/* fork_change end */
 
 .settings-font-size-control {
   display: flex;
