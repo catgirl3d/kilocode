@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Copy the files changed in a worktree into the local branch as-is, without relying on the branch diff — a new "Changed files" mode in the Agent Manager apply dialog that lists only the worktree's own changes even after the base branch was rebased or force-pushed, and asks before overwriting files that also changed locally.
 - Show a small quota ring in the chat model selector for providers that report usage limits, with used and remaining percentages and reset times in its tooltip.
 - Restore the opt-in Task Subagent Model Selection experiment — subagent model overrides only work when the setting is enabled and explicitly requested — and align tool guidance so agents never receive conflicting instructions.
 - Favorite local sessions from the history panel and keep them grouped at the top.

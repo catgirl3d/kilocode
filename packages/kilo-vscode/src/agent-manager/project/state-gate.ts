@@ -38,6 +38,10 @@ export const STATE_GATED = new Set<string>([
   "agentManager.moveToSection",
   "agentManager.moveSection",
   "agentManager.setWorktreePinned",
+  // fork_change start - changed-files apply reads persisted worktree state
+  "agentManager.requestSessionFiles",
+  "agentManager.copySessionFiles",
+  // fork_change end
   "agentManager.browser.open",
   "agentManager.browser.refresh",
   "agentManager.browser.back",
