@@ -71,11 +71,13 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
       info.experimental &&
       (info.experimental.policies !== undefined ||
         info.experimental.advisor_model !== undefined ||
-        info.experimental.advisor_variant !== undefined)
+        info.experimental.advisor_variant !== undefined ||
+        info.experimental.advisors !== undefined)
         ? {
             policies: info.experimental.policies,
             advisor_model: info.experimental.advisor_model,
             advisor_variant: info.experimental.advisor_variant,
+            advisors: info.experimental.advisors,
           }
         : undefined,
     // kilocode_change end

@@ -22,5 +22,23 @@ export class Experimental extends Schema.Class<Experimental>("ConfigV2.Experimen
   advisor_variant: Schema.String.pipe(Schema.optional).annotate({
     description: "Model variant to use for on-demand advisor consultations",
   }),
+  advisors: Schema.Struct({
+    name: Schema.String.annotate({
+      description: "Advisor slot ID passed in consult_advisor `advisors`, such as security",
+    }),
+    description: Schema.String.pipe(Schema.optional).annotate({
+      description: "Short description shown to the main agent (up to 200 characters)",
+    }),
+    prompt: Schema.String.pipe(Schema.optional).annotate({
+      description: "Role prompt sent only to this advisor (up to 20000 characters)",
+    }),
+    model: Schema.String.annotate({ description: "Model ID (provider/model) for this advisor" }),
+    variant: Schema.String.pipe(Schema.optional).annotate({ description: "Model variant for this advisor" }),
+  })
+    .pipe(Schema.Array, Schema.optional)
+    .annotate({
+      description:
+        "Up to three named advisor slots for on-demand consultations. When at least one slot is valid, advisor_model and advisor_variant are ignored",
+    }),
   // kilocode_change end
 }) {}
