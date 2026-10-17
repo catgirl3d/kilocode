@@ -586,3 +586,67 @@ describe("ConfigState", () => {
     })
   })
 })
+
+describe("advisor slots", () => {
+  const critic = { name: "critic", description: "Finds bugs", model: "kilo/a" }
+  const plan = { name: "plan", model: "kilo/b", variant: "high" }
+  const security = { name: "security", prompt: "Look for injection.", model: "kilo/c" }
+
+  it("replaces a nested advisors array instead of merging it by index", () => {
+    const target: Config = { experimental: { advisors: [critic, plan], batch_tool: true } }
+    const result = deepMerge(target, { experimental: { advisors: [security] } })
+    expect(result.experimental).toEqual({ advisors: [security], batch_tool: true })
+  })
+
+  it("drops a null advisors array from local state", () => {
+    const cfg = {
+      experimental: { advisors: null, advisor_model: null, advisor_variant: null, batch_tool: true },
+    } as unknown as Config
+    expect(stripNulls(cfg)).toEqual({ experimental: { batch_tool: true } })
+  })
+
+  it("keeps the latest array or null in the draft across edits", () => {
+    const s = new ConfigState()
+    s.handleConfigLoaded({ experimental: { advisor_model: "kilo/a", advisor_variant: "low" } })
+
+    s.updateConfig({ experimental: { advisors: [critic, plan], advisor_model: null, advisor_variant: null } })
+    expect(s.config.experimental).toEqual({ advisors: [critic, plan] })
+
+    s.updateConfig({ experimental: { advisors: [plan], advisor_model: null, advisor_variant: null } })
+    expect(s.config.experimental).toEqual({ advisors: [plan] })
+    expect(s.draft.experimental?.advisors).toEqual([plan])
+
+    s.updateConfig({ experimental: { advisors: null, advisor_model: null, advisor_variant: null } })
+    expect(s.config.experimental).toEqual({})
+    expect(s.draft.experimental).toEqual({ advisors: null, advisor_model: null, advisor_variant: null })
+
+    s.updateConfig({ experimental: { advisors: [security], advisor_model: null, advisor_variant: null } })
+    expect(s.config.experimental).toEqual({ advisors: [security] })
+    expect(s.draft.experimental?.advisors).toEqual([security])
+  })
+
+  it("re-applies a pending advisors array over a server push", () => {
+    const s = new ConfigState()
+    s.handleConfigLoaded({ experimental: { advisors: [critic, plan, security] } })
+    s.updateConfig({ experimental: { advisors: [plan], advisor_model: null, advisor_variant: null } })
+    s.handleConfigLoaded({ experimental: { advisors: [critic, plan, security], batch_tool: true } })
+    expect(s.config.experimental).toEqual({ advisors: [plan], batch_tool: true })
+  })
+
+  it("sends the whole array as set and nulls as unset paths", () => {
+    const write = { experimental: { advisors: [critic, plan], advisor_model: null, advisor_variant: null } }
+    expect(pruneConfigSet(write)).toEqual({ experimental: { advisors: [critic, plan] } })
+    expect(configUnsetPaths(write)).toEqual([
+      ["experimental", "advisor_model"],
+      ["experimental", "advisor_variant"],
+    ])
+
+    const disable = { experimental: { advisors: null, advisor_model: null, advisor_variant: null } }
+    expect(pruneConfigSet(disable)).toEqual({ experimental: {} })
+    expect(configUnsetPaths(disable)).toEqual([
+      ["experimental", "advisors"],
+      ["experimental", "advisor_model"],
+      ["experimental", "advisor_variant"],
+    ])
+  })
+})

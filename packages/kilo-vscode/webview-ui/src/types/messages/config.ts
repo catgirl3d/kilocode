@@ -61,8 +61,19 @@ export interface WatcherConfig {
   ignore?: string[]
 }
 
+// fork_change start
+export interface AdvisorSlot {
+  name: string
+  description?: string
+  prompt?: string
+  model: string
+  variant?: string
+}
+
+// fork_change end
 export interface ExperimentalConfig {
   openTelemetry?: boolean
+  advisors?: AdvisorSlot[] | null // fork_change
   advisor_model?: string | null // fork_change
   advisor_variant?: string | null // fork_change
   batch_tool?: boolean

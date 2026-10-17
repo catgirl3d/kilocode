@@ -45,4 +45,60 @@ describe("advisor model configuration", () => {
   test("migrates an advisor variant without an advisor model", () => {
     expect(ConfigMigrateV1.migrate({ experimental: { advisor_variant: "high" } }).experimental?.advisor_variant).toBe("high")
   })
+
+  const advisors = [
+    {
+      name: "security",
+      description: "finds vulnerabilities",
+      prompt: "Review for injection and secret leaks.",
+      model: "openrouter/anthropic/claude-sonnet-4",
+      variant: "high",
+    },
+    { name: "fast", model: "openrouter/openai/gpt-5-mini" },
+  ]
+
+  test("accepts advisor slots in V1 and V2 configuration", () => {
+    const input = { experimental: { advisors } }
+
+    expect(Schema.decodeUnknownSync(ConfigV1.Info)(input).experimental?.advisors).toEqual(advisors)
+    expect(Schema.decodeUnknownSync(Config.Info)(input).experimental?.advisors).toEqual(advisors)
+  })
+
+  test("keeps slot content lenient so runtime normalization can skip bad entries", () => {
+    const input = {
+      experimental: {
+        advisors: [
+          { name: "Not A Valid Name", model: "" },
+          { name: "long", model: "p/m", description: "d".repeat(500), prompt: "p".repeat(20_001) },
+          { name: "a", model: "p/a" },
+          { name: "b", model: "p/b" },
+          { name: "a", model: "p/c" },
+        ],
+      },
+    }
+
+    expect(Schema.decodeUnknownSync(ConfigV1.Info)(input).experimental?.advisors).toHaveLength(5)
+    expect(Schema.decodeUnknownSync(Config.Info)(input).experimental?.advisors).toHaveLength(5)
+  })
+
+  test("rejects advisor slots with wrong field types", () => {
+    for (const advisors of [
+      "security",
+      [{ name: "security" }],
+      [{ model: "p/m" }],
+      [{ name: 1, model: "p/m" }],
+      [{ name: "security", model: false }],
+      [{ name: "security", model: "p/m", prompt: 3 }],
+    ]) {
+      expect(() => Schema.decodeUnknownSync(ConfigV1.Info)({ experimental: { advisors } })).toThrow()
+      expect(() => Schema.decodeUnknownSync(Config.Info)({ experimental: { advisors } })).toThrow()
+    }
+  })
+
+  test("preserves advisor slots when migrating V1 configuration", () => {
+    const migrated = ConfigMigrateV1.migrate({ experimental: { advisors } })
+
+    expect(migrated.experimental?.advisors).toEqual(advisors)
+    expect(Schema.decodeUnknownSync(Config.Info)(migrated).experimental?.advisors).toEqual(advisors)
+  })
 })

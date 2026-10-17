@@ -20,6 +20,7 @@ import { Env } from "../../../src/env"
 import { Git } from "../../../src/git"
 import { KiloIndexing } from "../../../src/kilocode/indexing"
 import { KilocodeConfig } from "../../../src/kilocode/config/config"
+import { KilocodeConfigWriter } from "../../../src/kilocode/config/writer"
 import { provideTestInstance } from "../../fixture/fixture"
 import { Filesystem } from "../../../src/util/filesystem"
 import { disposeAllInstances, tmpdir } from "../../fixture/fixture"
@@ -1759,6 +1760,98 @@ describe("bash permission migration", () => {
       ;(Global.Path as { config: string }).config = prev
       await clear()
       await disposeAllInstances()
+    }
+  })
+})
+
+describe("advisor slot config writes", () => {
+  const slot = (name: string) => ({ name, model: `provider/${name}` })
+  const trio = [slot("security"), slot("fast"), slot("deep")]
+  type Saved = { username?: string; experimental?: Record<string, unknown> }
+
+  test("updateGlobal replaces the advisors array wholesale in JSON and JSONC targets", async () => {
+    for (const name of ["kilo.json", "kilo.jsonc"]) {
+      await using globalTmp = await tmpdir()
+      const file = path.join(globalTmp.path, name)
+      const prev = Global.Path.config
+      ;(Global.Path as { config: string }).config = globalTmp.path
+      await clear()
+      await disposeAllInstances()
+
+      try {
+        const seeded = JSON.stringify(
+          { username: "marius", experimental: { advisors: trio, advisor_model: "provider/legacy" } },
+          null,
+          2,
+        )
+        await Filesystem.write(file, name.endsWith(".jsonc") ? `// keep this comment\n${seeded}\n` : seeded)
+
+        await saveGlobal(decode({ experimental: { advisors: [slot("solo")] } }))
+
+        const text = await Bun.file(file).text()
+        const saved = ConfigParse.jsonc(text, file) as Saved
+        expect(saved.experimental?.advisors).toEqual([slot("solo")])
+        expect(saved.experimental?.advisor_model).toBe("provider/legacy")
+        expect(saved.username).toBe("marius")
+        if (name.endsWith(".jsonc")) expect(text).toContain("// keep this comment")
+      } finally {
+        ;(Global.Path as { config: string }).config = prev
+        await clear()
+        await disposeAllInstances()
+      }
+    }
+  })
+
+  test("the settings overlay writer replaces advisors and deletes unset advisor keys", async () => {
+    await using globalTmp = await tmpdir()
+    await using project = await tmpdir()
+    const file = path.join(globalTmp.path, "kilo.jsonc")
+    const prev = Global.Path.config
+    ;(Global.Path as { config: string }).config = globalTmp.path
+
+    try {
+      const seeded = JSON.stringify(
+        {
+          username: "marius",
+          experimental: { advisors: trio, advisor_model: "provider/legacy", advisor_variant: "high" },
+        },
+        null,
+        2,
+      )
+      await Filesystem.write(file, `// keep this comment\n${seeded}\n`)
+
+      // VS Code sends nulls as unset paths alongside the replacement array.
+      const replaced = await KilocodeConfigWriter.write({
+        directory: project.path,
+        scope: "global",
+        set: { experimental: { advisors: [slot("solo"), slot("pair")] } },
+        unset: [
+          ["experimental", "advisor_model"],
+          ["experimental", "advisor_variant"],
+        ],
+      })
+      expect(replaced.ok).toBe(true)
+      const text = await Bun.file(file).text()
+      expect(text).toContain("// keep this comment")
+      expect(ConfigParse.jsonc(text, file)).toEqual({
+        username: "marius",
+        experimental: { advisors: [slot("solo"), slot("pair")] },
+      })
+
+      const cleared = await KilocodeConfigWriter.write({
+        directory: project.path,
+        scope: "global",
+        set: { experimental: {} },
+        unset: [
+          ["experimental", "advisors"],
+          ["experimental", "advisor_model"],
+          ["experimental", "advisor_variant"],
+        ],
+      })
+      expect(cleared.ok).toBe(true)
+      expect(ConfigParse.jsonc(await Bun.file(file).text(), file)).toEqual({ username: "marius", experimental: {} })
+    } finally {
+      ;(Global.Path as { config: string }).config = prev
     }
   })
 })
