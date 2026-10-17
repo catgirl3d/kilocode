@@ -52,6 +52,7 @@ import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButto
 import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
 import { canUseSpeechToText, selectedSpeechToTextModel, selectedSpeechToTextMode } from "../speech-to-text/availability" // fork_change
 import { PromptSelectors } from "./PromptSelectors"
+import { ProviderUsageIndicator } from "./ProviderUsageIndicator" // fork_change
 import { PromptOverflow, type OverflowItem } from "./PromptOverflow"
 import { fold, reserve } from "./prompt-fold"
 import { useFileMention } from "../../hooks/useFileMention"
@@ -2509,11 +2510,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       <div class="prompt-input-hint" ref={hintRef}>
         <PromptSelectors
           agent={<ModeSwitcher sessionID={sid} blocked={props.blocked?.() ?? false} hint={modeHint()} />}
-          /* fork_change start - model slot hosts the favorites quick switcher */
+          /* fork_change start - model slot hosts the favorites quick switcher and the usage ring */
           model={
             <div class="model-quick-switcher">
               <FavoriteModelSwitcher sessionID={sid} numbered />
               <ModelSelector sessionID={sid} compact blocked={props.blocked?.() ?? false} />
+              <ProviderUsageIndicator sessionID={sid} />
             </div>
           }
           /* fork_change end */
