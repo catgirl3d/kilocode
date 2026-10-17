@@ -71,6 +71,7 @@ import type { ProviderUsageLoadedMessage } from "./provider-usage"
 import type {
   AgentManagerApplyWorktreeDiffConflict,
   AgentManagerApplyWorktreeDiffStatus,
+  AgentManagerSessionFilesMessage, // fork_change
   AgentManagerCaffeinationMessage,
   BranchInfo,
   ContinueInWorktreeStatus,
@@ -1402,6 +1403,10 @@ export interface AgentManagerApplyWorktreeDiffResultMessage {
   conflicts?: AgentManagerApplyWorktreeDiffConflict[]
 }
 
+// fork_change start - changed-files apply response
+export type { AgentManagerSessionFilesMessage }
+// fork_change end
+
 // Agent Manager: Revert single file result (extension → webview)
 export interface AgentManagerRevertWorktreeFileResultMessage {
   type: "agentManager.revertWorktreeFileResult"
@@ -2080,6 +2085,7 @@ export type ExtensionMessage =
   | AgentManagerWorktreeDiffLoadingMessage
   | AgentManagerWorktreeDiffNoticeMessage
   | AgentManagerApplyWorktreeDiffResultMessage
+  | AgentManagerSessionFilesMessage // fork_change
   | AgentManagerRevertWorktreeFileResultMessage
   | AgentManagerDiffBranchesMessage
   | AgentManagerWorktreeStatsMessage

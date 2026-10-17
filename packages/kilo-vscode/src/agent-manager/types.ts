@@ -370,6 +370,16 @@ interface ApplyWorktreeDiffResultMessage {
   conflicts?: ApplyConflict[]
 }
 
+// fork_change start - changed-files apply messages
+interface SessionFilesMessage {
+  type: "agentManager.sessionFiles"
+  projectId?: string
+  worktreeId: string
+  files: string[]
+  error?: string
+}
+// fork_change end
+
 interface WorktreeDiffLoadingMessage {
   type: "agentManager.worktreeDiffLoading"
   projectId?: string
@@ -559,6 +569,7 @@ export type AgentManagerOutMessage =
   | KeybindingsMessage
   | RepoInfoMessage
   | ApplyWorktreeDiffResultMessage
+  | SessionFilesMessage // fork_change
   | WorktreeDiffLoadingMessage
   | WorktreeDiffNoticeMessage
   | WorktreeDiffMessage
@@ -926,6 +937,22 @@ interface ApplyWorktreeDiffIn {
   worktreeId: string
   selectedFiles?: string[]
 }
+
+// fork_change start - changed-files apply requests
+interface RequestSessionFilesIn {
+  type: "agentManager.requestSessionFiles"
+  projectId?: string
+  worktreeId: string
+}
+
+interface CopySessionFilesIn {
+  type: "agentManager.copySessionFiles"
+  projectId?: string
+  worktreeId: string
+  files: string[]
+  force?: boolean
+}
+// fork_change end
 
 interface RequestWorktreeDiffFileIn {
   type: "agentManager.requestWorktreeDiffFile"
@@ -1360,6 +1387,8 @@ export type AgentManagerInMessage =
   | RequestWorktreeDiffIn
   | RequestWorktreeDiffFileIn
   | ApplyWorktreeDiffIn
+  | RequestSessionFilesIn // fork_change
+  | CopySessionFilesIn // fork_change
   | StartDiffWatchIn
   | StopDiffWatchIn
   | RevertWorktreeFileIn

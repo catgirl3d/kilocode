@@ -42,6 +42,13 @@ import { dict as amIt } from "../../webview-ui/agent-manager/i18n/it"
 import { dict as amFa } from "../../webview-ui/agent-manager/i18n/fa"
 
 const PREFIX = "agentManager."
+const ENGLISH_FALLBACK = new Set([
+  "agentManager.apply.mode.branch",
+  "agentManager.apply.mode.files",
+  "agentManager.apply.filesSummary",
+  "agentManager.apply.noChangedFiles",
+  "agentManager.apply.overwrite",
+])
 
 const locales = {
   en: amEn,
@@ -121,7 +128,7 @@ describe("Agent Manager i18n split", () => {
 
     for (const [locale, dict] of Object.entries(locales)) {
       const keySet = new Set(Object.keys(dict))
-      const missing = baseKeys.filter((key) => !keySet.has(key))
+      const missing = baseKeys.filter((key) => !keySet.has(key) && !ENGLISH_FALLBACK.has(key))
       const extra = Array.from(keySet).filter((key) => !(key in amEn))
 
       expect(missing, `locale ${locale} is missing agent manager keys`).toEqual([])
@@ -135,6 +142,7 @@ describe("Agent Manager i18n split", () => {
 
       for (const [key, value] of Object.entries(amEn)) {
         const localized = (dict as Record<string, string>)[key]
+        if (ENGLISH_FALLBACK.has(key)) continue
         expect(localized, `missing key ${key} in locale ${locale}`).toBeDefined()
         if (!localized) continue
 

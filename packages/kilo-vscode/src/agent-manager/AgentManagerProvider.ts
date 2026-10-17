@@ -858,6 +858,12 @@ export class AgentManagerProvider implements Disposable {
       void this.diffs.apply(m.worktreeId, m.selectedFiles)
       return null
     }
+    // fork_change start - session files requests are handled by the session files controller
+    if (m.type === "agentManager.requestSessionFiles" || m.type === "agentManager.copySessionFiles") {
+      void this.diffs.sessionFiles(m)
+      return null
+    }
+    // fork_change end
     if (m.type === "agentManager.revertWorktreeFile") {
       void this.diffs.revert(composeDiffId(m.sessionId, normalizeScope(m.scope)), m.file)
       return null
