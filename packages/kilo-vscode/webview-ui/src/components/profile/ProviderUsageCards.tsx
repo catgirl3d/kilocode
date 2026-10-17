@@ -10,6 +10,7 @@ import { Tag } from "@kilocode/kilo-ui/tag"
 import { useLanguage } from "../../context/language"
 import { localeToBcp47 } from "../../context/language-utils"
 import { formatWindow, windowLabel, windowProgress } from "@kilocode/kilo-gateway/provider-usage"
+import { usageLabels, usageResetText } from "../../utils/usage-labels" // fork_change
 
 export interface ProviderUsageCardsProps {
   data: ProviderUsageData | undefined
@@ -28,27 +29,6 @@ const source = (item: ProviderUsageSnapshot, language: Language) => {
   if (item.sourceKind === "kilo_managed") return "Kilo Gateway"
   return language.t("profile.usage.source.direct")
 }
-
-const labels = (language: Language) => ({
-  unlimited: language.t("profile.usage.status.unlimited"),
-  notInPlan: language.t("profile.usage.status.notInPlan"),
-  unknown: language.t("profile.usage.status.unknown"),
-  exhausted: language.t("profile.usage.status.exhausted"),
-  used: (value: string) => language.t("profile.usage.window.used", { value }),
-  remaining: (value: string) => language.t("profile.usage.window.remaining", { value }),
-  remainingOf: (value: string, limit: string) => language.t("profile.usage.window.remainingOf", { value, limit }),
-  usedOf: (value: string, limit: string) => language.t("profile.usage.window.usedOf", { value, limit }),
-  quota: language.t("profile.usage.window.quota"),
-  daily: language.t("profile.usage.window.daily"),
-  weekly: language.t("profile.usage.window.weekly"),
-  monthly: language.t("profile.usage.window.monthly"),
-  hours: (count: number) => language.t("profile.usage.window.hours", { count: String(count) }),
-  days: (count: number) => language.t("profile.usage.window.days", { count: String(count) }),
-  weeks: (count: number) => language.t("profile.usage.window.weeks", { count: String(count) }),
-  months: (count: number) => language.t("profile.usage.window.months", { count: String(count) }),
-  shared: language.t("profile.usage.window.shared"),
-  scoped: (resource: string, period: string) => language.t("profile.usage.window.scoped", { resource, period }),
-})
 
 const variant = (item: ProviderUsageSnapshot) => {
   if (item.fetchState === "error") return "error" as const
@@ -117,8 +97,8 @@ const UsageCard: Component<{
       <For each={props.item.windows}>
         {(window) => {
           const progress = () => windowProgress(window)
-          const value = () => formatWindow(window, labels(props.language))
-          const title = () => windowLabel(window, labels(props.language))
+          const value = () => formatWindow(window, usageLabels(props.language)) // fork_change
+          const title = () => windowLabel(window, usageLabels(props.language)) // fork_change
           return (
             <div class="provider-usage-row">
               <Show when={progress() !== undefined}>
@@ -141,13 +121,9 @@ const UsageCard: Component<{
                 </div>
               </Show>
               <Show when={window.resetAt}>
-                {(reset) => (
-                  <CardDescription>
-                    {props.language.t("profile.usage.reset", {
-                      date: new Date(reset()).toLocaleString(localeToBcp47(props.language.locale())),
-                    })}
-                  </CardDescription>
-                )}
+                {/* fork_change start - reuse the shared reset formatter */}
+                {(reset) => <CardDescription>{usageResetText(props.language, reset())}</CardDescription>}
+                {/* fork_change end */}
               </Show>
             </div>
           )

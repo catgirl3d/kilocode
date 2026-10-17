@@ -132,6 +132,9 @@ async function run(resumable: boolean, attachment?: AttachmentCase, commits = fa
               isConnected: () => true,
               gitInstalled: () => commits,
               workspaceDirectory: () => "/repo",
+              providerUsage: () => undefined,
+              requestProviderUsage: () => {},
+              refreshProviderUsage: () => {},
             } as never
           }
         >

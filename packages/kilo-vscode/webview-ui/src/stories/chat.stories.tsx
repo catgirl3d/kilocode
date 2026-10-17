@@ -193,7 +193,7 @@ export const ChatViewAgentManagerCompleted: Story = {
     }
     return (
       <StoryProviders sessionID={SESSION_ID} status="idle" noPadding>
-        <ServerContext.Provider value={mockServer as any}>
+        <ServerContext.Provider value={mockServer}>
           <SessionContext.Provider value={session as any}>
             <WorktreeModeProvider>
               <div style={{ height: "200px", display: "flex", "flex-direction": "column" }}>
@@ -244,7 +244,7 @@ export const ChatViewSessionDockStability: Story = {
     }
     return (
       <StoryProviders sessionID={SESSION_ID} status="idle" noPadding>
-        <ServerContext.Provider value={mockServer as any}>
+        <ServerContext.Provider value={mockServer}>
           <SessionContext.Provider value={session as any}>
             <WorktreeModeProvider>
               <div style={{ height: "400px", display: "flex", "flex-direction": "column" }}>
@@ -1767,6 +1767,7 @@ const mockServer = {
       organizations: [{ id: "org-1", name: "Kilo Org", role: "member" }],
     },
     balance: { balance: 5.0 },
+    kiloPass: null,
     currentOrgId: "org-1",
   }),
   deviceAuth: () => ({ status: "idle" as const }),
@@ -1776,6 +1777,11 @@ const mockServer = {
   languageOverride: () => undefined,
   workspaceDirectory: () => "/project",
   gitInstalled: () => true,
+  providerUsage: () => undefined,
+  providerUsageLoading: () => false,
+  providerUsageError: () => undefined,
+  requestProviderUsage: () => undefined,
+  refreshProviderUsage: () => undefined,
 }
 
 // ---------------------------------------------------------------------------
@@ -1797,7 +1803,7 @@ export const WelcomeWithSwitcherAndNotification: Story = {
   name: "Welcome — account switcher + notification",
   render: () => (
     <StoryProviders sessionID={SESSION_ID} status="idle" noPadding notifications={[MOCK_NOTIFICATION]}>
-      <ServerContext.Provider value={mockServer as any}>
+      <ServerContext.Provider value={mockServer}>
         <div style={{ width: "100%", height: "600px", display: "flex", "flex-direction": "column" }}>
           <ChatView />
         </div>

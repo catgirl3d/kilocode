@@ -52,6 +52,7 @@ import { SandboxButtonBase, SandboxTooltipContent } from "../shared/SandboxButto
 import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
 import { canUseSpeechToText, selectedSpeechToTextModel, selectedSpeechToTextMode } from "../speech-to-text/availability" // fork_change
 import { PromptSelectors } from "./PromptSelectors"
+import { ProviderUsageIndicator } from "./ProviderUsageIndicator" // fork_change
 import { PromptOverflow, type OverflowItem } from "./PromptOverflow"
 import { fold, reserve } from "./prompt-fold"
 import { useFileMention } from "../../hooks/useFileMention"
@@ -2519,6 +2520,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           /* fork_change end */
           variant={<ThinkingSelector sessionID={sid} blocked={props.blocked?.() ?? false} />}
         />
+        {/* fork_change start - provider usage ring beside the model selector */}
+        <ProviderUsageIndicator sessionID={sid} />
+        {/* fork_change end */}
         <div class="prompt-input-hint-actions">
           <div class="prompt-action" data-folded={hidden().length === 0 ? "" : undefined}>
             <PromptOverflow items={hidden()} />

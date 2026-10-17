@@ -1198,3 +1198,56 @@ body.vscode-reduce-motion .prompt-issues-menu {
     transform: scale(0.94);
   }
 }
+
+/* fork_change start - provider usage ring beside the model selector */
+.provider-usage-indicator {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.provider-usage-indicator:focus-visible {
+  outline: 1px solid var(--border-focus, var(--vscode-focusBorder));
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.provider-usage-indicator-ring {
+  --progress-circle-progress: var(--icon-base);
+}
+
+.provider-usage-indicator-ring--success {
+  --progress-circle-progress: var(--icon-success-base);
+}
+
+.provider-usage-indicator-ring--warning {
+  --progress-circle-progress: var(--icon-warning-base);
+}
+
+.provider-usage-indicator-ring--critical {
+  --progress-circle-progress: var(--icon-critical-base);
+}
+
+.provider-usage-indicator-ring--muted {
+  opacity: 0.6;
+}
+
+.provider-usage-indicator-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+  text-align: left;
+}
+
+.provider-usage-indicator-tooltip-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.provider-usage-indicator-tooltip-note {
+  color: var(--text-invert-weak);
+  font-weight: var(--font-weight-normal);
+}
+/* fork_change end */
