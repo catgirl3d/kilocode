@@ -73,6 +73,7 @@ import type {
   AgentManagerApplyWorktreeDiffStatus,
   AgentManagerSessionFilesMessage, // fork_change
   AgentManagerCaffeinationMessage,
+  AgentManagerSleepTimerMessage, // fork_change
   BranchInfo,
   ContinueInWorktreeStatus,
   LocalGitStats,
@@ -2125,6 +2126,7 @@ export type ExtensionMessage =
   | AgentManagerProjectSessionsMessage
   | AgentManagerRunStatusMessage
   | AgentManagerCaffeinationMessage
+  | AgentManagerSleepTimerMessage // fork_change
   | AgentManagerKeybindingsMessage
   | AutoApproveStateMessage
   | SandboxStatusMessage
