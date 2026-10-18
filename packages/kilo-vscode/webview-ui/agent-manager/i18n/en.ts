@@ -525,6 +525,22 @@ export const dict = {
   "agentManager.caffeination.armed": "Keep-awake mode enabled for Kilo agents; click to disable",
   "agentManager.caffeination.active": "Keeping computer awake while Kilo agents work",
   "agentManager.caffeination.unavailable": "Keep-awake mode is unavailable on this platform",
+  // fork_change start - sleep timer labels
+  "agentManager.sleepTimer.toggle": "Sleep or hibernate the computer on a timer or when Kilo agents finish",
+  "agentManager.sleepTimer.agents.sleep": "Sleep when agents finish",
+  "agentManager.sleepTimer.agents.hibernate": "Hibernate when agents finish",
+  "agentManager.sleepTimer.time.sleep": "Sleep in…",
+  "agentManager.sleepTimer.time.hibernate": "Hibernate in…",
+  "agentManager.sleepTimer.cancel": "Cancel sleep timer",
+  "agentManager.sleepTimer.armed.sleep":
+    "The computer will sleep when Kilo agents finish or wait for you; open the menu to change or cancel",
+  "agentManager.sleepTimer.armed.hibernate":
+    "The computer will hibernate when Kilo agents finish or wait for you; open the menu to change or cancel",
+  "agentManager.sleepTimer.countdown": "Agents are done. The sleep timer fires at {{time}}; open the menu to cancel",
+  "agentManager.sleepTimer.at.sleep": "The computer will sleep at {{time}}; open the menu to change or cancel",
+  "agentManager.sleepTimer.at.hibernate": "The computer will hibernate at {{time}}; open the menu to change or cancel",
+  "agentManager.sleepTimer.unavailable": "Sleep timer is unavailable on this platform",
+  // fork_change end
 
   "agentManager.pr.error.gh_auth.title": "GitHub authentication required",
   "agentManager.pr.error.gh_auth.description": "Run 'gh auth login' in your terminal to restore PR status.",

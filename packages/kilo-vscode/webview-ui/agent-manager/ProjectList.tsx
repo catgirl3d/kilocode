@@ -28,6 +28,7 @@ import { createProjectStore, type ProjectStore } from "./project/store"
 import { createWorktreeDelete, type WorktreeDelete } from "./worktree-delete"
 import type { ModeRouter } from "./mode-router"
 import { CaffeinationButton } from "./CaffeinationButton"
+import { SleepTimerButton } from "./SleepTimerButton" // fork_change
 
 const place = (state: AgentManagerStateMessage, session: ProjectSessionInfo, local: string) => {
   const wt = state.worktrees.find((item) => item.id === session.worktreeId)
@@ -268,6 +269,9 @@ export const ProjectList: Component<Props> = (props) => {
             onSelect={selectSearch}
           />
           <CaffeinationButton t={props.t} />
+          {/* fork_change start */}
+          <SleepTimerButton t={props.t} />
+          {/* fork_change end */}
           <TooltipKeybind
             title={props.t("agentManager.shortcuts.title")}
             keybind={props.bindings.showShortcuts ?? ""}
