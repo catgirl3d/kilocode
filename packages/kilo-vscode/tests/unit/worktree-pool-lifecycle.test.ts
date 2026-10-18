@@ -154,6 +154,25 @@ describe("WorktreeManager pool home", () => {
     expect(await pooledSlots(root)).toEqual([])
     expect(existsSync(path.join(root, ".kilo"))).toBe(false)
   })
+
+  it.skipIf(process.platform !== "win32")("disposing the pool does not empty a junction target in a slot", async () => {
+    const root = await createTempRepo()
+    const manager = createManager(root)
+    manager.warmPool()
+    const slot = await waitForPooledSlot(root)
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-pool-target-"))
+    tempDirs.push(outside)
+    await fs.mkdir(path.join(outside, "deep"))
+    await fs.writeFile(path.join(outside, "MARKER"), "x")
+    await fs.writeFile(path.join(outside, "deep", "MARKER"), "x")
+    await fs.symlink(outside, path.join(slot, "linked"), "junction")
+
+    await manager.disposePool()
+
+    expect(existsSync(slot)).toBe(false)
+    expect(existsSync(path.join(outside, "MARKER"))).toBe(true)
+    expect(existsSync(path.join(outside, "deep", "MARKER"))).toBe(true)
+  })
 })
 
 describe("WorktreeManager commit detection", () => {
