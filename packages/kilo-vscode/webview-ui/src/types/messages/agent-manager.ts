@@ -123,6 +123,27 @@ export interface AgentManagerCaffeinationMessage extends CaffeinationState {
   type: "agentManager.caffeination"
 }
 
+// fork_change start
+export type SleepMode = "sleep" | "hibernate"
+
+export type SleepKind = "agents" | "time"
+
+export interface SleepTimerState {
+  mode?: SleepMode
+  kind?: SleepKind
+  /** When the suspend happens; only set while counting down. */
+  deadline?: number
+  phase: "off" | "waiting" | "countdown"
+  available: boolean
+  hibernate: boolean
+  error?: string
+}
+
+export interface AgentManagerSleepTimerMessage extends SleepTimerState {
+  type: "agentManager.sleepTimer"
+}
+// fork_change end
+
 export interface ManagedSessionState {
   id: string
   worktreeId: string | null
