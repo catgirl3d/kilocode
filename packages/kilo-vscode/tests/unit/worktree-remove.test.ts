@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test"
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { existsSync } from "node:fs"
 import { simpleGit } from "simple-git"
-import { cleanup, createManager, createTempRepo } from "../helpers/worktree-fixtures"
+import { cleanup, createManager, createTempRepo, tempDirs } from "../helpers/worktree-fixtures"
 
 afterEach(cleanup)
 
@@ -44,6 +45,34 @@ describe("WorktreeManager.removeWorktree", () => {
       rename.mockRestore()
     }
   })
+
+  it.skipIf(process.platform !== "win32")(
+    "does not let the git fallback empty the target of a junction inside the worktree",
+    async () => {
+      const root = await createTempRepo()
+      const manager = createManager(root)
+      const worktree = await manager.createWorktree({ branchName: "junction-rename-blocked" })
+      const outside = await fs.mkdtemp(path.join(os.tmpdir(), "kilo-junction-target-"))
+      tempDirs.push(outside)
+      await fs.mkdir(path.join(outside, "deep"))
+      await fs.writeFile(path.join(outside, "MARKER"), "x")
+      await fs.writeFile(path.join(outside, "deep", "MARKER"), "x")
+      await fs.symlink(outside, path.join(worktree.path, "linked"), "junction")
+      const rename = spyOn(fs, "rename").mockRejectedValueOnce(
+        Object.assign(new Error("directory busy"), { code: "EBUSY" }),
+      )
+
+      try {
+        await manager.removeWorktree(worktree.path, worktree.branch)
+        expect(existsSync(worktree.path)).toBe(false)
+        expect((await simpleGit(root).branch()).all).not.toContain(worktree.branch)
+        expect(existsSync(path.join(outside, "MARKER"))).toBe(true)
+        expect(existsSync(path.join(outside, "deep", "MARKER"))).toBe(true)
+      } finally {
+        rename.mockRestore()
+      }
+    },
+  )
 
   it("keeps the branch when the worktree directory remains locked", async () => {
     const root = await createTempRepo()
