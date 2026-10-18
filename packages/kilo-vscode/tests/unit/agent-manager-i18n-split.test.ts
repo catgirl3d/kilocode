@@ -48,6 +48,18 @@ const ENGLISH_FALLBACK = new Set([
   "agentManager.apply.filesSummary",
   "agentManager.apply.noChangedFiles",
   "agentManager.apply.overwrite",
+  "agentManager.sleepTimer.toggle",
+  "agentManager.sleepTimer.agents.sleep",
+  "agentManager.sleepTimer.agents.hibernate",
+  "agentManager.sleepTimer.time.sleep",
+  "agentManager.sleepTimer.time.hibernate",
+  "agentManager.sleepTimer.cancel",
+  "agentManager.sleepTimer.armed.sleep",
+  "agentManager.sleepTimer.armed.hibernate",
+  "agentManager.sleepTimer.countdown",
+  "agentManager.sleepTimer.at.sleep",
+  "agentManager.sleepTimer.at.hibernate",
+  "agentManager.sleepTimer.unavailable",
 ])
 
 const locales = {
