@@ -1,5 +1,6 @@
 import * as fs from "fs/promises"
 import { Effect } from "effect"
+import { unlinkLinks } from "@opencode-ai/core/kilocode/unlink-links" // fork_change
 
 type GitResult = { code: number; text: string; stderr: string }
 
@@ -52,6 +53,15 @@ export namespace WorktreeCleanup {
   }) {
     const cfg = opts()
     return Effect.gen(function* () {
+      // fork_change start - git follows Windows junctions out of the worktree; unlink them first or refuse
+      const refused = yield* Effect.promise(() =>
+        unlinkLinks(input.target).then(
+          () => undefined,
+          (err: unknown) => (err instanceof Error ? err.message : String(err)),
+        ),
+      )
+      if (refused) return { code: 1, text: "", stderr: refused } satisfies GitResult
+      // fork_change end
       for (const attempt of Array.from({ length: cfg.retries }, (_, i) => i)) {
         yield* input.stop(input.target)
         const result = yield* input.git(["worktree", "remove", "--force", input.target], { cwd: input.root })
