@@ -2627,6 +2627,7 @@ export const SessionProvider: ParentComponent = (props) => {
     setLoading(false)
     setPendingAgentSelection(null)
     memory.forget(COMPOSER)
+    variants.reload() // fork_change
     vscode.postMessage({ type: "clearSession" })
   }
 
@@ -2677,6 +2678,7 @@ export const SessionProvider: ParentComponent = (props) => {
       setLoading(!ready)
       if (!ready) patchPage(id, { loadingInitial: true, loadingOlder: false, before: undefined, hasMore: false })
     })
+    variants.reload() // fork_change
     // Only the message fetch needs the backend. Defer it while offline and let
     // the reconnect effect replay it. We defer even for cached sessions: the
     // load message is what re-focuses the backend (focusSession, contextSessionID,
@@ -2723,6 +2725,7 @@ export const SessionProvider: ParentComponent = (props) => {
   createEffect(
     on(server.isConnected, (connected) => {
       if (!connected) return
+      variants.reload() // fork_change
       const pending = deferredFetch
       deferredFetch = undefined
       if (!pending || pending.id !== currentSessionID()) return
