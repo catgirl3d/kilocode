@@ -27,6 +27,7 @@ import { TelemetryProxy, type TelemetryEventName } from "../services/telemetry"
 import type { AutoApproveController } from "../commands/toggle-auto-approve"
 import type { RemoteStatusService } from "../services/RemoteStatusService"
 import type { CaffeinationService } from "../services/caffeination"
+import type { SleepControls } from "../services/caffeination/sleep" // fork_change
 
 const INTRO_KEY = "kilo.agentManager.introDismissed"
 const SPLASH_KEY = "kilo.agentManager.splashFolded"
@@ -49,6 +50,7 @@ export class VscodeHost implements Host {
     private readonly context: vscode.ExtensionContext,
     private readonly remoteService: RemoteStatusService,
     private readonly caffeination?: Pick<CaffeinationService, "getState" | "onChange" | "setEnabled">,
+    private readonly sleep?: SleepControls, // fork_change
   ) {}
 
   setDiffVirtualProvider(provider: DiffVirtualProvider): void {
@@ -166,8 +168,15 @@ export class VscodeHost implements Host {
       }
     }
     const unsubscribe = this.caffeination?.onChange(snapshot)
+    // fork_change start
+    const timer = () => {
+      if (this.sleep) void panel.webview.postMessage({ type: "agentManager.sleepTimer", ...this.sleep.getState() })
+    }
+    const unsleep = this.sleep?.onChange(timer)
+    // fork_change end
     panel.onDidDispose(() => {
       unsubscribe?.()
+      unsleep?.() // fork_change
       this.focus?.lost()
     })
     provider.attachToWebview(panel.webview, {
@@ -184,6 +193,19 @@ export class VscodeHost implements Host {
           if (typeof msg.folded === "boolean") await this.context.globalState.update(SPLASH_KEY, msg.folded)
           return null
         }
+        // fork_change start
+        if (msg.type === "agentManager.setSleepTimer") {
+          await this.sleep?.set(
+            msg.mode === "sleep" || msg.mode === "hibernate" ? msg.mode : undefined,
+            msg.kind === "time" ? "time" : "agents",
+          )
+          return null
+        }
+        if (msg.type === "agentManager.requestSleepTimer") {
+          timer()
+          return null
+        }
+        // fork_change end
         if (msg.type !== "agentManager.setIntroDismissed") return opts.onBeforeMessage(msg)
         if (typeof msg.dismissed === "boolean") await this.context.globalState.update(INTRO_KEY, msg.dismissed)
         return null
