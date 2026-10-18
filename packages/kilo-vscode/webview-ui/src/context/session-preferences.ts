@@ -1,12 +1,11 @@
 import type { Message, ModelSelection, SessionInfo } from "../types/messages"
-import { DEFAULT_VARIANT } from "./session-variant-store"
 
 export interface MessagePrefs {
   agent?: string
   /** agent -> latest user message model + variant for that agent */
-  picks: Record<string, { model: ModelSelection; variant: string; seq: number }>
+  picks: Record<string, { model: ModelSelection; variant?: string; seq: number }> // fork_change
   /** Latest user message that names no valid agent, attributed to the session's current agent */
-  unattributed?: { model: ModelSelection; variant: string; seq: number }
+  unattributed?: { model: ModelSelection; variant?: string; seq: number } // fork_change
 }
 
 /**
@@ -14,7 +13,7 @@ export interface MessagePrefs {
  * each agent keeps the model of its own latest user message.
  */
 export function resolveMessagePrefs(messages: Message[], names: Set<string>): MessagePrefs {
-  const picks: Record<string, { model: ModelSelection; variant: string; seq: number }> = {}
+  const picks: Record<string, { model: ModelSelection; variant?: string; seq: number }> = {} // fork_change
   let unattributed: MessagePrefs["unattributed"]
   let agent: string | undefined
   for (let i = messages.length - 1, seq = 0; i >= 0; i--, seq++) {
@@ -25,7 +24,7 @@ export function resolveMessagePrefs(messages: Message[], names: Set<string>): Me
     if (!agent && valid) agent = valid
     if (msg.role !== "user" || !msg.model?.providerID || !msg.model.modelID) continue
     const model = { providerID: msg.model.providerID, modelID: msg.model.modelID }
-    const variant = msg.model.variant ?? DEFAULT_VARIANT
+    const variant = msg.model.variant // fork_change
     if (valid) {
       if (!picks[valid]) picks[valid] = { model, variant, seq }
       continue
@@ -47,6 +46,6 @@ export function resolveInfoPrefs(info: Pick<SessionInfo, "agent" | "model">, nam
   return {
     agent,
     model: { providerID: info.model.providerID, modelID: info.model.modelID },
-    variant: info.model.variant ?? DEFAULT_VARIANT,
+    variant: info.model.variant, // fork_change
   }
 }
