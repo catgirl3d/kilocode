@@ -364,6 +364,13 @@ describe("sendMessage / sendCommand draft id contract", () => {
     expect(extractFunctionBody(source, "clearCurrentSession")).not.toContain("setPendingAgentSelection(defaultAgent())")
   })
 
+  it("re-reads remembered effort when a new chat opens, not at its first send", () => {
+    // Every New Task path lands in clearCurrentSession. The first send builds
+    // its message before variantsLoaded answers, so a reload there is too late.
+    expect(extractFunctionBody(source, "clearCurrentSession")).toContain("variants.reload()")
+    expect(extractFunctionBody(source, "mintDraft")).not.toContain("variants.reload()")
+  })
+
   it("does not clear a newer pending agent when a seeded draft is promoted", () => {
     const body = extractFunctionBody(source, "handleSessionCreated")
     const draftBlock = body.match(/if \(draftID\) \{([\s\S]*?)\} else if/)
