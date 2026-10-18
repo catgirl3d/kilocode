@@ -1217,6 +1217,20 @@ export interface SetCaffeinationRequest {
   enabled: boolean
 }
 
+// fork_change start
+export interface RequestSleepTimerMessage {
+  type: "agentManager.requestSleepTimer"
+}
+
+export interface SetSleepTimerRequest {
+  type: "agentManager.setSleepTimer"
+  /** Absent cancels the timer. */
+  mode?: "sleep" | "hibernate"
+  /** Defaults to waiting for the agents. */
+  kind?: "agents" | "time"
+}
+// fork_change end
+
 // Persist review diff style preference
 export interface SetReviewDiffStyleRequest {
   type: "agentManager.setReviewDiffStyle"
@@ -2054,6 +2068,8 @@ export type WebviewMessage =
   | SetSidebarCollapsedRequest
   | RequestCaffeinationMessage
   | SetCaffeinationRequest
+  | RequestSleepTimerMessage // fork_change
+  | SetSleepTimerRequest // fork_change
   | SetReviewDiffStyleRequest
   | SetReviewMarkdownRenderRequest
   | PersistVariantRequest
