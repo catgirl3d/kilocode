@@ -23,6 +23,7 @@ import { normalizePath, parseWorktreeList } from "../git-import"
 import { locate, poolDir } from "./home"
 import { METADATA_FILE, alive, readMeta, subdirs, type PoolMeta } from "./slot"
 import { sweep } from "./sweep"
+import { unlinkLinks } from "@opencode-ai/core/kilocode/unlink-links" // fork_change
 
 /** Maximum commits between a slot base and the requested base for a delta claim. */
 const MAX_DELTA = 50
@@ -513,9 +514,13 @@ export class WorktreePool {
   }
 
   private async removePath(wtPath: string): Promise<void> {
-    await this.raw(["worktree", "remove", "--force", "--force", wtPath]).catch((e) => {
-      this.deps.log(`worktree pool: remove failed for ${wtPath}: ${e}`)
-    })
+    // fork_change start - git follows Windows junctions out of the slot; unlink them first or skip git
+    await unlinkLinks(wtPath)
+      .then(() => this.raw(["worktree", "remove", "--force", "--force", wtPath]))
+      .catch((e) => {
+        this.deps.log(`worktree pool: remove failed for ${wtPath}: ${e}`)
+      })
+    // fork_change end
     if (fs.existsSync(wtPath)) {
       await fs.promises.rm(wtPath, { recursive: true, force: true }).catch((e) => {
         this.deps.log(`worktree pool: rm failed for ${wtPath}: ${e}`)
