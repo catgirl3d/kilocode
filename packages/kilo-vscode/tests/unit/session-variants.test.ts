@@ -88,6 +88,39 @@ describe("session variants", () => {
     expect(state.order).toEqual(["listen", "post", "unsub"])
   })
 
+  it("reloads persisted variants without adding another listener", () => {
+    const state = setup()
+    state.variants.load()
+    state.variants.reload()
+
+    expect(state.order).toEqual(["listen", "post", "post"])
+    expect(state.messages).toEqual([{ type: "requestVariants" }, { type: "requestVariants" }])
+  })
+
+  it("applies refreshed agent variants while still ignoring session variants", () => {
+    const state = setup()
+    state.variants.load()
+    state.dispatch({
+      type: "variantsLoaded",
+      variants: { "agent/code/anthropic/claude-sonnet-4": "low" },
+    })
+    state.variants.reload()
+    state.dispatch({
+      type: "variantsLoaded",
+      variants: { "agent/code/anthropic/claude-sonnet-4": "max", "session/current/model": "low" },
+    })
+
+    expect(state.selections).toEqual({ "agent/code/anthropic/claude-sonnet-4": "max" })
+  })
+
+  it("can reload before loading without subscribing", () => {
+    const state = setup()
+    state.variants.reload()
+
+    expect(state.order).toEqual(["post"])
+    expect(state.messages).toEqual([{ type: "requestVariants" }])
+  })
+
   it("loads global variants without restoring stale session variants", () => {
     const state = setup()
     state.variants.load()
