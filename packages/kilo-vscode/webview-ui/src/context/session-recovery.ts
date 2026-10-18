@@ -20,10 +20,12 @@ export function createSessionRecovery(opts: {
   agent: (id: string) => string
   names: () => Set<string>
 }) {
-  function fill(id: string, agent: string, model: ModelSelection, variant: string) {
+  // fork_change start
+  function fill(id: string, agent: string, model: ModelSelection, variant?: string) {
+    // fork_change end
     if (!opts.store.sessionOverrides[id]?.[agent]) opts.pick(id, agent, model)
     const key = variantKey(model, agent, id)
-    if (opts.store.variantSelections[key] === undefined) opts.variant(key, variant)
+    if (opts.store.variantSelections[key] === undefined && variant !== undefined) opts.variant(key, variant) // fork_change
   }
 
   function messages(id: string, list: Message[], names = opts.names()) {
