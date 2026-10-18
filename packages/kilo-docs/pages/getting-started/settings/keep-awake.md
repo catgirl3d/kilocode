@@ -49,3 +49,32 @@ Keep Awake prevents system sleep only. It does not keep the display on and does 
 | Windows | `SetThreadExecutionState` through PowerShell |
 
 If the required command is not available, Kilo reports that Keep Awake is unavailable and does not start the inhibitor.
+
+## Sleep when agents finish
+
+In the VS Code Agent Manager, the clock button next to the coffee icon puts the computer to sleep or hibernation once your agents are done, so you can leave while they work. The menu has two kinds of timer:
+
+| Menu item | What it does |
+|---|---|
+| **Sleep when agents finish** and **Hibernate when agents finish** | Waits until your agents are done, then counts down one minute. |
+| **Sleep in…** and **Hibernate in…** | Counts down from now and ignores the agents. Pick 5, 15, 30, 60 or 120 minutes, or **Custom…** for any whole number of minutes up to 1440 (24 hours). Kilo remembers your last choice. |
+
+Choose **Cancel sleep timer** to turn the timer off, or choose another item to replace it. Only one timer is active at a time.
+
+Kilo counts the work as finished when every session is idle or only waiting for you, for example for a permission or an answer to a question. A session that waits for you does not keep the computer awake. A retrying session, a session with a scheduled wakeup, and a parent session whose subagent is still working do.
+
+When the work is finished, a notification counts down 60 seconds and offers **Cancel**. If new work starts during the countdown, Kilo stops it and waits again.
+
+A timer that ignores the agents shows the same notification during its last minute. Hover the clock button to see when the computer will go down. This timer keeps running if the connection to the Kilo backend drops, and it can put the computer to sleep while agents are still working. The timer fires once. It is cleared when you cancel it, after it fires, and when the VS Code window reloads. Kilo turns Keep Awake off before the computer goes to sleep.
+
+The first time you enable the timer, VS Code asks for confirmation. The answer is stored in the extension's global state. The timer is not available in a remote window.
+
+| Platform | Sleep | Hibernate |
+|---|---|---|
+| macOS | `pmset sleepnow` | Not available |
+| Linux | `systemctl suspend` | `systemctl hibernate` |
+| Windows | `SetSuspendState` through PowerShell | `SetSuspendState` through PowerShell; hibernation must be on (`powercfg /hibernate on`) |
+
+{% callout type="warning" %}
+Unsaved work in other applications is not saved. On Windows computers that use Modern Standby, sleep may keep the machine partly running instead of fully suspending.
+{% /callout %}

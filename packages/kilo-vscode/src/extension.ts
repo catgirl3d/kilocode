@@ -24,6 +24,7 @@ import { AttentionService, showOSNotification } from "./services/attention"
 import { CaffeinationService } from "./services/caffeination"
 import { confirmCaffeination } from "./services/caffeination/confirm"
 import { createCaffeinationDriver } from "./services/caffeination/inhibitor"
+import { createSleep } from "./services/caffeination/sleep-ui" // fork_change
 import { BrowserAutomationService, BrowserBroker } from "./services/browser-automation"
 import {
   integratedBrowserFallback,
@@ -382,7 +383,18 @@ export async function activate(context: vscode.ExtensionContext) {
     log: (message) => console.warn(`[Kilo New] ${message}`),
   })
   const binary = process.platform === "win32" ? await git() : git
-  const agentManagerHost = new VscodeHost(context.extensionUri, connectionService, context, remoteService, controls)
+  // fork_change start
+  const sleep = createSleep(context, connectionService, awake, reason)
+  context.subscriptions.push({ dispose: sleep.dispose })
+  const agentManagerHost = new VscodeHost(
+    context.extensionUri,
+    connectionService,
+    context,
+    remoteService,
+    controls,
+    sleep.controls,
+  )
+  // fork_change end
   const agentManagerProvider = new AgentManagerProvider(agentManagerHost, connectionService, binary, browserBroker)
   agentManagerHost.setFocusListener({
     gained: () => {
