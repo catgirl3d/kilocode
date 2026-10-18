@@ -8,6 +8,7 @@ import * as fs from "fs"
 import * as path from "path"
 import type { SimpleGit } from "simple-git"
 import { METADATA_FILE, alive, readMeta, subdirs } from "./slot"
+import { unlinkLinks } from "@opencode-ai/core/kilocode/unlink-links" // fork_change
 
 /** A slot that no live process owns and that nothing touched for this long is removed. */
 const STALE = 14 * 24 * 60 * 60 * 1000
@@ -62,6 +63,7 @@ async function reap(slot: string, age: number, client: (cwd: string) => SimpleGi
   if (gitdir) {
     // simple-git throws at once when the directory vanished meanwhile.
     await Promise.resolve()
+      .then(() => unlinkLinks(slot)) // fork_change - git follows Windows junctions out of the slot
       .then(() => client(slot).raw(["worktree", "remove", "--force", "--force", slot]))
       .catch((e) => log(`worktree pool: remove ${slot}: ${e}`))
   }
