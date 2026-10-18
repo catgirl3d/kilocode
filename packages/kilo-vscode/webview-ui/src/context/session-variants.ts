@@ -112,6 +112,8 @@ export function createSessionVariants(options: Options) {
     options.set(variantKey(selection, name, sessionID), next)
   }
 
+  const reload = () => options.post({ type: "requestVariants" }) // fork_change
+
   const load = () => {
     const unsub = options.listen((message) => {
       if (message.type !== "variantsLoaded") return
@@ -120,9 +122,9 @@ export function createSessionVariants(options: Options) {
         options.set(key, value)
       }
     })
-    options.post({ type: "requestVariants" })
+    reload() // fork_change
     return unsub
   }
 
-  return { carry, list, agent, current, request, saved, choice, select, load }
+  return { carry, list, agent, current, request, saved, choice, select, load, reload } // fork_change
 }
