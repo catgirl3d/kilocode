@@ -34,6 +34,7 @@ import {
 import { pathKey } from "./project/paths"
 import { MISSING_GIT } from "./git-errors"
 import { Semaphore } from "./semaphore"
+import { unlinkLinks } from "@opencode-ai/core/kilocode/unlink-links" // fork_change
 
 const TEMP_PREFIX = ".kilo-delete-"
 const RM_OPTS: fs.RmOptions = { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }
@@ -800,9 +801,13 @@ export class WorktreeManager {
     const temp = await this.detach(worktreePath)
     if (!temp) {
       this.log(`Rename failed, falling back to force remove: ${worktreePath}`)
-      await this.git.raw(["worktree", "remove", "--force", worktreePath]).catch((error: unknown) => {
-        this.log(`Git worktree removal failed for ${worktreePath}: ${error}`)
-      })
+      // fork_change start - git follows Windows junctions out of the worktree; unlink them first or skip git
+      await unlinkLinks(worktreePath)
+        .then(() => this.git.raw(["worktree", "remove", "--force", worktreePath]))
+        .catch((error: unknown) => {
+          this.log(`Git worktree removal failed for ${worktreePath}: ${error}`)
+        })
+      // fork_change end
       if (fs.existsSync(worktreePath)) await fs.promises.rm(worktreePath, RM_OPTS)
       await this.git.raw(["worktree", "prune", "--expire", "now"]).catch((error: unknown) => {
         this.log(`Failed to prune worktree metadata for ${worktreePath}: ${error}`)

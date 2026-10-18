@@ -128,6 +128,23 @@ describe("worktree pool sweep", () => {
     expect(await registered(repo)).toBe(0)
   })
 
+  it.skipIf(process.platform !== "win32")("removes a stale slot without emptying a junction target", async () => {
+    const slot = await createSlot("junction", { pooled: true, owner: 999999 })
+    await age(metaFile(slot))
+    const outside = await temp("kilo-sweep-target-")
+    await fs.mkdir(path.join(outside, "deep"))
+    await fs.writeFile(path.join(outside, "MARKER"), "x")
+    await fs.writeFile(path.join(outside, "deep", "MARKER"), "x")
+    await fs.symlink(outside, path.join(slot, "linked"), "junction")
+
+    await run()
+
+    expect(existsSync(slot)).toBe(false)
+    expect(await registered(repo)).toBe(0)
+    expect(existsSync(path.join(outside, "MARKER"))).toBe(true)
+    expect(existsSync(path.join(outside, "deep", "MARKER"))).toBe(true)
+  })
+
   it("gives a slot without metadata an hour to finish its creation", async () => {
     const slot = await createSlot("creating")
 
