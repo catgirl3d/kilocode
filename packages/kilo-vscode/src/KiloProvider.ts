@@ -240,6 +240,19 @@ import { buildShortcutContextMessage, watchShortcutContext } from "./kilo-provid
 type ReviewCommentsHandler = (comments: unknown[], autoSend: boolean, sessionID?: string, directory?: string) => void
 
 let maxCost = 0
+// fork_change start
+let variantQueue = Promise.resolve()
+
+// Providers share one globalState, so variantSelections writes run one at a time.
+function enqueue(task: () => Promise<void>) {
+  const pending = variantQueue.then(task)
+  variantQueue = pending.then(
+    () => undefined,
+    () => undefined,
+  )
+  return pending
+}
+// fork_change end
 
 type MessageLoadMode = "replace" | "prepend" | "focus" | "reconcile"
 type ContextMessage = { contextDirectory?: unknown }
@@ -1848,12 +1861,17 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           TelemetryProxy.capture(message.event, message.properties)
           break
         case "persistVariant": {
-          const stored = this.extensionContext?.globalState.get<Record<string, string>>("variantSelections") ?? {}
-          stored[message.key] = message.value
-          await this.extensionContext?.globalState.update("variantSelections", stored)
+          // fork_change start
+          await enqueue(async () => {
+            const stored = this.extensionContext?.globalState.get<Record<string, string>>("variantSelections") ?? {}
+            stored[message.key] = message.value
+            await this.extensionContext?.globalState.update("variantSelections", stored)
+          })
+          // fork_change end
           break
         }
         case "requestVariants": {
+          await variantQueue // fork_change
           const variants = this.extensionContext?.globalState.get<Record<string, string>>("variantSelections") ?? {}
           this.postMessage({ type: "variantsLoaded", variants })
           break
@@ -5589,7 +5607,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     }
 
     // Clear globalState items that are not part of the configuration
-    await this.extensionContext?.globalState.update("variantSelections", undefined)
+    // fork_change start
+    await enqueue(async () => {
+      await this.extensionContext?.globalState.update("variantSelections", undefined)
+    })
+    // fork_change end
     await this.extensionContext?.globalState.update("recentModels", undefined)
     await this.extensionContext?.globalState.update("modelUsage", undefined)
     await this.extensionContext?.globalState.update("kilo.dismissedNotificationIds", undefined)
