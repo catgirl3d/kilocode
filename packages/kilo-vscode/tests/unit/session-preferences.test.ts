@@ -39,16 +39,36 @@ describe("session preference recovery", () => {
     })
   })
 
-  it.each([undefined, ""])("restores model default %s instead of an older effort", (variant) => {
+  it("leaves the effort unset when the newest message has no variant", () => {
     const prefs = resolveMessagePrefs(
       [
         msg({ agent: "code", model: { providerID: "anthropic", modelID: "claude-sonnet-4", variant: "high" } }),
-        msg({ agent: "code", model: { providerID: "anthropic", modelID: "claude-sonnet-4", variant } }),
+        msg({ agent: "code", model: { providerID: "anthropic", modelID: "claude-sonnet-4" } }),
       ],
       agents,
     )
 
-    expect(prefs.picks.code?.variant).toBe("")
+    expect(prefs.picks.code).toEqual({
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+      variant: undefined,
+      seq: 0,
+    })
+  })
+
+  it("keeps an explicit empty Default from the newest message", () => {
+    const prefs = resolveMessagePrefs(
+      [
+        msg({ agent: "code", model: { providerID: "anthropic", modelID: "claude-sonnet-4", variant: "high" } }),
+        msg({ agent: "code", model: { providerID: "anthropic", modelID: "claude-sonnet-4", variant: "" } }),
+      ],
+      agents,
+    )
+
+    expect(prefs.picks.code).toEqual({
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+      variant: "",
+      seq: 0,
+    })
   })
 
   it("ignores assistant-only model data and invalid agents", () => {
@@ -92,7 +112,7 @@ describe("session preference recovery", () => {
 
     expect(prefs.agent).toBe("code")
     expect(prefs.picks).toEqual({
-      ask: { model: { providerID: "anthropic", modelID: "claude-sonnet-4" }, variant: "", seq: 1 },
+      ask: { model: { providerID: "anthropic", modelID: "claude-sonnet-4" }, variant: undefined, seq: 1 },
     })
   })
 
@@ -118,11 +138,11 @@ describe("session info recovery", () => {
     ).toEqual({ agent: "ask", model: { providerID: "openai", modelID: "gpt-5.5" }, variant: "high" })
   })
 
-  it("treats a missing variant as an explicit Default", () => {
+  it("leaves the effort unset when a server session has no variant", () => {
     expect(resolveInfoPrefs({ agent: "code", model: { providerID: "openai", modelID: "gpt-5.5" } }, agents)).toEqual({
       agent: "code",
       model: { providerID: "openai", modelID: "gpt-5.5" },
-      variant: "",
+      variant: undefined,
     })
   })
 
