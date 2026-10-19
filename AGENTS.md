@@ -43,6 +43,8 @@ During fork rebases, follow `FORK_REBASE.md`: start with known risks and update 
 | JetBrains plugin | Validation disabled in this fork. Do not run Gradle/Java checks; report the verification gap if this package changes. |
 | CI/local guards | Run affected guards documented above, such as `bun run knip`, `bun run check-kilocode-change`, `bun run script/check-opencode-annotations.ts --worktree`, or source link extraction |
 
+The full `bun run test:unit` in `packages/kilo-vscode/` takes several minutes. When it fails, read `packages/kilo-vscode/test-results/unit-failures.txt`: it lists every failure with `file:line`, the errors outside tests, and a rerun command. The full output is in `unit.log` next to it. Do not rerun the suite or search its output to find the failing tests; rerun only the listed files with `bun run test:unit ./tests/unit/<file>.test.ts`.
+
 The `pre-push` hook checks formatting, forbidden markers, the committed fork diff, and types. It does not replace other required local guards.
 
 **Fork rebase intermediate commits:** Defer final verification during replay, commit folding, or history surgery as specified in `FORK_REBASE.md`. Run the required final guards on the assembled tree before freezing it for review or pushing. Ordinary completed feature and documentation changes still require the relevant checks.
