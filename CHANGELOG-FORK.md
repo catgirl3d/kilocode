@@ -88,6 +88,7 @@
 - Remember explicitly selected models and reasoning variants for each mode when starting new tasks.
 - Keep prompt selector popovers closed until clicked or opened with the keyboard, so moving the pointer across the prompt toolbar no longer switches the open selector.
 - Isolate CLI unit tests from the developer's real Kilo setup: test runs no longer read global skills, rules, or VS Code MCP settings from the actual user profile, and docs and VS Code tasks now point at the isolated per-file test runner.
+- End the VS Code extension's `bun run test:unit` output with a list of failed tests and errors outside tests, and save the failure report and full log in `test-results/` so a failed run never has to be repeated to find what failed.
 - Fix Enhance Prompt when using ChatGPT sign-in (OpenAI OAuth): stream the rewrite request and send the instruction the way the Codex backend expects.
 - Cap LLM retry waits at 60 seconds so provider quota windows no longer cause excessive session stalls.
 - Speed up Windows voice input by capturing audio natively through WASAPI instead of spawning FFmpeg on each recording.
