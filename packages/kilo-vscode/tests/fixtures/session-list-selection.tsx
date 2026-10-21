@@ -44,7 +44,7 @@ Object.assign(globalThis, {
   acquireVsCodeApi: () => api,
 })
 
-const { createSignal } = await import("solid-js")
+const { createEffect, createSignal } = await import("solid-js")
 const { render } = await import("solid-js/web")
 const { StoryProviders, mockSessionValue } = await import("../../webview-ui/src/stories/StoryProviders")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
@@ -72,12 +72,21 @@ const session = {
   },
 }
 
+const seen: string[][] = []
+const Observer = () => {
+  createEffect(() => {
+    seen.push(sessions().map((entry) => entry.id))
+  })
+  return null
+}
+
 const root = document.createElement("div")
 document.body.append(root)
 const dispose = render(
   () => (
     <StoryProviders sessionID="ses-one" sessionTags={null} failTags={false} noPadding>
       <SessionContext.Provider value={session as never}>
+        <Observer />
         <section data-testid="history">
           <SessionList onSelectSession={(id) => opened.push(id)} />
         </section>
@@ -342,6 +351,43 @@ dialogButtons()[1]!.click()
 await settle()
 assert.deepEqual(removed, [], "confirming an emptied selection deletes nothing")
 assert.equal(bar(), null, "confirming leaves select mode")
+
+// bulk deletion reaches downstream reactive consumers as one complete update
+setSessions([...items])
+removed.length = 0
+await settle()
+assert(seen.length > 0, "the fixture observes downstream session snapshots before the confirmation")
+seen.length = 0
+await enter("ses-three")
+check("ses-four").label.click()
+await settle()
+barButtons()[1]!.click()
+await settle()
+dialogButtons()[1]!.click()
+await settle()
+assert(
+  seen.some(
+    (ids) => ids.length === 4 && ["ses-child", "ses-five", "ses-one", "ses-two"].every((id) => ids.includes(id)),
+  ),
+  "the bulk confirmation reaches one downstream snapshot with every chosen session removed",
+)
+const partial = seen.some((ids) => ids.includes("ses-three") !== ids.includes("ses-four"))
+assert.equal(
+  partial,
+  false,
+  "the bulk confirmation never exposes a partial chosen-session removal to reactive consumers",
+)
+assert.deepEqual(
+  [...removed].sort(),
+  ["ses-four", "ses-three"],
+  "the observed bulk confirmation deletes both chosen sessions",
+)
+filter("")
+await settle()
+assert.equal(item("ses-three"), null, "the first chosen row stays gone")
+assert.equal(item("ses-four"), null, "the second chosen row stays gone")
+assert(item("ses-one"), "an unselected row stays")
+assert(item("ses-two"), "another unselected row stays")
 
 dispose()
 assert.equal(root.childNodes.length, 0, "disposing the tree removes the list")
