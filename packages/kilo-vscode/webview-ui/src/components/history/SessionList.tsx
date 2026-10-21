@@ -10,6 +10,7 @@ import {
   Component,
   For,
   Show,
+  batch,
   createEffect,
   createMemo,
   createSignal,
@@ -52,6 +53,18 @@ interface SessionListProps {
   // fork_change end
 }
 
+// fork_change start - List rebuilds every row on any new items array; treat field-equal refreshes as no-ops
+function same<T extends object>(a: readonly T[], b: readonly T[]) {
+  const field = (x: unknown, y: unknown) =>
+    Array.isArray(x) && Array.isArray(y) ? x.length === y.length && x.every((v, i) => v === y[i]) : Object.is(x, y)
+  const equal = (x: T, y: T) => {
+    const keys = Object.keys(x) as (keyof T)[]
+    return keys.length === Object.keys(y).length && keys.every((key) => field(x[key], y[key]))
+  }
+  return a.length === b.length && a.every((item, i) => item === b[i] || equal(item, b[i]!))
+}
+// fork_change end
+
 const SessionList: Component<SessionListProps> = (props) => {
   const session = useSession()
   const language = useLanguage()
@@ -92,33 +105,41 @@ const SessionList: Component<SessionListProps> = (props) => {
     const ids = props.sessionIds?.()
     return ids ? tagged().filter((item) => ids.has(item.id)) : tagged()
   })
-  const filterTags = createMemo(() => {
-    const scoped = props.sessionIds?.()
-    const state = tags.state()
-    const loaded = new Set(session.sessions().map((item) => item.id))
-    const legacy = new Set(state.legacySessions ?? [])
-    const removed = session.removedSessions()
-    const ids =
-      scoped === undefined
-        ? new Set(
-            Object.entries(state.sessions).flatMap(([id, tagIds]) => {
-              if (removed.has(id)) return []
-              return !legacy.has(id) || loaded.has(id) ? tagIds : []
-            }),
-          )
-        : new Set(base().flatMap((item) => item.tagIds))
-    return state.tags.filter((tag) => ids.has(tag.id))
-  })
+  const filterTags = createMemo(
+    () => {
+      const scoped = props.sessionIds?.()
+      const state = tags.state()
+      const loaded = new Set(session.sessions().map((item) => item.id))
+      const legacy = new Set(state.legacySessions ?? [])
+      const removed = session.removedSessions()
+      const ids =
+        scoped === undefined
+          ? new Set(
+              Object.entries(state.sessions).flatMap(([id, tagIds]) => {
+                if (removed.has(id)) return []
+                return !legacy.has(id) || loaded.has(id) ? tagIds : []
+              }),
+            )
+          : new Set(base().flatMap((item) => item.tagIds))
+      return state.tags.filter((tag) => ids.has(tag.id))
+    },
+    undefined,
+    { equals: same },
+  )
   const activeTags = createMemo(() => {
     const catalog = new Set(filterTags().map((tag) => tag.id))
     return new Set([...chosenTags()].filter((id) => catalog.has(id)))
   })
-  const items = createMemo(() => {
-    const source = base()
-    const active = activeTags()
-    if (active.size === 0) return source
-    return source.filter((item) => item.tagIds.some((id) => active.has(id)))
-  })
+  const items = createMemo(
+    () => {
+      const source = base()
+      const active = activeTags()
+      if (active.size === 0) return source
+      return source.filter((item) => item.tagIds.some((id) => active.has(id)))
+    },
+    undefined,
+    { equals: same },
+  )
   const match = createMemo(() => {
     const active = activeTags()
     return active.size > 0 && base().some((item) => item.tagIds.some((id) => active.has(id)))
@@ -242,7 +263,9 @@ const SessionList: Component<SessionListProps> = (props) => {
               variant="primary"
               size="large"
               onClick={() => {
-                for (const item of chosen()) session.deleteSession(item.id)
+                batch(() => {
+                  for (const item of chosen()) session.deleteSession(item.id)
+                })
                 dialog.close()
                 stopSelect()
               }}
