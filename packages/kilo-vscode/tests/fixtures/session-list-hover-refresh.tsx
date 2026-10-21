@@ -48,6 +48,7 @@ const { createSignal } = await import("solid-js")
 const { render } = await import("solid-js/web")
 const { StoryProviders, mockSessionValue } = await import("../../webview-ui/src/stories/StoryProviders")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
+const { post } = await import("../../webview-ui/src/utils/webview-message")
 const SessionList = (await import("../../webview-ui/src/components/history/SessionList")).default
 
 const now = new Date().toISOString()
@@ -136,6 +137,36 @@ function activity(seq: number) {
 // initial state: the current row is active even though it is not the first row
 await settle()
 assert.equal(active("ses-two"), "true", "the current row starts active (current is not the first row)")
+
+// deletion echoes (sessionDeleted, tag/favorite snapshots) that leave every visible row unchanged keep the rendered rows
+const tag = (name: string) => ({ id: "tag-delete", name, color: "red" })
+post({
+  type: "sessionTagsLoaded",
+  state: { tags: [tag("delete")], sessions: { "ses-one": ["tag-delete"], "ses-gone": ["tag-delete"] } },
+})
+await settle()
+const chip = root.querySelector<HTMLElement>(".session-tag-filter")
+assert(chip, "the tag filter chip is rendered")
+const tagged = item("ses-one")
+const plain = item("ses-three")
+setSessions((prev) => prev.map((entry) => ({ ...entry })))
+await settle()
+assert.equal(item("ses-three"), plain, "a refresh with equal session data keeps the rendered row")
+post({ type: "sessionTagsLoaded", state: { tags: [tag("delete")], sessions: { "ses-one": ["tag-delete"] } } })
+await settle()
+assert.equal(item("ses-one"), tagged, "a tag snapshot that only prunes a deleted session keeps the tagged row")
+assert.equal(item("ses-three"), plain, "a tag snapshot that only prunes a deleted session keeps other rows")
+assert.equal(root.querySelector(".session-tag-filter"), chip, "an equal tag catalog keeps the filter chip")
+post({ type: "sessionTagsLoaded", state: { tags: [tag("remove")], sessions: { "ses-one": ["tag-delete"] } } })
+await settle()
+assert.notEqual(item("ses-one"), tagged, "a renamed tag still refreshes the rows that show it")
+assert.equal(
+  root.querySelector(".session-tag-filter")?.textContent,
+  "remove",
+  "a renamed tag refreshes the filter chip",
+)
+post({ type: "sessionTagsLoaded", state: { tags: [], sessions: {} } })
+await settle()
 
 // hovering a row moves the active highlight there
 hover("ses-three")
