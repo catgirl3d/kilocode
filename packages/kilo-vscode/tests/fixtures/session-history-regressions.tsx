@@ -95,6 +95,7 @@ const source: SessionInfo[] = [
   { id: childID, title: "Tagged child", parentID: plainID, createdAt: now, updatedAt: now },
 ]
 const sourceBefore = structuredClone(source)
+const [sourceSessions, setSourceSessions] = createSignal<SessionInfo[]>(source)
 const [scope, setScope] = createSignal<ReadonlySet<string>>(new Set([favoriteID, plainID, childID]))
 const base = mockSessionValue({ id: "not-in-history" })
 let loadMoreCalls = 0
@@ -102,7 +103,7 @@ const session = {
   ...base,
   currentSessionID: () => undefined,
   currentSession: () => undefined,
-  sessions: () => source,
+  sessions: sourceSessions,
   loadMoreSessions: () => {
     loadMoreCalls++
   },
@@ -217,6 +218,14 @@ assert.equal(
   "the favorite root uses the favorites group",
 )
 
+// a scoped equal refresh is a no-op for the rendered rows
+const favoriteRow = row(favoriteID)
+const plainRow = row(plainID)
+setSourceSessions(source.map((entry) => ({ ...entry })))
+await settle()
+assert.equal(row(favoriteID), favoriteRow, "an equal scoped session refresh keeps the exact favorite row")
+assert.equal(row(plainID), plainRow, "an equal scoped session refresh keeps the exact plain row")
+
 const beforeActions = actions().length
 favoriteButton(favoriteID).click()
 favoriteButton(favoriteID).click()
@@ -290,6 +299,16 @@ await settle()
 tag("Favorite tag").click()
 await settle()
 assert.deepEqual([...ids()].sort(), [favoriteID], "the chosen tag is active before a scope change")
+const activeRow = row(favoriteID)
+setSourceSessions((current) => current.map((entry) => ({ ...entry })))
+await settle()
+assert.equal(row(favoriteID), activeRow, "an equal refresh under an active tag filter keeps the exact row")
+assert.equal(
+  tag("Favorite tag").getAttribute("aria-pressed"),
+  "true",
+  "an equal refresh keeps the selected tag filter active",
+)
+assert.deepEqual([...ids()].sort(), [favoriteID], "an equal refresh keeps the active tag filter results")
 
 const beforeScopeChangeLoad = loadMoreCalls
 setScope(new Set([plainID]))

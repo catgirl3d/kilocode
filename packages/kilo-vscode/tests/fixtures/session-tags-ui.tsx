@@ -512,6 +512,30 @@ assert.deepEqual(
   ["ses-home", "ses-tagged"],
   "one selected tag keeps only sessions assigned to it",
 )
+const urgentHome = item("ses-home")
+const urgentTagged = item("ses-tagged")
+setSessions((current) => current.map((entry) => ({ ...entry })))
+await settle()
+assert.equal(
+  item("ses-home"),
+  urgentHome,
+  "an active tag filter keeps the exact matching row node across an equal session refresh",
+)
+assert.equal(
+  item("ses-tagged"),
+  urgentTagged,
+  "an active tag filter keeps every matching row node across an equal session refresh",
+)
+assert.equal(
+  filterTag("Urgent").getAttribute("aria-pressed"),
+  "true",
+  "an equal session refresh keeps the selected tag filter active",
+)
+assert.deepEqual(
+  groupItems("history").flat(),
+  ["ses-home", "ses-tagged"],
+  "an equal session refresh keeps the active tag filter results",
+)
 filterTag("Review").click()
 await settle()
 assert.deepEqual(groupItems("history").flat(), ["ses-home", "ses-tagged"], "multiple selected tags use OR semantics")
@@ -1135,6 +1159,11 @@ assert.equal(
   "Green",
   "the editor applies the fresh host snapshot",
 )
+assert.equal(
+  filterTag("Urgent").style.getPropertyValue("--session-tag-color"),
+  "#2eb872",
+  "a color-only tag snapshot updates the filter chip color",
+)
 assert.equal(selected.length, count, "opening tag management does not select the session")
 assert.deepEqual(renamed, [], "opening tag management does not rename the session")
 assert.equal(item("ses-plain")?.querySelector('[data-slot="list-item-title"]')?.textContent, before)
@@ -1632,6 +1661,26 @@ pinnedSearch.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "
 pinnedSearch.dispatchEvent(new Event("change", { bubbles: true }))
 await settle()
 assert.deepEqual(pinnedNames(), ["Beta", "Delta", "Alpha"], "search results keep the initially assigned tags first")
+
+assert.equal(
+  item("ses-plain")?.querySelector('[data-slot="list-item-title"]')?.textContent,
+  "Check release notes",
+  "the title-only refresh starts from the original title",
+)
+setSessions((current) =>
+  current.map((entry) => (entry.id === "ses-plain" ? { ...entry, title: "Renamed release notes" } : entry)),
+)
+await settle()
+assert.equal(
+  item("ses-plain")?.querySelector('[data-slot="list-item-title"]')?.textContent,
+  "Renamed release notes",
+  "a title-only session refresh renders the new title",
+)
+filter("Renamed release notes")
+await settle()
+assert.deepEqual(groupItems("history").flat(), ["ses-plain"], "a title-only session refresh updates local search")
+filter("")
+await settle()
 
 const snapshot = tags.state()
 const pending = tags.mutate({ type: "assign", sessionID: "ses-home", id: "tag-review", assigned: false })
