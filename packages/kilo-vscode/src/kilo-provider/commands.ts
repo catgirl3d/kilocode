@@ -23,12 +23,13 @@ export async function loadCommands(client: KiloClient, dir: string): Promise<unk
           hints: [],
         }
       }
+      // The CLI encodes unset fields as null; the webview reads any non-undefined variant as a choice.
       return {
         name: cmd.name,
         description: cmd.description,
-        agent: cmd.agent,
-        model: cmd.model,
-        variant: cmd.variant,
+        agent: cmd.agent ?? undefined,
+        model: cmd.model ?? undefined,
+        variant: cmd.variant ?? undefined,
         source: cmd.source,
         hints: cmd.hints,
       }
