@@ -114,3 +114,4 @@
 - Deliver the memory core at session start in full: the newest session digest plus all project decisions and constraints are injected untruncated, routing rows that were shortened are marked `content=partial` with a readable `memory_id`, and recall response budgets increase to match.
 - Show recalled memory as structured rows in the chat badge tooltip — a muted kind label with the record key and the item text clamped to two lines with an ellipsis — and drop the raw mid-word snippet from the badge line.
 - Keep the remembered reasoning effort when reopening a session, starting a new chat, or reconnecting instead of resetting to Default.
+- Keep the selected reasoning effort when running a workflow slash command instead of switching the session to Default.
