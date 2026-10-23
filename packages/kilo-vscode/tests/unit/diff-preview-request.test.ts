@@ -193,11 +193,21 @@ const SCRIPT = `
 
 describe("diff preview detail requests", () => {
   it("requests detail when summarized diffs are present on first render", () => {
-    const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", SCRIPT], {
-      cwd: WEBVIEW,
-      stdout: "pipe",
-      stderr: "pipe",
-    })
+    const result = Bun.spawnSync(
+      [
+        "bun",
+        "--preload",
+        path.resolve(import.meta.dir, "../setup/worker-url.ts"),
+        "--conditions=browser",
+        "-e",
+        SCRIPT,
+      ],
+      {
+        cwd: WEBVIEW,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
     const output = result.stdout.toString() + result.stderr.toString()
     const logic = output.indexOf(FAIL)
 
