@@ -21,6 +21,7 @@ function build() { // kilocode_change - [fork] build the shared event payload sc
   return [
     ...registry
       .entries()
+      .filter(([type]) => type !== "server.instance.disposed") // kilocode_change - [fork] explicit InstanceDisposed covers the HTTP unions
       .map(([type, def]) =>
         Schema.Struct({
           id: Schema.String,
