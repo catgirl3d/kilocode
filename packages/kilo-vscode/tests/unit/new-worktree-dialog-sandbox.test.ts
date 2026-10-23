@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
-import { join } from "node:path"
+import path, { join } from "node:path"
 
-const path = join(__dirname, "..", "..", "webview-ui", "agent-manager", "NewWorktreeDialog.tsx")
+const dialogPath = join(__dirname, "..", "..", "webview-ui", "agent-manager", "NewWorktreeDialog.tsx")
 const providerPath = join(__dirname, "..", "..", "src", "KiloProvider.ts")
-const src = readFileSync(path, "utf8")
+const src = readFileSync(dialogPath, "utf8")
 const provider = readFileSync(providerPath, "utf8")
 
 describe("NewWorktreeDialog sandbox toggle", () => {
@@ -143,11 +143,21 @@ function check(code: string) {
       }
     })
   `
-  const child = Bun.spawnSync([process.execPath, "--conditions=browser", "-e", script], {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      "--preload",
+      path.resolve(import.meta.dir, "../setup/worker-url.ts"),
+      "--conditions=browser",
+      "-e",
+      script,
+    ],
+    {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  )
   expect(child.exitCode, child.stdout.toString() + child.stderr.toString()).toBe(0)
 }
 
