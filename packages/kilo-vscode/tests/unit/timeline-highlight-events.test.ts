@@ -36,11 +36,21 @@ const SCRIPT = `
 
 describe("timeline highlight events", () => {
   it("delivers a highlight once and removes its listener", () => {
-    const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", SCRIPT], {
-      cwd: WEBVIEW,
-      stdout: "pipe",
-      stderr: "pipe",
-    })
+    const result = Bun.spawnSync(
+      [
+        "bun",
+        "--preload",
+        path.resolve(import.meta.dir, "../setup/worker-url.ts"),
+        "--conditions=browser",
+        "-e",
+        SCRIPT,
+      ],
+      {
+        cwd: WEBVIEW,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
     const output = result.stdout.toString() + result.stderr.toString()
 
     if (output.includes(PASS)) return
