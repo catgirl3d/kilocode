@@ -8,6 +8,8 @@ describe("task tool index identity", () => {
     const result = Bun.spawnSync(
       [
         "bun",
+        "--preload",
+        path.resolve(import.meta.dir, "../setup/worker-url.ts"),
         "--conditions=browser",
         "-e",
         `
