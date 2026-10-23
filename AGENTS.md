@@ -245,6 +245,9 @@ This repository is a personal fork of Kilo Code (`upstream/main`).
 - **Fork Changelog & Changesets**:
   - Every custom feature, enhancement, or fix in this fork MUST be documented in `CHANGELOG-FORK.md`.
   - In addition, user-facing changes STILL require a changeset file in `.changeset/<slug>.md` (e.g. `"kilo-code": patch` or `minor`) describing the change from the user's perspective in imperative mood.
+- **Generated SDK artifacts**:
+  - Never commit order-only or reordering-only churn in `packages/sdk/openapi.json` or `packages/sdk/js/src/**/gen/`. After `./script/generate.ts`, inspect the generated diff; if it only reorders members or types, restore those files instead of committing them.
+  - Real generated changes belong to the feature commit that owns the source change, never to a separate generated-SDK tail commit.
 - **Change Annotation Rules by Location**:
   - **Exempt Files & Folders (NEVER Add Markers)**:
     - All test files and fixtures (`*.test.ts`, `*.spec.ts`, `test/`, `tests/`, `fixture/`, `__snapshots__/`), Markdown docs (`*.md`), JSON/YAML configs, and Storybook stories are **completely exempt** from all markers — both for newly created files and for edits in existing upstream files. Never put `fork_change` or `kilocode_change` comments inside test files.
