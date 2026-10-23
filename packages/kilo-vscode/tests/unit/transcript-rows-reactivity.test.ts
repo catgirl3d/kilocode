@@ -33,11 +33,21 @@ const SCRIPT = `
 
 describe("transcript rows reactivity", () => {
   it("invalidates a memo when a stashed synthetic prefix is promoted", () => {
-    const result = Bun.spawnSync([process.execPath, "--conditions=browser", "-e", SCRIPT], {
-      cwd: WEBVIEW,
-      stdout: "pipe",
-      stderr: "pipe",
-    })
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        "--preload",
+        path.resolve(import.meta.dir, "../setup/worker-url.ts"),
+        "--conditions=browser",
+        "-e",
+        SCRIPT,
+      ],
+      {
+        cwd: WEBVIEW,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    )
     const output = result.stdout.toString() + result.stderr.toString()
 
     if (result.exitCode === 0 && output.includes(PASS)) return

@@ -7,6 +7,8 @@ describe("agent-manager webview diff scope descriptors", () => {
     const child = Bun.spawnSync(
       [
         process.execPath,
+        "--preload",
+        path.resolve(import.meta.dir, "../setup/worker-url.ts"),
         "--conditions=browser",
         "-e",
         `
