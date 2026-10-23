@@ -17,7 +17,10 @@ function storage(value: Record<string, unknown> = {}) {
 describe("worktree mention recency", () => {
   it("tracks real selection changes and project-scoped session metadata", () => {
     const file = path.join(import.meta.dir, "../fixtures/worktree-references.ts")
-    const child = Bun.spawnSync(["bun", "--conditions=browser", file], { stdout: "pipe", stderr: "pipe" })
+    const child = Bun.spawnSync(
+      ["bun", "--preload", path.resolve(import.meta.dir, "../setup/worker-url.ts"), "--conditions=browser", file],
+      { stdout: "pipe", stderr: "pipe" },
+    )
     expect(child.exitCode, child.stdout.toString() + child.stderr.toString()).toBe(0)
   })
 
