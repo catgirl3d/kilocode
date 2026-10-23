@@ -97,12 +97,22 @@ function check(code: string) {
     }
     ${code}
   `
-  const child = Bun.spawnSync([process.execPath, "--conditions=browser", "-e", script], {
-    cwd: root,
-    stdout: "pipe",
-    stderr: "pipe",
-    windowsHide: true,
-  })
+  const child = Bun.spawnSync(
+    [
+      process.execPath,
+      "--preload",
+      path.resolve(import.meta.dir, "../setup/worker-url.ts"),
+      "--conditions=browser",
+      "-e",
+      script,
+    ],
+    {
+      cwd: root,
+      stdout: "pipe",
+      stderr: "pipe",
+      windowsHide: true,
+    },
+  )
   expect(child.exitCode, child.stdout.toString() + child.stderr.toString()).toBe(0)
 }
 
