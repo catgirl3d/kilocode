@@ -30069,9 +30069,6 @@
       "Event": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/EventServerInstanceDisposed"
-          },
-          {
             "$ref": "#/components/schemas/EventSessionNetworkAsked"
           },
           {
@@ -33211,9 +33208,6 @@
           },
           "payload": {
             "anyOf": [
-              {
-                "$ref": "#/components/schemas/EventServerInstanceDisposed"
-              },
               {
                 "$ref": "#/components/schemas/EventSessionNetworkAsked"
               },
@@ -43679,30 +43673,6 @@
         "required": ["directory"],
         "additionalProperties": false
       },
-      "EventServerInstanceDisposed": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["server.instance.disposed"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "directory": {
-                "type": "string"
-              }
-            },
-            "required": ["directory"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
       "EventSessionNetworkAsked": {
         "type": "object",
         "properties": {
@@ -48724,6 +48694,30 @@
               }
             },
             "required": ["providerID", "state"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventServerInstanceDisposed": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["server.instance.disposed"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "directory": {
+                "type": "string"
+              }
+            },
+            "required": ["directory"],
             "additionalProperties": false
           }
         },

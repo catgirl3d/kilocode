@@ -5,7 +5,6 @@ export type ClientOptions = {
 }
 
 export type Event =
-  | EventServerInstanceDisposed
   | EventSessionNetworkAsked
   | EventSessionNetworkReplied
   | EventSessionNetworkRejected
@@ -126,6 +125,7 @@ export type Event =
   | EventSessionDrainInterrupted
   | EventSessionWakeup
   | EventSessionHostAvailability
+  | EventServerInstanceDisposed
 
 export type QuestionReplied = {
   sessionID: string
@@ -1056,7 +1056,6 @@ export type GlobalEvent = {
   project?: string
   workspace?: string
   payload:
-    | EventServerInstanceDisposed
     | EventSessionNetworkAsked
     | EventSessionNetworkReplied
     | EventSessionNetworkRejected
@@ -1177,6 +1176,7 @@ export type GlobalEvent = {
     | EventSessionDrainInterrupted
     | EventSessionWakeup
     | EventSessionHostAvailability
+    | EventServerInstanceDisposed
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
     | SyncEventSessionDeleted
@@ -4509,14 +4509,6 @@ export type MoveSessionDestination = {
   directory: string
 }
 
-export type EventServerInstanceDisposed = {
-  id: string
-  type: "server.instance.disposed"
-  properties: {
-    directory: string
-  }
-}
-
 export type EventSessionNetworkAsked = {
   id: string
   type: "session.network.asked"
@@ -5958,6 +5950,14 @@ export type EventSessionHostAvailability = {
     sessionID?: string
     state: "available" | "unavailable"
     reason?: string
+  }
+}
+
+export type EventServerInstanceDisposed = {
+  id: string
+  type: "server.instance.disposed"
+  properties: {
+    directory: string
   }
 }
 
