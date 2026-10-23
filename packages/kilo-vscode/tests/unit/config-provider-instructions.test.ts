@@ -12,6 +12,7 @@ const SCRIPT = `
   globalThis.window = window
   globalThis.document = window.document
   globalThis.Node = window.Node
+  globalThis.Element = window.Element
 
   const sent = []
   globalThis.acquireVsCodeApi = () => ({
@@ -135,12 +136,22 @@ const SCRIPT = `
 
 describe("ConfigProvider scoped config persistence", () => {
   it("posts scoped updates with bindings and MCP unset paths", () => {
-    const result = Bun.spawnSync(["bun", "--conditions=browser", "-e", SCRIPT], {
-      cwd: WEBVIEW,
-      stdout: "pipe",
-      stderr: "pipe",
-      windowsHide: true,
-    })
+    const result = Bun.spawnSync(
+      [
+        "bun",
+        "--preload",
+        path.resolve(import.meta.dir, "../setup/worker-url.ts"),
+        "--conditions=browser",
+        "-e",
+        SCRIPT,
+      ],
+      {
+        cwd: WEBVIEW,
+        stdout: "pipe",
+        stderr: "pipe",
+        windowsHide: true,
+      },
+    )
     const output = result.stdout.toString() + result.stderr.toString()
 
     if (output.includes(PASS)) return
