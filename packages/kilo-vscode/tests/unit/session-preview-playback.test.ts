@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AssistantMessage, Part } from "@kilocode/sdk/v2"
 import { previewDuration, previewFrame } from "../../webview-ui/src/components/settings/session-preview-playback"
@@ -147,6 +148,8 @@ describe("session preview playback", () => {
     const child = Bun.spawnSync(
       [
         process.execPath,
+        "--preload",
+        path.resolve(import.meta.dir, "../setup/worker-url.ts"),
         "--conditions=browser",
         "-e",
         `import { createStore, reconcile } from "solid-js/store";
