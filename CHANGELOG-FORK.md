@@ -49,6 +49,7 @@
 
 ### Fixes & Enhancements
 
+- Keep the session history list from jumping back to the current session when live data refreshes update visible rows without changing the current session.
 - Stop the session history list from flickering and lagging on hover after deleting several sessions: refreshes that leave every visible row and tag filter unchanged (host `sessionDeleted` echoes, tag and favorite snapshots pruning deleted sessions) no longer rebuild the whole list, and bulk deletion applies its optimistic removals in one batch.
 - Stop Agent Manager and the CLI (`kilo worktree remove`, the TUI workspaces dialog, Kilo Console, the worktree API) from emptying the targets of Windows junctions (for example a `.vscode` or `node_modules` junction into the main checkout) when they run `git worktree remove --force` or discard a pooled worktree slot: junctions and symlinks inside the worktree are unlinked first, and git is skipped if that fails. The shared helper lives in `packages/core/src/kilocode/unlink-links.ts`.
 - Start bulk session selection from a hover icon on the history row or its context menu (both check that row) instead of a permanent Select button, so the search row and header stay uncluttered.
