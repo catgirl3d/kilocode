@@ -60,8 +60,10 @@ const items: SessionInfo[] = [
 ]
 
 const [sessions, setSessions] = createSignal(items)
+const [currentSessionID, setCurrentSessionID] = createSignal("ses-two")
 const session = {
   ...mockSessionValue({ id: "ses-two" }),
+  currentSessionID,
   sessions,
 }
 
@@ -85,6 +87,11 @@ async function settle() {
   await Promise.resolve()
   await new Promise((resolve) => setTimeout(resolve, 0))
   await Promise.resolve()
+}
+
+async function flushFrame() {
+  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
+  await settle()
 }
 
 function item(id: string) {
@@ -136,7 +143,21 @@ function activity(seq: number) {
 
 // initial state: the current row is active even though it is not the first row
 await settle()
+await flushFrame()
 assert.equal(active("ses-two"), "true", "the current row starts active (current is not the first row)")
+
+const scroll = root.querySelector<HTMLElement>('[data-slot="list-scroll"]')
+assert(scroll, "the list scroll container is mounted")
+let writes = 0
+let scrollTop = scroll.scrollTop
+Object.defineProperty(scroll, "scrollTop", {
+  configurable: true,
+  get: () => scrollTop,
+  set: (value: number) => {
+    writes++
+    scrollTop = value
+  },
+})
 
 // deletion echoes (sessionDeleted, tag/favorite snapshots) that leave every visible row unchanged keep the rendered rows
 const tag = (name: string) => ({ id: "tag-delete", name, color: "red" })
@@ -171,15 +192,27 @@ await settle()
 // hovering a row moves the active highlight there
 hover("ses-three")
 await settle()
+await flushFrame()
 assert.equal(active("ses-three"), "true", "hovering moves the active row")
 assert.equal(active("ses-two"), "false", "hovering clears the current row")
+writes = 0
 
 // a live data refresh updates the DOM without stealing the hovered highlight
 activity(1)
 await settle()
+await flushFrame()
 assert(root.textContent.includes("Alpha session 1"), "the live refresh rendered updated data")
 assert.equal(active("ses-three"), "true", "a data refresh keeps the hovered row active")
 assert.equal(active("ses-one"), "false", "a data refresh does not move the highlight to the first row")
+assert.equal(writes, 0, "a data refresh with the same current session does not recenter the list")
+
+// changing the current session identity still recenters the list
+writes = 0
+setCurrentSessionID("ses-four")
+await settle()
+await flushFrame()
+assert(writes > 0, "changing the current session recenters the list")
+assert.equal(item("ses-four").getAttribute("data-selected"), "true", "the new current row is selected")
 
 // a filter change resets to the first result even when the previously active row survives
 filter("session")

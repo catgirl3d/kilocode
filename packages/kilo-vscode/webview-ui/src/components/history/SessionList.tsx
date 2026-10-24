@@ -202,12 +202,16 @@ const SessionList: Component<SessionListProps> = (props) => {
     session.loadSessions()
   })
 
-  // fork_change start - current selection must use the derived List item
-  const currentSession = (): (SessionInfo & { tags: string; tagIds: string[]; favorite: boolean }) | undefined => {
-    // fork_change end
-    const id = session.currentSessionID()
-    return items().find((s) => s.id === id)
-  }
+  // fork_change start - keep current List identity stable across row refreshes
+  const current = createMemo(
+    () => {
+      const id = session.currentSessionID()
+      return items().find((s) => s.id === id)
+    },
+    undefined,
+    { equals: (a, b) => a?.id === b?.id },
+  )
+  // fork_change end
 
   function startRename(s: SessionInfo) {
     setRenamingId(s.id)
@@ -485,7 +489,9 @@ const SessionList: Component<SessionListProps> = (props) => {
         items={items()}
         key={(s) => s.id}
         filterKeys={["title", "tags"]} /* fork_change - include session tags in local search and rows */
-        current={currentSession()}
+        /* fork_change start - use the id-stable current memo */
+        current={current()}
+        /* fork_change end */
         onMove={announce}
         onSelect={(s) => {
           // fork_change start - multi-select mode
