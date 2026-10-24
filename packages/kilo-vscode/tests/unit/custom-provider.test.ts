@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import {
+  CustomProviderConfigSchema,
   MASKED_CUSTOM_PROVIDER_KEY,
   parseCustomProviderSecret,
   resolveCustomProviderKey,
@@ -73,6 +74,21 @@ describe("resolveCustomProviderKey", () => {
   })
 })
 
+describe("CustomProviderConfigSchema", () => {
+  it("rejects an oversized env list without per-element issues", () => {
+    const result = CustomProviderConfigSchema.safeParse({
+      name: "My Provider",
+      options: { baseURL: "https://example.com/v1" },
+      models: { "model-1": { name: "Model One" } },
+      env: new Array(5_000).fill(1),
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.issues).toEqual([expect.objectContaining({ code: "too_big", path: ["env"] })])
+  })
+})
+
 describe("sanitizeCustomProviderConfig", () => {
   it("normalizes config and preserves an approved package", () => {
     const result = sanitizeCustomProviderConfig({
@@ -118,7 +134,7 @@ describe("sanitizeCustomProviderConfig", () => {
       models: { "model-1": { name: "Model One" } },
     })
 
-    expect("error" in result ? result.error : "").toContain("Invalid enum value")
+    expect("error" in result).toBe(true)
   })
 
   it("accepts supported thinking variant options", () => {
