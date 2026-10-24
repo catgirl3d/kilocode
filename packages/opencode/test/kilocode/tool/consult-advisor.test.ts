@@ -606,12 +606,14 @@ itFiles.live("returns preparation errors without partial attachments and release
     fileRequested.length = 0
     const dir = yield* tmpdirScoped()
     yield* Effect.promise(() => writeFile(path.join(dir, "short.txt"), "one\ntwo", "utf8"))
+    yield* Effect.promise(() => writeFile(path.join(dir, "empty.txt"), "", "utf8"))
     yield* Effect.promise(() => mkdir(path.join(dir, "folder")))
     yield* Effect.promise(() => writeFile(path.join(dir, "binary.bin"), Buffer.from([0, 1, 2, 3])))
     const tool = yield* Tool.init(yield* ConsultAdvisorTool)
     const deny: Tool.Context["ask"] = () => Effect.die(new Error("read permission denied"))
     const cases: {
       path: string
+      start?: number
       end?: number
       ask?: Tool.Context["ask"]
       detail?: string
@@ -620,7 +622,8 @@ itFiles.live("returns preparation errors without partial attachments and release
       { path: "missing.txt" },
       { path: "folder" },
       { path: "binary.bin" },
-      { path: "short.txt", end: 3, detail: "out of range" },
+      { path: "short.txt", start: 3, end: 3, detail: "beyond EOF" },
+      { path: "empty.txt", detail: "file has 0 lines" },
       { path: "short.txt", ask: deny },
       {
         path: "short.txt",
@@ -635,7 +638,7 @@ itFiles.live("returns preparation errors without partial attachments and release
     for (const item of cases) {
       const result = yield* provideInstance(dir)(
         tool.execute(
-          { files: item.files ?? [{ path: item.path, start: 1, end: item.end ?? 1 }] },
+          { files: item.files ?? [{ path: item.path, start: item.start ?? 1, end: item.end ?? 1 }] },
           context("ses_prepare_fail", undefined, undefined, undefined, undefined, item.ask),
         ),
       )
@@ -650,6 +653,82 @@ itFiles.live("returns preparation errors without partial attachments and release
     )
     expect(valid.title).toBe("Advisor completed")
     expect(fileRequested).toHaveLength(1)
+  }),
+)
+
+itFiles.live("clamps a requested end past EOF and reports the adjustment to the advisor and caller", () =>
+  Effect.gen(function* () {
+    fileRequested.length = 0
+    const dir = yield* tmpdirScoped()
+    const file = path.join(dir, "short.txt")
+    yield* Effect.promise(() => writeFile(file, "one\r\ntwo", "utf8"))
+    const canonical = yield* Effect.promise(() => realpath(file))
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const result = yield* provideInstance(dir)(
+      tool.execute({ files: [{ path: "short.txt", start: 1, end: 4 }] }, context("ses_clamped_range")),
+    )
+
+    expect(result.title).toBe("Advisor completed")
+    expect(fileRequested).toHaveLength(1)
+    const content = fileRequested[0]?.messages[0]?.content
+    if (typeof content !== "string") throw new Error("expected text advisor content")
+    expect(content).toContain(`File: ${canonical}`)
+    expect(content).toContain("Lines: 1-2")
+    expect(content).toContain("Requested lines: 1-4")
+    expect(content).toContain("Range warning: end clamped to EOF; file has 2 lines.")
+    expect(content).toContain("1: one")
+    expect(content).toContain("2: two")
+    expect(result.output).toContain("Context warnings:")
+    expect(result.output).toContain("requested lines 1-4; supplied 1-2")
+  }),
+)
+
+itFiles.live("keeps other attachments when one file range is clamped", () =>
+  Effect.gen(function* () {
+    fileRequested.length = 0
+    const dir = yield* tmpdirScoped()
+    yield* Effect.promise(() => writeFile(path.join(dir, "short.txt"), "one\ntwo", "utf8"))
+    yield* Effect.promise(() => writeFile(path.join(dir, "other.txt"), "alpha\nbeta", "utf8"))
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const result = yield* provideInstance(dir)(
+      tool.execute(
+        {
+          files: [
+            { path: "short.txt", start: 2, end: 5 },
+            { path: "other.txt", start: 2, end: 2 },
+          ],
+        },
+        context("ses_clamped_with_other"),
+      ),
+    )
+
+    expect(result.title).toBe("Advisor completed")
+    expect(fileRequested).toHaveLength(1)
+    const content = fileRequested[0]?.messages[0]?.content
+    if (typeof content !== "string") throw new Error("expected text advisor content")
+    expect(content).toContain("2: two")
+    expect(content).toContain("2: beta")
+    expect(content.match(/Range warning:/g)).toHaveLength(1)
+  }),
+)
+
+itFiles.live("does not warn when the requested range ends exactly at EOF", () =>
+  Effect.gen(function* () {
+    fileRequested.length = 0
+    const dir = yield* tmpdirScoped()
+    yield* Effect.promise(() => writeFile(path.join(dir, "short.txt"), "one\ntwo", "utf8"))
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const result = yield* provideInstance(dir)(
+      tool.execute({ files: [{ path: "short.txt", start: 1, end: 2 }] }, context("ses_exact_eof")),
+    )
+
+    expect(result.title).toBe("Advisor completed")
+    const content = fileRequested[0]?.messages[0]?.content
+    if (typeof content !== "string") throw new Error("expected text advisor content")
+    expect(content).toContain("Lines: 1-2")
+    expect(content).not.toContain("Requested lines")
+    expect(content).not.toContain("Range warning")
+    expect(result.output).not.toContain("Context warnings:")
   }),
 )
 
