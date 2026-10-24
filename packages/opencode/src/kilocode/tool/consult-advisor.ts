@@ -250,17 +250,19 @@ async function collect(
         }
 
         if (chunk[stop] === "\r") skipLF = true
-        if (finish()) return
+        if (finish()) return range.end
         offset = stop + 1
       }
     }
 
-    if (hasData && finish()) return
-    if (line <= range.end) {
+    if (hasData && finish()) return range.end
+    const end = line - 1
+    if (end < range.start) {
       throw new Error(
-        `Requested lines ${range.start}-${range.end} are out of range for ${requested}; file has ${line - 1} lines.`,
+        `Requested lines ${range.start}-${range.end} are beyond EOF for ${requested}; file has ${end} lines.`,
       )
     }
+    return end
   } finally {
     input.destroy()
   }
@@ -283,10 +285,22 @@ function excerpt(file: KiloReadObject.File, range: FileRange, limit: number, abo
         () => file.stream(combined),
         (next) => limited(file, next),
         async (stream) => {
+          const body = budget(limit)
+          const end = await collect(stream, range, body.add, combined, file.requested)
           const attempt = budget(limit)
-          attempt.add(`File: ${file.target}\nLines: ${range.start}-${range.end}\n`)
-          await collect(stream, range, attempt.add, combined, file.requested)
-          return attempt.text()
+          attempt.add(`File: ${file.target}\nLines: ${range.start}-${end}\n`)
+          if (end < range.end) {
+            attempt.add(`Requested lines: ${range.start}-${range.end}\n`)
+            attempt.add(`Range warning: end clamped to EOF; file has ${end} lines.\n`)
+          }
+          attempt.add(body.text())
+          return {
+            text: attempt.text(),
+            warning:
+              end < range.end
+                ? `${file.target}: requested lines ${range.start}-${range.end}; supplied ${range.start}-${end}; file has ${end} lines (end clamped to EOF).`
+                : undefined,
+          }
         },
         combined,
       )
@@ -318,7 +332,9 @@ function missing(fs: Pick<FSUtil.Interface, "realPath">, requested: string, work
 
 function prepare(params: Params, ctx: Tool.Context, config: Config.Info) {
   const files = params.files ?? []
-  if (!params.materials && files.length === 0) return Effect.succeed(undefined as string | undefined)
+  if (!params.materials && files.length === 0) {
+    return Effect.succeed(undefined as { text: string; warnings: string[] } | undefined)
+  }
 
   return Effect.gen(function* () {
     const out = budget()
@@ -328,7 +344,7 @@ function prepare(params: Params, ctx: Tool.Context, config: Config.Info) {
       out.add("\n\n")
       out.add(params.materials)
     }
-    if (files.length === 0) return out.text()
+    if (files.length === 0) return { text: out.text(), warnings: [] }
 
     const instance = yield* InstanceState.context
     const service = yield* Effect.serviceOption(FSUtil.Service)
@@ -340,6 +356,7 @@ function prepare(params: Params, ctx: Tool.Context, config: Config.Info) {
       worktree: instance.worktree,
     })
     out.add("\n\nFile excerpts:")
+    const warnings: string[] = []
     for (const range of files) {
       let requested = path.resolve(instance.directory, range.path)
       if (process.platform === "win32") requested = FSUtil.normalizePath(requested)
@@ -379,9 +396,10 @@ function prepare(params: Params, ctx: Tool.Context, config: Config.Info) {
       if (!file) return yield* Effect.fail(new Error(`Not a regular file: ${requested}`))
       out.add("\n\n")
       const text = yield* KiloReadObject.use(file, (bound) => excerpt(bound, range, out.left(), ctx.abort))
-      out.add(text)
+      out.add(text.text)
+      if (text.warning) warnings.push(text.warning)
     }
-    return out.text()
+    return { text: out.text(), warnings }
   })
 }
 
@@ -527,6 +545,10 @@ export const ConsultAdvisorTool = Tool.define<
                 metadata: {},
               }
             }
+            const supplied = prepared.value
+            const notice = supplied?.warnings.length
+              ? `Context warnings:\n${supplied.warnings.map((item) => `- ${item}`).join("\n")}`
+              : undefined
             const body = [
               `Focus: ${focus}`,
               `Question: ${question}`,
@@ -534,7 +556,7 @@ export const ConsultAdvisorTool = Tool.define<
               "Recent conversation transcript:",
               transcript,
               ...(currentText ? ["Current assistant message (in progress):", clip(currentText)] : []),
-              ...(prepared.value ? [prepared.value] : []),
+              ...(supplied ? [supplied.text] : []),
             ].join("\n\n")
             // Each slot gets a fresh stream per attempt and its own retry policy state.
             const consult = (
@@ -598,17 +620,18 @@ export const ConsultAdvisorTool = Tool.define<
               }
               if (Exit.isFailure(exit)) {
                 yield* setTitle(FAILED_TITLE)
+                const failure = `Advisor consultation failed: ${detail(Cause.squash(exit.cause))}`
                 return {
                   title: FAILED_TITLE,
-                  output: `Advisor consultation failed: ${detail(Cause.squash(exit.cause))}`,
+                  output: notice ? `${notice}\n\n${failure}` : failure,
                   metadata: {},
                 }
               }
-              const output = exit.value.trim()
+              const output = exit.value.trim() || "The advisor returned no guidance."
               yield* setTitle(COMPLETED_TITLE)
               return {
                 title: COMPLETED_TITLE,
-                output: output || "The advisor returned no guidance.",
+                output: notice ? `${notice}\n\n${output}` : output,
                 metadata: { truncated: false },
               }
             }
@@ -650,18 +673,20 @@ export const ConsultAdvisorTool = Tool.define<
             }
             if (Exit.isFailure(runs)) {
               yield* setTitle(FAILED_TITLE)
+              const failure = `Advisor consultation failed: ${detail(Cause.squash(runs.cause))}`
               return {
                 title: FAILED_TITLE,
-                output: `Advisor consultation failed: ${detail(Cause.squash(runs.cause))}`,
+                output: notice ? `${notice}\n\n${failure}` : failure,
                 metadata: {},
               }
             }
             const ok = runs.value.some((item) => item.ok)
             const title = ok ? COMPLETED_TITLE : FAILED_TITLE
             yield* setTitle(title)
+            const output = runs.value.map((item) => item.text).join("\n\n")
             return {
               title,
-              output: runs.value.map((item) => item.text).join("\n\n"),
+              output: notice ? `${notice}\n\n${output}` : output,
               metadata: ok ? { truncated: false } : {},
             }
           }).pipe(Effect.ensuring(Effect.sync(() => release(ctx.sessionID))))
