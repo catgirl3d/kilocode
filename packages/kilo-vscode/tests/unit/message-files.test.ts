@@ -24,6 +24,19 @@ describe("parseMessageFiles", () => {
     expect(parseMessageFiles([{ mime: "text/plain", url: "https://example.com/file.txt" }])).toBeUndefined()
   })
 
+  it("drops the whole list when any attachment is invalid", () => {
+    expect(
+      parseMessageFiles([
+        { mime: "text/plain", url: "data:text/plain;charset=utf-8,ok" },
+        { mime: "text/plain", url: "https://example.com/file.txt" },
+      ]),
+    ).toBeUndefined()
+  })
+
+  it("accepts an absent list", () => {
+    expect(parseMessageFiles(undefined)).toBeUndefined()
+  })
+
   it("accepts past-chat session attachments", () => {
     const files = parseMessageFiles([
       {
