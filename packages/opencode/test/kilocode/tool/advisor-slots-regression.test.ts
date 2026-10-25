@@ -1,10 +1,11 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LLMEvent } from "@opencode-ai/llm"
 import { Cause, Effect, Exit, Layer, Stream } from "effect"
 import { Agent } from "../../../src/agent/agent"
 import { Config } from "../../../src/config/config"
 import { ConsultAdvisorTool } from "../../../src/kilocode/tool/consult-advisor"
+import { select } from "../../../src/kilocode/tool/advisor-slots"
 import { Provider } from "../../../src/provider/provider"
 import { LLM } from "../../../src/session/llm"
 import { MessageID, SessionID } from "../../../src/session/schema"
@@ -77,6 +78,49 @@ describe("advisor slot selection bounds", () => {
       }
 
       expect(state.streams).toEqual([])
+    }),
+  )
+})
+
+describe("advisor slot input normalization", () => {
+  const security = { name: "security", model: "prov/sec" }
+  const fast = { name: "fast", model: "prov/fast" }
+  const slots = [security, fast]
+
+  test("accepts a JSON-encoded array, a single name, and the all sentinel", () => {
+    expect(select(slots, '["security"]')).toEqual({ slots: [security] })
+    expect(select(slots, "security")).toEqual({ slots: [security] })
+    expect(select(slots, '["security","fast"]')).toEqual({ slots: [security, fast] })
+    expect(select(slots, ["all"])).toEqual({ slots })
+    expect(select(slots, "all")).toEqual({ slots })
+    expect(select(slots, '["missing"]')).toEqual({ unknown: "missing" })
+  })
+
+  it.effect("accepts a JSON-encoded advisors array and a single advisor name", () =>
+    Effect.gen(function* () {
+      configure({ advisors: [{ name: "security", model: "prov/sec" }] })
+      const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+
+      for (const [index, advisors] of ['["security"]', "security", "all", '["all"]'].entries()) {
+        state.streams.length = 0
+        const result = yield* tool.execute({ advisors }, context(`ses_regression_normalized_${index}`))
+        expect(result.title).toBe("Advisor completed")
+        expect(state.streams).toHaveLength(1)
+      }
+    }),
+  )
+
+  it.effect("exposes an array-only advisors schema to the model", () =>
+    Effect.gen(function* () {
+      configure({ advisors: [{ name: "security", model: "prov/sec" }] })
+      const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+      const advisors = tool.jsonSchema?.properties?.["advisors"] as unknown as
+        | { type?: string; anyOf?: unknown; items?: { type?: string } }
+        | undefined
+
+      expect(advisors?.type).toBe("array")
+      expect(advisors?.items?.type).toBe("string")
+      expect(advisors?.anyOf).toBeUndefined()
     }),
   )
 })

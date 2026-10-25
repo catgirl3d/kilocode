@@ -629,7 +629,7 @@ describe("kilocode tool registry indexing", () => {
     const advisor = (cfg: Parameters<typeof KiloToolRegistry.extra>[1]) =>
       KiloToolRegistry.extra(tools, cfg, flags).find((tool) => tool.id === "consult_advisor")
     const header =
-      'Configured advisors (pass names in `advisors`, or "all"; without it the first one answers; each additional advisor is a separate model call):'
+      'Configured advisors (pass names as an array in `advisors`, or ["all"]; without it the first one answers; each additional advisor is a separate model call):'
 
     const slots = advisor({
       experimental: {
