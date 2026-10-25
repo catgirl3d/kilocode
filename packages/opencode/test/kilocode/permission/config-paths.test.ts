@@ -194,6 +194,95 @@ describe("ConfigProtection.isRequest", () => {
   })
 })
 
+describe("ConfigProtection.isRequest managed worktrees", () => {
+  const dirs = [".kilo", ".kilocode"] as const
+  const roots = ["kilo.json", "kilo.jsonc", "opencode.json", "opencode.jsonc", "AGENTS.md"]
+  const protectedFiles = [
+    ".kilo/command/foo.md",
+    ".kilocode/command/foo.md",
+    ".kilo/skills/my-skill/SKILL.md",
+    ".kilo/package-lock.json",
+  ]
+  const isProtected = (pattern: string) => ConfigProtection.isRequest({ permission: "edit", patterns: [pattern] })
+
+  for (const dir of dirs) {
+    test(`${dir}: source files inside a managed worktree are not configuration`, () => {
+      for (const pattern of [
+        `${dir}/worktrees/remove-default-server/client/src/stores/modeStatus.ts`,
+        `${dir}\\worktrees\\remove-default-server\\client\\src\\stores\\modeStatus.ts`,
+      ])
+        expect(isProtected(pattern)).toBe(false)
+    })
+
+    test(`${dir}: root config files inside a managed worktree stay protected`, () => {
+      for (const file of roots) expect(isProtected(`${dir}/worktrees/feature/${file}`)).toBe(true)
+    })
+
+    test(`${dir}: config paths inside a managed worktree stay protected`, () => {
+      for (const file of protectedFiles) expect(isProtected(`${dir}/worktrees/feature/${file}`)).toBe(true)
+    })
+
+    test(`${dir}: plan files stay exempt inside a managed worktree`, () => {
+      expect(isProtected(`${dir}/worktrees/feature/.kilo/plans/plan.md`)).toBe(false)
+    })
+
+    test(`${dir}: worktree container paths stay protected`, () => {
+      for (const pattern of [
+        `${dir}/worktrees`,
+        `${dir}/worktrees/`,
+        `${dir}/worktrees/feature`,
+        `${dir}/worktrees/feature/`,
+      ])
+        expect(isProtected(pattern)).toBe(true)
+    })
+
+    test(`${dir}: lookalike containers stay protected`, () => {
+      expect(isProtected(`${dir}/worktrees-old/feature/src/index.ts`)).toBe(true)
+    })
+
+    test(`${dir}: parent traversal cannot escape worktree protection`, () => {
+      expect(isProtected(`${dir}/worktrees/feature/../../command/foo.md`)).toBe(true)
+    })
+
+    test(`${dir}: nested worktree containers classify the innermost checkout`, () => {
+      expect(isProtected(`${dir}/worktrees/outer/.kilo/worktrees/inner/src/index.ts`)).toBe(false)
+      expect(isProtected(`${dir}/worktrees/outer/.kilo/worktrees/inner/kilo.json`)).toBe(true)
+    })
+
+    test(`${dir}: nested worktree containers inside config directories stay protected`, () => {
+      expect(isProtected(`${dir}/command/.kilo/worktrees/feature/src/index.ts`)).toBe(true)
+    })
+
+    test(`${dir}: worktree containers below a package keep the nested config rule`, () => {
+      expect(isProtected(`packages/app/${dir}/worktrees/feature/src/index.ts`)).toBe(true)
+    })
+  }
+
+  test("edit requests combine relative patterns with absolute metadata paths", async () => {
+    await using tmp = await tmpdir()
+    const root = tmp.path
+    const source = path.join(root, ".kilo", "worktrees", "feature", "client", "src", "index.ts")
+    const config = path.join(root, ".kilo", "worktrees", "feature", "kilo.json")
+    const request = (file: string) =>
+      ConfigProtection.isRequest({
+        permission: "edit",
+        patterns: [path.relative(root, file).replaceAll("\\", "/")],
+        metadata: { filepath: file, files: [{ filePath: file }] },
+      })
+    expect(request(source)).toBe(false)
+    expect(request(config)).toBe(true)
+  })
+
+  test("mixed source and config patterns stay protected", () => {
+    expect(
+      ConfigProtection.isRequest({
+        permission: "edit",
+        patterns: ["client/src/index.ts", ".kilo/worktrees/feature/kilo.json"],
+      }),
+    ).toBe(true)
+  })
+})
+
 describe("ConfigProtection.isGlobalSkillRequest", () => {
   const roots = [Global.Path.config, ...KilocodePaths.globalDirs()]
 
