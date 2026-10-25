@@ -16,6 +16,14 @@ export namespace ConfigProtection {
    */
   const EXCLUDED_SUBDIRS = ["plans/"]
 
+  // fork_change start
+  /**
+   * Subdirectory under CONFIG_DIRS that holds checkouts, not configuration.
+   * Contents are classified relative to the checkout root.
+   */
+  const WORKTREES = "worktrees/"
+  // fork_change end
+
   /**
    * Root-level config files that must be protected.
    * Matched only when the relative path has no directory component.
@@ -38,24 +46,48 @@ export namespace ConfigProtection {
     return EXCLUDED_SUBDIRS.some((sub) => remainder.startsWith(sub))
   }
 
+  // fork_change start
+  /**
+   * Managed git worktrees live under a config directory (e.g. `.kilo/worktrees/<name>`).
+   * A path inside one belongs to that checkout, not to the config directory, so classify
+   * its remainder instead. Fail closed for the container itself and for a missing remainder.
+   * Only a container at the start of the path qualifies: `packages/app/.kilo/worktrees/...`
+   * and `.kilo/command/.kilo/worktrees/...` keep their protection.
+   */
+  function checkout(normalized: string): string | undefined {
+    for (const dir of CONFIG_DIRS) {
+      const prefix = dir + WORKTREES
+      if (!normalized.startsWith(prefix)) continue
+      const rest = normalized.slice(prefix.length)
+      const end = rest.indexOf("/")
+      if (end <= 0 || end === rest.length - 1) return
+      return checkout(rest.slice(end + 1))
+    }
+    return normalized
+  }
+  // fork_change end
+
   /** Check if a project-relative path points to a config file or directory. */
   export function isRelative(pattern: string): boolean {
-    const normalized = normalize(pattern)
+    const inner = checkout(normalize(pattern)) // fork_change
+    if (inner === undefined) return true // fork_change
     for (const dir of CONFIG_DIRS) {
       const bare = dir.slice(0, -1) // e.g. ".kilo"
       // Match at root (e.g. ".kilo/foo") or nested (e.g. "packages/sub/.kilo/foo")
-      if (normalized === bare || normalized.endsWith("/" + bare)) return true
-      if (normalized.startsWith(dir)) {
-        if (excluded(normalized.slice(dir.length))) continue
+      if (inner === bare || inner.endsWith("/" + bare)) return true // fork_change
+      // fork_change start
+      if (inner.startsWith(dir)) {
+        if (excluded(inner.slice(dir.length))) continue
+        // fork_change end
         return true
       }
-      const nested = normalized.indexOf("/" + dir)
+      const nested = inner.indexOf("/" + dir) // fork_change
       if (nested !== -1) {
-        if (excluded(normalized.slice(nested + 1 + dir.length))) continue
+        if (excluded(inner.slice(nested + 1 + dir.length))) continue // fork_change
         return true
       }
     }
-    return CONFIG_ROOT_FILES.has(normalized)
+    return CONFIG_ROOT_FILES.has(inner) // fork_change
   }
 
   function keys(p: string): string[] {
