@@ -49,6 +49,7 @@
 
 ### Fixes & Enhancements
 
+- Let auto-approve edit source files inside managed worktrees under `.kilo/worktrees/<name>`: the checkout is classified as a separate project root, so its code no longer asks for permission while root config files, commands, and skills inside it still do. Post-edit config validation also stops flagging a worktree's `package.json` or `tsconfig.json` as invalid config.
 - Keep the session history list from jumping back to the current session when live data refreshes update visible rows without changing the current session.
 - Stop the session history list from flickering and lagging on hover after deleting several sessions: refreshes that leave every visible row and tag filter unchanged (host `sessionDeleted` echoes, tag and favorite snapshots pruning deleted sessions) no longer rebuild the whole list, and bulk deletion applies its optimistic removals in one batch.
 - Stop Agent Manager and the CLI (`kilo worktree remove`, the TUI workspaces dialog, Kilo Console, the worktree API) from emptying the targets of Windows junctions (for example a `.vscode` or `node_modules` junction into the main checkout) when they run `git worktree remove --force` or discard a pooled worktree slot: junctions and symlinks inside the worktree are unlinked first, and git is skipped if that fails. The shared helper lives in `packages/core/src/kilocode/unlink-links.ts`.
