@@ -18,6 +18,7 @@ import { KiloLLM } from "@/kilocode/session/llm"
 import { KiloSessionProcessor } from "@/kilocode/session/processor"
 import { SessionTranscript } from "@/kilocode/session/transcript"
 import { Tool } from "@/tool/tool"
+import * as ToolJsonSchema from "@/tool/json-schema"
 import * as AdvisorSlots from "@/kilocode/tool/advisor-slots"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { FSUtil } from "@opencode-ai/core/fs-util"
@@ -43,7 +44,7 @@ const Params = Schema.Struct({
   materials: Schema.optional(Schema.String),
   files: Schema.optional(Schema.Array(FileRange)),
   advisors: Schema.optional(
-    Schema.Union([Schema.Literal("all"), Schema.Array(Schema.String).check(Schema.isLengthBetween(1, 3))]),
+    Schema.Union([Schema.NonEmptyString, Schema.Array(Schema.String).check(Schema.isLengthBetween(1, 3))]),
   ),
 })
 
@@ -452,6 +453,12 @@ export const ConsultAdvisorTool = Tool.define<
     return {
       description: DESCRIPTION,
       parameters: Params,
+      jsonSchema: ToolJsonSchema.fromSchema(
+        Schema.Struct({
+          ...Params.fields,
+          advisors: Schema.optional(Schema.Array(Schema.String).check(Schema.isLengthBetween(1, 3))),
+        }),
+      ),
       execute: (params: Params, ctx: Tool.Context) =>
         Effect.gen(function* () {
           if (!acquire(ctx.sessionID)) {
