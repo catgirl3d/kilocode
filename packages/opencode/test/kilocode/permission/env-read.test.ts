@@ -1,18 +1,16 @@
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { afterAll, describe, expect } from "bun:test"
-import fs from "fs/promises"
-import path from "path"
 import { Effect, Fiber, Layer } from "effect"
 import { Bus } from "../../../src/bus"
 import * as Config from "../../../src/config/config"
 import { InstanceRuntime } from "../../../src/project/instance-runtime"
 import * as CrossSpawnSpawner from "@opencode-ai/core/cross-spawn-spawner"
-import { Global } from "@opencode-ai/core/global"
 import { Permission } from "../../../src/permission"
 import { EventV2Bridge } from "../../../src/event-v2-bridge"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionID } from "../../../src/session/schema"
+import { clearGlobalConfig } from "../global-config"
 import { provideTmpdirInstance } from "../../fixture/fixture"
 import { testEffect } from "../../lib/effect"
 
@@ -25,10 +23,7 @@ const env = Layer.mergeAll(
 const it = testEffect(env)
 
 afterAll(async () => {
-  const dir = Global.Path.config
-  for (const file of ["kilo.jsonc", "kilo.json", "config.json", "opencode.json", "opencode.jsonc"]) {
-    await fs.rm(path.join(dir, file), { force: true }).catch(() => {})
-  }
+  await clearGlobalConfig()
   await Effect.runPromise(
     Config.Service.use((svc) => svc.invalidate()).pipe(Effect.scoped, Effect.provide(AppNodeBuilder.build(Config.node))),
   )
