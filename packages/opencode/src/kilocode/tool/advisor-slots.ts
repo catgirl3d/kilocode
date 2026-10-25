@@ -55,11 +55,26 @@ export function resolve(cfg?: Source): Slot[] {
   return [{ name: "advisor", model, variant: cfg?.advisor_variant }]
 }
 
+function parse(text: string): string[] | undefined {
+  const value = text.trim()
+  if (!value.startsWith("[")) return undefined
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > LIMIT) return undefined
+    return parsed.every((item) => typeof item === "string") ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Pick the slots for one call: the first slot by default, every slot for "all", otherwise the named ones. */
-export function select(slots: Slot[], input?: "all" | ReadonlyArray<string>): { slots: Slot[] } | { unknown: string } {
+export function select(slots: Slot[], input?: string | ReadonlyArray<string>): { slots: Slot[] } | { unknown: string } {
   if (input === undefined) return { slots: slots.slice(0, 1) }
   if (input === "all") return { slots }
-  const names = [...new Set(input)]
+  if (typeof input === "string" && input.trim() === "all") return { slots }
+  const value = typeof input === "string" ? (parse(input) ?? [input]) : input
+  const names = [...new Set(value)]
+  if (names.length === 1 && names[0] === "all") return { slots }
   const unknown = names.find((name) => !slots.some((slot) => slot.name === name))
   if (unknown !== undefined) return { unknown }
   return { slots: names.flatMap((name) => slots.filter((slot) => slot.name === name)) }
@@ -76,7 +91,7 @@ export function describe(def: Def, slots: Slot[]): Def {
     description: [
       def.description.trimEnd(),
       "",
-      'Configured advisors (pass names in `advisors`, or "all"; without it the first one answers; each additional advisor is a separate model call):',
+      'Configured advisors (pass names as an array in `advisors`, or ["all"]; without it the first one answers; each additional advisor is a separate model call):',
       ...list,
     ].join("\n"),
   }
