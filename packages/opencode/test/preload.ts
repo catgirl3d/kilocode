@@ -1,14 +1,13 @@
 // IMPORTANT: Set env vars BEFORE any imports from src/ directory
 // xdg-basedir reads env vars at import time, so we must set these first
-import os from "os"
 import path from "path"
 import fs from "fs/promises"
 import { setTimeout as sleep } from "node:timers/promises"
 import { afterAll } from "bun:test"
 import { remove as cleanup } from "./kilocode/cleanup" // kilocode_change
+import { inside, root as dir } from "./kilocode/test-root"
 
 // Set XDG env vars FIRST, before any src/ imports
-const dir = path.join(os.tmpdir(), "opencode-test-data-" + process.pid)
 await fs.mkdir(dir, { recursive: true })
 afterAll(async () => {
   const { AppRuntime } = await import("../src/effect/app-runtime")
@@ -59,6 +58,9 @@ await fs.mkdir(cacheDir, { recursive: true })
 await fs.writeFile(path.join(cacheDir, "version"), "21")
 
 // Clear provider and server auth env vars to ensure clean test state
+delete process.env["KILO_CONFIG"]
+delete process.env["KILO_CONFIG_DIR"]
+delete process.env["KILO_CONFIG_CONTENT"]
 delete process.env["ANTHROPIC_API_KEY"]
 delete process.env["OPENAI_API_KEY"]
 delete process.env["GOOGLE_API_KEY"]
@@ -113,6 +115,18 @@ if (process.env["KILO_DB"] !== ":memory:") {
   const resolved = Database.path()
   if (resolved !== ":memory:") {
     throw new Error(`unit test preload: database path must resolve to ":memory:", got "${resolved}"`)
+  }
+}
+
+// Fail closed: permission test cleanup removes global config files, so a broken XDG redirect
+// (for example Global imported before the env vars above were set) must abort the run before
+// any test executes. KILO_CONFIG_DIR does not change Global.Path; it is cleared above instead.
+{
+  const { Global } = await import("@opencode-ai/core/global")
+  for (const key of ["config", "data", "cache", "state", "home"] as const) {
+    const value = Global.Path[key]
+    if (!inside(value))
+      throw new Error(`unit test preload: Global.Path.${key} must stay inside "${dir}", got "${value}"`)
   }
 }
 // kilocode_change end
