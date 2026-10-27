@@ -1487,6 +1487,14 @@ export interface OpenSubAgentViewerRequest {
   parentSessionID?: string
 }
 
+// fork_change start
+// Open the session that sent an attributed message; the extension picks Agent Manager or the sidebar
+export interface OpenSourceSessionRequest {
+  type: "openSourceSession"
+  sessionID: string
+}
+// fork_change end
+
 // Preview an image attachment in VS Code's built-in image viewer
 export interface PreviewImageRequest {
   type: "previewImage"
@@ -2113,6 +2121,7 @@ export type WebviewMessage =
   | DisconnectCliRequest // fork_change
   | ReloadRequest
   | OpenSubAgentViewerRequest
+  | OpenSourceSessionRequest // fork_change
   | PreviewImageRequest
   | SaveImageRequest
   | SetDefaultBaseBranchRequest

@@ -6,10 +6,21 @@ import { handleEditorAction } from "../../src/kilo-provider/editor-actions"
 
 const external = spyOn(vscode.env, "openExternal")
 const stat = spyOn(vscode.workspace.fs, "stat")
+const execute = spyOn(vscode.commands, "executeCommand")
 
 afterEach(() => {
   external.mockClear()
   stat.mockClear()
+  execute.mockClear()
+})
+
+describe("Source session routing", () => {
+  it("hands an attributed source session to the reveal command", () => {
+    const handled = handleEditorAction({ type: "openSourceSession", sessionID: "ses_sidebar" }, { dir: () => "/repo" })
+
+    expect(handled).toBe(true)
+    expect(execute.mock.calls).toEqual([["kilo-code.new.revealSession", "ses_sidebar"]])
+  })
 })
 
 describe("Markdown editor routing", () => {
