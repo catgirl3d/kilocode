@@ -49,6 +49,7 @@ describe("AgentManagerOrchestrationBridge", () => {
     } = {}
     const status = { failList: "", failReply: false, failClient: false }
     const managed = new Set(["ses_caller", "ses_target"])
+    const closed = new Set<string>()
     const promptAsync = mock(async () => ({ data: undefined }))
     const close = mock(async () => undefined)
     const push = mock(() => undefined)
@@ -126,6 +127,7 @@ describe("AgentManagerOrchestrationBridge", () => {
       push: (dir) => (overrides?.push ? overrides.push(dir) : push()),
       resolve: (id, dir) => overrides?.resolve?.(id, dir),
       managed: (id, dir) => (overrides?.managed ? overrides.managed(id, dir) : managed.has(id)),
+      closed: (id, dir) => (overrides?.closed ? overrides.closed(id, dir) : closed.has(id)),
       close: async (id, dir) => (overrides?.close ? overrides.close(id, dir) : close(id, dir)),
       log: () => undefined,
     })
@@ -138,6 +140,7 @@ describe("AgentManagerOrchestrationBridge", () => {
       bridge,
       client,
       close,
+      closed,
       connection,
       handlers,
       lists,
@@ -151,6 +154,36 @@ describe("AgentManagerOrchestrationBridge", () => {
       statsCalls,
       status,
     }
+  }
+
+  function real() {
+    const contexts = new ProjectContexts({
+      workspaceRoot: () => root,
+      registry: { list: () => [], get: () => undefined },
+      deps: { log: () => undefined, state: () => state },
+    })
+    const ctx = contexts.active()!
+    ctx.stateManager()
+    const test = harness()
+    test.bridge.dispose()
+    const bridge = createOrchestrationBridge({
+      connectionService: test.connection as never,
+      contexts,
+      projectScope: new ProjectScope(),
+      getRoot: () => ctx.root,
+      getState: () => state,
+      getStateReady: () => Promise.resolve(),
+      initStateReady: () => Promise.resolve(),
+      getStats: async () => ({ worktrees: [] }),
+      getPrs: () => new Map(),
+      pushState: () => undefined,
+      hasPanelSession: () => false,
+      routeSession: () => undefined,
+      closeSession: async () => undefined,
+      postSessionClosed: () => undefined,
+      log: () => undefined,
+    })
+    return { bridge, ctx, test }
   }
 
   const request: AgentManagerRequest = {
@@ -301,6 +334,7 @@ describe("AgentManagerOrchestrationBridge", () => {
     test.request({ ...request, id: "amr_closed" })
     await waitFor(() => test.replies.length === 1)
     test.managed.delete("ses_caller")
+    test.closed.add("ses_caller")
 
     test.request({
       id: "amr_closed_reply",
@@ -317,6 +351,162 @@ describe("AgentManagerOrchestrationBridge", () => {
     })
     expect(test.promptAsync).toHaveBeenCalledTimes(1)
     test.bridge.dispose()
+  })
+
+  it("routes a peer reply to a live sidebar session that Agent Manager does not track", async () => {
+    const { bridge, ctx, test } = real()
+    test.request({ ...request, id: "amr_sidebar", sessionID: "ses_sidebar" }, ctx.root)
+    await waitFor(() => test.replies.length === 1)
+
+    test.request(
+      {
+        id: "amr_sidebar_reply",
+        sessionID: "ses_target",
+        operation: "prompt",
+        targetSessionID: "ses_sidebar",
+        prompt: "The change is complete.",
+        replyTo: "amr_sidebar",
+      },
+      dir,
+    )
+    await waitFor(() => test.replies.length + test.rejections.length === 2)
+
+    expect(test.rejections).toEqual([])
+    expect(test.promptAsync).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sessionID: "ses_sidebar",
+        directory: ctx.root,
+        parts: [{ type: "text", text: expect.stringContaining("[Agent Manager peer reply]") }],
+      }),
+      { throwOnError: true },
+    )
+    expect(test.replies[1]).toEqual({
+      requestID: "amr_sidebar_reply",
+      directory: dir,
+      result: { operation: "prompt", sessionID: "ses_sidebar", delivered: true },
+    })
+    bridge.dispose()
+  })
+
+  it("reports a host error instead of a gone sender when the sender cannot be verified", async () => {
+    const { bridge, ctx, test } = real()
+    test.client.session.get.mockImplementation(async ({ sessionID, directory }) =>
+      sessionID === "ses_sidebar"
+        ? ({ error: { status: 500 } } as never)
+        : { data: { id: sessionID ?? "ses_target", directory: directory ?? dir, title: "Session" } as Session },
+    )
+    test.request({ ...request, id: "amr_flaky", sessionID: "ses_sidebar" }, ctx.root)
+    await waitFor(() => test.replies.length === 1)
+
+    test.request(
+      {
+        id: "amr_flaky_reply",
+        sessionID: "ses_target",
+        operation: "prompt",
+        targetSessionID: "ses_sidebar",
+        prompt: "The change is complete.",
+        replyTo: "amr_flaky",
+      },
+      dir,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "host_error", message: "The original Agent Manager sender could not be verified" },
+    })
+    expect(test.promptAsync).toHaveBeenCalledTimes(1)
+    bridge.dispose()
+  })
+
+  it("rejects a peer reply to an untracked sender the backend no longer has", async () => {
+    const { bridge, ctx, test } = real()
+    test.client.session.get.mockImplementation(async ({ sessionID, directory }) =>
+      sessionID === "ses_sidebar"
+        ? ({ error: { name: "NotFoundError" } } as never)
+        : { data: { id: sessionID ?? "ses_target", directory: directory ?? dir, title: "Session" } as Session },
+    )
+    test.request({ ...request, id: "amr_deleted", sessionID: "ses_sidebar" }, ctx.root)
+    await waitFor(() => test.replies.length === 1)
+
+    test.request(
+      {
+        id: "amr_deleted_reply",
+        sessionID: "ses_target",
+        operation: "prompt",
+        targetSessionID: "ses_sidebar",
+        prompt: "This must not be delivered.",
+        replyTo: "amr_deleted",
+      },
+      dir,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "unknown_session", message: "The original Agent Manager sender is no longer available" },
+    })
+    expect(test.promptAsync).toHaveBeenCalledTimes(1)
+    bridge.dispose()
+  })
+
+  it("rejects a peer reply to an untracked subagent sender", async () => {
+    const { bridge, ctx, test } = real()
+    test.client.session.get.mockImplementation(async ({ sessionID, directory }) => ({
+      data: {
+        id: sessionID ?? "ses_target",
+        directory: directory ?? dir,
+        title: "Session",
+        ...(sessionID === "ses_child" ? { parentID: "ses_parent" } : {}),
+      } as Session,
+    }))
+    test.request({ ...request, id: "amr_child", sessionID: "ses_child" }, ctx.root)
+    await waitFor(() => test.replies.length === 1)
+
+    test.request(
+      {
+        id: "amr_child_reply",
+        sessionID: "ses_target",
+        operation: "prompt",
+        targetSessionID: "ses_child",
+        prompt: "This must not be delivered.",
+        replyTo: "amr_child",
+      },
+      dir,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "unknown_session", message: "The original Agent Manager sender is no longer available" },
+    })
+    expect(test.promptAsync).toHaveBeenCalledTimes(1)
+    bridge.dispose()
+  })
+
+  it("rejects a peer reply to a sender stopped in Agent Manager", async () => {
+    state.addSession("ses_local", null)
+    const { bridge, ctx, test } = real()
+    test.request({ ...request, id: "amr_local", sessionID: "ses_local" }, ctx.root)
+    await waitFor(() => test.replies.length === 1)
+    state.removeSession("ses_local")
+    state.closeSession("ses_local", null)
+
+    test.request(
+      {
+        id: "amr_local_reply",
+        sessionID: "ses_target",
+        operation: "prompt",
+        targetSessionID: "ses_local",
+        prompt: "This must not be delivered.",
+        replyTo: "amr_local",
+      },
+      dir,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "unknown_session", message: "The original Agent Manager sender is no longer available" },
+    })
+    expect(test.promptAsync).toHaveBeenCalledTimes(1)
+    bridge.dispose()
   })
 
   it("adds source-session attribution to prompts sent by another agent", async () => {

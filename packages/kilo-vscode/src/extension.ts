@@ -440,6 +440,17 @@ export async function activate(context: vscode.ExtensionContext) {
     return [...dirs]
   })
   // fork_change end
+  // fork_change start
+  // Agent Manager reveals the sessions it owns; any other session opens in the sidebar.
+  const reveal = async (sessionID: string, directory?: string) => {
+    if (await agentManagerProvider.revealSession(sessionID)) return
+    await vscode.commands.executeCommand("kilo-code.SidebarProvider.focus")
+    await provider.openSession(sessionID, directory)
+  }
+  context.subscriptions.push(
+    vscode.commands.registerCommand("kilo-code.new.revealSession", (sessionID: string) => reveal(sessionID)),
+  )
+  // fork_change end
   const attention = new AttentionService(connectionService, {
     details: async (sessionID, directory) => {
       provider.rememberSession(sessionID, directory)
@@ -456,11 +467,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Manager without each one needing its own accessor.
     visible: (sessionID) => connectionService.isVisible(sessionID),
     os: showOSNotification,
-    show: async (sessionID, directory) => {
-      if (await agentManagerProvider.revealSession(sessionID)) return
-      await vscode.commands.executeCommand("kilo-code.SidebarProvider.focus")
-      await provider.openSession(sessionID, directory)
-    },
+    show: reveal, // fork_change
   })
 
   // Prewarm only after all global event consumers are ready.

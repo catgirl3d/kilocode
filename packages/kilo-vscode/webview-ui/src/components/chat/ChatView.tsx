@@ -39,7 +39,7 @@ import type { WorktreeReference } from "../../hooks/file-mention-utils"
 interface ChatViewProps {
   projectId?: string
   onSelectSession?: (id: string) => void
-  isSessionOpen?: (id: string) => boolean
+  onSource?: (id: string) => boolean // fork_change
   onShowHistory?: () => void
   onForkMessage?: (sessionId: string, messageId: string) => void
   onForkSession?: (sessionId: string) => void
@@ -436,7 +436,7 @@ export const ChatView: Component<ChatViewProps> = (props) => {
             <div class="chat-messages">
               <MessageList
                 onSelectSession={props.onSelectSession}
-                isSessionOpen={props.isSessionOpen}
+                onSource={props.onSource} /* fork_change */
                 onShowHistory={props.onShowHistory}
                 onForkMessage={props.onForkMessage}
                 onEditMessage={edit}
