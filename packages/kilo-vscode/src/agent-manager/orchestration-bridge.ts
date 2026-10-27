@@ -8,6 +8,7 @@ import type { ManagedSession, WorktreeStateManager } from "./WorktreeStateManage
 import {
   OrchestrationError,
   answer,
+  missing, // fork_change
   move,
   overview,
   prompt,
@@ -62,6 +63,7 @@ interface Options {
   push(directory?: string): void
   resolve?(sessionID: string, directory?: string): ManagedSession | undefined
   managed(sessionID: string, directory?: string): boolean
+  closed(sessionID: string, directory?: string): boolean // fork_change
   close(sessionID: string, directory?: string): Promise<void>
   directories?(): string[]
   log(...args: unknown[]): void
@@ -474,10 +476,20 @@ export class AgentManagerOrchestrationBridge {
     return reply
   }
 
-  private async validateReply(reply: ReplyRoute, input: { root: string }): Promise<void> {
+  // fork_change start
+  private async validateReply(reply: ReplyRoute, input: { client: KiloClient; root: string }): Promise<void> {
+    // Requests are admitted from any session in the workspace, including the
+    // sidebar, so a sender Agent Manager does not track still gets its reply
+    // while the backend has it as a root session. Stopped senders stay closed.
+    const gone = new OrchestrationError("unknown_session", "The original Agent Manager sender is no longer available")
+    if (this.options.closed(reply.sessionID, reply.directory)) throw gone
     if (!this.options.managed(reply.sessionID, reply.directory)) {
-      throw new OrchestrationError("unknown_session", "The original Agent Manager sender is no longer available")
+      const response = await input.client.session.get({ sessionID: reply.sessionID, directory: reply.directory })
+      if (response.error && !missing(response.error))
+        throw new OrchestrationError("host_error", "The original Agent Manager sender could not be verified")
+      if (!response.data || response.data.parentID != null) throw gone
     }
+    // fork_change end
     const routeRoot = this.options.root(reply.directory)
     if (!routeRoot || !(await sameManagedDirectory(routeRoot, input.root))) {
       throw new OrchestrationError(
