@@ -69,7 +69,7 @@ import type { QuestionRequest, SuggestionRequest } from "../../types/messages"
 
 interface MessageListProps {
   onSelectSession?: (id: string) => boolean | void
-  isSessionOpen?: (id: string) => boolean
+  onSource?: (id: string) => boolean // fork_change
   onShowHistory?: () => void
   onForkMessage?: (sessionId: string, messageId: string) => void
   onEditMessage?: (sessionID: string, messageID: string) => void
@@ -843,8 +843,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
         <TranscriptRowView
           row={row()}
           index={indexes().get(key)}
-          onSelectSession={props.onSelectSession}
-          isSessionOpen={props.isSessionOpen}
+          onSource={props.onSource} /* fork_change */
           onForkMessage={props.onForkMessage}
           onEditMessage={props.onEditMessage}
           queuedDisabled={props.queuedDisabled}
@@ -976,8 +975,7 @@ export const MessageList: Component<MessageListProps> = (props) => {
               {(row) => (
                 <TranscriptRowView
                   row={row}
-                  onSelectSession={props.onSelectSession}
-                  isSessionOpen={props.isSessionOpen}
+                  onSource={props.onSource} /* fork_change */
                   onEditMessage={props.onEditMessage}
                   queuedDisabled={props.queuedDisabled}
                   editDisabled={props.editDisabled}

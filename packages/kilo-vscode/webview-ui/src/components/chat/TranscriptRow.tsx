@@ -19,8 +19,7 @@ import { CompactionDivider } from "./CompactionDivider" // fork_change
 interface TranscriptRowViewProps {
   row: TranscriptRow
   index?: number
-  onSelectSession?: (id: string) => boolean | void
-  isSessionOpen?: (id: string) => boolean
+  onSource?: (id: string) => boolean // fork_change
   onForkMessage?: (sessionId: string, messageId: string) => void
   onEditMessage?: (sessionID: string, messageID: string) => void
   /** Part behind the currently hovered/focused task-timeline bar, if any. */
@@ -72,8 +71,7 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
               message={row().message}
               parts={row().parts}
               revertDisabled={row().answered && session.status() !== "idle"}
-              onSelectSession={props.onSelectSession}
-              isSessionOpen={props.isSessionOpen}
+              onSource={props.onSource} /* fork_change */
               interrupted={row().interrupted}
               queued={row().queued}
               onEdit={
