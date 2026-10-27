@@ -89,7 +89,9 @@ export interface OverviewInput {
   prs: Map<string, PRStatus>
 }
 
-function missing(error: unknown): boolean {
+// fork_change start
+export function missing(error: unknown): boolean {
+  // fork_change end
   if (!error || typeof error !== "object") return false
   const value = error as Record<string, unknown>
   if (value.name === "NotFoundError" || value._tag === "NotFound" || value.status === 404) return true
