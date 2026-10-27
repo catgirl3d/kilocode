@@ -2310,9 +2310,7 @@ const AgentManagerContent: Component = () => {
                     onForkMessage={readOnly() ? undefined : handleForkSession}
                     onForkSession={readOnly() ? undefined : handleForkSession}
                     onSelectSession={focusExistingSession}
-                    isSessionOpen={(id) =>
-                      localSessionIDs().includes(id) || managedSessions().some((entry) => entry.id === id)
-                    }
+                    onSource={focusExistingSession} /* fork_change */
                     readonly={readOnly()}
                     continueInWorktree={selection() === LOCAL}
                     worktree={worktrees().some((wt) => wt.id === selection())}

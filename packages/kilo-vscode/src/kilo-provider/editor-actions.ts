@@ -204,6 +204,12 @@ export function handleEditorAction(message: EditorActionMessage, opts: EditorAct
     if (message.dataUrl && message.filename) previewImage(opts.storage, message.dataUrl, message.filename)
     return true
   }
+  // fork_change start
+  if (message.type === "openSourceSession") {
+    if (message.sessionID) void vscode.commands.executeCommand("kilo-code.new.revealSession", message.sessionID)
+    return true
+  }
+  // fork_change end
   return false
 }
 

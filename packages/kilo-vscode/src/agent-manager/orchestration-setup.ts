@@ -65,6 +65,12 @@ export function createOrchestrationBridge(deps: OrchestrationBridgeDeps): AgentM
       }
       return deps.hasPanelSession(id) || !!deps.getState()?.getSession(id)
     },
+    // fork_change start
+    closed: (id, dir) => {
+      const ctx = dir ? deps.contexts.byDirectory(dir) : undefined
+      return !!(ctx ? ctx.peekState() : deps.getState())?.isSessionClosed(id)
+    },
+    // fork_change end
     close: async (id, dir) => {
       const ctx = dir ? deps.contexts.byDirectory(dir) : undefined
       if (ctx) {
