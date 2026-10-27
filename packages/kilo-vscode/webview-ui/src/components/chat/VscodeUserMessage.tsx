@@ -23,8 +23,7 @@ interface VscodeUserMessageProps {
   onFork?: () => void
   onRevert?: () => void
   revertDisabled?: boolean
-  onSelectSession?: (id: string) => boolean | void
-  isSessionOpen?: (id: string) => boolean
+  onSource?: (id: string) => boolean // fork_change
 }
 
 const ATTRIBUTION = /\n\n<!-- kilo-agent-manager source=([^ ]+) -->$/
@@ -56,11 +55,15 @@ export const VscodeUserMessage: Component<VscodeUserMessageProps> = (props) => {
   const [open, setOpen] = createSignal(false)
   const collapsed = createMemo(() => !!view()?.preview && !open())
   const body = createMemo(() => (collapsed() ? view()?.preview : full()))
+  // fork_change start
+  // A surface that already shows the sender focuses it; otherwise the extension
+  // opens the sender wherever it lives: Agent Manager or the sidebar.
   const openSource = () => {
     const id = attribution()
-    if (!id || !props.onSelectSession) return
-    props.onSelectSession(id)
+    if (!id || props.onSource?.(id)) return
+    vscode.postMessage({ type: "openSourceSession", sessionID: id })
   }
+  // fork_change end
 
   // Build the header nodes once. UserMessageDisplay reads these props in
   // several Show conditions, and a JSX getter would rebuild a detached subtree
@@ -71,21 +74,16 @@ export const VscodeUserMessage: Component<VscodeUserMessageProps> = (props) => {
       <div class="agent-manager-attribution" data-collapsed={collapsed() ? "" : undefined} dir="ltr">
         <span class="agent-manager-attribution-label">{view()?.label}</span>
         <Show when={attribution()}>
-          <Show
-            when={props.onSelectSession && props.isSessionOpen?.(attribution() ?? "") !== false}
-            fallback={<span class="agent-manager-attribution-status">Session not open</span>}
-          >
-            <Tooltip value="Go to originating session" placement="top">
-              <IconButton
-                icon="square-arrow-top-right"
-                size="small"
-                variant="ghost"
-                class="agent-manager-attribution-link"
-                aria-label="Go to originating session"
-                onClick={openSource}
-              />
-            </Tooltip>
-          </Show>
+          <Tooltip value="Go to originating session" placement="top">
+            <IconButton
+              icon="square-arrow-top-right"
+              size="small"
+              variant="ghost"
+              class="agent-manager-attribution-link"
+              aria-label="Go to originating session"
+              onClick={openSource}
+            />
+          </Tooltip>
         </Show>
         <Show when={view()?.preview}>
           <button
