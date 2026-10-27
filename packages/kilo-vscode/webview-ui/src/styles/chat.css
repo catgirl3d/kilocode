@@ -59,10 +59,6 @@
   margin-left: auto;
 }
 
-.agent-manager-attribution-status {
-  margin-left: auto;
-}
-
 /* A collapsed injected prompt fades out at the bottom of the bubble so it
    reads as "continues", not as the complete message. The bubble background is
    a translucent tint, so a mask is used instead of a color gradient overlay. */
