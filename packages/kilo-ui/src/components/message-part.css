@@ -78,6 +78,7 @@
     margin-left: auto;
     display: inline-flex;
     align-items: center;
+    gap: 2px; /* fork_change */
     opacity: 0;
     transition: opacity 0.15s ease;
   }
