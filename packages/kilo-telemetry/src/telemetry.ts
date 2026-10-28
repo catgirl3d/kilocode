@@ -138,13 +138,21 @@ export namespace Telemetry {
     const enabled = level(options.enabled)
     Client.setEnabled(enabled)
 
-    await Promise.all([Identity.getMachineId(), enabled ? refreshConda() : Promise.resolve()])
+    // fork_change start - skip machine id and conda lookups when telemetry is hard-off
+    await Promise.all([
+      Client.isDisabled() ? Promise.resolve() : Identity.getMachineId(),
+      enabled ? refreshConda() : Promise.resolve(),
+    ])
+    // fork_change end
 
     initialized = true
     startTime = Date.now()
   }
 
   export function level(configured: boolean): boolean {
+    // fork_change start - telemetry is hard-off in this fork
+    if (Client.isDisabled()) return false
+    // fork_change end
     const env = process.env.KILO_TELEMETRY_LEVEL?.trim().toLowerCase()
     const allowed = !env || env === "all" || env === "on" || env === "true" || env === "1"
     return configured && allowed && (host ?? process.env.KILO_TELEMETRY_HOST_DISABLED !== "1")

@@ -68,6 +68,12 @@ const AboutKiloCodeTab: Component<AboutKiloCodeTabProps> = (props) => {
 
   const telemetryHandler = (event: MessageEvent) => {
     const msg = event.data as ExtensionMessage
+    // fork_change start - reflect the effective level under the fork hard-off
+    if (msg.type === "telemetryState") {
+      setTelemetry(msg.enabled)
+      return
+    }
+    // fork_change end
     if (msg.type !== "telemetryLevelResult") return
     setTelemetrySaving(false)
     if (msg.ok && typeof msg.enabled === "boolean") {
