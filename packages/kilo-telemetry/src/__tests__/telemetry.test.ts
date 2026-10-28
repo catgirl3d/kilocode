@@ -144,6 +144,23 @@ describe("Telemetry", () => {
     expect(typeof Telemetry.trackSuggestionAccepted).toBe("function")
   })
 
+  test("Client.init leaves telemetry disabled", () => {
+    Client.init()
+    expect(Client.isDisabled()).toBe(true)
+    expect(Client.getClient()).toBeNull()
+  })
+
+  test("setEnabled(true) does not read the conda token", () => {
+    const conda = spyOn(Conda, "clientToken")
+    try {
+      Telemetry.setEnabled(true)
+      expect(conda).not.toHaveBeenCalled()
+      expect(Client.isEnabled()).toBe(false)
+    } finally {
+      conda.mockRestore()
+    }
+  })
+
   test("trackToolUsed sends Tool Used event with tool name and sessionId", () => {
     const capture = spyOn(Client, "capture").mockImplementation(() => {})
 
@@ -161,14 +178,12 @@ describe("Telemetry", () => {
 
 const shell = process.platform === "win32" ? test.skip : test
 
-shell("uses conda's effective client ID in events", async () => {
+shell("reads conda's effective client ID", async () => {
   const root = await mkdtemp(join(tmpdir(), "kilo-aau-"))
   const home = process.env.HOME
   const exe = process.env.CONDA_EXE
   const token = "abcdefghijklmnopqrstuv"
   const conda = join(root, "conda")
-  const capture = spyOn(Client, "capture").mockImplementation(() => {})
-  const machine = spyOn(Identity, "getMachineId").mockResolvedValue(undefined)
 
   try {
     await mkdir(join(root, ".conda"))
@@ -179,25 +194,10 @@ shell("uses conda's effective client ID in events", async () => {
     process.env.CONDA_EXE = conda
 
     expect(await Conda.clientToken()).toBe(token)
-    await Telemetry.init({ dataPath: root, version: "test", enabled: true })
-    Telemetry.trackCliStart()
-    expect(capture).toHaveBeenCalledWith(TelemetryEvent.CLI_START, expect.objectContaining({ aauClientToken: token }))
 
     await Bun.write(conda, "#!/bin/sh\nprintf '%s\\n' '{\"user_agent\":\"conda/26.1\"}'\n")
     expect(await Conda.clientToken()).toBeUndefined()
-
-    Telemetry.setEnabled(false)
-    capture.mockClear()
-    Telemetry.trackCliStart()
-    expect(capture).toHaveBeenCalledTimes(1)
-    expect(capture.mock.calls.at(0)?.at(1)).not.toHaveProperty("aauClientToken")
   } finally {
-    // Clear conda properties while the client is still active; shutdown alone
-    // leaves them behind for tests that run later in randomized order.
-    Telemetry.setEnabled(false)
-    capture.mockRestore()
-    machine.mockRestore()
-    await Client.shutdown()
     if (home === undefined) delete process.env.HOME
     else process.env.HOME = home
     if (exe === undefined) delete process.env.CONDA_EXE

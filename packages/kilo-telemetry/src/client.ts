@@ -5,6 +5,10 @@ import { createHash } from "node:crypto"
 import { readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
+// fork_change start - this fork never sends telemetry; keep PostHog unreachable
+const DISABLED = true
+// fork_change end
+
 const POSTHOG_API_KEY = "phc_GK2Pxl0HPj5ZPfwhLRjXrtdz8eD7e9MKnXiFrOqnB6z"
 const POSTHOG_HOST = "https://us.i.posthog.com"
 
@@ -17,6 +21,13 @@ export namespace Client {
   export function init(dir = "") {
     directory = dir
     pending.clear()
+    // fork_change start - [fork] never construct the PostHog client
+    if (DISABLED) {
+      client = null
+      enabled = false
+      return
+    }
+    // fork_change end
     client = new PostHog(POSTHOG_API_KEY, {
       host: POSTHOG_HOST,
       disableGeoip: false,
@@ -48,7 +59,16 @@ export namespace Client {
     return client
   }
 
+  // fork_change start - expose the fork-wide telemetry policy
+  export function isDisabled(): boolean {
+    return DISABLED
+  }
+  // fork_change end
+
   export function setEnabled(value: boolean) {
+    // fork_change start - telemetry is hard-off in this fork
+    if (DISABLED) return
+    // fork_change end
     enabled = value
     if (!client) return
     if (value) client.optIn()

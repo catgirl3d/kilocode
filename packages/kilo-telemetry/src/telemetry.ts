@@ -123,16 +123,24 @@ export namespace Telemetry {
     Client.init(options.dataPath)
 
     const level = process.env.KILO_TELEMETRY_LEVEL
-    const enabled = level ? level === "all" : options.enabled
+    const enabled = Client.isDisabled() ? false : level ? level === "all" : options.enabled // fork_change - telemetry is hard-off in this fork
     Client.setEnabled(enabled)
 
-    await Promise.all([Identity.getMachineId(), enabled ? refreshConda() : Promise.resolve()])
+    // fork_change start - skip machine id and conda lookups when telemetry is hard-off
+    await Promise.all([
+      Client.isDisabled() ? Promise.resolve() : Identity.getMachineId(),
+      enabled ? refreshConda() : Promise.resolve(),
+    ])
+    // fork_change end
 
     initialized = true
     startTime = Date.now()
   }
 
   export function setEnabled(value: boolean) {
+    // fork_change start - never re-enable telemetry in this fork
+    if (Client.isDisabled()) return
+    // fork_change end
     if (value === Client.isEnabled()) return
     Client.setEnabled(value)
     delete props.aauClientToken
