@@ -2263,25 +2263,46 @@ function ToolChanges(props: { changes: DiffValue; slot?: string }) {
   )
 }
 
-function ToolDiffAction(props: { when: boolean; onClick: (e: MouseEvent) => void }) {
+// fork_change start - open the edited file in the editor
+function ToolDiffAction(props: { when: boolean; file?: string; session?: string; onClick: (e: MouseEvent) => void }) {
   const i18n = useI18n()
+  const data = useData()
+  const open = () => !!props.file && !!data.openFile
   return (
-    <Show when={props.when}>
+    <Show when={props.when || open()}>
       <span data-slot="tool-trigger-actions">
-        <Tooltip value={i18n.t("ui.messagePart.openInDiffViewer")} placement="top" gutter={4}>
-          <IconButton
-            icon="square-arrow-top-right"
-            size="small"
-            variant="ghost"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={props.onClick}
-            aria-label={i18n.t("ui.messagePart.openInDiffViewer")}
-          />
-        </Tooltip>
+        <Show when={open()}>
+          <Tooltip value={i18n.t("ui.messagePart.openInEditor")} placement="top" gutter={4}>
+            <IconButton
+              icon="go-to-file"
+              size="small"
+              variant="ghost"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation()
+                data.openFile!(props.file!, undefined, undefined, props.session)
+              }}
+              aria-label={i18n.t("ui.messagePart.openInEditor")}
+            />
+          </Tooltip>
+        </Show>
+        <Show when={props.when}>
+          <Tooltip value={i18n.t("ui.messagePart.openInDiffViewer")} placement="top" gutter={4}>
+            <IconButton
+              icon="square-arrow-top-right"
+              size="small"
+              variant="ghost"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={props.onClick}
+              aria-label={i18n.t("ui.messagePart.openInDiffViewer")}
+            />
+          </Tooltip>
+        </Show>
       </span>
     </Show>
   )
 }
+// fork_change end
 
 function ShellText(props: { text: string }) {
   return (
@@ -3009,7 +3030,14 @@ ToolRegistry.register({
                   <ToolFileMeta filePath={props.input.filePath} changes={props.metadata.filediff ?? streamed()} />
                 </div>
               </div>
-              <ToolDiffAction when={canOpenDiff()} onClick={handleOpenDiffClick} />
+              {/* fork_change start */}
+              <ToolDiffAction
+                when={canOpenDiff()}
+                onClick={handleOpenDiffClick}
+                file={props.status === "completed" ? props.input.filePath : undefined}
+                session={props.sessionID}
+              />
+              {/* fork_change end */}
             </div>
           }
         >
@@ -3105,7 +3133,14 @@ ToolRegistry.register({
                   />
                 </div>
               </div>
-              <ToolDiffAction when={canOpenDiff()} onClick={handleOpenDiffClick} />
+              {/* fork_change start */}
+              <ToolDiffAction
+                when={canOpenDiff()}
+                onClick={handleOpenDiffClick}
+                file={props.status === "completed" ? props.input.filePath : undefined}
+                session={props.sessionID}
+              />
+              {/* fork_change end */}
             </div>
           }
         >
