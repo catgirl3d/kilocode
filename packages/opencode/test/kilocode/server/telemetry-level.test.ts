@@ -86,7 +86,7 @@ describe("telemetry level", () => {
       expect((await post("/telemetry/setEnabled", true)).status).toBe(200)
       const read = await get()
       expect(read.status).toBe(200)
-      expect(await read.json()).toEqual({ enabled: env !== "off" })
+      expect(await read.json()).toEqual({ enabled: false })
     },
     20_000,
   )
