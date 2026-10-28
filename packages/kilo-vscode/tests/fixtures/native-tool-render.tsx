@@ -52,6 +52,7 @@ const message: AssistantMessage = {
   tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
 }
 const files: string[] = []
+const sessions: Array<string | undefined> = []
 const diffs: Array<{ file: string; patch?: string; additions: number; deletions: number }> = []
 const data = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
 const disposals: Array<() => void> = []
@@ -85,7 +86,10 @@ function mount(initial: ToolPart) {
         <DataProvider
           data={data}
           directory="/project"
-          onOpenFile={(file) => files.push(file)}
+          onOpenFile={(file, _line, _column, session) => {
+            files.push(file)
+            sessions.push(session)
+          }}
           onOpenDiff={(diff) => diffs.push(diff)}
           onSessionHref={(id) => `/session/${id}`}
         >
@@ -129,13 +133,75 @@ try {
       part(tool, input, { filediff: { file, patch, additions: 1, deletions: tool === "write" ? 0 : 1 } }),
     )
     await settle()
-    click(view.root, '[data-slot="tool-trigger-actions"] button')
+    // "Open in Editor" sits left of "Open in Diff Viewer".
+    const [open, show] = view.root.querySelectorAll<HTMLElement>('[data-slot="tool-trigger-actions"] button')
+    assert.ok(open && show, `${tool} shows Open in Editor before Open in Diff Viewer`)
+    assert.equal(
+      open.getAttribute("aria-label"),
+      "ui.messagePart.openInEditor",
+      `${tool} shows Open in Editor before Open in Diff Viewer`,
+    )
+    const count = diffs.length
+    open.click()
+    // Checked before any await: a bubbled click would expand the card and mount the diff body.
+    const trigger = view.root.querySelector('[data-slot="collapsible-trigger"]')
+    assert.equal(
+      trigger?.getAttribute("aria-expanded"),
+      "false",
+      `${tool} editor action leaves the tool card collapsed`,
+    )
+    assert.equal(files.at(-1), file, `${tool} opens its file in the editor`)
+    assert.equal(sessions.at(-1), message.sessionID, `${tool} scopes the editor open to its session`)
+    assert.equal(diffs.length, count, `${tool} editor action does not open the diff`)
+    show.click()
     const diff = diffs.at(-1)
     assert.equal(diff?.file, file)
     assert.match(diff?.patch ?? "", /\+after/)
     assert.equal(diff?.additions, 1)
     assert.equal(diff?.deletions, tool === "write" ? 0 : 1)
   }
+
+  // A write still in flight may not have created its file yet, so it offers no editor action.
+  const draft = { filePath: "/project/draft.txt", content: "draft\n" }
+  const running = mount({
+    ...part("write", draft),
+    id: "part-draft",
+    state: { status: "running", input: draft, time: { start: 1 } },
+  })
+  await settle()
+  assert.equal(
+    running.root.querySelector('[data-slot="tool-trigger-actions"]'),
+    null,
+    "a running write offers no editor action",
+  )
+
+  // A running edit has a diff preview but its file may still be changing, so only the diff action is offered.
+  const edit = { filePath: "/project/draft-edit.txt", oldString: "before\n", newString: "after\n" }
+  const editing = mount({
+    ...part("edit", edit),
+    id: "part-edit-draft",
+    state: { status: "running", input: edit, metadata: {}, time: { start: 1 } },
+  })
+  await settle()
+  const pending = [...editing.root.querySelectorAll('[data-slot="tool-trigger-actions"] button')]
+  assert.deepEqual(
+    pending.map((button) => button.getAttribute("aria-label")),
+    ["ui.messagePart.openInDiffViewer"],
+    "a running edit offers no editor action",
+  )
+
+  // A completed write without a filediff has no diff to open, so the editor action stands alone.
+  const bare = { filePath: "/project/bare.txt", content: "bare\n" }
+  const plain = mount({ ...part("write", bare), id: "part-bare" })
+  await settle()
+  const actions = [...plain.root.querySelectorAll<HTMLElement>('[data-slot="tool-trigger-actions"] button')]
+  assert.deepEqual(
+    actions.map((button) => button.getAttribute("aria-label")),
+    ["ui.messagePart.openInEditor"],
+    "a write without a diff offers only the editor action",
+  )
+  actions.at(0)?.click()
+  assert.equal(files.at(-1), bare.filePath, "a write without a diff opens its file in the editor")
 
   const task = mount(
     part("task", { description: "Inspect the fixture", subagent_type: "code" }, { sessionId: "child" }),

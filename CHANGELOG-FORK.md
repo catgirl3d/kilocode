@@ -46,6 +46,7 @@
 - Restore the git commits picker in the VS Code chat `@` menu: search repository history, insert a full commit hash, and attach the commit's `git show` details to the next message.
 - Select multiple local sessions in the history list and delete them together after a single confirmation.
 - Delete the current session from the chat header's More actions menu after a confirmation prompt; the action stays out of Agent Manager, which closes sessions through its own flow.
+- Open the edited file in the editor from an "Open in Editor" button on Edit and Write tool cards, next to "Open in Diff Viewer".
 
 ### Fixes & Enhancements
 

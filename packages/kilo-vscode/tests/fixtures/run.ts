@@ -10,6 +10,7 @@ export type Mutation = {
   id: string
   anchor: string
   replace: string
+  file?: string
 }
 
 const root = path.resolve(import.meta.dir, "../..")
@@ -19,7 +20,7 @@ const output = path.join(os.tmpdir(), "kilo")
 const happy = pathToFileURL(Bun.resolveSync("happy-dom", webview)).href
 
 async function compile(name: string, mutation?: Mutation) {
-  const text = mutation === undefined ? undefined : await Bun.file(source).text()
+  const text = mutation === undefined ? undefined : await Bun.file(mutation.file ?? source).text()
   let hits = 0
   const parser = (code: string, opts: object, parse: (code: string, opts: object) => unknown) => {
     if (code !== text || mutation === undefined) return parse(code, opts)
