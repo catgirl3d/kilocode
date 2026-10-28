@@ -21,6 +21,7 @@ await Telemetry.init({
 })
 if (process.env.TEST_HOST_ENABLED) Telemetry.setHostEnabled(true, enabled)
 if (process.env.TEST_RUNTIME_ENABLED) Telemetry.setEnabled(true)
+if (process.env.TEST_SET_ENABLED) Telemetry.setEnabled(true) // fork_change
 if (process.env.TEST_LOGIN) Telemetry.trackCliStart()
 // Overlapping auth checks must not enqueue the same alias twice.
 await Promise.all([

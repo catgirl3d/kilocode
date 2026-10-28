@@ -1721,7 +1721,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             this.postMessage({ type: "telemetryLevelResult", ok: false })
             break
           }
-          this.postMessage({ type: "telemetryLevelResult", ok: true, enabled: message.enabled })
+          this.postMessage({ type: "telemetryLevelResult", ok: true, enabled }) // fork_change - report the effective level after the fork-wide hard-off
           void this.fetchAndSendGlobalConfig()
           break
         }
