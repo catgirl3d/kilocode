@@ -49,6 +49,7 @@ import { focusPrompt } from "../../utils/tab-navigation"
 
 interface TaskHeaderProps {
   readonly?: boolean
+  onConvert?: (sessionId: string) => void // fork_change
 }
 
 export const TaskHeader: Component<TaskHeaderProps> = (props) => {
@@ -161,6 +162,24 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       disabled: !sid(),
       run: remove,
     } satisfies OverflowItem,
+  ])
+  // Convert needs an idle session. Only the session id is read here, so a sub-agent with no status entry counts as idle.
+  // The sidebar viewer's host re-checks the status before forking; the Agent Manager inspector's host does not.
+  const ready = createMemo(() => session.status() === "idle" && !!session.currentSessionID())
+  const convert = () => {
+    const id = session.currentSessionID()
+    if (!id) return
+    props.onConvert?.(id)
+  }
+  const menu = createMemo<OverflowItem[]>(() => [
+    {
+      key: "convert",
+      icon: "fork",
+      label: language.t("session.action.convert"),
+      description: language.t("session.action.convert.description"),
+      disabled: !ready(),
+      run: convert,
+    },
   ])
   // fork_change end
 
@@ -580,6 +599,9 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
           <Show when={compact()}>
             <Show when={props.readonly} fallback={<PromptOverflow items={actions()} placement="bottom-end" />}>
               {searchView()}
+              <Show when={props.onConvert}>
+                <PromptOverflow items={menu()} placement="bottom-end" />
+              </Show>
             </Show>
           </Show>
           <Show when={!compact()}>
@@ -613,6 +635,9 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
               </Tooltip>
             </Show>
             {searchView()}
+            <Show when={props.readonly && props.onConvert}>
+              <PromptOverflow items={menu()} placement="bottom-end" />
+            </Show>
           </Show>
           {/* fork_change end */}
           <Show when={hasMessages()}>

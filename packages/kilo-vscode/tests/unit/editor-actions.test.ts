@@ -15,11 +15,24 @@ afterEach(() => {
 })
 
 describe("Source session routing", () => {
-  it("hands an attributed source session to the reveal command", () => {
-    const handled = handleEditorAction({ type: "openSourceSession", sessionID: "ses_sidebar" }, { dir: () => "/repo" })
+  it("hands an attributed source session to the reveal command with its tracked directory", () => {
+    const handled = handleEditorAction(
+      { type: "openSourceSession", sessionID: "ses_fork" },
+      { dir: () => "/repo", known: (id) => (id === "ses_fork" ? "/repo/.kilo/worktrees/feature" : undefined) },
+    )
 
     expect(handled).toBe(true)
-    expect(execute.mock.calls).toEqual([["kilo-code.new.revealSession", "ses_sidebar"]])
+    expect(execute.mock.calls).toEqual([["kilo-code.new.revealSession", "ses_fork", "/repo/.kilo/worktrees/feature"]])
+  })
+
+  it("passes no directory for a session the provider does not track", () => {
+    const handled = handleEditorAction(
+      { type: "openSourceSession", sessionID: "ses_sidebar" },
+      { dir: () => "/repo", known: () => undefined },
+    )
+
+    expect(handled).toBe(true)
+    expect(execute.mock.calls).toEqual([["kilo-code.new.revealSession", "ses_sidebar", undefined]])
   })
 })
 

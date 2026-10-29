@@ -448,7 +448,9 @@ export async function activate(context: vscode.ExtensionContext) {
     await provider.openSession(sessionID, directory)
   }
   context.subscriptions.push(
-    vscode.commands.registerCommand("kilo-code.new.revealSession", (sessionID: string) => reveal(sessionID)),
+    vscode.commands.registerCommand("kilo-code.new.revealSession", (sessionID: string, directory?: string) =>
+      reveal(sessionID, directory),
+    ),
   )
   // fork_change end
   const attention = new AttentionService(connectionService, {

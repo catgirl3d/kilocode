@@ -1,6 +1,7 @@
 import type { KiloClient, Session } from "@kilocode/sdk/v2/client"
 import { getErrorMessage } from "../kilo-provider-utils"
 import { TelemetryProxy, TelemetryEventName } from "../services/telemetry"
+import { isRunningStatus } from "../session-status" // fork_change
 import type { WorktreeStateManager } from "./WorktreeStateManager"
 import { PLATFORM } from "./constants"
 import { recordForkHandoff } from "./fork-handoff"
@@ -42,6 +43,20 @@ export async function forkSession(
     if (!worktreeId || !ctx.state) return ctx.directory
     return ctx.state.getWorktree(worktreeId)?.path ?? ctx.directory
   })()
+
+  // fork_change start - refuse running sessions for every Agent Manager entry point, matching the sidebar
+  const status = await Promise.resolve()
+    .then(() => client.session.status({ directory }, { throwOnError: true }))
+    .then((result) => result.data?.[sessionId]?.type ?? "idle")
+    .catch((err) => {
+      ctx.log("forkSession: status check failed:", getErrorMessage(err))
+      return "busy" as const
+    })
+  if (isRunningStatus(status)) {
+    ctx.postError("Wait for the session to finish before forking it.")
+    return null
+  }
+  // fork_change end
 
   let forked: Session
   try {

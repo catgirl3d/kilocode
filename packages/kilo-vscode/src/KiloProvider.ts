@@ -2071,6 +2071,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         sessionID
           ? this.getWorkspaceDirectory(sessionID)
           : (this.getProjectDirectory(this.currentSession?.id) ?? this.getWorkspaceDirectory(this.currentSession?.id)),
+      known: (sessionID) => this.sessionDirectories.get(sessionID),
       // fork_change end
       diff: this.diffVirtualProvider,
       openPRComment: (comment, sessionID) => this.openChanges(sessionID, undefined, comment),
