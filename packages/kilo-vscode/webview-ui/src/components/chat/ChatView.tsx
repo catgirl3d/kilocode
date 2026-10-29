@@ -43,6 +43,7 @@ interface ChatViewProps {
   onShowHistory?: () => void
   onForkMessage?: (sessionId: string, messageId: string) => void
   onForkSession?: (sessionId: string) => void
+  onConvert?: (sessionId: string) => void // fork_change
   readonly?: boolean
   /** Whether this chat owns actionable prompt controls. Defaults to true. */
   interactivePrompts?: boolean
@@ -431,7 +432,9 @@ export const ChatView: Component<ChatViewProps> = (props) => {
           <Show when={isSidebar() && !props.readonly && tabs && showTabStrip(tabs.ids())}>
             <SessionTabStrip />
           </Show>
-          <TaskHeader readonly={props.readonly} />
+          {/* fork_change start - a read-only sub-agent viewer converts its session from the header */}
+          <TaskHeader readonly={props.readonly} onConvert={props.onConvert} />
+          {/* fork_change end */}
           <div class="chat-messages-wrapper">
             <div class="chat-messages">
               <MessageList

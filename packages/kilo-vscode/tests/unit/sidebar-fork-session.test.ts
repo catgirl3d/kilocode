@@ -9,6 +9,7 @@ function ctx(overrides: Partial<ForkContext> = {}): ForkContext {
     session: {
       fork: mock(async () => ({ data: session })),
       promptAsync: mock(async () => ({})),
+      status: mock(async () => ({ data: {} })),
     },
   }
   return {
