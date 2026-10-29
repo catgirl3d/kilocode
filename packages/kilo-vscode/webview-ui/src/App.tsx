@@ -364,6 +364,12 @@ const AppContent: Component = () => {
 
   const handleForked = (message: { type?: string; sessionID?: string; forkedFromID?: string }) => {
     if (message.type !== "sessionForked" || !message.sessionID) return
+    // fork_change start - the sub-agent viewer keeps showing its child; the fork opens through the sidebar or Agent Manager
+    if (currentView() === "subAgentViewer") {
+      vscode.postMessage({ type: "openSourceSession", sessionID: message.sessionID })
+      return
+    }
+    // fork_change end
     if (tabs && message.forkedFromID) tabs.openAfter(message.forkedFromID, message.sessionID)
     if (tabs && !message.forkedFromID) tabs.open(message.sessionID)
     if (!tabs) session.selectSession(message.sessionID)
@@ -515,7 +521,9 @@ const AppContent: Component = () => {
               />
             </Match>
             <Match when={currentView() === "subAgentViewer"}>
-              <ChatView readonly />
+              {/* fork_change start - a sub-agent viewer converts its session into a regular one */}
+              <ChatView readonly onConvert={(id) => vscode.postMessage({ type: "forkSession", sessionId: id })} />
+              {/* fork_change end */}
             </Match>
           </Switch>
         }

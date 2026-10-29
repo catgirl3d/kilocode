@@ -41,6 +41,7 @@ type EditorActionMessage = EditorOpenMessage & {
 
 type EditorActionOptions = {
   dir: (sessionID?: string) => string
+  known?: (sessionID: string) => string | undefined
   diff?: DiffVirtualProvider
   openMarkdown?: (file: string, sessionID?: string, line?: number, column?: number) => boolean
   openPRComment?: (comment: PRReviewCommentData, sessionID?: string) => void
@@ -143,6 +144,12 @@ function openMarkdownFile(file: string, message: EditorActionMessage, opts: Edit
   return opts.openMarkdown?.(file, message.sessionID, message.line, message.column) === true
 }
 
+function revealSession(message: EditorActionMessage, opts: EditorActionOptions): void {
+  if (!message.sessionID) return
+  // The provider's tracked directory, when it has one, keeps the reveal in the session's worktree.
+  void vscode.commands.executeCommand("kilo-code.new.revealSession", message.sessionID, opts.known?.(message.sessionID))
+}
+
 export function handleEditorAction(message: EditorActionMessage, opts: EditorActionOptions): boolean {
   // fork_change end
   if (message.type === "openPRComment") {
@@ -206,7 +213,7 @@ export function handleEditorAction(message: EditorActionMessage, opts: EditorAct
   }
   // fork_change start
   if (message.type === "openSourceSession") {
-    if (message.sessionID) void vscode.commands.executeCommand("kilo-code.new.revealSession", message.sessionID)
+    revealSession(message, opts)
     return true
   }
   // fork_change end

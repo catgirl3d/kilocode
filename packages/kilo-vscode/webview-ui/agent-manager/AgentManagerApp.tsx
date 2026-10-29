@@ -2454,6 +2454,7 @@ const AgentManagerContent: Component = () => {
                         onCloseOthers={subagents.closeOthers}
                         onReorder={subagents.reorder}
                         onClosePanel={() => panels.close(SidePanel.Subagents)}
+                        onConvert={readOnly() ? undefined : (id) => handleForkSession(id)} /* fork_change */
                       />
                     </Show>
                     <Show when={editPreview.preview()}>
