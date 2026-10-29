@@ -31,9 +31,12 @@ interface Props {
   onCloseOthers: (id: string) => void
   onReorder: (from: string, to: string) => void
   onClosePanel: () => void
+  onConvert?: (id: string) => void // fork_change
 }
 
-const SubagentChat: Component<{ active: Accessor<string | undefined> }> = (props) => {
+// fork_change start - the convert action reaches the inspector's viewer
+const SubagentChat: Component<Pick<Props, "active" | "onConvert">> = (props) => {
+  // fork_change end
   const session = useSession()
 
   createEffect(
@@ -46,7 +49,13 @@ const SubagentChat: Component<{ active: Accessor<string | undefined> }> = (props
   return (
     <DataBridge>
       {/* fork_change start - [fork] status-only dock for the readonly inspector */}
-      <ChatView readonly interactivePrompts={false} statusDock promptBoxId="agent-manager:subagent" />
+      <ChatView
+        readonly
+        interactivePrompts={false}
+        statusDock
+        promptBoxId="agent-manager:subagent"
+        onConvert={props.onConvert}
+      />
       {/* fork_change end */}
     </DataBridge>
   )
@@ -144,7 +153,9 @@ const SubagentContent: Component<ContentProps> = (props) => {
         }}
       />
       <div class="am-subagent-chat">
-        <SubagentChat active={props.active} />
+        {/* fork_change start - the convert action reaches the inspector's viewer */}
+        <SubagentChat active={props.active} onConvert={props.onConvert} />
+        {/* fork_change end */}
       </div>
     </section>
   )
