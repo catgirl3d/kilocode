@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Convert a read-only sub-agent session into a regular session from the More actions menu in its header; the copy opens as a new session while the sub-agent view stays as it is.
 - PostHog telemetry is fully disabled in this fork: the CLI and VS Code send no events even when VS Code telemetry is enabled, `KILO_TELEMETRY_LEVEL=all` is set, or `experimental.openTelemetry` is on; machine id, conda AAU token, and profile email are not collected for telemetry.
 - Put the computer to sleep or hibernation once Kilo agents finish with a new Agent Manager button next to Keep Awake — sessions that only wait for a permission or an answer count as finished, a cancellable one-minute countdown runs first, and the timer fires once; a plain "Sleep in…" / "Hibernate in…" timer with presets or a custom number of minutes works independently of the agents.
 - Copy the files changed in a worktree into the local branch as-is, without relying on the branch diff — a new "Changed files" mode in the Agent Manager apply dialog that lists only the worktree's own changes even after the base branch was rebased or force-pushed, and asks before overwriting files that also changed locally.
