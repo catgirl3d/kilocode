@@ -1912,13 +1912,15 @@ export const SessionProvider: ParentComponent = (props) => {
     setSessionsProject(hasMore ? undefined : projectId)
   }
 
-  function handleSessionDeleted(sessionID: string) {
+  // fork_change start - a view that only releases a session keeps no tombstone, so a reopened sub-agent gets its events again
+  function handleSessionDeleted(sessionID: string, tombstone = true) {
+    // fork_change end
     pendingOptimistic.delete(sessionID)
     freshSessions.delete(sessionID)
     aborts.clear(sessionID)
     confirmSubmissions(sessionID)
     batch(() => {
-      removedSessions.add(sessionID) // fork_change
+      if (tombstone) removedSessions.add(sessionID) // fork_change
       // Collect message IDs so we can clean up their parts (store + stash)
       const msgs = store.messages[sessionID] ?? []
       const msgIds = msgs.map((m) => m.id)
@@ -3135,7 +3137,7 @@ export const SessionProvider: ParentComponent = (props) => {
     selectSession,
     scrollBottomID,
     consumeScrollBottom,
-    releaseSession: handleSessionDeleted,
+    releaseSession: (id: string) => handleSessionDeleted(id, false), // fork_change
     deleteSession,
     renameSession,
     exportSessionTranscript,
