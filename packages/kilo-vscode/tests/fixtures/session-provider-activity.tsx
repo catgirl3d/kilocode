@@ -71,7 +71,6 @@ const { DialogProvider } = await import("@kilocode/kilo-ui/context/dialog")
 const { SessionProvider, useSession, useSessionVisibility } = await import("../../webview-ui/src/context/session")
 const { LocalTabsProvider, useLocalTabs } = await import("../../webview-ui/src/context/local-tabs")
 const { createProjectRegistry } = await import("../../webview-ui/agent-manager/project/registry")
-const { DialogProvider } = await import("@kilocode/kilo-ui/context/dialog")
 const { ProjectList } = await import("../../webview-ui/agent-manager/ProjectList")
 const { createModeRouter } = await import("../../webview-ui/agent-manager/mode-router")
 const { initialMessage } = await import("../../webview-ui/agent-manager/initial-message")
@@ -632,6 +631,33 @@ try {
     } finally {
       Date.now = original
     }
+  }
+
+  {
+    // Releasing a view drops its cached data but is not a deletion, so a reopened sub-agent keeps receiving events.
+    const sid = "released-child"
+    const request = (id: string) => ({
+      type: "permissionRequest",
+      permission: { id, sessionID: sid, toolName: "bash", patterns: [], always: [], args: {} },
+    })
+    await emit({ type: "sessionCreated", session: info(sid) })
+    value.releaseSession(sid)
+    await emit({ type: "sessionStatus", sessionID: sid, status: "busy" })
+    assert.equal(value.allStatusMap()[sid]?.type, "busy", "A released session still receives status")
+    await emit(request("released-permission"))
+    assert(
+      value.permissions().some((item) => item.id === "released-permission"),
+      "A released session still receives permissions",
+    )
+    await emit({ type: "sessionStatus", sessionID: sid, status: "idle" })
+    await emit({ type: "sessionDeleted", sessionID: sid })
+    await emit({ type: "sessionStatus", sessionID: sid, status: "busy" })
+    assert.notEqual(value.allStatusMap()[sid]?.type, "busy", "A deleted session drops late status")
+    await emit(request("deleted-permission"))
+    assert(
+      !value.permissions().some((item) => item.id === "deleted-permission"),
+      "A deleted session drops late permissions",
+    )
   }
   const auto = { providerID: "kilo", modelID: "kilo-auto/free" }
   const personal = { providerID: "kilo", modelID: "personal" }
