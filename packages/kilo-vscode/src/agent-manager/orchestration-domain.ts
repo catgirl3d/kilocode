@@ -351,6 +351,12 @@ async function locate(input: Target): Promise<Located> {
     if (missing(response.error)) throw new OrchestrationError("stale_session", "The managed session no longer exists")
     throw new OrchestrationError("host_error", "The managed session could not be verified")
   }
+  // fork_change start - [fork] peer targets must be root sessions
+  if (response.data.parentID != null)
+    throw new OrchestrationError("unknown_session", "The target session is a subagent, not a root session")
+  if (response.data.time?.archived != null)
+    throw new OrchestrationError("unknown_session", "The target session is archived")
+  // fork_change end
   if (!(await sameManagedDirectory(response.data.directory, dir))) {
     throw new OrchestrationError("cross_workspace", "The managed session belongs to a different workspace directory")
   }
@@ -384,10 +390,10 @@ async function blocked(input: Target, dir: string, name: string, questions?: "di
       .join(" | ")
     const count = first.questions.length
     const more = mine.length > 1 ? ` Pending request IDs: ${mine.map((value) => value.id).join(", ")}.` : ""
-    return `The managed session ${input.sessionID} ("${name}") is waiting for input. Pending question requests: ${detail}. Call agent_manager with action "answer", sessionID "${input.sessionID}", questionID "${first.id}", and one label array per question in that request (${count} total), in order, before prompting.${more}`
+    return `The target session ${input.sessionID} ("${name}") is waiting for input. Pending question requests: ${detail}. Call agent_manager with action "answer", sessionID "${input.sessionID}", questionID "${first.id}", and one label array per question in that request (${count} total), in order, before prompting.${more}` // fork_change
   }
   if ((perms.data ?? []).some((value) => value.sessionID === input.sessionID)) {
-    return `The managed session ${input.sessionID} ("${name}") has a pending permission request; resolve it in Agent Manager before prompting`
+    return `The target session ${input.sessionID} ("${name}") has a pending permission request; resolve it in the session's UI before prompting` // fork_change
   }
   return undefined
 }
@@ -434,6 +440,7 @@ export async function answer(input: {
   questionID?: string
   answers: string[][]
   managed?: ManagedSession
+  directory?: string // fork_change
 }): Promise<{ questionID: string }> {
   const dir = (await locate(input)).dir
   const listed = await input.client.question.list({ directory: dir })
