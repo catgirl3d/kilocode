@@ -567,6 +567,7 @@ export async function closeLifecycleSession(
 ): Promise<null> {
   const state = ctx.peekState()
   const dir = state?.directoryFor(sessionId) ?? host.sessions.directories()?.get(sessionId) ?? ctx.root ?? process.cwd()
+  const worktreeId = state?.getSession(sessionId)?.worktreeId ?? state?.findWorktreeByPath(dir)?.id ?? null // fork_change
   await host.sessions.abort([sessionId])
   // Drop the session from state before stopping its processes. Process shutdown
   // can be slow or unavailable, and while a closed session is still listed here
@@ -574,6 +575,7 @@ export async function closeLifecycleSession(
   // because a webview with no remaining real tabs looks like a reload.
   host.sessions.forget(sessionId)
   state?.removeSession(sessionId)
+  state?.closeSession(sessionId, worktreeId) // fork_change
   host.sessions.clearDirectory(sessionId)
   if (state) host.push()
   try {

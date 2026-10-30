@@ -230,6 +230,15 @@ describe("WorktreeStateManager", () => {
       await restored.flush()
     })
 
+    it("keeps stopped-session records beyond the old 1,000-entry limit", async () => {
+      const wt = manager.addWorktree({ branch: "fix", path: "/tmp/fix", parentBranch: "main" })
+      manager.closeSession("ses-first", wt.id)
+      for (let index = 0; index < 1_001; index++) manager.closeSession(`ses-stopped-${index}`, wt.id)
+      await manager.flush()
+
+      expect(manager.isSessionClosed("ses-first")).toBe(true)
+    })
+
     it("removes stopped-session records when their worktree is deleted", () => {
       const wt = manager.addWorktree({ branch: "fix", path: "/tmp/fix", parentBranch: "main" })
       manager.closeSession("ses-stopped", wt.id)
