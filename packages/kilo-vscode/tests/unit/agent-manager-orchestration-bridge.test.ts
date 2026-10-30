@@ -125,9 +125,11 @@ describe("AgentManagerOrchestrationBridge", () => {
       },
       prs: (dir) => (overrides?.prs ? overrides.prs(dir) : new Map()),
       push: (dir) => (overrides?.push ? overrides.push(dir) : push()),
-      resolve: (id, dir) => overrides?.resolve?.(id, dir),
+      resolve: (id, dir) =>
+        overrides?.resolve ? overrides.resolve(id, dir) : state.isSessionClosed(id) ? undefined : state.getSession(id),
       managed: (id, dir) => (overrides?.managed ? overrides.managed(id, dir) : managed.has(id)),
-      closed: (id, dir) => (overrides?.closed ? overrides.closed(id, dir) : closed.has(id)),
+      closed: (id, dir) =>
+        overrides?.closed ? overrides.closed(id, dir) : closed.has(id) || state.isSessionClosed(id),
       close: async (id, dir) => (overrides?.close ? overrides.close(id, dir) : close(id, dir)),
       log: () => undefined,
     })
@@ -329,6 +331,69 @@ describe("AgentManagerOrchestrationBridge", () => {
     test.bridge.dispose()
   })
 
+  it("rejects a reply whose request route is unknown", async () => {
+    const test = harness()
+    test.request({
+      id: "amr_unknown_reply",
+      sessionID: "ses_target",
+      operation: "prompt",
+      targetSessionID: "ses_caller",
+      prompt: "This must not be delivered.",
+      replyTo: "amr_missing",
+    })
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.promptAsync).not.toHaveBeenCalled()
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "unknown_session", message: "Agent Manager reply request amr_missing is unknown" },
+    })
+    test.bridge.dispose()
+  })
+
+  it("rejects a reply route that belongs to another workspace", async () => {
+    const secondary = fs.mkdtempSync(path.join(os.tmpdir(), "am-orchestration-reply-secondary-"))
+    const test = harness({
+      root: (origin) => (origin === secondary ? secondary : root),
+      resolve: (id, origin) =>
+        id === "ses_secondary_target" && origin === secondary ? { id, worktreeId: null, createdAt: "" } : undefined,
+    })
+    test.managed.add("ses_sender")
+    test.request(
+      {
+        id: "amr_secondary_route",
+        sessionID: "ses_sender",
+        operation: "prompt",
+        targetSessionID: "ses_secondary_target",
+        prompt: "Start",
+      },
+      secondary,
+    )
+    await waitFor(() => test.replies.length === 1)
+    expect(test.replies[0]).toMatchObject({
+      result: { operation: "prompt", sessionID: "ses_secondary_target", delivered: true },
+    })
+
+    test.request(
+      {
+        id: "amr_cross_workspace_reply",
+        sessionID: "ses_secondary_target",
+        operation: "prompt",
+        targetSessionID: "ses_sender",
+        prompt: "Reply",
+        replyTo: "amr_secondary_route",
+      },
+      root,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.promptAsync).toHaveBeenCalledTimes(1)
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "cross_workspace", message: "The Agent Manager reply belongs to a different workspace directory" },
+    })
+    test.bridge.dispose()
+    fs.rmSync(secondary, { recursive: true, force: true })
+  })
+
   it("rejects a reply after the original session is closed", async () => {
     const test = harness()
     test.request({ ...request, id: "amr_closed" })
@@ -506,6 +571,271 @@ describe("AgentManagerOrchestrationBridge", () => {
       error: { code: "unknown_session", message: "The original Agent Manager sender is no longer available" },
     })
     expect(test.promptAsync).toHaveBeenCalledTimes(1)
+    bridge.dispose()
+  })
+
+  it("prompts a live root session that Agent Manager does not track in the same directory", async () => {
+    const { bridge, ctx, test } = real()
+    ctx.upsertSession({
+      id: "ses_other_tab",
+      parentID: null,
+      title: "Other tab",
+      createdAt: "",
+      updatedAt: "",
+      revert: null,
+      summary: null,
+      worktreeId: null,
+    })
+    test.request(
+      {
+        id: "amr_untracked_prompt",
+        sessionID: "ses_tab",
+        operation: "prompt",
+        targetSessionID: "ses_other_tab",
+        prompt: "Continue",
+      },
+      ctx.root,
+    )
+    await waitFor(() => test.replies.length === 1)
+
+    expect(test.rejections).toEqual([])
+    expect(test.promptAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionID: "ses_other_tab", directory: ctx.root }),
+      { throwOnError: true },
+    )
+    expect(test.replies[0]).toEqual({
+      requestID: "amr_untracked_prompt",
+      directory: ctx.root,
+      result: { operation: "prompt", sessionID: "ses_other_tab", delivered: true },
+    })
+    bridge.dispose()
+  })
+
+  it("prompts an untracked live session in the sender's worktree directory", async () => {
+    const { bridge, test } = real()
+    test.client.session.get.mockImplementation(async ({ sessionID }) =>
+      sessionID === "ses_worktree_tab"
+        ? ({ data: { id: "ses_worktree_tab", directory: dir, title: "Worktree tab" } as Session } as never)
+        : ({ error: { name: "NotFoundError" } } as never),
+    )
+    test.request(
+      {
+        id: "amr_worktree_prompt",
+        sessionID: "ses_worktree_sender",
+        operation: "prompt",
+        targetSessionID: "ses_worktree_tab",
+        prompt: "Continue",
+      },
+      dir,
+    )
+    await waitFor(() => test.replies.length === 1)
+
+    expect(test.rejections).toEqual([])
+    expect(test.promptAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionID: "ses_worktree_tab", directory: dir }),
+      { throwOnError: true },
+    )
+    expect(test.replies[0]).toEqual({
+      requestID: "amr_worktree_prompt",
+      directory: dir,
+      result: { operation: "prompt", sessionID: "ses_worktree_tab", delivered: true },
+    })
+    bridge.dispose()
+  })
+
+  it("refuses a prompt to a subagent session", async () => {
+    const { bridge, ctx, test } = real()
+    test.client.session.get.mockImplementation(async ({ sessionID, directory }) => ({
+      data: {
+        id: sessionID ?? "ses_child",
+        directory: directory ?? ctx.root,
+        title: "Child",
+        parentID: "ses_parent",
+      } as Session,
+    }))
+    test.request(
+      {
+        id: "amr_child_prompt",
+        sessionID: "ses_caller",
+        operation: "prompt",
+        targetSessionID: "ses_child",
+        prompt: "Continue",
+      },
+      ctx.root,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.promptAsync).not.toHaveBeenCalled()
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "unknown_session", message: "The target session is a subagent, not a root session" },
+    })
+    bridge.dispose()
+  })
+
+  it("refuses a prompt to a session stopped through Agent Manager", async () => {
+    const { bridge, ctx, test } = real()
+    state.closeSession("ses_stopped", null)
+    test.request(
+      {
+        id: "amr_stopped_prompt",
+        sessionID: "ses_caller",
+        operation: "prompt",
+        targetSessionID: "ses_stopped",
+        prompt: "Continue",
+      },
+      ctx.root,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.promptAsync).not.toHaveBeenCalled()
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "unknown_session", message: "The target session was stopped through Agent Manager" },
+    })
+    bridge.dispose()
+  })
+
+  it("does not reuse the sender directory to reach a session outside it", async () => {
+    const { bridge, test } = real()
+    test.client.session.get.mockImplementation(async ({ sessionID }) =>
+      sessionID === "ses_root"
+        ? ({ data: { id: "ses_root", directory: root, title: "Root" } as Session } as never)
+        : ({ error: { name: "NotFoundError" } } as never),
+    )
+    test.request(
+      {
+        id: "amr_outside_prompt",
+        sessionID: "ses_caller",
+        operation: "prompt",
+        targetSessionID: "ses_root",
+        prompt: "Continue",
+      },
+      dir,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.promptAsync).not.toHaveBeenCalled()
+    expect(test.rejections[0]).toMatchObject({ error: { code: "cross_workspace" } })
+    bridge.dispose()
+  })
+
+  it("reports a deleted target as stale", async () => {
+    const { bridge, ctx, test } = real()
+    test.client.session.get.mockImplementation(async () => ({ error: { name: "NotFoundError" } }))
+    test.request(
+      {
+        id: "amr_deleted_prompt",
+        sessionID: "ses_caller",
+        operation: "prompt",
+        targetSessionID: "ses_deleted",
+        prompt: "Continue",
+      },
+      ctx.root,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.promptAsync).not.toHaveBeenCalled()
+    expect(test.rejections[0]).toMatchObject({ error: { code: "stale_session" } })
+    bridge.dispose()
+  })
+
+  it("refuses a prompt to an archived session", async () => {
+    const { bridge, ctx, test } = real()
+    test.client.session.get.mockImplementation(async ({ sessionID, directory }) => ({
+      data: {
+        id: sessionID ?? "ses_archived",
+        directory: directory ?? ctx.root,
+        title: "Archived",
+        time: { created: 1, updated: 1, archived: 2 },
+      } as Session,
+    }))
+    test.request(
+      {
+        id: "amr_archived_prompt",
+        sessionID: "ses_caller",
+        operation: "prompt",
+        targetSessionID: "ses_archived",
+        prompt: "Continue",
+      },
+      ctx.root,
+    )
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.promptAsync).not.toHaveBeenCalled()
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "unknown_session", message: "The target session is archived" },
+    })
+    bridge.dispose()
+  })
+
+  it("refuses a prompt to a session closed in project state", async () => {
+    state.addSession("ses_state_stopped", null)
+    state.closeSession("ses_state_stopped", null)
+    const test = harness()
+    test.request({
+      id: "amr_state_stopped",
+      sessionID: "ses_caller",
+      operation: "prompt",
+      targetSessionID: "ses_state_stopped",
+      prompt: "Continue",
+    })
+    await waitFor(() => test.rejections.length === 1)
+
+    expect(test.promptAsync).not.toHaveBeenCalled()
+    expect(test.rejections[0]).toMatchObject({
+      error: { code: "unknown_session", message: "The target session was stopped through Agent Manager" },
+    })
+    test.bridge.dispose()
+  })
+
+  it("answers an untracked root session's pending question in the same directory", async () => {
+    const { bridge, ctx, test } = real()
+    test.client.question.list.mockImplementation(async () => ({
+      data: [
+        {
+          id: "que_untracked",
+          sessionID: "ses_question_tab",
+          questions: [{ header: "Approve", question: "Proceed?", options: [{ label: "Yes", description: "ok" }] }],
+        },
+      ],
+    }))
+    test.request(
+      {
+        id: "amr_untracked_blocked",
+        sessionID: "ses_caller",
+        operation: "prompt",
+        targetSessionID: "ses_question_tab",
+        prompt: "Continue",
+      },
+      ctx.root,
+    )
+    await waitFor(() => test.rejections.length === 1)
+    expect(test.rejections[0]).toMatchObject({
+      error: {
+        code: "unavailable_session",
+        message: expect.stringContaining('Call agent_manager with action "answer"'),
+      },
+    })
+
+    test.request(
+      {
+        id: "amr_untracked_answer",
+        sessionID: "ses_caller",
+        operation: "answer",
+        targetSessionID: "ses_question_tab",
+        answers: [["Yes"]],
+      },
+      ctx.root,
+    )
+    await waitFor(() => test.replies.length === 1)
+    expect(test.questionReply).toHaveBeenCalledWith(
+      { requestID: "que_untracked", answers: [["Yes"]], directory: ctx.root },
+      { throwOnError: true },
+    )
+    expect(test.replies[0]).toEqual({
+      requestID: "amr_untracked_answer",
+      directory: ctx.root,
+      result: { operation: "answer", sessionID: "ses_question_tab", questionID: "que_untracked", resolved: true },
+    })
     bridge.dispose()
   })
 
@@ -1036,6 +1366,13 @@ describe("AgentManagerOrchestrationBridge", () => {
     )
     expect(other.getSession(live.id)).toBeUndefined()
 
+    test.client.session.get.mockImplementation(async ({ sessionID, directory }) =>
+      sessionID === live.id
+        ? ({ data: { id: live.id, directory: worktree, title: "Secondary live" } as Session } as never)
+        : ({
+            data: { id: sessionID ?? "ses_target", directory: directory ?? root, title: "Target" } as Session,
+          } as never),
+    )
     test.request({
       id: "amr_secondary_foreign",
       sessionID: "ses_caller",
@@ -1044,7 +1381,8 @@ describe("AgentManagerOrchestrationBridge", () => {
       prompt: "Cross project",
     })
     await waitFor(() => test.rejections.length === 1)
-    expect(test.rejections[0]).toMatchObject({ error: { code: "unknown_session" } })
+    expect(test.rejections[0]).toMatchObject({ error: { code: "cross_workspace" } })
+    expect(test.promptAsync).toHaveBeenCalledTimes(1)
 
     test.bridge.dispose()
     await other.flush()

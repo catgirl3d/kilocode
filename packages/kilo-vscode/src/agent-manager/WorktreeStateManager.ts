@@ -111,7 +111,6 @@ export interface StateLoadResult extends MigrationResult {
 import { KILO_DIR, migrateAgentManagerData, type MigrationResult } from "./constants"
 
 const STATE_FILE = "agent-manager.json"
-const CLOSED_LIMIT = 1_000
 
 let counter = 0
 
@@ -408,7 +407,6 @@ export class WorktreeStateManager {
   closeSession(id: string, worktreeId: string | null): void {
     this.closed.delete(id)
     this.closed.set(id, worktreeId)
-    if (this.closed.size > CLOSED_LIMIT) this.closed.delete(this.closed.keys().next().value!)
     void this.save()
   }
 
