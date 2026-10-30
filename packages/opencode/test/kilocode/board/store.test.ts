@@ -166,7 +166,10 @@ describe("BoardStore", () => {
           messages: [],
           hasMore: false,
         })
-        expect(yield* BoardStore.activity({ sessionID: id("root"), after: 0 })).toEqual({ cursor: 1, message: 0 })
+        expect(yield* BoardStore.activity({ sessionID: id("root"), after: 0 })).toMatchObject({
+          cursor: 1,
+          message: 0,
+        })
         expect(yield* BoardStore.read({ sessionID: id("root"), since: first.id })).toMatchObject({
           messages: [],
           cursor: first.id,
@@ -183,7 +186,10 @@ describe("BoardStore", () => {
         })
         const next = yield* BoardStore.post({ ...args, callID: "after", body: "After reset", reply_to: first.id })
         expect((yield* BoardStore.read({ sessionID: id("root"), since: first.id })).messages).toEqual([next])
-        expect(yield* BoardStore.activity({ sessionID: id("root"), after: 1 })).toEqual({ cursor: 2, message: 2 })
+        expect(yield* BoardStore.activity({ sessionID: id("root"), after: 1 })).toMatchObject({
+          cursor: 2,
+          message: 2,
+        })
         expect((yield* BoardStore.observe({ ...input, before: first.id })).messages).toEqual([])
         expect((yield* BoardStore.reset({ ...input, revision: 1 }).pipe(Effect.exit))._tag).toBe("Failure")
         expect((yield* BoardStore.observe(input)).messages).toEqual([next])
@@ -396,7 +402,7 @@ describe("BoardStore", () => {
     expect(BoardStore.format(result.retry)).toBe(BoardStore.format(result.first))
     expect(result.retry.fromLabel).toBe(title)
     expect(result.read.messages).toEqual([result.retry])
-    expect(result.activity).toEqual({ cursor: 1, message: 1 })
+    expect(result.activity).toMatchObject({ cursor: 1, message: 1 })
   })
 
   test("does not notify siblings about main-only direct messages", async () => {
@@ -416,9 +422,52 @@ describe("BoardStore", () => {
       }),
     )
     expect(result.post.to).toBe("main")
-    expect(result.main).toEqual({ cursor: 1, message: 1 })
-    expect(result.sibling).toEqual({ cursor: 1, message: 0 })
+    expect(result.main).toMatchObject({ cursor: 1, message: 1 })
+    expect(result.sibling).toMatchObject({ cursor: 1, message: 0 })
     expect(result.history.messages).toContainEqual(result.post)
+  })
+
+  test("summarizes new addressed activity without exposing message bodies", async () => {
+    const result = await setup(() =>
+      Effect.gen(function* () {
+        yield* BoardStore.post({
+          sessionID: id("child"),
+          messageID: "msg_summary_ask",
+          to: "main",
+          type: "ASK",
+          body: "Private ask body",
+        })
+        yield* BoardStore.post({
+          sessionID: id("sibling"),
+          messageID: "msg_summary_broadcast",
+          to: "ALL",
+          type: "INFO",
+          body: "Broadcast body",
+        })
+        yield* BoardStore.post({
+          sessionID: id("root"),
+          messageID: "msg_summary_outgoing",
+          to: id("child"),
+          type: "INFO",
+          body: "Outgoing body",
+        })
+        const read = yield* BoardStore.read({ sessionID: id("root"), limit: 1 })
+        return {
+          main: yield* BoardStore.activity({ sessionID: id("root"), after: 0 }),
+          child: yield* BoardStore.activity({ sessionID: id("child"), after: 0 }),
+          consumed: yield* BoardStore.activity({ sessionID: id("root"), after: 0, read: read.cursor }),
+          read,
+        }
+      }),
+    )
+    expect(result.main).toMatchObject({ cursor: 3, message: 2, count: 2, types: { ASK: 1, INFO: 1 } })
+    expect(result.main.senders.toSorted()).toEqual([id("child"), id("sibling")].toSorted())
+    expect(JSON.stringify(result.main)).not.toContain("Private ask body")
+    expect(JSON.stringify(result.main)).not.toContain("Broadcast body")
+    expect(result.child).toMatchObject({ count: 2, types: { INFO: 2 } })
+    expect(result.child.senders.toSorted()).toEqual(["main", id("sibling")].toSorted())
+    expect(result.consumed).toMatchObject({ cursor: 3, count: 1, types: { INFO: 1 } })
+    expect(result.consumed.senders).toEqual([id("sibling")])
   })
 
   test("returns cursors on final and empty pages", async () => {
@@ -866,15 +915,15 @@ describe("BoardStore", () => {
     )
     expect(new Set(result.values.map((item) => item.id)).size).toBe(60)
     expect(result.sequences.map((item) => item.seq)).toEqual(Array.from({ length: 60 }, (_, index) => index + 1))
-    expect(result.first).toEqual({ cursor: 60, message: 60 })
+    expect(result.first).toMatchObject({ cursor: 60, message: 60 })
     expect(result.page.messages).toHaveLength(50)
     expect(result.page.hasMore).toBe(true)
     expect(result.rest.messages).toHaveLength(10)
     expect(result.rest.hasMore).toBe(false)
-    expect(result.own).toEqual({ cursor: 61, message: 0 })
-    expect(result.notice).toEqual({ cursor: 62, message: 62 })
-    expect(result.caught).toEqual({ cursor: 62, message: 0 })
-    expect(result.incoming).toEqual({ cursor: 63, message: 63 })
+    expect(result.own).toMatchObject({ cursor: 61, message: 0 })
+    expect(result.notice).toMatchObject({ cursor: 62, message: 62 })
+    expect(result.caught).toMatchObject({ cursor: 62, message: 0 })
+    expect(result.incoming).toMatchObject({ cursor: 63, message: 63 })
   })
 
   test("bounds excerpts and canonical storage without charging for display labels", async () => {
