@@ -364,13 +364,14 @@ it.live(
         const received = yield* waitFor(
           llm,
           (input) => main(input) && calls(input, "bash") >= 1 && calls(input, "board_read") === 0,
-          "main request with a fixed board notice",
+          "main request with a board notice",
         )
         const prefix = messages({ body: boundary })
         const outgoing = messages({ body: received })
         expect(outgoing.slice(0, prefix.length)).toEqual(prefix)
         expect(outgoing.at(-1)?.role).toBe("tool")
-        expect(JSON.stringify(outgoing.at(-1)?.content)).toContain(BoardNotice.text)
+        expect(JSON.stringify(outgoing.at(-1)?.content)).toContain(BoardNotice.signal)
+        expect(JSON.stringify(outgoing.at(-1)?.content)).toContain("Shared-board activity")
         expect(outgoing.filter((message) => message.role === "user")).toEqual(
           prefix.filter((message) => message.role === "user"),
         )
@@ -382,10 +383,10 @@ it.live(
         const update = yield* waitFor(
           llm,
           (input) => sibling(input) && calls(input, "board_post") >= 1 && calls(input, "board_read") === 0,
-          "sibling request with a fixed board notice",
+          "sibling request with a board notice",
         )
         const notice = text({ body: update })
-        expect(notice).toContain(BoardNotice.text)
+        expect(notice).toContain(BoardNotice.signal)
         expect(notice).not.toContain("A broadcast warning for every worker")
         expect(notice).not.toContain("A direct discovery for main")
         expect(notice).not.toContain("A routine broadcast body stays hidden")
@@ -496,10 +497,10 @@ for (const failed of [false, true]) {
           if (!read || !next) throw new Error("Missing requests after tool results")
           const first = JSON.stringify(messages({ body: read }).at(-1))
           const last = JSON.stringify(messages({ body: next }).at(-1))
-          expect(first).not.toContain(BoardNotice.text)
+          expect(first).not.toContain(BoardNotice.signal)
           expect(first.includes("Explicit read regression body")).toBe(!failed)
           expect(last).toContain("normal tool boundary")
-          expect(last.includes(BoardNotice.text)).toBe(failed)
+          expect(last.includes(BoardNotice.signal)).toBe(failed)
           expect(last).not.toContain("Explicit read regression body")
           const tools = (yield* sessions.messages({ sessionID: chat.id }))
             .flatMap((message) => message.parts)
@@ -569,7 +570,7 @@ it.live(
         expect(tool.state.status).not.toBe("running")
         expect(tool.state.status).not.toBe("pending")
         expect(parts.filter((part) => part.type === "tool")).toHaveLength(1)
-        expect(JSON.stringify(parts)).not.toContain(BoardNotice.text)
+        expect(JSON.stringify(parts)).not.toContain(BoardNotice.signal)
       }),
       { git: true, config },
     ),
