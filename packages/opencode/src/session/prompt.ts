@@ -1659,6 +1659,7 @@ export const layer = Layer.effect(
         // kilocode_change end
         msgs = KiloSessionPromptQueue.scope(sessionID, msgs) // kilocode_change - hide later queued prompts
         msgs = KiloSessionPrompt.trimBeforeLastSummary(msgs) // kilocode_change - trim on any completed summary (e.g. manual /compact against a text user)
+        BoardContext.prime({ cache: board, messages: msgs }) // kilocode_change - [fork] resume notice progress from persisted tool results
 
         // kilocode_change start - select loop state by chronology after retained-tail projection
         const latest = KiloSessionMessageOrder.latest(msgs)
