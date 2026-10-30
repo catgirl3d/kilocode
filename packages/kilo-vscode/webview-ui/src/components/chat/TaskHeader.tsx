@@ -81,13 +81,13 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   // fork_change start - session actions fold into the "..." menu
   const clipboard = useClipboard()
   const dialog = useDialog()
-  const copyId = () => {
-    const id = sid()
+  const copy = (id: string | undefined) => {
     if (!id) return
     void Promise.resolve(clipboard.write(id)).catch(() =>
       showToast({ variant: "error", title: language.t("session.action.copyId.failed") }),
     )
   }
+  const copyId = () => copy(sid())
   // The dialog keeps the session it was opened for, even if the current session changes meanwhile.
   // Nothing restores focus when the dialog unmounts, so it returns to the prompt once the focus trap lifts.
   const remove = () => {
@@ -172,6 +172,13 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
     props.onConvert?.(id)
   }
   const menu = createMemo<OverflowItem[]>(() => [
+    {
+      key: "copyId",
+      icon: "copy",
+      label: language.t("session.action.copyId"),
+      disabled: !session.currentSessionID(),
+      run: () => copy(session.currentSessionID()),
+    },
     {
       key: "convert",
       icon: "fork",
