@@ -27,6 +27,7 @@ function createManager(options?: { dir?: string; panelDir?: string; state?: bool
   const aborted: string[][] = []
   const cleared: string[] = []
   const removed: string[] = []
+  const closed: Array<{ id: string; worktreeId: string | null }> = []
   const messages: unknown[] = []
   const events: string[] = []
   const client = {
@@ -40,6 +41,14 @@ function createManager(options?: { dir?: string; panelDir?: string; state?: bool
   }
   const state = {
     directoryFor: mock((sessionId: string) => (sessionId === "s1" ? options?.dir : undefined)),
+    getSession: mock((sessionId: string) =>
+      sessionId === "s1" ? { id: "s1", worktreeId: "wt-1", createdAt: "" } : undefined,
+    ),
+    findWorktreeByPath: mock(() => ({ id: "wt-1" })),
+    closeSession: mock((id: string, worktreeId: string | null) => {
+      closed.push({ id, worktreeId })
+      events.push("close")
+    }),
     removeSession: mock((sessionId: string) => {
       removed.push(sessionId)
       events.push("remove")
@@ -72,22 +81,25 @@ function createManager(options?: { dir?: string; panelDir?: string; state?: bool
   manager.projectScope = { current: () => ctx, run: (_: unknown, fn: () => unknown) => fn() }
   manager.contexts = { active: () => ctx }
 
-  return { manager, stopped, aborted, cleared, removed, messages, events }
+  return { manager, stopped, aborted, cleared, removed, closed, messages, events }
 }
 
 describe("AgentManagerProvider closeSession", () => {
   // The session leaves Agent Manager state before its processes are stopped:
   // process shutdown can be slow, and a state push that still listed the closed
   // session would restore the tab the user just closed.
-  it("aborts the agent, drops the tab, then stops its processes", async () => {
-    const { manager, stopped, aborted, cleared, removed, messages, events } = createManager({ dir: "/repo/worktree" })
+  it("aborts the agent, drops the tab, marks it closed, then stops its processes", async () => {
+    const { manager, stopped, aborted, cleared, removed, closed, messages, events } = createManager({
+      dir: "/repo/worktree",
+    })
 
     await manager.onCloseSession("s1")
 
     expect(aborted).toEqual([["s1"]])
     expect(stopped).toEqual([{ sessionID: "s1", directory: "/repo/worktree" }])
-    expect(events).toEqual(["abort", "remove", "processes"])
+    expect(events).toEqual(["abort", "remove", "close", "processes"])
     expect(removed).toEqual(["s1"])
+    expect(closed).toEqual([{ id: "s1", worktreeId: "wt-1" }])
     expect(cleared).toEqual(["s1"])
     expect(messages).toEqual([])
     expect(manager.panelSessions.has("s1")).toBe(false)
