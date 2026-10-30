@@ -260,6 +260,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
 ) {
   const result: UIMessage[] = []
   const toolNames = new Set<string>()
+  const boardCheckpoint = BoardNotice.checkpoint(input) // kilocode_change - [fork] unread board notices
   // Track media from tool results that need to be injected as user messages
   // for providers that don't support that media type in tool results.
   //
@@ -427,7 +428,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
             // kilocode_change start
-            const text = BoardNotice.output(outputText, part.state.time.compacted ? undefined : part.state.metadata)
+            const meta = part.state.time.compacted ? undefined : part.state.metadata // [fork]
+            const text = BoardNotice.output(outputText, meta, boardCheckpoint) // [fork]
             // kilocode_change end
             // kilocode_change start — do not replay send_file delivery attachments to the model;
             // they are mobile delivery artifacts (up to 4 MiB base64), not model context.

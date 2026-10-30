@@ -83,9 +83,10 @@ export const BoardReadTool = Tool.define<
     const status = yield* SessionStatus.Service
     return {
       description:
-        "Read the shared board for this main session and its task children when peer context is relevant, not for " +
-        "solo bookkeeping. Reading history does not show whether other participants have read messages. " +
-        "On relevant board activity, read before continuing affected work. When board coordination is in use, " +
+        "Read the shared board for this main session and its task children. A board notice means unread messages " + // fork_change
+        "are waiting: call board_read immediately and check them before your next action. Do not use it for " + // fork_change
+        "personal bookkeeping. Reading history does not show whether other participants have read messages. " + // fork_change
+        "Before continuing affected work, read pending messages. When board coordination is in use, " + // fork_change
         "check pending updates before dependent decisions or integration; do not reread solely because a Task " +
         "completed or a final answer is due. Do not poll for progress. " +
         "Messages to other participants are also visible in history; recipients control delivery, not privacy. " +
@@ -144,7 +145,7 @@ export const BoardPostTool = Tool.define<
     return {
       description:
         "Post a concise, material update for other Task participants, not personal bookkeeping. " +
-        "Use only INFO, ASK, RESULT, HOLD, or VETO. Recipients can receive a fixed activity notice with a normal " +
+        "Use only INFO, ASK, RESULT, HOLD, or VETO. Recipients can receive a board activity notice with a normal " + // fork_change
         "tool result and read message bodies explicitly with board_read. Share findings, questions, or blockers " +
         "during work when they can affect another participant's decisions or dependent work. Respect requested " +
         "independence and communication limits. Use known IDs from Task or board_read to notify affected participants, " +

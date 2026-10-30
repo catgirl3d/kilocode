@@ -348,32 +348,77 @@ export namespace BoardStore {
       return yield* fail("Board activity sequence must be a non-negative integer")
     const { db } = yield* Database.Service
     const current = yield* scope(input.sessionID)
+    // fork_change start
     const latest = yield* db
-      .get<{ cursor: number; message: number | null }>(
+      .get<{ cursor: number; message: number | null; count: number; types: string; senders: string }>(
         sql`
-        SELECT board.next_seq - 1 AS cursor, (
-          SELECT MAX(seq)
+        WITH board AS (
+          SELECT next_seq, cleared_seq, next_seq - 1 AS cursor
+          FROM kilo_board
+          WHERE root_session_id = ${current.root}
+        ),
+        relevant AS (
+          SELECT seq, type, sender_session_id
           FROM kilo_board_message
-          WHERE board_root_session_id = board.root_session_id
-            AND seq > ${input.after} AND seq > board.cleared_seq AND seq < board.next_seq
+          WHERE board_root_session_id = ${current.root}
+            AND seq > ${input.after}
+            AND seq > (SELECT cleared_seq FROM board)
+            AND seq < (SELECT next_seq FROM board)
+            AND sender_session_id <> ${input.sessionID}
+            AND (recipient = ${input.sessionID} OR recipient = ${ALL})
             ${
               input.read === undefined
                 ? sql``
                 : sql`AND seq > COALESCE((
                     SELECT seq FROM kilo_board_message
-                    WHERE board_root_session_id = board.root_session_id AND id = ${input.read}
+                    WHERE board_root_session_id = ${current.root} AND id = ${input.read}
                   ), 0)`
             }
-            AND sender_session_id <> ${input.sessionID}
-            AND (recipient = ${input.sessionID} OR recipient = ${ALL})
-        ) AS message
-        FROM kilo_board board
-        WHERE board.root_session_id = ${current.root}
+        )
+        SELECT
+          (SELECT cursor FROM board) AS cursor,
+          MAX(seq) AS message,
+          COUNT(*) AS count,
+          (SELECT json_group_object(type, total) FROM (
+            SELECT type, COUNT(*) AS total FROM relevant GROUP BY type
+          )) AS types,
+          (SELECT json_group_array(sender) FROM (
+            SELECT sender_session_id AS sender
+            FROM relevant
+            GROUP BY sender_session_id
+            ORDER BY MAX(seq) DESC
+            LIMIT 5
+          )) AS senders
+        FROM relevant
       `,
       )
       .pipe(Effect.mapError((error) => mapError(error)))
+    // fork_change end
     if (!latest) return yield* fail("Board was not initialized")
-    return { cursor: Math.max(input.after, latest.cursor), message: latest.message ?? 0 }
+    // fork_change start
+    const types: Record<string, number> = {}
+    const parsed = JSON.parse(latest.types || "{}") as unknown
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const [kind, total] of Object.entries(parsed)) {
+        if (!Schema.is(Kind)(kind)) continue
+        if (typeof total !== "number" || !Number.isSafeInteger(total) || total <= 0) continue
+        types[kind] = total
+      }
+    }
+    const listed = JSON.parse(latest.senders || "[]") as unknown
+    const senders = Array.isArray(listed)
+      ? listed
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => (value === current.root ? "main" : value))
+      : []
+    return {
+      cursor: Math.max(input.after, latest.cursor),
+      message: latest.message ?? 0,
+      count: latest.count,
+      types,
+      senders,
+    }
+    // fork_change end
   })
 
   export function format(value: Message) {
