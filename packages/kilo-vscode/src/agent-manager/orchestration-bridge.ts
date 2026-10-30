@@ -418,6 +418,11 @@ export class AgentManagerOrchestrationBridge {
     if (reply) await this.validateReply(reply, input)
     const source = input.request.sourceSessionID ?? input.origin.sessionID
     const targetSessionID = reply?.sessionID ?? input.request.targetSessionID
+    // fork_change start - [fork] prompt a live root session the panel does not track
+    const managed = reply ? undefined : this.options.resolve?.(input.request.targetSessionID, input.origin.directory)
+    if (!reply && !managed && this.options.closed(input.request.targetSessionID, input.origin.directory))
+      throw new OrchestrationError("unknown_session", "The target session was stopped through Agent Manager")
+    // fork_change end
     await prompt({
       client: input.client,
       root: input.root,
@@ -428,8 +433,9 @@ export class AgentManagerOrchestrationBridge {
         MAX_PROMPT,
       ),
       signal: input.active.controller.signal,
-      ...(reply ? { directory: reply.directory } : {}),
-      ...(reply ? {} : { managed: this.options.resolve?.(input.request.targetSessionID, input.origin.directory) }),
+      // fork_change start - [fork] fall back to the sender directory outside Agent Manager
+      ...(reply ? { directory: reply.directory } : managed ? { managed } : { directory: input.origin.directory }),
+      // fork_change end
       ...(!reply
         ? {
             metadata: metadata({
@@ -543,6 +549,11 @@ export class AgentManagerOrchestrationBridge {
     origin: Origin,
     active: Active,
   ): Promise<Outcome | undefined> {
+    // fork_change start - [fork] answer a live root session the panel does not track
+    const managed = this.options.resolve?.(request.targetSessionID, origin.directory)
+    if (!managed && this.options.closed(request.targetSessionID, origin.directory))
+      throw new OrchestrationError("unknown_session", "The target session was stopped through Agent Manager")
+    // fork_change end
     const resolved = await answer({
       client,
       root,
@@ -550,7 +561,7 @@ export class AgentManagerOrchestrationBridge {
       sessionID: request.targetSessionID,
       questionID: request.questionID,
       answers: request.answers,
-      managed: this.options.resolve?.(request.targetSessionID, origin.directory),
+      ...(managed ? { managed } : { directory: origin.directory }), // fork_change
     })
     if (this.disposed || active.cancelled) return
     return {
