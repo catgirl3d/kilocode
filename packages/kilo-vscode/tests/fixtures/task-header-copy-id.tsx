@@ -91,6 +91,14 @@ const draft = {
   currentSessionID: () => draftKey,
   currentSession: () => ({ id: draftKey, title: "Unsaved draft", createdAt: now, updatedAt: now }),
 }
+// A read-only sub-agent viewer: only the session id is available, its metadata may not be loaded yet.
+const child = {
+  ...mockSessionValue({ id: "ses-child" }),
+  currentSessionID: () => "ses-child",
+  currentSession: () => undefined,
+  messages: () => [{ id: "child-message", sessionID: "ses-child", role: "user", createdAt: now }],
+  visibleMessages: () => [],
+}
 
 const root = document.createElement("div")
 document.body.append(root)
@@ -112,6 +120,11 @@ const dispose = render(
         <div data-testid="draft-header">
           <SessionContext.Provider value={draft as never}>
             <TaskHeader />
+          </SessionContext.Provider>
+        </div>
+        <div data-testid="viewer-header">
+          <SessionContext.Provider value={child as never}>
+            <TaskHeader readonly onConvert={() => {}} />
           </SessionContext.Provider>
         </div>
       </SessionContext.Provider>
@@ -210,6 +223,15 @@ try {
   // Read-only sub-agent viewers keep the session actions folded away entirely.
   assert.equal(trigger("readonly-header"), null, "a read-only header hides the More actions menu")
 
+  // A read-only sub-agent viewer copies its id even before its metadata is loaded.
+  const viewer = await open("viewer-header")
+  const viewerItem = copyItem(viewer.menu)
+  assert.equal(viewerItem.hasAttribute("data-disabled"), false, "a read-only sub-agent offers the copy action")
+  select(viewerItem)
+  await settle()
+  assert.deepEqual(attempts, ["ses-home", "ses-child"], "the read-only copy writes the sub-agent session id")
+  assert.equal(viewer.button.getAttribute("aria-expanded"), "false", "the viewer menu closes after the copy action")
+
   // A failed clipboard write surfaces an error instead of failing silently.
   failCopy = true
   const retry = await open("header")
@@ -221,11 +243,11 @@ try {
     "Could not copy the session ID.",
     "a failed clipboard write shows an error toast",
   )
-  assert.deepEqual(attempts, ["ses-home", "ses-home"], "the failed attempt still targets the session id")
+  assert.deepEqual(attempts, ["ses-home", "ses-child", "ses-home"], "the failed attempt still targets the session id")
   assert.deepEqual(errors, [], "the copy scenario raises no window errors")
 
   const writes = sent.filter((message) => message.type === "copyToClipboard")
-  assert.equal(writes.length, 2, "only the two real selections reach the clipboard bridge")
+  assert.equal(writes.length, 3, "only the three real selections reach the clipboard bridge")
 } finally {
   failCopy = false
   dispose()
