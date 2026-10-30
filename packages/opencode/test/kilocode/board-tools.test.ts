@@ -110,7 +110,7 @@ describe("shared board tools", () => {
           const read = yield* Tool.init(yield* BoardReadTool)
           expect(Object.keys(post.parameters.fields)).toEqual(["to", "type", "body", "reply_to"])
           expect(Object.keys(read.parameters.fields)).toEqual(["since", "limit"])
-          expect(read.description).toContain("before continuing affected work")
+          expect(read.description).toContain("Before continuing affected work")
           expect(read.description).toContain(
             "Reading history does not show whether other participants have read messages",
           )
