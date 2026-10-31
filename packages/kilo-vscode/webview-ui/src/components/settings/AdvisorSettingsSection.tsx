@@ -18,6 +18,7 @@ import { ThinkingSelectorBase } from "../shared/ThinkingSelector"
 import { preserveVariant } from "../../context/session-variant-store"
 import SettingsRow from "./SettingsRow"
 import { TEMPLATES } from "./advisor-templates"
+import { useModelScope } from "./workspace-models"
 
 const LIMIT = 3
 const NAME = /^[a-z0-9][a-z0-9_-]{0,31}$/
@@ -69,14 +70,15 @@ function slug(value: string) {
 }
 
 const AdvisorSettingsSection: Component = () => {
-  const { config, discarded, updateConfig } = useConfig()
+  const { discarded } = useConfig()
+  const scope = useModelScope()
   const language = useLanguage()
   const provider = useProvider()
 
-  const seed = () => slots(config().experimental).map(row)
+  const seed = () => slots(scope.config().experimental).map(row)
 
   const [rows, setRows] = createStore<Row[]>(seed())
-  const source = createMemo(() => JSON.stringify(slots(config().experimental).map(entry)))
+  const source = createMemo(() => JSON.stringify(slots(scope.config().experimental).map(entry)))
 
   const problem = (index: number) => {
     const item = rows[index]
@@ -110,7 +112,9 @@ const AdvisorSettingsSection: Component = () => {
   )
 
   function disable() {
-    updateConfig({ experimental: { advisors: null, advisor_model: null, advisor_variant: null } })
+    // A workspace empty list overrides global advisors; null would only inherit them.
+    const advisors = scope.pinned() ? [] : null
+    scope.update({ experimental: { advisors, advisor_model: null, advisor_variant: null } })
   }
 
   function commit() {
@@ -120,7 +124,7 @@ const AdvisorSettingsSection: Component = () => {
       disable()
       return
     }
-    updateConfig({ experimental: { advisors: list, advisor_model: null, advisor_variant: null } })
+    scope.update({ experimental: { advisors: list, advisor_model: null, advisor_variant: null } })
   }
 
   function toggle(checked: boolean) {

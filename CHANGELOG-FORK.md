@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Keep model choices per workspace with a new Workspace models switch in Settings → Models: it copies the current default, small, subagent, advisor, compaction and mode models into the workspace's `.kilo/kilo.jsonc` and saves later edits there; turning it off returns the workspace to the global models.
 - Hold the Send button in chat to defer a prompt until the current turn finishes instead of interrupting the agent; the pending prompt appears above the input, can be cancelled, and returns to the composer when you press Stop.
 - Copy a read-only sub-agent's session ID from the More actions menu in its header, even before its session metadata finishes loading.
 - Convert a read-only sub-agent session into a regular session from the More actions menu in its header; the copy opens as a new session while the sub-agent view stays as it is.
