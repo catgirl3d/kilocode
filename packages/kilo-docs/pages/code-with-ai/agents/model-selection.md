@@ -162,7 +162,7 @@ For details on configuring subagent models, see [Custom Subagents](/docs/customi
 
 Request a different model, provider, or reasoning effort for an individual subagent task. Overrides require your explicit request; the agent does not choose a different model on its own based on task complexity, cost, or latency.
 
-Invalid selections fail instead of silently falling back. Resumed tasks keep their last model and reasoning effort unless you request an override.
+Invalid selections fail instead of silently falling back. Resumed tasks keep a model or reasoning effort you explicitly requested for them while the experiment is enabled; everything else follows your current subagent model settings, so changing the subagent model in settings also applies when a task is resumed.
 
 ## Selecting a Model or Agent via a Link (VS Code)
 
