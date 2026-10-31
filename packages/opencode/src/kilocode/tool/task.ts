@@ -90,7 +90,7 @@ export namespace KiloTask {
   }
 
   export const modelDescription =
-    "Subagent model selection is enabled. Omit these fields, or send null, to keep the normal subagent model and reasoning defaults. Only override model, provider, or variant when the user explicitly requests it. Do not choose overrides on your own based on task complexity, cost, or latency. Use agent_manager_models only when an override is requested to find available models, providers, and variants; do not guess names or use model knowledge from training. This does not create Agent Manager sessions. Resumed tasks keep their last model and variant unless overridden. A variant-only override keeps the resolved model. A model override does not inherit the parent's reasoning effort."
+    "Subagent model selection is enabled. Omit these fields, or send null, to keep the normal subagent model and reasoning defaults. Only override model, provider, or variant when the user explicitly requests it. Do not choose overrides on your own based on task complexity, cost, or latency. Use agent_manager_models only when an override is requested to find available models, providers, and variants; do not guess names or use model knowledge from training. This does not create Agent Manager sessions. Resumed tasks keep a model or variant explicitly chosen for them earlier; anything not chosen explicitly follows the current subagent settings. A variant-only override keeps the resolved model. A model override does not inherit the parent's reasoning effort." // fork_change
 
   export const cancelForeground = Effect.fn("KiloTask.cancelForeground")(function* (
     jobs: Pick<BackgroundJob.Interface, "get">,
@@ -444,11 +444,62 @@ export namespace KiloTask {
     return { model: input.parent, variant }
   })
 
+  // fork_change start - resumed tasks follow settings except for explicit task choices
+  type Pin = { model?: Model; variant?: string }
+
+  const PIN = "kilo.task.pin"
+
+  const PinState = z.object({
+    model: z
+      .object({
+        providerID: z.custom<ProviderV2.ID>(Schema.is(ProviderV2.ID)),
+        modelID: z.custom<ModelV2.ID>(Schema.is(ModelV2.ID)),
+      })
+      .optional(),
+    variant: z.string().optional(),
+  })
+
+  /** Model and variant that task calls chose explicitly for a child session. */
+  export function pinned(metadata: Session.Info["metadata"]): Pin | undefined {
+    const result = PinState.safeParse(metadata?.[PIN])
+    return result.success ? result.data : undefined
+  }
+
+  /** Child session metadata that stores the pin, or undefined when nothing changes. */
+  export function remember(metadata: Session.Info["metadata"], pin: Pin) {
+    if (!pin.model && !pin.variant) return undefined
+    const prev = pinned(metadata)
+    if (
+      prev?.model?.providerID === pin.model?.providerID &&
+      prev?.model?.modelID === pin.model?.modelID &&
+      prev?.variant === pin.variant
+    )
+      return undefined
+    return {
+      ...metadata,
+      [PIN]: {
+        ...(pin.model ? { model: { providerID: pin.model.providerID, modelID: pin.model.modelID } } : {}),
+        ...(pin.variant ? { variant: pin.variant } : {}),
+      },
+    }
+  }
+
+  const base = Effect.fn("KiloTask.baseModel")(function* (input: Parameters<typeof defaults>[0], pin: Pin) {
+    if (pin.model) return { model: pin.model, variant: pin.variant }
+    const resolved = yield* defaults(input)
+    if (!pin.variant) return resolved
+    const full = yield* input.provider
+      .getModel(resolved.model.providerID, resolved.model.modelID)
+      .pipe(Effect.catchTag("ProviderModelNotFoundError", () => Effect.succeed(undefined)))
+    return full?.variants?.[pin.variant] ? { model: resolved.model, variant: pin.variant } : resolved
+  })
+  // fork_change end
+
   export const resolveModel = Effect.fn("KiloTask.resolveModel")(function* (
     input: Parameters<typeof defaults>[0] & {
       enabled?: boolean // fork_change
       selection?: { model?: string | null; provider?: string | null; variant?: string | null }
-      resume?: Session.Info["model"]
+      pin?: Pin // fork_change - explicit choices stored on a resumed child
     },
   ) {
     const selection = input.selection ?? {}
@@ -466,19 +517,24 @@ export namespace KiloTask {
     if (selection.provider && !selection.model) {
       return yield* Effect.fail(new Error("Task provider requires a model"))
     }
-    const source = selection.model
-      ? undefined
-      : input.resume
-        ? {
-            model: { providerID: input.resume.providerID, modelID: input.resume.id },
-            variant: input.resume.variant === "default" ? undefined : input.resume.variant,
-          }
-        : yield* defaults(input)
-    if (!requested && source) return source
+    // fork_change start - a resumed task follows settings except for its explicit choices
+    // Pins come from the opt-in experiment; with it off, a resume follows settings only.
+    const pin: Pin = input.enabled ? (input.pin ?? {}) : {}
+    const source = selection.model ? undefined : yield* base(input, pin)
+    if (!requested && source) return { ...source, pin }
+    // fork_change end
     const providers = yield* input.provider.list()
     const selected = selectModel(selection, providers, source, input.parent.providerID)
     if ("error" in selected) return yield* Effect.fail(new Error(`Task ${selected.error}`))
-    return selected
+    // fork_change start - remember what this call chose explicitly
+    return {
+      ...selected,
+      pin: {
+        model: selection.model ? selected.model : pin.model,
+        variant: selection.variant ? selected.variant : selection.model ? undefined : pin.variant,
+      },
+    }
+    // fork_change end
   })
 
   export function workflow(value: unknown): Workflow | undefined {
