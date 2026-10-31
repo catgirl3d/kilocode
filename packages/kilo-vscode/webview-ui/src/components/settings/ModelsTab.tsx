@@ -13,8 +13,10 @@ import { AUTOCOMPLETE_SELECTOR_MODELS, getAutocompleteSelection } from "./autoco
 import { preserveVariant } from "../../context/session-variant-store"
 import AdvisorSettingsSection from "./AdvisorSettingsSection" // fork_change
 import VoiceInputSettingsSection from "./VoiceInputSettingsSection" // fork_change
+import { useModelScope } from "./workspace-models" // fork_change
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting, features } = useConfig()
+  const scope = useModelScope() // fork_change
   const language = useLanguage()
   const provider = useProvider()
   const session = useSession()
@@ -31,45 +33,51 @@ const ModelsTab: Component = () => {
   function handleModelSelect(configKey: "model" | "small_model") {
     return (providerID: string, modelID: string) => {
       if (!providerID || !modelID) {
-        updateConfig({ [configKey]: null })
+        scope.update({ [configKey]: null }) // fork_change
         return
       }
-      updateConfig({ [configKey]: `${providerID}/${modelID}` })
+      scope.update({ [configKey]: `${providerID}/${modelID}` }) // fork_change
     }
   }
 
-  const subagentModel = createMemo(() => parseModelString(config().subagent_model ?? undefined))
-  const variantKey = createMemo(() => config().subagent_model ?? undefined)
+  const subagentModel = createMemo(() => parseModelString(scope.config().subagent_model ?? undefined)) // fork_change
+  const variantKey = createMemo(() => scope.config().subagent_model ?? undefined) // fork_change
   const subagentVariants = createMemo(() => Object.keys(provider.findModel(subagentModel())?.variants ?? {}))
   const subagentVariant = createMemo(() => {
     const key = variantKey()
     if (!key) return undefined
-    const value = config().subagent_variant_overrides?.[key]
+    const value = scope.config().subagent_variant_overrides?.[key] // fork_change
     if (value) return value
-    return config().subagent_model === key ? (config().subagent_variant ?? undefined) : undefined
+    return scope.config().subagent_model === key ? (scope.config().subagent_variant ?? undefined) : undefined // fork_change
   })
 
   function handleSubagentModelSelect(providerID: string, modelID: string) {
     if (!providerID || !modelID) {
-      updateConfig({ subagent_model: null, subagent_variant: null })
+      scope.update({ subagent_model: null, subagent_variant: null }) // fork_change
       return
     }
     const value = `${providerID}/${modelID}`
     const list = Object.keys(provider.findModel({ providerID, modelID })?.variants ?? {})
     const next = preserveVariant(subagentVariant(), list)
-    updateConfig({
+    // fork_change start
+    scope.update({
+      // fork_change end
       subagent_model: value,
-      ...(config().subagent_model === value ? {} : { subagent_variant: null }),
-      ...(next ? { subagent_variant_overrides: { ...config().subagent_variant_overrides, [value]: next } } : {}),
+      // fork_change start
+      ...(scope.config().subagent_model === value ? {} : { subagent_variant: null }),
+      ...(next ? { subagent_variant_overrides: { ...scope.config().subagent_variant_overrides, [value]: next } } : {}),
+      // fork_change end
     })
   }
 
   function updateSubagentVariant(value: string | null) {
     const key = variantKey()
     if (!key) return
-    updateConfig({
+    // fork_change start
+    scope.update({
+      // fork_change end
       subagent_variant_overrides: { [key]: value },
-      ...(config().subagent_model === key ? { subagent_variant: null } : {}),
+      ...(scope.config().subagent_model === key ? { subagent_variant: null } : {}), // fork_change
     })
   }
 
@@ -78,13 +86,15 @@ const ModelsTab: Component = () => {
   function handleModeModelSelect(agentName: string) {
     return (providerID: string, modelID: string) => {
       if (!providerID || !modelID) {
-        updateConfig({ agent: { [agentName]: { model: null } } })
+        scope.update({ agent: { [agentName]: { model: null } } }) // fork_change
         return
       }
-      const current = config().agent?.[agentName]?.variant ?? undefined
+      const current = scope.config().agent?.[agentName]?.variant ?? undefined // fork_change
       const list = Object.keys(provider.findModel({ providerID, modelID })?.variants ?? {})
       const next = preserveVariant(current, list)
-      updateConfig({
+      // fork_change start
+      scope.update({
+        // fork_change end
         agent: {
           [agentName]: {
             model: `${providerID}/${modelID}`,
@@ -110,12 +120,27 @@ const ModelsTab: Component = () => {
   return (
     <div>
       <Card>
+        {/* fork_change start */}
+        <SettingsRow
+          title={language.t("settings.providers.workspaceModels.title")}
+          description={language.t("settings.providers.workspaceModels.description")}
+        >
+          <Switch
+            checked={scope.pinned()}
+            onChange={(checked: boolean) => scope.toggle(checked)}
+            disabled={!scope.available()}
+            hideLabel
+          >
+            {language.t("settings.providers.workspaceModels.title")}
+          </Switch>
+        </SettingsRow>
+        {/* fork_change end */}
         <SettingsRow
           title={language.t("settings.providers.defaultModel.title")}
           description={language.t("settings.providers.defaultModel.description")}
         >
           <ModelSelectorBase
-            value={parseModelString(config().model ?? undefined)}
+            value={parseModelString(scope.config().model ?? undefined)} /* fork_change */
             onSelect={handleModelSelect("model")}
             placement="bottom-start"
             allowClear
@@ -129,7 +154,7 @@ const ModelsTab: Component = () => {
           description={language.t("settings.providers.smallModel.description")}
         >
           <ModelSelectorBase
-            value={parseModelString(config().small_model ?? undefined)}
+            value={parseModelString(scope.config().small_model ?? undefined)} /* fork_change */
             onSelect={handleModelSelect("small_model")}
             placement="bottom-start"
             allowClear
@@ -175,12 +200,14 @@ const ModelsTab: Component = () => {
           description={language.t("settings.context.compactionModel.description")}
         >
           <ModelSelectorBase
-            value={parseModelString(config().agent?.compaction?.model ?? undefined)}
+            /* fork_change start */
+            value={parseModelString(scope.config().agent?.compaction?.model ?? undefined)}
             onSelect={(providerID, modelID) =>
-              updateConfig({
+              scope.update({
                 agent: { compaction: { model: providerID && modelID ? `${providerID}/${modelID}` : null } },
               })
             }
+            /* fork_change end */
             placement="bottom-start"
             allowClear
             clearLabel={language.t("settings.context.compactionModel.useChatModel")}
@@ -231,7 +258,7 @@ const ModelsTab: Component = () => {
               last={index() === allAgents().length - 1}
             >
               <ModelSelectorBase
-                value={parseModelString(config().agent?.[agent.name]?.model ?? undefined)}
+                value={parseModelString(scope.config().agent?.[agent.name]?.model ?? undefined)} /* fork_change */
                 onSelect={handleModeModelSelect(agent.name)}
                 placement="bottom-start"
                 allowClear
