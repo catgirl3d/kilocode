@@ -29,6 +29,7 @@ import { createMcpAuth } from "./mcp-auth"
 import { createSessionModelActions } from "./session-model-actions" // fork_change
 import { createSessionFavorites } from "./model-favorites" // fork_change
 import { createSessionShake } from "./session-shake" // fork_change
+import { createDeferredSends } from "./session-deferred" // fork_change
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { touch } from "@kilocode/kilo-ui/tool-motion"
 import type {
@@ -174,9 +175,25 @@ export const SessionProvider: ParentComponent = (props) => {
   })
   const shake = shakeActions.shake
   // fork_change end
-
   // Per-session status map — keyed by sessionID
   const [statusMap, setStatusMap] = createStore<Record<string, SessionStatusInfo>>({})
+  // fork_change start - hold prompts until the turn closes and the session is idle
+  const deferred = createDeferredSends({
+    status: (id) => statusMap[id]?.type ?? "idle",
+    send: (item) =>
+      sendMessage(
+        item.text,
+        undefined,
+        undefined,
+        item.files,
+        undefined,
+        item.context,
+        item.review,
+        item.sessionID,
+        item.browserFeedback,
+      ),
+  })
+  // fork_change end
   const [closeMap, setCloseMap] = createStore<Record<string, CloseState | undefined>>({})
   const [timingMap, setTimingMap] = createStore<Record<string, Timing>>({})
   const [submissionMap, setSubmissionMap] = createStore<Record<string, number>>({})
@@ -198,7 +215,6 @@ export const SessionProvider: ParentComponent = (props) => {
   // fork_change end
   const terminalPermissions = new Map<string, undefined>()
   const aborts = createAbortState()
-
   const idle: SessionStatusInfo = { type: "idle" }
 
   function permissionKey(permissionID: string, sessionID?: string) {
@@ -820,6 +836,7 @@ export const SessionProvider: ParentComponent = (props) => {
   }
 
   function closed(message: Extract<ExtensionMessage, { type: "sessionTurnClosed" }>) {
+    if (message.reason !== "superseded") deferred.turnClosed(message.sessionID) // fork_change
     if (message.eventID && closeMap[message.sessionID]?.eventID === message.eventID) return
     if (message.reason === "completed" && closeMap[message.sessionID]?.reason === "error") return
     const ids = recoveries.get(message.sessionID)
@@ -834,7 +851,6 @@ export const SessionProvider: ParentComponent = (props) => {
       seen: false,
     })
   }
-
   function failed(id: string, message: Message, phase?: "admission" | "execution") {
     if (phase === "admission") return
     if (message.error?.name === "ContextOverflowError" && closeMap[id]?.reason !== "error") {
@@ -846,7 +862,6 @@ export const SessionProvider: ParentComponent = (props) => {
     recoveries.delete(id)
     setCloseMap(id, { reason: "error", parentID: store.sessions[id]?.parentID ?? undefined })
   }
-
   function handleStreamMessage(message: ExtensionMessage): boolean {
     if (handleWakeupMessage(message)) return true
     if (shakeActions.handleMessage(message)) return true // fork_change
@@ -1563,6 +1578,8 @@ export const SessionProvider: ParentComponent = (props) => {
       // messages themselves will be reconciled on the next messagesLoaded.
       pendingOptimistic.delete(sessionID)
     }
+    if (newStatus === "busy") deferred.turnBusy(sessionID) // fork_change
+    if (newStatus === "idle" && prev !== "idle") deferred.flush(sessionID) // fork_change
     if (shouldAbort) vscode.postMessage({ type: "abort", sessionID, scope: "session" })
   }
 
@@ -1918,6 +1935,7 @@ export const SessionProvider: ParentComponent = (props) => {
     pendingOptimistic.delete(sessionID)
     freshSessions.delete(sessionID)
     aborts.clear(sessionID)
+    deferred.clear(sessionID) // fork_change
     confirmSubmissions(sessionID)
     batch(() => {
       if (tombstone) removedSessions.add(sessionID) // fork_change
@@ -2442,6 +2460,12 @@ export const SessionProvider: ParentComponent = (props) => {
       console.warn("[Kilo New] Cannot abort: no current or pending session")
       return
     }
+    // fork_change start - return held prompts to the composer even if this Stop is
+    // swallowed for a pending submission; nothing is lost and nothing auto-sends
+    const held = deferred.take(scope)
+    if (held.length > 0)
+      window.dispatchEvent(new CustomEvent("kilo:deferred-cancelled", { detail: { sessionID: scope, items: held } }))
+    // fork_change end
     const messageID = [...pendingSubmissions].reverse().find(([, sid]) => sid === scope)?.[0]
     const goal = currentSession()?.goal?.active === true
     const requested = aborts.request(scope, status(), messageID, goal)
@@ -2755,6 +2779,7 @@ export const SessionProvider: ParentComponent = (props) => {
       console.warn("[Kilo New] Cannot delete session: not connected")
       return
     }
+    deferred.clear(id) // fork_change
     // Optimistically remove from the list so the UI updates immediately
     setStore(
       "sessions",
@@ -3114,6 +3139,12 @@ export const SessionProvider: ParentComponent = (props) => {
     deleteQueuedMessage,
     submit,
     sendMessage,
+    // fork_change start
+    deferMessage: deferred.add,
+    cancelDeferred: deferred.cancel,
+    releaseDeferred: deferred.release,
+    deferredMessages: deferred.list,
+    // fork_change end
     sendCommand,
     abort,
     compact,

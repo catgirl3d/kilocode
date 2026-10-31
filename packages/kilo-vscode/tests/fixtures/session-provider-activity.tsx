@@ -1598,6 +1598,144 @@ try {
     assert(request?.type === "sendCommand")
     await emit({ type: "sessionCommandCompleted", messageID: request.messageID })
   }
+  {
+    const hold = async (text: string, prepare?: () => Promise<void>) => {
+      await seed(text)
+      await prepare?.()
+      const count = requests().length
+      await emit({ type: "sessionStatus", sessionID: "composer", status: "busy" })
+      const button = host.querySelector<HTMLButtonElement>('[aria-label="prompt.action.send"]')
+      assert(button)
+      button.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }) as unknown as Event)
+      await Promise.resolve()
+      assert(button.classList.contains("prompt-send-holding"), "The hold indicator starts immediately")
+      assert.equal(button.getAttribute("aria-label"), "prompt.action.send.holding")
+      await new Promise((resolve) => setTimeout(resolve, 850))
+      assert(button.classList.contains("prompt-send-defer"), "The hold arms after the threshold")
+      assert.equal(button.getAttribute("aria-label"), "prompt.action.send.deferred")
+      button.dispatchEvent(new window.PointerEvent("pointerup", { bubbles: true }) as unknown as Event)
+      button.dispatchEvent(new window.MouseEvent("click", { bubbles: true, detail: 1 }) as unknown as Event)
+      await settle()
+      return count
+    }
+
+    const count = await hold("Hold to defer this prompt")
+    assert.equal(requests().length, count, "A held send while busy must not post immediately")
+    const deferred = value.deferredMessages("composer")
+    assert.equal(deferred.length, 1, "The held prompt is stored for its session")
+    assert.equal(deferred[0]?.text, "Hold to defer this prompt")
+    assert.equal(input().value, "", "Deferring clears the composer")
+    const chip = host.querySelector(".prompt-deferred")
+    assert(chip, "The pending chip is rendered above the prompt")
+    assert.equal(chip.querySelector(".prompt-deferred-text")?.textContent, "Hold to defer this prompt")
+
+    await emit({
+      type: "sessionTurnClosed",
+      sessionID: "composer",
+      eventID: "defer-close-1",
+      reason: "completed",
+    })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "idle" })
+    await settle()
+    assert.equal(requests().length, count + 1, "A completed turn flushes the deferred prompt exactly once")
+    const flushed = requests().at(-1)
+    assert(flushed?.type === "sendMessage")
+    assert.equal(flushed.text, "Hold to defer this prompt")
+    assert.equal(value.deferredMessages("composer").length, 0, "Flushing removes the deferred item")
+    assert.equal(host.querySelector(".prompt-deferred"), null, "The chip disappears after the flush")
+
+    const superseded = await hold("Superseded deferred prompt")
+    await emit({
+      type: "sessionTurnClosed",
+      sessionID: "composer",
+      eventID: "defer-superseded-1",
+      reason: "superseded",
+    })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "idle" })
+    await settle()
+    assert.equal(requests().length, superseded, "A superseded turn never flushes the held prompt")
+    assert.equal(value.deferredMessages("composer").length, 1)
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "busy" })
+    await emit({
+      type: "sessionTurnClosed",
+      sessionID: "composer",
+      eventID: "defer-completed-2",
+      reason: "completed",
+    })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "idle" })
+    await settle()
+    assert.equal(requests().length, superseded + 1, "The held prompt flushes after a completed turn")
+    assert.equal(value.deferredMessages("composer").length, 0)
+
+    const paused = await hold("Hold across a suggestion")
+    await emit({
+      type: "suggestionRequest",
+      suggestion: { id: "defer-suggestion", sessionID: "composer", text: "Continue?", actions: [] },
+    })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "idle" })
+    await settle()
+    assert.equal(requests().length, paused, "Suggestion idle without a turn close does not flush the held prompt")
+    assert.equal(value.deferredMessages("composer").length, 1)
+    await emit({ type: "suggestionResolved", requestID: "defer-suggestion" })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "busy" })
+    await emit({
+      type: "sessionTurnClosed",
+      sessionID: "composer",
+      eventID: "defer-suggestion-close",
+      reason: "completed",
+    })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "idle" })
+    await settle()
+    assert.equal(requests().length, paused + 1, "The held prompt flushes after the suggestion turn ends")
+    assert.equal(value.deferredMessages("composer").length, 0)
+
+    const stopComment = { id: "stop-review", file: "stop.ts", line: 2, side: "additions", comment: "Keep raw text" }
+    const stopBrowser = { id: "stop-browser", sessionId: "composer", selector: "button.stop" }
+    const stopped = await hold("Stop returns this prompt", async () => {
+      await emit({
+        type: "setChatBoxMessage",
+        text: "Stop returns this prompt",
+        review: [stopComment],
+        browser: [stopBrowser],
+      })
+    })
+    assert.equal(requests().length, stopped)
+    value.abort()
+    await settle()
+    assert.equal(input().value, "Stop returns this prompt", "Stop restores the held prompt text")
+    assert(host.querySelector('img[src="data:image/png;base64,cGl4ZWw="]'), "Stop restores held images")
+    assert.equal(host.querySelectorAll(".prompt-review-row").length, 2, "Stop restores structured review data")
+    assert.equal(value.deferredMessages("composer").length, 0, "Stop removes the deferred item")
+    assert.equal(host.querySelector(".prompt-deferred"), null)
+    await emit({ type: "sessionTurnClosed", sessionID: "composer", reason: "interrupted" })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "idle" })
+    await settle()
+    assert.equal(requests().length, stopped, "A prompt restored by Stop is never sent")
+
+    const stoppedWithNewText = await hold("Deferred raw text")
+    input().value = "New draft"
+    input().dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
+    await settle()
+    value.abort()
+    await settle()
+    assert.equal(input().value, "New draft\n\nDeferred raw text", "Stop appends held raw text below a new draft")
+    assert(host.querySelector('img[src="data:image/png;base64,cGl4ZWw="]'), "Stop restores held images below new text")
+    await emit({ type: "sessionTurnClosed", sessionID: "composer", reason: "interrupted" })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "idle" })
+    await settle()
+    assert.equal(requests().length, stoppedWithNewText, "A stopped prompt with new text is never auto-sent")
+
+    await seed("Short press sends now")
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "busy" })
+    const short = host.querySelector<HTMLButtonElement>('[aria-label="prompt.action.send"]')
+    assert(short)
+    const shortCount = requests().length
+    short.dispatchEvent(new window.PointerEvent("pointerdown", { bubbles: true }) as unknown as Event)
+    short.dispatchEvent(new window.PointerEvent("pointerup", { bubbles: true }) as unknown as Event)
+    short.click()
+    await settle()
+    assert.equal(requests().length, shortCount + 1, "A short press sends immediately")
+  }
   setComposer(false)
   await settle()
   await catalog("org-a", [recommended.modelID], recommended.modelID)
