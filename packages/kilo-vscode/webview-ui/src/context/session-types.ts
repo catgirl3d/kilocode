@@ -29,6 +29,7 @@ import type { Activity } from "../utils/session-activity"
 import type { Timing } from "./session-timing"
 import type { MessageMutation } from "./session-utils"
 import type { DeferredSend, DeferredSendInput } from "./session-deferred" // fork_change
+import type { ReasoningState } from "./session-reasoning" // fork_change
 
 export interface SessionContextValue {
   // Current session
@@ -228,9 +229,16 @@ export interface SessionContextValue {
   ) => boolean
   abort: () => void
   compact: () => void
-  undoCompact: (messageID: string) => void // fork_change
-  shake: () => void // fork_change
-  shaking: () => boolean // fork_change
+  // fork_change start - compact undo, shake and reasoning-clear session actions
+  undoCompact: (messageID: string) => void
+  shake: () => void
+  shaking: () => boolean
+  reasoningPreview: (sessionID: string, keepTurns: number, opts?: { delay?: number }) => void
+  reasoningCancel: (sessionID: string) => void
+  reasoningClear: (sessionID: string, keepTurns: number, token: string) => void
+  reasoningState: (sessionID: string) => ReasoningState
+  reasoningClearing: (sessionID: string) => boolean
+  // fork_change end
   respondToPermission: (
     permissionId: string,
     response: "once" | "always" | "reject",
