@@ -33,6 +33,8 @@ type Ctx = {
   caffeination: () => void
   // fork_change start
   shake: (sessionID: string) => Promise<void>
+  reasoningPreview: (sessionID: string, requestID: string, keepTurns: number) => Promise<void>
+  reasoningClear: (sessionID: string, requestID: string, keepTurns: number, token: string) => Promise<void>
   sessionColors: () => void
   setSessionColor: (sessionID: string, color: string | null) => Promise<void>
   sessionTagProject: () => string | undefined
@@ -82,7 +84,46 @@ function isResume(input: { sessionID?: unknown; messageID?: unknown; requestID?:
     typeof input.sessionID === "string" && typeof input.messageID === "string" && typeof input.requestID === "string"
   )
 }
+
 // fork_change start
+type ReasoningMessage = {
+  type: "sessionReasoningClearPreview" | "sessionReasoningClear"
+  sessionID?: unknown
+  requestID?: unknown
+  keepTurns?: unknown
+  token?: unknown
+}
+
+function isReasoningMessage(message: { type: string }): message is ReasoningMessage {
+  return message.type === "sessionReasoningClearPreview" || message.type === "sessionReasoningClear"
+}
+
+async function routeReasoningMessage(message: ReasoningMessage, ctx: Ctx): Promise<boolean> {
+  const operation = message.type === "sessionReasoningClearPreview" ? "preview" : "apply"
+  const sessionID = message.sessionID
+  const requestID = message.requestID
+  const keepTurns = message.keepTurns
+  const token = message.token
+  const validTurns = typeof keepTurns === "number"
+  const validToken = operation === "preview" || (typeof token === "string" && token.length > 0)
+  if (typeof sessionID !== "string" || typeof requestID !== "string" || !validTurns || !validToken) {
+    if (typeof sessionID === "string" && typeof requestID === "string") {
+      ctx.post({
+        type: "sessionReasoningClearFailed",
+        operation,
+        sessionID,
+        requestID,
+        code: "invalid",
+        error: "Invalid reasoning clear request",
+      })
+    }
+    return true
+  }
+  if (operation === "preview") await ctx.reasoningPreview(sessionID, requestID, keepTurns)
+  else await ctx.reasoningClear(sessionID, requestID, keepTurns, token as string)
+  return true
+}
+
 async function routeSessionMessage(
   message: {
     type: string
@@ -91,6 +132,8 @@ async function routeSessionMessage(
     messageID?: unknown
     requestID?: unknown
     color?: unknown
+    keepTurns?: unknown
+    token?: unknown
   },
   ctx: Ctx,
 ): Promise<boolean | undefined> {
@@ -105,6 +148,7 @@ async function routeSessionMessage(
     if (typeof message.sessionID === "string") await ctx.shake(message.sessionID)
     return true
   }
+  if (isReasoningMessage(message)) return routeReasoningMessage(message, ctx)
   if (message.type === "setSessionColor") {
     if (typeof message.sessionId === "string" && (message.color === null || typeof message.color === "string")) {
       await ctx.setSessionColor(message.sessionId, message.color)
