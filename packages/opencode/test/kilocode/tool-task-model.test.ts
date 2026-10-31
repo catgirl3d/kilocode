@@ -11,6 +11,7 @@ import { Bus } from "../../src/bus"
 import { SessionRunState } from "../../src/session/run-state"
 import { SessionStatus } from "../../src/session/status"
 import { SessionDrain } from "@/kilocode/session/drain"
+import { KiloTask } from "@/kilocode/tool/task"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Config } from "../../src/config/config"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
@@ -236,7 +237,9 @@ function run(input: {
   enabled?: boolean
   config?: Pick<Config.Info, "subagent_model" | "subagent_variant" | "subagent_variant_overrides">
   selection?: { model?: string | null; provider?: string | null; variant?: string | null }
+  launch?: { model?: string | null; provider?: string | null; variant?: string | null }
   resume?: Session.Info["model"]
+  pin?: Parameters<typeof KiloTask.remember>[1]
 }) {
   return provideTmpdirInstance(
     () =>
@@ -246,20 +249,29 @@ function run(input: {
 
         const { chat, assistant } = yield* seed(input.agent, input.variant)
         const sessions = yield* Session.Service
-        const child = input.resume ? yield* sessions.create({ parentID: chat.id, model: input.resume }) : undefined
+        const child =
+          input.resume || input.pin
+            ? yield* sessions.create({
+                parentID: chat.id,
+                model: input.resume,
+                metadata: input.pin && KiloTask.remember(undefined, input.pin),
+              })
+            : undefined
         const tool = yield* TaskTool
         const def = yield* tool.init()
         let seen: SessionPrompt.PromptInput | undefined
         const promptOps = stubOps({ onPrompt: (value) => (seen = value) })
-
-        const result = yield* def
-          .execute(
+        const execute = (
+          selection: { model?: string | null; provider?: string | null; variant?: string | null } | undefined,
+          task?: string,
+        ) =>
+          def.execute(
             {
               description: `run ${input.agent}`,
               prompt: "inspect resolution",
               subagent_type: input.agent,
-              task_id: child?.id,
-              ...input.selection,
+              task_id: task,
+              ...selection,
             },
             {
               sessionID: chat.id,
@@ -272,14 +284,19 @@ function run(input: {
               ask: () => Effect.void,
             },
           )
-          .pipe(
-            Effect.onError(() =>
-              Effect.gen(function* () {
-                expect(seen).toBeUndefined()
-                expect(yield* sessions.children(chat.id)).toHaveLength(child ? 1 : 0)
-              }),
-            ),
-          )
+
+        // The resume call below must start without the launch call's prompt.
+        const launched = input.launch
+          ? yield* execute(input.launch).pipe(Effect.tap(() => Effect.sync(() => (seen = undefined))))
+          : undefined
+        const result = yield* execute(input.selection, launched?.metadata.sessionId ?? child?.id).pipe(
+          Effect.onError(() =>
+            Effect.gen(function* () {
+              expect(seen).toBeUndefined()
+              expect(yield* sessions.children(chat.id)).toHaveLength(input.resume || input.launch || input.pin ? 1 : 0)
+            }),
+          ),
+        )
 
         return {
           prompt: seen?.model,
@@ -287,6 +304,7 @@ function run(input: {
           model: result.metadata.model,
           metadataVariant: result.metadata.variant,
           metadata: result.metadata,
+          pin: KiloTask.pinned((yield* sessions.get(result.metadata.sessionId)).metadata),
         }
       }),
     {
@@ -370,7 +388,7 @@ describe("tool.task model resolution", () => {
           ),
       )
 
-      it.live(`keeps the resumed model with selection ${JSON.stringify(selection)} and enabled ${enabled}`, () =>
+      it.live(`follows settings on resume with selection ${JSON.stringify(selection)} and enabled ${enabled}`, () =>
         run({
           agent: "pinned",
           enabled,
@@ -379,8 +397,9 @@ describe("tool.task model resolution", () => {
         }).pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
-              expect(result.prompt).toEqual(sub)
-              expect(result.variant).toEqual(subVariant)
+              expect(result.prompt).toEqual(cfg)
+              expect(result.variant).toEqual(cfgVariant)
+              expect(result.pin).toBeUndefined()
             }),
           ),
         ),
@@ -388,7 +407,7 @@ describe("tool.task model resolution", () => {
     }
   }
 
-  it.live("allows a reasoning override on a resumed model", () =>
+  it.live("applies a reasoning override to the settings model on resume", () =>
     run({
       agent: "pinned",
       enabled: true,
@@ -397,12 +416,77 @@ describe("tool.task model resolution", () => {
     }).pipe(
       Effect.tap((result) =>
         Effect.sync(() => {
-          expect(result.prompt).toEqual(sub)
+          expect(result.prompt).toEqual(cfg)
           expect(result.variant).toEqual(overrideVariant)
         }),
       ),
     ),
   )
+
+  it.live("keeps an explicitly chosen model on resume", () =>
+    run({
+      agent: "pinned",
+      enabled: true,
+      launch: { model: "sub-provider/sub-model", variant: subVariant },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(sub)
+          expect(result.variant).toEqual(subVariant)
+          expect(result.pin).toEqual({ model: sub, variant: subVariant })
+        }),
+      ),
+    ),
+  )
+
+  it.live("keeps an explicitly chosen reasoning effort on resume", () =>
+    run({
+      agent: "pinned",
+      enabled: true,
+      launch: { variant: overrideVariant },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(cfg)
+          expect(result.variant).toEqual(overrideVariant)
+          expect(result.pin).toEqual({ variant: overrideVariant })
+        }),
+      ),
+    ),
+  )
+
+  it.live("replaces an explicit model choice on resume", () =>
+    run({
+      agent: "pinned",
+      enabled: true,
+      launch: { model: "sub-provider/sub-model", variant: subVariant },
+      selection: { model: "config-provider/config-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(cfg)
+          expect(result.variant).toBeUndefined()
+          expect(result.pin).toEqual({ model: cfg })
+        }),
+      ),
+    ),
+  )
+
+  for (const enabled of [false, true]) {
+    it.live(
+      `${enabled ? "applies" : "ignores"} a stored pin when task model selection is ${enabled ? "enabled" : "disabled"}`,
+      () =>
+        run({ agent: "pinned", enabled, pin: { model: sub, variant: subVariant } }).pipe(
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              expect(result.prompt).toEqual(enabled ? sub : cfg)
+              expect(result.variant).toEqual(enabled ? subVariant : cfgVariant)
+              expect(result.pin).toEqual({ model: sub, variant: subVariant })
+            }),
+          ),
+        ),
+    )
+  }
 
   for (const enabled of [false, true]) {
     for (const background of [false, true]) {

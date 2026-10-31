@@ -247,7 +247,7 @@ export const TaskTool = Tool.define(
         provider,
         enabled: selection, // [fork] restore opt-in selection gate
         selection: { model: params.model, provider: params.provider, variant: params.variant },
-        resume: session?.model,
+        pin: KiloTask.pinned(session?.metadata), // [fork] resumed tasks follow settings except explicit choices
       })
       const model = selected.model
       const variant = selected.variant
@@ -276,6 +276,9 @@ export const TaskTool = Tool.define(
         const permission = KiloTask.refresh(session.permission ?? [], childPermission)
         session.permission = permission
         yield* sessions.setPermission({ sessionID: session.id, permission })
+        const fresh = yield* sessions.get(session.id) // [fork] current metadata so the pin write keeps concurrent changes
+        const metadata = KiloTask.remember(fresh.metadata, selected.pin) // [fork] keep explicit task model choices
+        if (metadata) yield* sessions.setMetadata({ sessionID: session.id, metadata }) // [fork]
       }
       // kilocode_change end
       const platform = KiloSession.resolvePlatform(ctx.sessionID) // kilocode_change - preserve parent attribution across task creation/resume
@@ -288,6 +291,7 @@ export const TaskTool = Tool.define(
           agent: next.name,
           platform, // kilocode_change
           permission: childPermission, // kilocode_change - persist inherited Kilo ceilings and upstream child denies
+          metadata: KiloTask.remember(undefined, selected.pin), // [fork] keep explicit task model choices
         }))
       // kilocode_change end
       // kilocode_change start - rebuild in-memory ancestry and inherit confinement after creation/resume
