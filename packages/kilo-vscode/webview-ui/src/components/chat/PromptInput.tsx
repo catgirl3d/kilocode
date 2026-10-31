@@ -92,12 +92,17 @@ import {
   memoryRest,
   commandAction, // fork_change
   resolvePrompt, // fork_change
+  DEFER_HOLD_MS, // fork_change
   type SandboxDefaultState,
   type SandboxState,
   undoKey,
 } from "./prompt-input-utils"
 import { sandboxMessages } from "./prompt-sandbox-messages"
 import type { ExtensionMessage, ReviewCommentEntry, SendMessageFailedMessage, TextPart } from "../../types/messages"
+// fork_change start
+import type { FileAttachment } from "../../types/messages"
+import type { DeferredSend } from "../../context/session-deferred"
+// fork_change end
 import { formatReviewCommentsMarkdown, pushInstruction } from "../../utils/review-comment-markdown"
 import {
   createdDraftKey,
@@ -151,6 +156,24 @@ function mergeReviewComments(current: ReviewCommentEntry[], incoming: ReviewComm
   }
   return [...map.values()]
 }
+
+// fork_change start
+function append(current: string, next: string): string {
+  if (!next) return current
+  return current ? `${current}\n\n${next}` : next
+}
+
+function imageAttachments(files: FileAttachment[] | undefined) {
+  return (files ?? [])
+    .filter((file) => file.mime.startsWith("image/") && file.url.startsWith("data:"))
+    .map((file) => ({
+      id: crypto.randomUUID(),
+      filename: file.filename ?? "image",
+      mime: file.mime,
+      dataUrl: file.url,
+    }))
+}
+// fork_change end
 
 function finishPending(id: string | undefined): boolean {
   if (!id) return false
@@ -856,6 +879,43 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const isBusy = () =>
     isPromptBusy(session.status(), !!props.suggesting?.(), !!props.questioning?.(), session.submitting())
+  // fork_change start - long press on Send holds the prompt until the turn ends
+  let holdTimer: ReturnType<typeof setTimeout> | undefined
+  let holdDeferred = false
+  const [holding, setHolding] = createSignal(false)
+  const [holdArmed, setHoldArmed] = createSignal(false)
+  const holdStop = () => {
+    if (holdTimer) clearTimeout(holdTimer)
+    holdTimer = undefined
+  }
+  const resetHold = () => {
+    holdStop()
+    holdDeferred = false
+    setHolding(false)
+    setHoldArmed(false)
+  }
+  const holdDown = (event: PointerEvent) => {
+    resetHold()
+    if (event.button !== 0) return
+    if (!isBusy()) return
+    setHolding(true)
+    holdTimer = setTimeout(() => {
+      holdTimer = undefined
+      setHoldArmed(true)
+    }, DEFER_HOLD_MS)
+  }
+  const holdUp = () => {
+    holdDeferred = holdArmed() && isBusy()
+    holdStop()
+    setHolding(false)
+    setHoldArmed(false)
+  }
+  const holdCancel = () => resetHold()
+  createEffect(() => {
+    if (!isBusy()) resetHold()
+  })
+  onCleanup(resetHold)
+  // fork_change end
   const showIndexing = () =>
     indexingButtonVisible(
       features().indexing,
@@ -890,6 +950,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
+    if (holdArmed()) return language.t("prompt.action.send.deferred") // fork_change
+    if (holding()) return language.t("prompt.action.send.holding") // fork_change
     if (speech.state() === "recording") return language.t("prompt.action.send.recording")
     if (goal.active()) return language.t("prompt.goal.start")
     if (canSendContinue()) return language.t("prompt.action.continue")
@@ -1053,14 +1115,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (!target) return
     const comments = restored.comments
     const browser = restored.browsers
-    const images = (failed.files ?? [])
-      .filter((file) => file.mime.startsWith("image/") && file.url.startsWith("data:"))
-      .map((file) => ({
-        id: crypto.randomUUID(),
-        filename: file.filename ?? "image",
-        mime: file.mime,
-        dataUrl: file.url,
-      }))
+    const images = imageAttachments(failed.files) // fork_change
     if (target !== draftKey()) {
       saveDraft(target, draft, comments, images, scrollDrafts.get(target) ?? 0, browser, [])
       return
@@ -1723,13 +1778,68 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   onCleanup(shortcut.reset)
 
-  const handleSendClick = () => {
+  // fork_change start
+  const handleSendClick = (event: MouseEvent) => {
+    const afterTurn = event.detail > 0 && holdDeferred
+    resetHold()
+    // fork_change end
     if (speech.state() !== "recording" || !canSend()) {
-      void handleSend()
+      void handleSend(afterTurn) // fork_change
       return
     }
     transcribeAndSend()
   }
+
+  // fork_change start - Stop returns held prompts to the composer instead of dropping them
+  const restoreCancelled = (event: Event) => {
+    const detail = (event as CustomEvent<{ sessionID?: string; items?: DeferredSend[] }>).detail
+    if (!detail?.items?.length || detail.sessionID !== sid()) return
+    const raw = detail.items.reduce((current, item) => append(current, item.draft), "")
+    const comments = detail.items.reduce<ReviewCommentEntry[]>(
+      (current, item) => mergeReviewComments(current, item.review?.comments ?? []),
+      [],
+    )
+    const refs = detail.items.reduce<BrowserReference[]>(
+      (current, item) => (item.browserFeedback?.references ?? []).reduce(mergeBrowserReferences, current),
+      [],
+    )
+    const ctxs = detail.items.reduce<CodeContext[]>(
+      (current, item) => mergeCodeContexts(current, item.contexts ?? []),
+      [],
+    )
+    const images = detail.items.flatMap((item) => imageAttachments(item.files))
+    if (readonly()) {
+      const key = scopeDraftKey(boxKey(), sessionDraftKey(detail.sessionID))
+      const combined = [...(imageDrafts.get(key) ?? []), ...images]
+      savePromptDraft(
+        key,
+        append(drafts.get(key) ?? "", raw),
+        mergeReviewComments(reviewDrafts.get(key) ?? [], comments),
+        combined,
+        scrollDrafts.get(key) ?? 0,
+        refs.reduce(mergeBrowserReferences, references.get(key) ?? []),
+        mergeCodeContexts(contextDrafts.get(key) ?? [], ctxs),
+      )
+      return
+    }
+    const next = append(text(), raw)
+    const combined = [...imageAttach.images(), ...images]
+    setText(next)
+    mention.seedFromText(next)
+    replaceReviewComments(mergeReviewComments(reviewComments(), comments))
+    replace(refs.reduce(mergeBrowserReferences, browsers()))
+    replaceContexts(mergeCodeContexts(contexts(), ctxs))
+    imageAttach.replace(combined)
+    imageDrafts.set(draftKey(), combined)
+    if (textareaRef) {
+      textareaRef.value = next
+      adjustHeight()
+      textareaRef.focus()
+    }
+  }
+  window.addEventListener("kilo:deferred-cancelled", restoreCancelled)
+  onCleanup(() => window.removeEventListener("kilo:deferred-cancelled", restoreCancelled))
+  // fork_change end
 
   const runMemory = (memory: NonNullable<ReturnType<typeof parseMemoryCommand>>) => {
     if (memory.kind === "usage") {
@@ -1835,7 +1945,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   // fork_change end
 
-  const handleSend = async () => {
+  // fork_change start - hold the composed prompt until this turn goes idle
+  const originBusy = (id: string) =>
+    session.isSubmitting(id) ||
+    (!session.suggestions().some((item) => item.sessionID === id) &&
+      !session.questions().some((item) => item.sessionID === id) &&
+      (session.allStatusMap()[id]?.type ?? "idle") !== "idle")
+  // fork_change end
+
+  // fork_change start
+  const handleSend = async (afterTurn = false) => {
+    // fork_change end
     // Collapsed pastes are expanded to their full content before anything reads
     // the draft: sending, attachments, slash detection, and history all see the
     // real text, never the placeholder.
@@ -1893,12 +2013,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const push = pushInstruction(pending, settings()["agentManager.pushFixes"] !== false)
     const browserData = browserFeedbackData(browsers())
     const browserText = browserData ? formatBrowserFeedback(browserData.references) : ""
-    const contextText = formatCodeContexts(contexts())
+    // fork_change start
+    const codeContexts = [...contexts()]
+    const contextText = formatCodeContexts(codeContexts)
+    // fork_change end
     if (canSendContinue()) {
       session.resume()
       return
     }
     // fork_change start
+    const raw = draft
     if (!browserData) draft = resolvePrompt(draft, pending.length > 0, imgs.length > 0)
     const message = [review, browserText, push, contextText, draft].filter(Boolean).join("\n\n")
     // fork_change end
@@ -1971,6 +2095,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
 
     // Server-side slash command (cmdMatch/matched already computed above)
+    // fork_change start - hold the composed prompt until this turn goes idle
     if (matched && !hasStructuredInput(data, browserData)) {
       const args = draft.slice(cmdMatch![0].length).trim()
       const accepted = session.sendCommand(
@@ -1989,8 +2114,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         },
       )
       if (!accepted) return
-    } else {
-      const accepted = session.sendMessage(
+    } else if (afterTurn && !matched && origin && !pendingId && originBusy(origin)) {
+      const accepted = session.deferMessage({
+        sessionID: origin,
+        text: message,
+        draft: raw,
+        preview: raw || attachments?.find((file) => file.filename)?.filename || "",
+        files: attachments,
+        review: data,
+        browserFeedback: browserData,
+        contexts: codeContexts,
+        context,
+      })
+      if (!accepted) return
+    } else if (
+      !session.sendMessage(
         message,
         sel?.providerID,
         sel?.modelID,
@@ -2001,8 +2139,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         origin ?? null,
         browserData,
       )
-      if (!accepted) return
-    }
+    )
+      return
+    // fork_change end
 
     // `id` was captured before the terminal/git attachment awaits above, so it still
     // names the conversation this message was actually sent to even if the user has
@@ -2156,6 +2295,38 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           }}
         />
       </Show>
+      {/* fork_change start */}
+      <Show when={session.deferredMessages(sid()).length > 0}>
+        <div class="prompt-deferred">
+          <For each={session.deferredMessages(sid())}>
+            {(item) => (
+              <div class="prompt-deferred-row">
+                <Icon name="clock" size="small" />
+                <span class="prompt-deferred-text" title={item.preview || language.t("prompt.deferred.attachment")}>
+                  {item.preview || language.t("prompt.deferred.attachment")}
+                </span>
+                <span class="prompt-deferred-label">{language.t("prompt.deferred.afterTurn")}</span>
+                <IconButton
+                  icon="send"
+                  variant="ghost"
+                  size="small"
+                  aria-label={language.t("prompt.deferred.sendNow")}
+                  title={language.t("prompt.deferred.sendNow")}
+                  onClick={() => session.releaseDeferred(item.sessionID, item.id)}
+                />
+                <IconButton
+                  icon="close-small"
+                  variant="ghost"
+                  size="small"
+                  aria-label={language.t("prompt.deferred.cancel")}
+                  onClick={() => session.cancelDeferred(item.sessionID, item.id)}
+                />
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+      {/* fork_change end */}
       <Show when={contexts().length > 0}>
         <CodeContextChips
           contexts={contexts()}
@@ -2621,6 +2792,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         onClick={handleSendClick}
                         disabled={!canSend()}
                         aria-label={sendLabel()}
+                        /* fork_change start */
+                        style={`--prompt-send-hold-duration:${DEFER_HOLD_MS}ms`}
+                        classList={{ "prompt-send-holding": holding(), "prompt-send-defer": holdArmed() }}
+                        onPointerDown={holdDown}
+                        onPointerUp={holdUp}
+                        onPointerLeave={holdCancel}
+                        onPointerCancel={holdCancel}
+                        /* fork_change end */
                       />
                     }
                   >
