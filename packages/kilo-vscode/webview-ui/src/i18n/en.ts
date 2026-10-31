@@ -103,6 +103,29 @@ export const dict = {
   "command.session.shake.diagnostics":
     "Debug: session {{sessionID}}; raw {{raw}} -> context {{projection}}; tools {{tools}}, completed {{completed}}, protected {{protected}}, already cleared {{compacted}}, candidates {{candidates}}, ~{{tokens}} tokens",
   "command.session.shake.failed": "Failed to clear tool output",
+  "command.session.reasoningClear": "Clear old reasoning",
+  "command.session.reasoningClear.title": "Clear old reasoning",
+  "command.session.reasoningClear.description":
+    "Preview and clear old reasoning blocks without changing the current turn.",
+  "command.session.reasoningClear.keepTurns": "Keep last N turns",
+  "command.session.reasoningClear.invalid": "Enter a whole number from 1 to 100",
+  "command.session.reasoningClear.turns": "Turns to clear",
+  "command.session.reasoningClear.blocks": "Reasoning blocks",
+  "command.session.reasoningClear.tokens": "Estimated tokens",
+  "command.session.reasoningClear.preserved":
+    "{{count}} reasoning carrier(s) are preserved and will not be cleared.",
+  "command.session.reasoningClear.loading": "Loading preview...",
+  "command.session.reasoningClear.empty": "No old reasoning can be cleared.",
+  "command.session.reasoningClear.stale": "Context changed, preview again.",
+  "command.session.reasoningClear.error.busy": "Session is busy. Try again when the session is idle.",
+  "command.session.reasoningClear.error.notFound": "The session was not found.",
+  "command.session.reasoningClear.error.notConnected": "Not connected to the Kilo backend.",
+  "command.session.reasoningClear.error.conflict": "The session changed. Preview again before clearing reasoning.",
+  "command.session.reasoningClear.error.invalid": "The reasoning clear request is invalid.",
+  "command.session.reasoningClear.error.unknown": "Could not clear reasoning.",
+  "command.session.reasoningClear.button": "Clear reasoning",
+  "command.session.reasoningClear.success":
+    "Cleared {{parts}} reasoning blocks across {{turns}} turns ({{tokens}} tokens).",
   // fork_change end
   // fork_change start - undo compaction
   "compaction.divider.label": "Session compacted",
@@ -1469,7 +1492,7 @@ export const dict = {
   // fork_change start - compact header actions display setting
   "settings.display.compactHeader.title": "Compact Header Actions",
   "settings.display.compactHeader.description":
-    "Show session actions (search chat, compact session, clear heavy tool output) in a More actions menu in the chat header. Disable to show them as separate buttons.",
+    "Show session actions (search chat, compact session, clear heavy tool output, clear old reasoning) in a More actions menu in the chat header. Disable to show them as separate buttons.",
   // fork_change end
   "settings.display.autoApprovalReason.title": "Show Auto-Approval Reason",
   "settings.display.autoApprovalReason.description":

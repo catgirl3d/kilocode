@@ -18704,6 +18704,269 @@
         ]
       }
     },
+    "/session/{sessionID}/reasoning/clear/preview": {
+      "post": {
+        "tags": ["session"],
+        "operationId": "session.reasoningClearPreview",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses.*"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Preview manual reasoning clear",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "turns": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "parts": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "tokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unsupported": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "token": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["turns", "parts", "tokens", "unsupported", "token"],
+                  "additionalProperties": false,
+                  "description": "Preview manual reasoning clear"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError | SessionBusyError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionBusyError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Preview clearing historical unsigned reasoning without changing the session.",
+        "summary": "Preview reasoning clear",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keepTurns": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  }
+                },
+                "required": ["keepTurns"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.session.reasoningClearPreview({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/session/{sessionID}/reasoning/clear": {
+      "post": {
+        "tags": ["session"],
+        "operationId": "session.reasoningClear",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses.*"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Clear historical reasoning",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "parts": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "turns": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "tokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": ["parts", "turns", "tokens"],
+                  "additionalProperties": false,
+                  "description": "Clear historical reasoning"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError | SessionBusyError | KiloReasoningClearStalePreviewError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ConflictError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionBusyError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/KiloReasoningClearStalePreviewError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Mark historical unsigned reasoning as cleared without invoking an LLM.",
+        "summary": "Clear reasoning",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keepTurns": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": ["keepTurns", "token"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createKiloClient } from \"@kilocode/sdk/v2\"\n\nconst client = createKiloClient()\nawait client.session.reasoningClear({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/kilocode/migrate/sessions": {
       "post": {
         "tags": ["migrate"],
@@ -41489,6 +41752,20 @@
           }
         },
         "required": ["operation", "message"],
+        "additionalProperties": false
+      },
+      "KiloReasoningClearStalePreviewError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["KiloReasoningClearStalePreviewError"]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
         "additionalProperties": false
       },
       "KilocodeMigrateSessionsMigrated": {

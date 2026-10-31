@@ -276,6 +276,31 @@ export interface ShakeRequest {
   type: "shake"
   sessionID: string
 }
+
+export type ReasoningClearOperation = "preview" | "apply"
+export type ReasoningClearErrorCode =
+  | "invalid"
+  | "notConnected"
+  | "busy"
+  | "notFound"
+  | "stale"
+  | "conflict"
+  | "unknown"
+
+export interface SessionReasoningClearPreviewRequest {
+  type: "sessionReasoningClearPreview"
+  sessionID: string
+  requestID: string
+  keepTurns: number
+}
+
+export interface SessionReasoningClearRequest {
+  type: "sessionReasoningClear"
+  sessionID: string
+  requestID: string
+  keepTurns: number
+  token: string
+}
 // fork_change end
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
@@ -1934,6 +1959,8 @@ export type WebviewMessage =
   | RequestProvidersMessage
   | CompactRequest
   | ShakeRequest // fork_change
+  | SessionReasoningClearPreviewRequest // fork_change
+  | SessionReasoningClearRequest // fork_change
   | RequestAgentsMessage
   | RequestSkillsMessage
   | RequestCommandsMessage

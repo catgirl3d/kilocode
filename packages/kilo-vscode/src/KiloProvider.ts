@@ -161,6 +161,7 @@ import {
   fetchAndSendPendingQuestions,
 } from "./kilo-provider/handlers/question"
 import { fetchAndSendPendingSuggestions } from "./kilo-provider/handlers/suggestion"
+import { isNotFoundError } from "./kilo-provider/handlers/not-found" // fork_change
 import { nativeTitle } from "./kilo-provider/native-tab-title"
 import { isActivity, type Activity } from "../webview-ui/src/utils/session-activity"
 import type { PRReviewCommentData, ReviewMessageData } from "./shared/review-comments"
@@ -279,6 +280,19 @@ const MCP_MESSAGE_TYPES = new Set([
 function feedbackMessage(message: { text: string; review?: unknown; browserFeedback?: unknown }) {
   return parseFeedback({ review: message.review, browserFeedback: message.browserFeedback }, message.text)
 }
+
+// fork_change start - map reasoning-clear API errors to UI error codes
+function reasoningClearCode(error: unknown): "busy" | "notFound" | "stale" | "conflict" | "unknown" {
+  if (isNotFoundError(error)) return "notFound"
+  const cause = error instanceof Error ? error.cause : undefined
+  const body = cause && typeof cause === "object" ? (cause as { body?: unknown }).body : undefined
+  const tag = body && typeof body === "object" ? (body as { _tag?: unknown })._tag : undefined
+  if (tag === "KiloReasoningClearStalePreviewError") return "stale"
+  if (tag === "SessionBusyError") return "busy"
+  if (tag === "ConflictError") return "conflict"
+  return "unknown"
+}
+// fork_change end
 
 type SendWebviewMessage = {
   type: "sendMessage"
@@ -1430,6 +1444,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           caffeination: () => void vscode.commands.executeCommand("kilo-code.new.toggleCaffeination"),
           shake: (sessionID) => this.handleShake(sessionID), // fork_change
           // fork_change start
+          reasoningPreview: (sessionID, requestID, keepTurns) =>
+            this.handleReasoningClear(sessionID, requestID, keepTurns),
+          reasoningClear: (sessionID, requestID, keepTurns, token) =>
+            this.handleReasoningClear(sessionID, requestID, keepTurns, token),
           sessionColors: () => this.postMessage({ type: "sessionColorsLoaded", colors: sessionColors() }),
           setSessionColor: (sessionID, color) => setSessionColor(sessionID, color),
           sessionTagProject: () => this.tagProject(),
@@ -5432,6 +5450,40 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         sessionID: target,
         error: getErrorMessage(error) || "Failed to clear tool output",
       })
+    }
+  }
+
+  private async handleReasoningClear(
+    sessionID: string,
+    requestID: string,
+    keepTurns: number,
+    token?: string,
+  ): Promise<void> {
+    const operation = token === undefined ? "preview" : "apply"
+    const fail = (code: ReturnType<typeof reasoningClearCode> | "notConnected", error: string) =>
+      this.postMessage({ type: "sessionReasoningClearFailed", operation, sessionID, requestID, code, error })
+    if (!this.client) {
+      fail("notConnected", "Not connected to CLI backend")
+      return
+    }
+    try {
+      const directory = this.getWorkspaceDirectory(sessionID)
+      if (token === undefined) {
+        const result = await this.client.session.reasoningClearPreview(
+          { sessionID, directory, keepTurns },
+          { throwOnError: true },
+        )
+        this.postMessage({ type: "sessionReasoningClearPreviewed", sessionID, requestID, ...result.data })
+        return
+      }
+      const result = await this.client.session.reasoningClear(
+        { sessionID, directory, keepTurns, token },
+        { throwOnError: true },
+      )
+      this.postMessage({ type: "sessionReasoningCleared", sessionID, requestID, ...result.data })
+    } catch (error) {
+      console.error(`[Kilo New] KiloProvider: Failed to ${operation} reasoning clear:`, error)
+      fail(reasoningClearCode(error), getErrorMessage(error) || "Failed to clear reasoning")
     }
   }
 

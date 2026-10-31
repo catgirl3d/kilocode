@@ -21,7 +21,7 @@ import type {
   // fork_change end
   SessionUpdate,
 } from "./sessions"
-import type { AgentManagerSidebarTarget } from "./webview-messages"
+import type { AgentManagerSidebarTarget, ReasoningClearErrorCode, ReasoningClearOperation } from "./webview-messages" // fork_change
 import type { PermissionRequest } from "./permissions"
 import type { AnacondaDesktopExtensionMessage } from "../../../../src/shared/anaconda-desktop-messages"
 import type { BrowserFeedbackData, BrowserReference } from "../../../../src/shared/browser-feedback"
@@ -279,6 +279,35 @@ export interface SessionShakeCompletedMessage {
 export interface SessionShakeFailedMessage {
   type: "sessionShakeFailed"
   sessionID: string
+  error: string
+}
+
+export interface SessionReasoningClearPreviewedMessage {
+  type: "sessionReasoningClearPreviewed"
+  sessionID: string
+  requestID: string
+  turns: number
+  parts: number
+  tokens: number
+  unsupported: number
+  token: string
+}
+
+export interface SessionReasoningClearedMessage {
+  type: "sessionReasoningCleared"
+  sessionID: string
+  requestID: string
+  parts: number
+  turns: number
+  tokens: number
+}
+
+export interface SessionReasoningClearFailedMessage {
+  type: "sessionReasoningClearFailed"
+  operation: ReasoningClearOperation
+  sessionID: string
+  requestID: string
+  code: ReasoningClearErrorCode
   error: string
 }
 // fork_change end
@@ -1960,8 +1989,13 @@ export type ExtensionMessage =
   | SessionCreatedMessage
   | SessionForkedMessage
   | SessionUpdatedMessage
-  | SessionShakeCompletedMessage // fork_change
-  | SessionShakeFailedMessage // fork_change
+  // fork_change start - shake and reasoning-clear message types
+  | SessionShakeCompletedMessage
+  | SessionShakeFailedMessage
+  | SessionReasoningClearPreviewedMessage
+  | SessionReasoningClearedMessage
+  | SessionReasoningClearFailedMessage
+  // fork_change end
   | SessionDeletedMessage
   | MessageRemovedMessage
   | DeleteMessageResultMessage
@@ -2008,11 +2042,13 @@ export type ExtensionMessage =
   | TerminalContextErrorMessage
   | GitChangesContextResultMessage
   | GitChangesContextErrorMessage
-  | GitCommitsResultMessage // fork_change
-  | GitCommitContextResultMessage // fork_change
-  | GitCommitContextErrorMessage // fork_change
-  | StagedDiffResultMessage // fork_change
-  | StagedDiffErrorMessage // fork_change
+  // fork_change start - git commits, context and staged diff results
+  | GitCommitsResultMessage
+  | GitCommitContextResultMessage
+  | GitCommitContextErrorMessage
+  | StagedDiffResultMessage
+  | StagedDiffErrorMessage
+  // fork_change end
   | QuestionRequestMessage
   | QuestionResolvedMessage
   | QuestionErrorMessage

@@ -178,6 +178,27 @@ describe("Kilo PublicApi OpenAPI contract", () => {
     expect(spec.paths[path]?.post?.tags).toEqual(["session"])
   })
 
+  test("keeps both reasoning-clear operations in the session SDK group", () => {
+    const spec = OpenApi.fromApi(PublicApi)
+    const routes = [
+      {
+        path: "/session/{sessionID}/reasoning/clear/preview",
+        operationId: "session.reasoningClearPreview",
+      },
+      {
+        path: "/session/{sessionID}/reasoning/clear",
+        operationId: "session.reasoningClear",
+      },
+    ]
+
+    for (const route of routes) {
+      const operation = spec.paths[route.path]?.post
+      expect(operation).toBeDefined()
+      expect(operation?.operationId).toBe(route.operationId)
+      expect(operation?.tags).toEqual(["session"])
+    }
+  })
+
   test("constrains embedding model metadata", () => {
     const accepts = (dimension: number, scoreThreshold: number) =>
       Result.isSuccess(

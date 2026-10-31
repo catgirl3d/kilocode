@@ -355,6 +355,11 @@ export function mockSessionValue(overrides?: {
     // fork_change start
     shake: noop,
     shaking: () => false,
+    reasoningPreview: noop,
+    reasoningCancel: noop,
+    reasoningClear: noop,
+    reasoningState: () => ({ keepTurns: 10, previewing: false, applying: false }),
+    reasoningClearing: () => false,
     // fork_change end
     respondToPermission: noop,
     replyToQuestion: noop,
