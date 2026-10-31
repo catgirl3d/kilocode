@@ -104,7 +104,7 @@ function mount(initial: Config) {
     globalDraft: () => ({}),
     projectDraft: () => ({}),
     globalEffectiveConfig: config,
-    projectConfig: config,
+    projectConfig: () => ({}),
     projectBinding: () => undefined,
     collections: () => ({}),
     settings: () => ({}),
