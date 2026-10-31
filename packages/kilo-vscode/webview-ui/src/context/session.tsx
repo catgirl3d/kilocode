@@ -26,10 +26,13 @@ import { useConfig } from "./config"
 import { useLanguage } from "./language"
 import { createCostAlertHandler } from "./cost-alert"
 import { createMcpAuth } from "./mcp-auth"
-import { createSessionModelActions } from "./session-model-actions" // fork_change
-import { createSessionFavorites } from "./model-favorites" // fork_change
-import { createSessionShake } from "./session-shake" // fork_change
-import { createDeferredSends } from "./session-deferred" // fork_change
+// fork_change start
+import { createSessionModelActions } from "./session-model-actions"
+import { createSessionFavorites } from "./model-favorites"
+import { createSessionShake } from "./session-shake"
+import { createDeferredSends } from "./session-deferred"
+import { createSessionReasoning } from "./session-reasoning"
+// fork_change end
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { touch } from "@kilocode/kilo-ui/tool-motion"
 import type {
@@ -174,6 +177,12 @@ export const SessionProvider: ParentComponent = (props) => {
     language,
   })
   const shake = shakeActions.shake
+  const reasoningActions = createSessionReasoning({
+    isConnected: () => server.isConnected(),
+    currentSessionID,
+    post: vscode.postMessage,
+    language,
+  })
   // fork_change end
   // Per-session status map — keyed by sessionID
   const [statusMap, setStatusMap] = createStore<Record<string, SessionStatusInfo>>({})
@@ -865,6 +874,7 @@ export const SessionProvider: ParentComponent = (props) => {
   function handleStreamMessage(message: ExtensionMessage): boolean {
     if (handleWakeupMessage(message)) return true
     if (shakeActions.handleMessage(message)) return true // fork_change
+    if (reasoningActions.handleMessage(message)) return true // fork_change
     if (!streamMessage(message)) return false
     if (message.type === "partUpdated") {
       handlePartUpdated(message.sessionID, message.messageID, message.part, message.delta)
@@ -2886,10 +2896,12 @@ export const SessionProvider: ParentComponent = (props) => {
   const revertedCount = createMemo(() => {
     const boundary = revert()?.messageID
     if (!boundary) return 0
-    const list = messages() // fork_change
-    const index = list.findIndex((message) => message.id === boundary) // fork_change
-    if (index < 0) return 0 // fork_change
-    return list.slice(index).filter((message) => message.role === "user").length // fork_change
+    // fork_change start
+    const list = messages()
+    const index = list.findIndex((message) => message.id === boundary)
+    if (index < 0) return 0
+    return list.slice(index).filter((message) => message.role === "user").length
+    // fork_change end
   })
 
   const summary = createMemo(() => {
@@ -3148,9 +3160,16 @@ export const SessionProvider: ParentComponent = (props) => {
     sendCommand,
     abort,
     compact,
-    undoCompact, // fork_change
-    shake, // fork_change
-    shaking: () => shakeActions.shaking() === currentSessionID(), // fork_change
+    // fork_change start - compact undo, shake and reasoning-clear session actions
+    undoCompact,
+    shake,
+    shaking: () => shakeActions.shaking() === currentSessionID(),
+    reasoningPreview: reasoningActions.preview,
+    reasoningCancel: reasoningActions.cancel,
+    reasoningClear: reasoningActions.apply,
+    reasoningState: reasoningActions.state,
+    reasoningClearing: (id) => reasoningActions.clearing(id),
+    // fork_change end
     respondToPermission,
     replyToQuestion,
     rejectQuestion,

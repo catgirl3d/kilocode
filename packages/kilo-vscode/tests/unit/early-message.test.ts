@@ -3,7 +3,14 @@ import { routeEarlyMessage } from "../../src/kilo-provider/early-message"
 
 type Ctx = Parameters<typeof routeEarlyMessage>[1]
 
-function context(copied: string[], posted: unknown[], fail = false, shaken: string[] = []) {
+function context(
+  copied: string[],
+  posted: unknown[],
+  fail = false,
+  shaken: string[] = [],
+  previews: unknown[] = [],
+  clears: unknown[] = [],
+) {
   return {
     copy: async (text: string) => {
       if (fail) throw new Error("clipboard unavailable")
@@ -11,6 +18,8 @@ function context(copied: string[], posted: unknown[], fail = false, shaken: stri
     },
     post: (message: unknown) => posted.push(message),
     shake: async (sessionID: string) => shaken.push(sessionID),
+    reasoningPreview: async (...args: unknown[]) => previews.push(args),
+    reasoningClear: async (...args: unknown[]) => clears.push(args),
   } as Ctx
 }
 
@@ -66,6 +75,98 @@ describe("routeEarlyMessage resume", () => {
     expect(calls).toEqual([["ses_1", "msg_1", "request-1"]])
     expect(await routeEarlyMessage({ ...message, messageID: undefined }, ctx)).toBe(true)
     expect(calls).toHaveLength(1)
+  })
+})
+
+describe("routeEarlyMessage reasoning clear", () => {
+  it("routes a valid preview and apply request before prompt routing", async () => {
+    const previews: unknown[] = []
+    const clears: unknown[] = []
+    const ctx = context([], [], false, [], previews, clears)
+
+    expect(
+      await routeEarlyMessage(
+        { type: "sessionReasoningClearPreview", sessionID: "ses_1", requestID: "preview-1", keepTurns: 10 },
+        ctx,
+      ),
+    ).toBe(true)
+    expect(
+      await routeEarlyMessage(
+        {
+          type: "sessionReasoningClear",
+          sessionID: "ses_1",
+          requestID: "clear-1",
+          keepTurns: 10,
+          token: "preview-token",
+        },
+        ctx,
+      ),
+    ).toBe(true)
+    expect(previews).toEqual([["ses_1", "preview-1", 10]])
+    expect(clears).toEqual([["ses_1", "clear-1", 10, "preview-token"]])
+  })
+
+  it("rejects non-numeric keepTurns and empty apply tokens without invoking the host", async () => {
+    const posted: unknown[] = []
+    const previews: unknown[] = []
+    const clears: unknown[] = []
+    const ctx = context([], posted, false, [], previews, clears)
+
+    expect(
+      await routeEarlyMessage(
+        { type: "sessionReasoningClearPreview", sessionID: "ses_1", requestID: "preview-2", keepTurns: "10" },
+        ctx,
+      ),
+    ).toBe(true)
+    expect(
+      await routeEarlyMessage(
+        {
+          type: "sessionReasoningClear",
+          sessionID: "ses_1",
+          requestID: "clear-2",
+          keepTurns: null,
+          token: "preview-token",
+        },
+        ctx,
+      ),
+    ).toBe(true)
+    expect(
+      await routeEarlyMessage(
+        {
+          type: "sessionReasoningClear",
+          sessionID: "ses_1",
+          requestID: "clear-3",
+          keepTurns: 10,
+          token: "",
+        },
+        ctx,
+      ),
+    ).toBe(true)
+    expect(previews).toEqual([])
+    expect(clears).toEqual([])
+    expect(posted).toEqual([
+      expect.objectContaining({
+        type: "sessionReasoningClearFailed",
+        operation: "preview",
+        sessionID: "ses_1",
+        requestID: "preview-2",
+        code: "invalid",
+      }),
+      expect.objectContaining({
+        type: "sessionReasoningClearFailed",
+        operation: "apply",
+        sessionID: "ses_1",
+        requestID: "clear-2",
+        code: "invalid",
+      }),
+      expect.objectContaining({
+        type: "sessionReasoningClearFailed",
+        operation: "apply",
+        sessionID: "ses_1",
+        requestID: "clear-3",
+        code: "invalid",
+      }),
+    ])
   })
 })
 
