@@ -35,6 +35,7 @@
 - Preview or remove stale child sessions with the `kilo session cleanup` command.
 - Allow sending an empty prompt as `continue` when no media or review comments are attached.
 - Clear heavy tool outputs from the active session context on demand.
+- Clear old reasoning from the active session after previewing the affected turns, blocks, and estimated tokens.
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
 - Copy the current session ID from the chat header's More actions menu.
 - Show live sub-agent status dots on task cards: green while running, gray when completed, and red on error.
