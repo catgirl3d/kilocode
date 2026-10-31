@@ -703,6 +703,28 @@ export const kiloScenarios: Scenario[] = [
       object(body.diagnostics)
       check(body.diagnostics.candidates === 0, "shake should report no eligible tool output")
     }),
+  http.protected
+    .post("/session/{sessionID}/reasoning/clear/preview", "session.reasoningClearPreview")
+    .seeded((ctx) => ctx.session({ title: "Reasoning clear preview session" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/reasoning/clear/preview", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { keepTurns: 10 },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.turns === 0, "reasoning clear preview should report no turns for an empty session")
+      check(body.parts === 0 && body.tokens === 0, "reasoning clear preview should report zero work")
+    }),
+  http.protected
+    .post("/session/{sessionID}/reasoning/clear", "session.reasoningClear")
+    .seeded((ctx) => ctx.session({ title: "Reasoning clear apply session" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/reasoning/clear", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { keepTurns: 10, token: "stale-preview" },
+    }))
+    .status(409),
   http.protected.get("/remote/status", "remote.status").json(200, (body) => {
     object(body)
     check(body.enabled === false && body.connected === false, "remote should start disabled")

@@ -23,7 +23,7 @@ const posix = (value: string) => value.replaceAll("\\", "/")
  * session.get records every call so tests can assert which directory was
  * queried. Mirrors the shape used by kilo-provider-session-refresh.test.ts.
  */
-function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs = "git") {
+function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs = "git", connected = true) {
   const calls: SessionGetParams[] = []
   const projectCalls: string[] = []
   const client = {
@@ -48,6 +48,16 @@ function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs
       shake: async (_p: { sessionID: string; directory: string }) => ({
         data: { parts: 0, tokens: 0, diagnostics: {} },
       }),
+      reasoningClearPreview: async (_p: unknown) => ({
+        data: {
+          turns: 0,
+          parts: 0,
+          tokens: 0,
+          unsupported: 0,
+          token: "preview-token",
+        },
+      }),
+      reasoningClear: async (_p: unknown) => ({ data: { parts: 0, turns: 0, tokens: 0 } }),
       command: async (_p: unknown) => ({ data: {} }),
     },
     experimental: {
@@ -73,7 +83,7 @@ function mockConnection(getImpl?: (p: SessionGetParams) => Promise<unknown>, vcs
       profile: async () => ({ data: {} }),
     },
   }
-  let current: typeof client | null = client
+  let current: typeof client | null = connected ? client : null
   return {
     calls,
     projectCalls,
@@ -166,6 +176,7 @@ type ProviderInternals = {
     contextDirectory?: string,
   ) => Promise<void>
   handleShake: (sessionID?: string) => Promise<void>
+  handleReasoningClear: (sessionID: string, requestID: string, keepTurns: number, token?: string) => Promise<void>
 }
 
 /**
@@ -884,6 +895,172 @@ describe("KiloProvider route integration", () => {
       },
     ])
   })
+
+  it("forwards reasoning clear preview and apply through the session workspace directory", async () => {
+    const { connection } = mockConnection()
+    const client = connection.getClient() as unknown as {
+      session: {
+        reasoningClearPreview: (input: unknown) => Promise<unknown>
+        reasoningClear: (input: unknown) => Promise<unknown>
+      }
+    }
+    const calls: unknown[] = []
+    client.session.reasoningClearPreview = async (input) => {
+      calls.push({ operation: "preview", input })
+      return {
+        data: {
+          turns: 2,
+          parts: 3,
+          tokens: 88,
+          unsupported: 0,
+          token: "token-1",
+        },
+      }
+    }
+    client.session.reasoningClear = async (input) => {
+      calls.push({ operation: "apply", input })
+      return { data: { parts: 3, turns: 2, tokens: 88 } }
+    }
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo/project",
+    })
+    const internal = provider as unknown as ProviderInternals
+    connect(internal)
+    const posted: unknown[] = []
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+
+    await internal.handleReasoningClear("ses-reasoning", "preview-1", 10)
+    await internal.handleReasoningClear("ses-reasoning", "apply-1", 10, "token-1")
+
+    expect(calls).toEqual([
+      {
+        operation: "preview",
+        input: { sessionID: "ses-reasoning", directory: "/repo/project", keepTurns: 10 },
+      },
+      {
+        operation: "apply",
+        input: { sessionID: "ses-reasoning", directory: "/repo/project", keepTurns: 10, token: "token-1" },
+      },
+    ])
+    expect(posted).toEqual([
+      {
+        type: "sessionReasoningClearPreviewed",
+        sessionID: "ses-reasoning",
+        requestID: "preview-1",
+        turns: 2,
+        parts: 3,
+        tokens: 88,
+        unsupported: 0,
+        token: "token-1",
+      },
+      {
+        type: "sessionReasoningCleared",
+        sessionID: "ses-reasoning",
+        requestID: "apply-1",
+        parts: 3,
+        turns: 2,
+        tokens: 88,
+      },
+    ])
+  })
+
+  it("preserves request IDs and reports client-null and backend failures", async () => {
+    const { connection } = mockConnection(undefined, "git", false)
+    const provider = new KiloProvider({} as never, connection, undefined, {
+      rootDirectory: () => "/repo/project",
+    })
+    const internal = provider as unknown as ProviderInternals
+    const posted: unknown[] = []
+    internal.webview = { postMessage: async (message) => posted.push(message) }
+    await internal.handleReasoningClear("ses-reasoning", "preview-null", 10)
+
+    await connection.connect()
+    const client = connection.getClient() as unknown as {
+      session: { reasoningClear: (input: unknown) => Promise<unknown> }
+    }
+    client.session.reasoningClear = async () => {
+      throw new Error("Session is busy", {
+        cause: {
+          status: 409,
+          body: { _tag: "SessionBusyError", sessionID: "ses-reasoning", message: "Session is busy" },
+        },
+      })
+    }
+    connect(internal)
+    await internal.handleReasoningClear("ses-reasoning", "apply-fail", 10, "token-1")
+
+    expect(posted).toEqual([
+      {
+        type: "sessionReasoningClearFailed",
+        operation: "preview",
+        sessionID: "ses-reasoning",
+        requestID: "preview-null",
+        code: "notConnected",
+        error: "Not connected to CLI backend",
+      },
+      {
+        type: "sessionReasoningClearFailed",
+        operation: "apply",
+        sessionID: "ses-reasoning",
+        requestID: "apply-fail",
+        code: "busy",
+        error: "Session is busy",
+      },
+    ])
+  })
+
+  it.each([
+    [404, { name: "NotFoundError", data: { message: "Session not found" } }, "Session not found", "notFound"],
+    [
+      409,
+      { _tag: "KiloReasoningClearStalePreviewError", message: "The reasoning-clear preview is stale." },
+      "The reasoning-clear preview is stale.",
+      "stale",
+    ],
+    [
+      409,
+      { _tag: "SessionBusyError", sessionID: "ses-reasoning", message: "Session is busy" },
+      "Session is busy",
+      "busy",
+    ],
+    [
+      409,
+      { _tag: "ConflictError", message: "Restore the session before clearing reasoning." },
+      "Restore the session before clearing reasoning.",
+      "conflict",
+    ],
+    [409, { _tag: "ConflictError", message: "stale token, preview again" }, "stale token, preview again", "conflict"],
+    [500, { _tag: "UnknownError", message: "Unexpected server failure" }, "Unexpected server failure", "unknown"],
+  ] as const)(
+    "maps reasoning clear HTTP failure %s (%j) with message %s to %s and preserves the request ID",
+    async (status, body, message, code) => {
+      const { connection } = mockConnection()
+      const client = connection.getClient() as unknown as {
+        session: { reasoningClearPreview: (input: unknown) => Promise<unknown> }
+      }
+      client.session.reasoningClearPreview = async () => {
+        throw new Error(message, { cause: { status, body } })
+      }
+      const provider = new KiloProvider({} as never, connection, undefined, {
+        rootDirectory: () => "/repo/project",
+      })
+      const internal = provider as unknown as ProviderInternals
+      connect(internal)
+      const posted: unknown[] = []
+      internal.webview = { postMessage: async (value) => posted.push(value) }
+
+      await internal.handleReasoningClear("ses-reasoning", `request-${status}-${code}`, 10)
+
+      expect(posted).toContainEqual({
+        type: "sessionReasoningClearFailed",
+        operation: "preview",
+        sessionID: "ses-reasoning",
+        requestID: `request-${status}-${code}`,
+        code,
+        error: message,
+      })
+    },
+  )
 
   it("keeps a configured shake command on the generic provider command boundary", async () => {
     const { connection } = mockConnection()

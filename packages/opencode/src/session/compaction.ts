@@ -24,6 +24,7 @@ import { KiloCompactionPayloadRecovery } from "@/kilocode/session/compaction-pay
 import { KiloCompactionChunks } from "@/kilocode/session/compaction-chunks"
 import { SessionExport } from "@/kilocode/session-export"
 import { KiloSession } from "@/kilocode/session"
+import * as KiloReasoningMarker from "@/kilocode/session/reasoning-marker" // [fork]
 // kilocode_change end
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -78,7 +79,12 @@ const serialize = (message: SessionV1.WithParts) => {
   return message.parts
     .flatMap((part) => {
       if (part.type === "text") return part.text ? [`[Assistant]: ${part.text}`] : []
-      if (part.type === "reasoning") return part.text ? [`[Assistant reasoning]: ${part.text}`] : []
+      // kilocode_change start - [fork] omit cleared reasoning from serialized compaction history
+      if (part.type === "reasoning") {
+        if (KiloReasoningMarker.cleared(part)) return []
+        return part.text ? [`[Assistant reasoning]: ${part.text}`] : []
+      }
+      // kilocode_change end
       if (part.type !== "tool") return []
       const call = `[Assistant tool call]: ${part.tool}(${JSON.stringify(part.state.input)})`
       if (part.state.status === "completed") {

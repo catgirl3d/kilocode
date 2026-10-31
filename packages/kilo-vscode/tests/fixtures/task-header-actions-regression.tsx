@@ -65,6 +65,8 @@ const { SessionProvider, useSession } = await import("../../webview-ui/src/conte
 const { MemoryProvider } = await import("../../webview-ui/src/context/memory")
 const { TranscriptSearchProvider } = await import("../../webview-ui/src/context/transcript-search")
 const { DialogProvider } = await import("@kilocode/kilo-ui/context/dialog")
+const { I18nProvider } = await import("@kilocode/kilo-ui/context")
+const { Toast } = await import("@kilocode/kilo-ui/toast")
 const { TaskHeader } = await import("../../webview-ui/src/components/chat/TaskHeader")
 const { post } = await import("../../webview-ui/src/utils/webview-message")
 
@@ -118,10 +120,21 @@ const dispose = render(
                     <MemoryProvider>
                       <TranscriptSearchProvider>
                         <DialogProvider>
-                          <Probe />
-                          <div data-testid="header">
-                            <TaskHeader />
-                          </div>
+                          <I18nProvider
+                            value={
+                              {
+                                locale: () => "en",
+                                t: (key: string) => key,
+                                plural: (key: string) => key,
+                              } as never
+                            }
+                          >
+                            <Probe />
+                            <div data-testid="header">
+                              <TaskHeader />
+                            </div>
+                            <Toast.Region />
+                          </I18nProvider>
                         </DialogProvider>
                       </TranscriptSearchProvider>
                     </MemoryProvider>
@@ -195,7 +208,7 @@ function dialog() {
   const value = [...document.querySelectorAll<HTMLElement>('[data-component="dialog"]')].find(
     (entry) => !entry.querySelector('[role="dialog"]')?.hasAttribute("data-closed"),
   )
-  assert(value, "the delete confirmation dialog is open")
+  assert(value, "the confirmation dialog is open")
   return value
 }
 
@@ -219,6 +232,10 @@ async function ask() {
 
 const title = () => root.querySelector('[data-slot="task-header-title-label"]')?.textContent?.trim()
 const deletes = () => sent.filter((message) => message.type === "deleteSession")
+const toasts = (variant: string) =>
+  [...document.querySelectorAll<HTMLElement>('[data-component="toast"]')].filter(
+    (node) => node.getAttribute("data-variant") === variant,
+  )
 
 const id = "ses-home"
 const other = "ses-other"
@@ -255,6 +272,280 @@ try {
   assert.equal(session.currentSessionID(), id, "the loaded session is current")
   assert.equal(title(), "Home session", "the header renders the current session title")
 
+  // The reasoning action opens a per-session preview dialog and never applies
+  // a stale or cancelled preview.
+  const reasoningMenu = await open()
+  const reasoningItem = items(reasoningMenu.menu).find((entry) => label(entry) === "command.session.reasoningClear")
+  assert(reasoningItem, "the More actions menu exposes Clear old reasoning")
+  select(reasoningItem)
+  await settle()
+  const reasoningDialog = dialog()
+  const firstPreview = sent.filter((message) => message.type === "sessionReasoningClearPreview").at(-1)
+  assert(firstPreview, "opening the reasoning dialog requests a preview")
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: id,
+    requestID: firstPreview.requestID,
+    turns: 2,
+    parts: 3,
+    tokens: 88,
+    unsupported: 0,
+    token: "token-1",
+  })
+  const field = reasoningDialog.querySelector<HTMLInputElement>('input[type="number"]')
+  assert(field, "the reasoning dialog exposes the keep-turns field")
+  field.value = ""
+  field.dispatchEvent(new window.InputEvent("input", { bubbles: true }) as unknown as Event)
+  await settle()
+  assert.equal(
+    action(reasoningDialog, "command.session.reasoningClear.button").disabled,
+    true,
+    "empty keep turns cannot apply",
+  )
+  field.value = "5"
+  field.dispatchEvent(new window.InputEvent("input", { bubbles: true }) as unknown as Event)
+  await settle()
+  assert.equal(
+    action(reasoningDialog, "command.session.reasoningClear.button").disabled,
+    true,
+    "changing keep turns disables apply until the preview completes",
+  )
+  // Wait for the 300ms reasoning preview debounce before settling.
+  await new Promise((resolve) => window.setTimeout(resolve, 350))
+  await settle()
+  const previews = sent.filter((message) => message.type === "sessionReasoningClearPreview")
+  assert.equal(previews.length, 2, "changing keep turns requests a fresh preview")
+  const secondPreview = previews.at(-1)!
+  const numbers = () =>
+    [...reasoningDialog.querySelectorAll<HTMLElement>('[data-slot="reasoning-clear-preview"] strong')].map((node) =>
+      node.textContent?.trim(),
+    )
+  const card = () => reasoningDialog.querySelector<HTMLElement>('[data-slot="reasoning-clear-preview"]')
+  assert.deepEqual(numbers(), ["2", "3", "88"], "the previous numbers stay visible while the new preview loads")
+  assert.equal(card()?.hasAttribute("data-stale"), true, "the previous numbers are dimmed while the new preview loads")
+  assert.equal(
+    reasoningDialog.querySelectorAll('[data-slot="reasoning-clear-status"]').length,
+    0,
+    "no loading line is shown while the previous numbers are visible",
+  )
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: id,
+    requestID: secondPreview.requestID,
+    turns: 1,
+    parts: 1,
+    tokens: 20,
+    unsupported: 0,
+    token: "token-2",
+  })
+  assert.deepEqual(numbers(), ["1", "1", "20"], "the new preview replaces the previous numbers")
+  assert.equal(card()?.hasAttribute("data-stale"), false, "the new preview is not dimmed")
+  action(reasoningDialog, "command.session.reasoningClear.button").click()
+  await settle()
+  const applies = () => sent.filter((message) => message.type === "sessionReasoningClear")
+  const apply = applies().at(-1)
+  assert(apply, "confirming reasoning clear posts an apply request")
+  assert.deepEqual(apply, {
+    type: "sessionReasoningClear",
+    sessionID: id,
+    requestID: apply.requestID,
+    keepTurns: 5,
+    token: "token-2",
+  })
+  assert.equal(field.disabled, true, "the keep-turns field is disabled while reasoning clear applies")
+  const closeButton = reasoningDialog.querySelector<HTMLButtonElement>('[data-slot="dialog-close-button"]')
+  assert(closeButton, "the reasoning dialog exposes a close button")
+  assert.equal(closeButton.disabled, true, "the close button is disabled while reasoning clear applies")
+  field.value = "6"
+  field.dispatchEvent(new window.InputEvent("input", { bubbles: true }) as unknown as Event)
+  await settle()
+  assert.equal(
+    sent.filter((message) => message.type === "sessionReasoningClearPreview").length,
+    2,
+    "editing during apply does not request another preview",
+  )
+  await emit({
+    type: "sessionReasoningCleared",
+    sessionID: id,
+    requestID: apply.requestID,
+    parts: 1,
+    turns: 1,
+    tokens: 20,
+  })
+  assert.equal(
+    reasoningDialog.querySelector('[role="dialog"]')?.hasAttribute("data-closed"),
+    true,
+    "a successful reasoning clear closes the dialog",
+  )
+  assert.equal(
+    toasts("success").some((node) => node.textContent?.includes("command.session.reasoningClear.success")),
+    true,
+    "a current-session reasoning clear shows a success toast",
+  )
+
+  const successToastCount = toasts("success").length
+
+  const cancelledMenu = await open()
+  const cancelledItem = items(cancelledMenu.menu).find((entry) => label(entry) === "command.session.reasoningClear")
+  assert(cancelledItem)
+  select(cancelledItem)
+  await settle()
+  const cancelledDialog = dialog()
+  const mounted = sent.filter((message) => message.type === "sessionReasoningClearPreview").length
+  const cancelledField = cancelledDialog.querySelector<HTMLInputElement>('input[type="number"]')
+  assert(cancelledField, "the cancelled reasoning dialog exposes the keep-turns field")
+  cancelledField.value = "7"
+  cancelledField.dispatchEvent(new window.InputEvent("input", { bubbles: true }) as unknown as Event)
+  await settle()
+  action(cancelledDialog, "common.cancel").click()
+  await settle()
+  // Wait past the 300ms reasoning preview debounce: closing the dialog must cancel the pending preview.
+  await new Promise((resolve) => window.setTimeout(resolve, 350))
+  await settle()
+  assert.equal(
+    sent.filter((message) => message.type === "sessionReasoningClearPreview").length,
+    mounted,
+    "closing the reasoning dialog cancels a pending debounced preview",
+  )
+  assert.equal(applies().length, 1, "cancelling the reasoning dialog sends no apply request")
+  const cancelledPreview = sent.filter((message) => message.type === "sessionReasoningClearPreview").at(-1)
+  assert(cancelledPreview, "the cancelled reasoning dialog requested a preview")
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: id,
+    requestID: cancelledPreview.requestID,
+    turns: 1,
+    parts: 1,
+    tokens: 20,
+    unsupported: 0,
+    token: "cancelled-token",
+  })
+
+  const emptyMenu = await open()
+  const emptyItem = items(emptyMenu.menu).find((entry) => label(entry) === "command.session.reasoningClear")
+  assert(emptyItem)
+  select(emptyItem)
+  await settle()
+  const emptyDialog = dialog()
+  const emptyPreview = sent.filter((message) => message.type === "sessionReasoningClearPreview").at(-1)
+  assert(emptyPreview, "reopening the reasoning dialog requests a preview")
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: id,
+    requestID: emptyPreview.requestID,
+    turns: 0,
+    parts: 0,
+    tokens: 0,
+    unsupported: 0,
+    token: "empty-token",
+  })
+  assert.equal(
+    action(emptyDialog, "command.session.reasoningClear.button").disabled,
+    true,
+    "empty previews cannot apply",
+  )
+  assert.deepEqual(
+    [...emptyDialog.querySelectorAll<HTMLElement>('[data-slot="reasoning-clear-status"]')].map((node) =>
+      node.textContent?.trim(),
+    ),
+    ["command.session.reasoningClear.empty"],
+    "an empty preview renders only the empty status",
+  )
+
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: id,
+    requestID: emptyPreview.requestID,
+    turns: 1,
+    parts: 1,
+    tokens: 20,
+    unsupported: 2,
+    token: "preserved-token",
+  })
+  assert.deepEqual(
+    [...emptyDialog.querySelectorAll<HTMLElement>('[data-slot="reasoning-clear-status"]')].map((node) =>
+      node.textContent?.trim(),
+    ),
+    ["command.session.reasoningClear.preserved"],
+    "a preview with unsupported parts renders the preserved status",
+  )
+  action(emptyDialog, "common.cancel").click()
+  await settle()
+
+  session.reasoningPreview(other, 10)
+  const otherPreview = sent.filter((message) => message.type === "sessionReasoningClearPreview").at(-1)
+  assert(otherPreview, "a non-current session can request a reasoning preview")
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: other,
+    requestID: otherPreview.requestID,
+    turns: 3,
+    parts: 4,
+    tokens: 70,
+    unsupported: 0,
+    token: "other-token",
+  })
+  session.reasoningClear(other, 10, "other-token")
+  const otherApply = sent.filter((message) => message.type === "sessionReasoningClear").at(-1)
+  assert(otherApply, "a non-current session can request a reasoning apply")
+  await emit({
+    type: "sessionReasoningCleared",
+    sessionID: other,
+    requestID: otherApply.requestID,
+    parts: 4,
+    turns: 3,
+    tokens: 70,
+  })
+  assert.equal(toasts("success").length, successToastCount, "a non-current reasoning clear shows no success toast")
+
+  session.reasoningPreview(other, 10)
+  const otherFailurePreview = sent.filter((message) => message.type === "sessionReasoningClearPreview").at(-1)
+  assert(otherFailurePreview)
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: other,
+    requestID: otherFailurePreview.requestID,
+    turns: 3,
+    parts: 4,
+    tokens: 70,
+    unsupported: 0,
+    token: "other-failure-token",
+  })
+  session.reasoningClear(other, 10, "other-failure-token")
+  const otherFailureApply = sent.filter((message) => message.type === "sessionReasoningClear").at(-1)
+  assert(otherFailureApply)
+  await emit({
+    type: "sessionReasoningClearFailed",
+    operation: "apply",
+    sessionID: other,
+    requestID: otherFailureApply.requestID,
+    code: "unknown",
+    error: "The other session failed.",
+  })
+  assert.equal(toasts("error").length, 0, "a non-current reasoning failure shows no error toast")
+
+  session.selectCloudSession("preview")
+  await emit({
+    type: "cloudSessionDataLoaded",
+    cloudSessionId: "preview",
+    title: "Cloud preview",
+    messages: [{ id: "cloud-message", sessionID: "cloud:preview", role: "user", createdAt: now }],
+  })
+  assert.equal(session.currentSessionID(), "cloud:preview", "cloud preview becomes the current session")
+  assert.equal(session.messages().length, 1, "cloud preview has non-empty messages")
+  const cloudMenu = await open()
+  const cloudReasoningItem = items(cloudMenu.menu).find((entry) => label(entry) === "command.session.reasoningClear")
+  assert(cloudReasoningItem, "the cloud preview exposes the reasoning action row")
+  assert.equal(
+    cloudReasoningItem.hasAttribute("data-disabled"),
+    true,
+    "cloud preview keeps reasoning clear disabled without a local session id",
+  )
+  press(cloudMenu.button, "pointerdown")
+  await settle()
+  session.selectSession(id)
+  await settle()
+
   // 1. Menu contract: the delete row is appended after the existing actions, in order.
   const menu = await open()
   assert.deepEqual(
@@ -263,6 +554,7 @@ try {
       "chat.search.toggle",
       "command.session.compact",
       "command.session.shake",
+      "command.session.reasoningClear",
       "session.action.copyId",
       "chat.action.disconnectCli",
       "session.delete.title",
@@ -329,7 +621,7 @@ try {
   assert.equal(deletes().length, 1, "the round-trip posts no further deleteSession message")
 
   // 5. No window errors during the scenario.
-  assert.deepEqual(errors, [], "the delete regression scenario raises no window errors")
+  assert.deepEqual(errors, [], "the task header actions scenario raises no window errors")
 } finally {
   dispose()
   await window.happyDOM.cancelAsync()

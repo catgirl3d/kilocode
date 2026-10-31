@@ -469,6 +469,10 @@ import type {
   SessionPromptAsyncResponses,
   SessionPromptErrors,
   SessionPromptResponses,
+  SessionReasoningClearErrors,
+  SessionReasoningClearPreviewErrors,
+  SessionReasoningClearPreviewResponses,
+  SessionReasoningClearResponses,
   SessionRevertErrors,
   SessionRevertResponses,
   SessionShakeErrors,
@@ -5403,6 +5407,94 @@ export class Session2 extends HeyApiClient {
       url: "/session/{sessionID}/shake",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Preview reasoning clear
+   *
+   * Preview clearing historical unsigned reasoning without changing the session.
+   */
+  public reasoningClearPreview<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      keepTurns: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "keepTurns" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionReasoningClearPreviewResponses,
+      SessionReasoningClearPreviewErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/reasoning/clear/preview",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Clear reasoning
+   *
+   * Mark historical unsigned reasoning as cleared without invoking an LLM.
+   */
+  public reasoningClear<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      keepTurns: number
+      token: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "keepTurns" },
+            { in: "body", key: "token" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionReasoningClearResponses,
+      SessionReasoningClearErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/reasoning/clear",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }

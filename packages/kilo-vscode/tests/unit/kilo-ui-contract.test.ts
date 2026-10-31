@@ -460,8 +460,31 @@ describe("Memory control placement contract (source)", () => {
     expect(header).toContain("session.shake()")
     expect(header).toContain("command.session.shake")
     expect(header).toContain("!session.shaking()")
+    expect(header).toContain("ClearReasoningDialog")
+    expect(header).toContain("session.reasoningClear")
+    expect(header).toContain("session.reasoningCancel(id)")
+    expect(header).toContain('key: "reasoningClear"')
+    expect(header).toContain('icon: "brain"')
+    expect(header).toContain("canReasoningClear")
+    expect(header).toContain('session.status() === "idle"')
+    expect(header).toContain("!session.revert()")
+    expect(header).toContain("hasMessages()")
+    expect(header).toContain("reasoningClearing")
+    expect(header).toContain("!props.readonly")
     const context = fs.readFileSync(SESSION_CONTEXT_FILE, "utf-8")
     expect(context).toContain("createSessionShake")
+    expect(context).toContain("createSessionReasoning")
+    expect(context).toContain("reasoningActions.handleMessage")
+    const reasoningDialog = fs.readFileSync(
+      path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/components/chat/ClearReasoningDialog.tsx"),
+      "utf-8",
+    )
+    expect(reasoningDialog).toContain('type="number"')
+    expect(reasoningDialog).toContain("command.session.reasoningClear.keepTurns")
+    expect(reasoningDialog).not.toContain('aria-label="keep last N turns"')
+    expect(reasoningDialog).toContain("unsupported")
+    expect(reasoningDialog).toContain("session.reasoningClear")
+    expect(reasoningDialog).toContain("onCleanup(() => session.reasoningCancel(props.sessionID))")
     const shakeToastSource = fs.readFileSync(
       path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/context/session-shake.ts"),
       "utf-8",
