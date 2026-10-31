@@ -1488,6 +1488,9 @@ export const dict = {
   "settings.providers.subagentModel.description":
     "Default model and reasoning effort for task-tool subagents. Leave unset to inherit the calling agent's model.",
   // fork_change start
+  "settings.providers.workspaceModels.title": "Workspace models",
+  "settings.providers.workspaceModels.description":
+    "Keep the default, small, subagent, advisor, compaction and mode models on this tab in this workspace's .kilo/kilo.jsonc instead of the global config. Editor autocomplete and voice input stay global. Turning it off removes these models from the workspace when you save.",
   "settings.providers.advisor.title": "Enable Advisor",
   "settings.providers.advisor.description": "Enable the consult_advisor tool.",
   "settings.providers.advisorModel.title": "Advisor Model",
