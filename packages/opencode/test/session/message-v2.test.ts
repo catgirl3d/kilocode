@@ -9,6 +9,7 @@ import { SessionID, MessageID, PartID } from "../../src/session/schema"
 import { Question } from "../../src/question"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { key } from "../../src/kilocode/session/reasoning-marker"
 
 const sessionID = SessionID.make("session")
 const providerID = ProviderV2.ID.make("test")
@@ -102,6 +103,78 @@ function assistantInfo(
     },
   } as unknown as SessionV1.Assistant
 }
+
+test("omits cleared reasoning from same-model and different-model payloads", async () => {
+  const messageID = MessageID.make("msg-cleared")
+  const reasoning = {
+    id: PartID.make("prt-cleared-reasoning"),
+    sessionID,
+    messageID,
+    type: "reasoning" as const,
+    text: "old reasoning",
+    metadata: { [key]: { cleared: 1 } },
+    time: { start: 1, end: 2 },
+  }
+  const text = {
+    id: PartID.make("prt-cleared-text"),
+    sessionID,
+    messageID,
+    type: "text" as const,
+    text: "answer",
+  }
+  const same = await MessageV2.toModelMessages(
+    [{ info: assistantInfo(messageID, "msg-user"), parts: [reasoning, text] }],
+    model,
+  )
+  const different = await MessageV2.toModelMessages(
+    [
+      {
+        info: assistantInfo(messageID, "msg-user", undefined, { providerID: "old", modelID: "old" }),
+        parts: [reasoning, text],
+      },
+    ],
+    model,
+  )
+
+  expect(same).toMatchObject([{ role: "assistant", content: [{ type: "text", text: "answer" }] }])
+  expect(different).toMatchObject([{ role: "assistant", content: [{ type: "text", text: "answer" }] }])
+  expect(JSON.stringify(same)).not.toContain("old reasoning")
+  expect(JSON.stringify(same)).not.toContain(key)
+  expect(JSON.stringify(different)).not.toContain("old reasoning")
+})
+
+test("sends empty DeepSeek reasoning content after cleared reasoning is omitted", async () => {
+  const deepseek = {
+    ...model,
+    api: { ...model.api, id: "deepseek-chat" },
+    capabilities: { ...model.capabilities, interleaved: { field: "reasoning_content" } },
+  }
+  const messageID = MessageID.make("msg-cleared-deepseek")
+  const reasoning = {
+    ...basePart(messageID, "prt-cleared-deepseek-reasoning"),
+    type: "reasoning" as const,
+    text: "old deepseek reasoning",
+    metadata: { [key]: { cleared: 1 } },
+    time: { start: 1, end: 2 },
+  }
+  const text = {
+    ...basePart(messageID, "prt-cleared-deepseek-text"),
+    type: "text" as const,
+    text: "answer",
+  }
+
+  const result = ProviderTransform.message(
+    await MessageV2.toModelMessages(
+      [{ info: assistantInfo(messageID, "msg-user"), parts: [reasoning, text] }],
+      deepseek,
+    ),
+    deepseek,
+    {},
+  )
+
+  expect(result).toMatchObject([{ providerOptions: { openaiCompatible: { reasoning_content: "" } } }])
+  expect(JSON.stringify(result)).not.toContain("old deepseek reasoning")
+})
 
 function basePart(messageID: string, id: string) {
   return {
