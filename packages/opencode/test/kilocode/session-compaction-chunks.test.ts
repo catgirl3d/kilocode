@@ -665,6 +665,189 @@ describe("KiloCompactionChunks", () => {
     })
   })
 
+  test("does not send cleared reasoning text to chunk workers", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const first = await user(session.id, "oversized " + "x".repeat(80_000))
+        const replyMessage = await assistant(session.id, first.id, tmp.path, "reply")
+        await svc.updatePart({
+          id: PartID.ascending(),
+          messageID: replyMessage.id,
+          sessionID: session.id,
+          type: "reasoning",
+          text: "CLEARED_REASONING_SENTINEL",
+          time: { start: 1, end: 2 },
+          metadata: { "kilocode.reasoning": { cleared: 1 } },
+        })
+        await Effect.runPromise(
+          KiloSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: ref,
+            auto: false,
+          }),
+        )
+
+        const { rt, calls } = fakeRuntime()
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({
+                parentID: parent!,
+                messages: msgs,
+                sessionID: session.id,
+                auto: false,
+              }),
+            ),
+          )
+
+          expect(calls.length).toBeGreaterThan(0)
+          expect(calls.join("\n")).not.toContain("CLEARED_REASONING_SENTINEL")
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("omits cleared reasoning from a normal compaction prompt", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const first = await user(session.id, "small user turn")
+        const replyMessage = await assistant(session.id, first.id, tmp.path, "small reply")
+        await svc.updatePart({
+          id: PartID.ascending(),
+          messageID: replyMessage.id,
+          sessionID: session.id,
+          type: "reasoning",
+          text: "CLEARED_NORMAL_REASONING_SENTINEL",
+          time: { start: 1, end: 2 },
+          metadata: { "kilocode.reasoning": { cleared: 1 } },
+        })
+        await svc.updatePart({
+          id: PartID.ascending(),
+          messageID: replyMessage.id,
+          sessionID: session.id,
+          type: "reasoning",
+          text: "KEPT_NORMAL_REASONING_SENTINEL",
+          time: { start: 1, end: 2 },
+        })
+        await Effect.runPromise(
+          KiloSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: ref,
+            auto: false,
+          }),
+        )
+
+        const { rt, calls } = fakeRuntime()
+        try {
+          const msgs = await svc.messages({ sessionID: session.id })
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          const result = await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({
+                parentID: parent!,
+                messages: msgs,
+                sessionID: session.id,
+                auto: false,
+              }),
+            ),
+          )
+
+          expect(result).toBe("continue")
+          expect(calls.length).toBeGreaterThan(0)
+          expect(calls.join("\n")).toContain("KEPT_NORMAL_REASONING_SENTINEL")
+          expect(calls.join("\n")).not.toContain("CLEARED_NORMAL_REASONING_SENTINEL")
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
+  test("omits cleared reasoning from an oversized head chunk transcript", async () => {
+    await using tmp = await tmpdir()
+    await provideTestInstance({
+      directory: tmp.path,
+      fn: async () => {
+        const session = await svc.create({})
+        const old = await user(session.id, "old " + "x".repeat(80_000))
+        const oldReply = await assistant(session.id, old.id, tmp.path, "old reply")
+        await svc.updatePart({
+          id: PartID.ascending(),
+          messageID: oldReply.id,
+          sessionID: session.id,
+          type: "reasoning",
+          text: "CLEARED_HEAD_REASONING_SENTINEL",
+          time: { start: 1, end: 2 },
+          metadata: { "kilocode.reasoning": { cleared: 1 } },
+        })
+        await svc.updatePart({
+          id: PartID.ascending(),
+          messageID: oldReply.id,
+          sessionID: session.id,
+          type: "reasoning",
+          text: "KEPT_HEAD_REASONING_SENTINEL " + "y".repeat(40_000),
+          time: { start: 1, end: 2 },
+        })
+        const middle = await user(session.id, "middle")
+        await assistant(session.id, middle.id, tmp.path, "middle reply")
+        const latest = await user(session.id, "latest")
+        await assistant(session.id, latest.id, tmp.path, "latest reply")
+        await Effect.runPromise(
+          KiloSessionCompaction.create({
+            session: store,
+            sessionID: session.id,
+            agent: "build",
+            model: ref,
+            auto: false,
+          }),
+        )
+
+        const { rt, calls } = fakeRuntime()
+        try {
+          const raw = await svc.messages({ sessionID: session.id })
+          const msgs = MessageV2.filterCompacted([...raw].reverse())
+          const parent = msgs.at(-1)?.info.id
+          expect(parent).toBeTruthy()
+          await rt.runPromise(
+            SessionCompaction.Service.use((svc) =>
+              svc.process({
+                parentID: parent!,
+                messages: msgs,
+                sessionID: session.id,
+                auto: false,
+              }),
+            ),
+          )
+
+          const chunkCall = calls.find(
+            (call) => call.includes("compacted transcript") && call.includes("KEPT_HEAD_REASONING_SENTINEL"),
+          )
+          expect(chunkCall).toBeDefined()
+          expect(chunkCall).toContain("KEPT_HEAD_REASONING_SENTINEL")
+          expect(chunkCall).not.toContain("CLEARED_HEAD_REASONING_SENTINEL")
+        } finally {
+          await rt.dispose()
+        }
+      },
+    })
+  })
+
   test("compacts oversized replay turns after overflow compaction", async () => {
     const stub = llm()
     const calls: string[] = []

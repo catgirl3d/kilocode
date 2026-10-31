@@ -12,6 +12,75 @@
   gap: 8px;
 }
 
+/* fork_change start - reasoning clear dialog styles */
+[data-slot="reasoning-clear-preview"] {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised-base);
+}
+
+[data-slot="reasoning-clear-preview"] > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+[data-slot="reasoning-clear-preview"] span {
+  color: var(--text-weak-base);
+  font-size: var(--kilo-font-size-12);
+}
+
+[data-slot="reasoning-clear-preview"] strong {
+  min-width: 0;
+  font-size: var(--kilo-font-size-14);
+  overflow-wrap: anywhere;
+  transition: opacity 120ms ease;
+}
+
+/* Last numbers stay visible, dimmed, while a refreshed preview loads. */
+[data-slot="reasoning-clear-preview"][data-stale] strong {
+  opacity: 0.5;
+}
+
+/* Reserve the row of the validation message (8px gap + 18px line) and overlay the message on it. */
+[data-slot="reasoning-clear-field"] {
+  position: relative;
+  padding-bottom: 26px;
+  margin-bottom: -8px;
+}
+
+[data-slot="reasoning-clear-field"] [data-slot="input-error"] {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+}
+
+/* Single reserved status row (one 12px/18px line). */
+[data-slot="reasoning-clear-statuses"] {
+  min-height: 18px;
+}
+
+[data-slot="reasoning-clear-error"] {
+  color: var(--text-critical-base, var(--vscode-errorForeground));
+}
+
+[data-slot="reasoning-clear-status"] {
+  color: var(--text-weak-base);
+  font-size: var(--kilo-font-size-12);
+}
+
+@media (max-width: 360px) {
+  [data-slot="reasoning-clear-preview"] {
+    grid-template-columns: 1fr;
+  }
+}
+/* fork_change end */
+
 .provider-connect-actions {
   align-items: center;
   flex-wrap: wrap;

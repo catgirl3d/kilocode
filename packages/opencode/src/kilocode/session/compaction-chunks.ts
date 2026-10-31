@@ -12,6 +12,7 @@ import type { Session } from "@/session/session"
 import { Token } from "@/util/token"
 import * as Log from "@opencode-ai/core/util/log"
 import { Database } from "@opencode-ai/core/database/database"
+import * as KiloReasoningMarker from "./reasoning-marker" // fork_change
 
 type Update = <T extends MessageV2.Part>(part: T) => Effect.Effect<T>
 type UpdateMessage = <T extends MessageV2.Info>(msg: T) => Effect.Effect<T>
@@ -236,6 +237,7 @@ export namespace KiloCompactionChunks {
 
   function part(part: MessageV2.Part) {
     if (part.type === "text") return clip({ text: part.text, chars: TRANSCRIPT_MAX_CHARS, label: "Text" })
+    if (part.type === "reasoning" && KiloReasoningMarker.cleared(part)) return "" // fork_change
     if (part.type === "reasoning")
       return `[Reasoning]: ${clip({ text: part.text, chars: TRANSCRIPT_MAX_CHARS, label: "Reasoning" })}`
     if (part.type === "file") return `[File attachment]: ${part.filename ?? part.url} (${part.mime})`

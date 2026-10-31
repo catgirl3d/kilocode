@@ -3760,6 +3760,11 @@ export type AnacondaDesktopOperationError = {
   message: string
 }
 
+export type KiloReasoningClearStalePreviewError = {
+  _tag: "KiloReasoningClearStalePreviewError"
+  message: string
+}
+
 export type KilocodeMigrateSessionsMigrated = {
   /**
    * Source session UUID.
@@ -16581,6 +16586,99 @@ export type SessionShakeResponses = {
 }
 
 export type SessionShakeResponse = SessionShakeResponses[keyof SessionShakeResponses]
+
+export type SessionReasoningClearPreviewData = {
+  body?: {
+    keepTurns: number
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/reasoning/clear/preview"
+}
+
+export type SessionReasoningClearPreviewErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+}
+
+export type SessionReasoningClearPreviewError =
+  SessionReasoningClearPreviewErrors[keyof SessionReasoningClearPreviewErrors]
+
+export type SessionReasoningClearPreviewResponses = {
+  /**
+   * Preview manual reasoning clear
+   */
+  200: {
+    turns: number
+    parts: number
+    tokens: number
+    unsupported: number
+    token: string
+  }
+}
+
+export type SessionReasoningClearPreviewResponse =
+  SessionReasoningClearPreviewResponses[keyof SessionReasoningClearPreviewResponses]
+
+export type SessionReasoningClearData = {
+  body?: {
+    keepTurns: number
+    token: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/reasoning/clear"
+}
+
+export type SessionReasoningClearErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError | KiloReasoningClearStalePreviewError
+   */
+  409: ConflictError | SessionBusyError | KiloReasoningClearStalePreviewError
+}
+
+export type SessionReasoningClearError = SessionReasoningClearErrors[keyof SessionReasoningClearErrors]
+
+export type SessionReasoningClearResponses = {
+  /**
+   * Clear historical reasoning
+   */
+  200: {
+    parts: number
+    turns: number
+    tokens: number
+  }
+}
+
+export type SessionReasoningClearResponse = SessionReasoningClearResponses[keyof SessionReasoningClearResponses]
 
 export type KilocodeMigrateSessionsData = {
   body?: {
