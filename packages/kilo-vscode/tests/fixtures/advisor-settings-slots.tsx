@@ -83,23 +83,26 @@ async function settle() {
 }
 
 /** Mounts the section with a config context that records every partial and applies it like the real provider. */
-function mount(initial: Config) {
+function mount(initial: Config, project: Config = {}) {
   const [config, setConfig] = createSignal(initial)
+  const [projectConfig, setProjectConfig] = createSignal(project)
+  const [projectDraft, setProjectDraft] = createSignal<Partial<Config>>({})
   const writes: Partial<Config>[] = []
+  const projectWrites: Partial<Config>[] = []
   const value = {
     config,
     globalConfig: config,
     globalDraft: () => ({}),
-    projectDraft: () => ({}),
+    projectDraft,
     globalEffectiveConfig: config,
-    projectConfig: config,
+    projectConfig,
     projectBinding: () => undefined,
     collections: () => ({}),
     settings: () => ({}),
     shortcuts: () => ({ bindings: {}, selection: false }),
     features: () => ({ indexing: false, sandboxControls: false, backgroundSubagents: false, speechToText: false }),
     loading: () => false,
-    isDirty: () => writes.length > 0,
+    isDirty: () => writes.length > 0 || projectWrites.length > 0,
     saving: () => false,
     discarded: () => 0,
     blocked: () => false,
@@ -109,7 +112,11 @@ function mount(initial: Config) {
       setConfig((prev) => stripNulls(deepMerge(prev, partial)))
     },
     updateGlobalConfig: () => {},
-    updateProjectConfig: () => {},
+    updateProjectConfig: (partial: Partial<Config>) => {
+      projectWrites.push(partial)
+      setProjectConfig((prev) => stripNulls(deepMerge(prev, partial)))
+      setProjectDraft((prev) => deepMerge(prev as Config, partial))
+    },
     updateSetting: () => {},
     applySetting: () => {},
     saveConfig: () => {},
@@ -127,7 +134,7 @@ function mount(initial: Config) {
     ),
     root,
   )
-  return { root, writes, config, setConfig, dispose }
+  return { root, writes, projectWrites, config, setConfig, dispose }
 }
 
 function mountReal() {
@@ -204,8 +211,9 @@ async function customize(node: HTMLElement) {
 }
 
 async function toggle(view: RootView) {
-  const input = view.root.querySelector<HTMLInputElement>('[data-slot="switch-input"]')
-  assert(input, "enable switch is rendered")
+  const row = view.root.querySelector<HTMLElement>('[data-slot="settings-row"][data-search-label="Enable Advisor"]')
+  const input = row?.querySelector<HTMLInputElement>('[data-slot="switch-input"]')
+  assert(input, "advisor enable switch is rendered")
   input.click()
   await settle()
 }
@@ -875,6 +883,35 @@ try {
     const unset = [...(payload.globalUnset ?? []), ...(payload.projectUnset ?? [])]
     assert.ok(unset.some((path) => path.join(".") === "experimental.advisor_model"))
     assert.ok(unset.some((path) => path.join(".") === "experimental.advisor_variant"))
+    view.dispose()
+  }
+
+  // Workspace-pinned advisor settings write through the project config and disable with an empty list.
+  {
+    const saved: AdvisorSlot[] = [{ name: "a", model: MODEL }]
+    const view = mount({ experimental: { advisors: saved } }, { experimental: { advisors: saved } })
+    await settle()
+    assert.equal(view.writes.length, 0, "rendering pinned advisors does not write")
+    assert.equal(view.projectWrites.length, 0, "rendering pinned advisors does not write the project")
+
+    await customize(slot(view, 0))
+    await type(slot(view, 0), "Description (optional)", "Workspace description")
+    assert.equal(view.writes.length, 0, "pinned advisor edits do not write the global config")
+    assert.deepEqual(view.projectWrites.at(-1), {
+      experimental: {
+        advisors: [{ name: "a", description: "Workspace description", model: MODEL }],
+        advisor_model: null,
+        advisor_variant: null,
+      },
+    })
+
+    await toggle(view)
+    assert.equal(view.writes.length, 0, "disabling pinned advisors does not write the global config")
+    assert.deepEqual(
+      view.projectWrites.at(-1),
+      { experimental: { advisors: [], advisor_model: null, advisor_variant: null } },
+      "workspace-pinned disable writes an empty list instead of inheriting global advisors",
+    )
     view.dispose()
   }
 
