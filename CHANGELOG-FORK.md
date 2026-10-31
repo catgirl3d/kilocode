@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Hold the Send button in chat to defer a prompt until the current turn finishes instead of interrupting the agent; the pending prompt appears above the input, can be cancelled, and returns to the composer when you press Stop.
 - Copy a read-only sub-agent's session ID from the More actions menu in its header, even before its session metadata finishes loading.
 - Convert a read-only sub-agent session into a regular session from the More actions menu in its header; the copy opens as a new session while the sub-agent view stays as it is.
 - PostHog telemetry is fully disabled in this fork: the CLI and VS Code send no events even when VS Code telemetry is enabled, `KILO_TELEMETRY_LEVEL=all` is set, or `experimental.openTelemetry` is on; machine id, conda AAU token, and profile email are not collected for telemetry.
