@@ -270,6 +270,7 @@ export function mockSessionValue(overrides?: {
     loadingOlderMessages: () => false,
     hasOlderMessages: () => false,
     submitting: () => false,
+    isSubmitting: () => false,
     canResume: () => false,
     resume: noop,
     draftSessionID: () => undefined,
@@ -350,6 +351,12 @@ export function mockSessionValue(overrides?: {
     selectVariant: noop,
     sendMessage: () => true,
     sendCommand: () => true,
+    // fork_change start - deferred prompt sending for active turns
+    deferMessage: () => true,
+    deferredMessages: () => [],
+    releaseDeferred: noop,
+    cancelDeferred: noop,
+    // fork_change end
     abort: noop,
     compact: noop,
     // fork_change start

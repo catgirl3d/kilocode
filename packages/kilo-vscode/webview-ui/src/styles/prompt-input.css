@@ -38,6 +38,95 @@
   margin: 0 0 6px;
 }
 
+/* fork_change start */
+.prompt-deferred {
+  margin: 6px 6px 0;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-input-background));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.prompt-deferred-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prompt-deferred [data-component="icon"] {
+  flex-shrink: 0;
+}
+
+.prompt-deferred-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--kilo-font-size-11);
+  color: var(--vscode-foreground);
+}
+
+.prompt-deferred-label {
+  flex-shrink: 0;
+  font-size: var(--kilo-font-size-10);
+  color: var(--text-weak, var(--vscode-descriptionForeground));
+}
+
+[data-component="icon-button"].prompt-send-defer {
+  color: var(--vscode-focusBorder);
+  background: var(--vscode-list-activeSelectionBackground);
+}
+
+[data-component="icon-button"].prompt-send-defer:hover {
+  color: var(--vscode-focusBorder);
+  background: var(--vscode-list-activeSelectionBackground);
+}
+
+@property --prompt-send-hold-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+[data-component="icon-button"].prompt-send-holding {
+  position: relative;
+}
+
+[data-component="icon-button"].prompt-send-holding::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  background: conic-gradient(
+    var(--vscode-focusBorder) var(--prompt-send-hold-angle),
+    transparent var(--prompt-send-hold-angle)
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1px));
+  pointer-events: none;
+  animation: prompt-send-hold var(--prompt-send-hold-duration, 800ms) linear forwards;
+}
+
+@keyframes prompt-send-hold {
+  to {
+    --prompt-send-hold-angle: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="icon-button"].prompt-send-holding::before {
+    animation: none;
+    --prompt-send-hold-angle: 360deg;
+    opacity: 0.5;
+  }
+}
+/* fork_change end */
+
 .prompt-review-comments-header {
   display: flex;
   align-items: center;

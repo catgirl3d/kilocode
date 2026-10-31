@@ -48,6 +48,10 @@ function extractFunctionBody(source: string, name: string): string {
   return next === -1 ? rest : rest.slice(0, next)
 }
 
+function handleSendStart(source: string): number {
+  return source.search(/const handleSend = async\s*\([^)]*\)\s*=>\s*\{/)
+}
+
 describe("sendMessage dismisses pending tool requests", () => {
   const source = readFile(SESSION_FILE)
   const body = extractFunctionBody(source, "sendMessage")
@@ -438,7 +442,7 @@ describe("PromptInput send origin contract", () => {
   })
 
   it("resolves commit mentions before send and includes their show attachments", () => {
-    const start = source.indexOf("const handleSend = async () =>")
+    const start = handleSendStart(source)
     const end = source.indexOf("\n  return (", start)
     const body = source.slice(start, end)
     const resolve = body.indexOf("await resolveCommits(message, id)")
@@ -469,7 +473,7 @@ describe("PromptInput send origin contract", () => {
   })
 
   it("records sent prompts before a pending session key change can return", () => {
-    const start = source.indexOf("const handleSend = async () =>")
+    const start = handleSendStart(source)
     const end = source.indexOf("\n  return (", start)
     const body = source.slice(start, end)
     const send = Math.max(body.indexOf("session.sendMessage("), body.indexOf("session.sendCommand("))
@@ -497,7 +501,7 @@ describe("PromptInput send origin contract", () => {
 
 describe("PromptInput empty-chat continue contract", () => {
   const source = readFile(PROMPT_FILE)
-  const start = source.indexOf("const handleSend = async () =>")
+  const start = handleSendStart(source)
   const end = source.indexOf("\n  return (", start)
   const body = source.slice(start, end)
 
@@ -858,7 +862,8 @@ describe("code context pill contract", () => {
   })
 
   it("includes code context content only when the user sends the prompt", () => {
-    expect(source).toContain("formatCodeContexts(contexts())")
+    expect(source).toContain("const codeContexts = [...contexts()]")
+    expect(source).toContain("formatCodeContexts(codeContexts)")
     expect(source).not.toContain("setText(formatCodeContexts")
     // A context-only prompt must not take the server slash-command branch, which
     // sends the raw args and drops the composed message.
