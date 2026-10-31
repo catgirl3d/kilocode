@@ -45,6 +45,7 @@ import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { Button } from "@kilocode/kilo-ui/button"
 import { focusPrompt } from "../../utils/tab-navigation"
+import { ClearReasoningDialog } from "./ClearReasoningDialog"
 // fork_change end
 
 interface TaskHeaderProps {
@@ -76,6 +77,19 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   )
   // fork_change end
   const canShake = createMemo(() => !busy() && session.visibleMessages().length > 0 && !session.shaking()) // fork_change
+  // fork_change start - reasoning clear is only offered for an idle local session
+  const canReasoningClear = createMemo(() => {
+    const id = sid()
+    return (
+      !props.readonly &&
+      session.status() === "idle" &&
+      !session.revert() &&
+      hasMessages() &&
+      !!id &&
+      !session.reasoningClearing(id)
+    )
+  })
+  // fork_change end
   const compact = createMemo(() => Boolean(settings()["chat.compactHeaderActions"] ?? true)) // fork_change
 
   // fork_change start - session actions fold into the "..." menu
@@ -120,6 +134,18 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       () => requestAnimationFrame(focusPrompt),
     )
   }
+  const openReasoningClear = () => {
+    const id = sid()
+    if (!id || !canReasoningClear()) return
+    dialog.show(
+      () => <ClearReasoningDialog sessionID={id} />,
+      () => {
+        // onClose runs synchronously; the dialog unmounts 100 ms later, after a pending delayed preview may fire.
+        session.reasoningCancel(id)
+        requestAnimationFrame(focusPrompt)
+      },
+    )
+  }
   const actions = createMemo<OverflowItem[]>(() => [
     {
       key: "search",
@@ -141,6 +167,13 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       label: language.t("command.session.shake"),
       disabled: !canShake(),
       run: () => session.shake(),
+    },
+    {
+      key: "reasoningClear",
+      icon: "brain",
+      label: language.t("command.session.reasoningClear"),
+      disabled: !canReasoningClear(),
+      run: openReasoningClear,
     },
     {
       key: "copyId",
@@ -638,6 +671,16 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                   disabled={!canShake()}
                   onClick={() => session.shake()}
                   aria-label={language.t("command.session.shake")}
+                />
+              </Tooltip>
+              <Tooltip value={language.t("command.session.reasoningClear")} placement="bottom">
+                <IconButton
+                  icon="brain"
+                  size="small"
+                  variant="ghost"
+                  disabled={!canReasoningClear()}
+                  onClick={openReasoningClear}
+                  aria-label={language.t("command.session.reasoningClear")}
                 />
               </Tooltip>
             </Show>
