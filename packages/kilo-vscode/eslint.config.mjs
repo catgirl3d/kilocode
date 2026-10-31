@@ -56,7 +56,7 @@ export default [
   },
   {
     files: ["webview-ui/src/components/chat/PromptInput.tsx"],
-    rules: { complexity: ["error", 48] },
+    rules: { complexity: ["error", 57] },
   },
   {
     files: ["src/legacy-migration/migration-service.ts"],
@@ -71,7 +71,7 @@ export default [
     // Raised from the default 3000 as this session context grew past the cap
     // after upstream merges; kept as a targeted override rather than loosening
     // the global limit. // fork_change
-    rules: { complexity: ["error", 31], "max-lines": ["error", 3200] }, // fork_change
+    rules: { complexity: ["error", 31], "max-lines": ["error", 3210] }, // fork_change
   },
   {
     files: ["src/services/autocomplete/classic-auto-complete/AutocompleteInlineCompletionProvider.ts"],

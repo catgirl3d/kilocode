@@ -28,6 +28,8 @@ import type {
 import type { Activity } from "../utils/session-activity"
 import type { Timing } from "./session-timing"
 import type { MessageMutation } from "./session-utils"
+import type { ReasoningState } from "./session-reasoning" // fork_change
+import type { DeferredSend, DeferredSendInput } from "./session-deferred" // fork_change
 
 export interface SessionContextValue {
   // Current session
@@ -207,6 +209,12 @@ export interface SessionContextValue {
     browserFeedback?: BrowserFeedbackData,
     injectedTitle?: string,
   ) => boolean
+  // fork_change start
+  deferMessage: (input: DeferredSendInput) => boolean
+  cancelDeferred: (sessionID: string, id: string) => void
+  releaseDeferred: (sessionID: string, id: string) => void
+  deferredMessages: (sessionID?: string) => DeferredSend[]
+  // fork_change end
   sendCommand: (
     command: string,
     args: string,
@@ -224,6 +232,10 @@ export interface SessionContextValue {
   undoCompact: (messageID: string) => void // fork_change
   shake: () => void // fork_change
   shaking: () => boolean // fork_change
+  reasoningPreview: (sessionID: string, keepTurns: number) => void // fork_change
+  reasoningClear: (sessionID: string, keepTurns: number, token: string) => void // fork_change
+  reasoningState: (sessionID: string) => ReasoningState // fork_change
+  reasoningClearing: (sessionID: string) => boolean // fork_change
   respondToPermission: (
     permissionId: string,
     response: "once" | "always" | "reject",

@@ -372,6 +372,11 @@ export function isPromptBusy(status: string, suggesting: boolean, questioning: b
   return submitting || (status !== "idle" && !suggesting && !questioning)
 }
 
+// fork_change start
+/** Time the send button must be held to defer the prompt until the turn ends. */
+export const DEFER_HOLD_MS = 800
+// fork_change end
+
 /**
  * Whether the session is busy only because a suggestion is pending.
  * True when no permission request is blocking the prompt and at least one

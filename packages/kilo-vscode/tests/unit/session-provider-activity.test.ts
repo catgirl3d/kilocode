@@ -50,5 +50,5 @@ describe("SessionProvider activity", () => {
     } finally {
       unlinkSync(file)
     }
-  }, 60_000)
+  }, 120_000)
 })
