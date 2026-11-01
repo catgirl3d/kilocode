@@ -136,6 +136,7 @@ const ProviderConnectDialog: Component<ProviderConnectDialogProps> = (props) => 
     if (bedrockKeys() && prompt.key === "sessionToken") return true
     if (vertexCredentials() && prompt.key === "project") return true
     if (props.providerID === "snowflake-cortex" && prompt.key === "role") return true
+    if (props.providerID === "opendesign" && prompt.key === "baseURL") return true // fork_change
     return false
   }
 
