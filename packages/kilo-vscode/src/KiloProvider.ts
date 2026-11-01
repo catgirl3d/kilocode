@@ -281,13 +281,13 @@ function feedbackMessage(message: { text: string; review?: unknown; browserFeedb
   return parseFeedback({ review: message.review, browserFeedback: message.browserFeedback }, message.text)
 }
 
-// fork_change start - map reasoning-clear API errors to UI error codes
-function reasoningClearCode(error: unknown): "busy" | "notFound" | "stale" | "conflict" | "unknown" {
+// fork_change start - map reasoning-clear and tool-clear API errors to UI error codes
+function clearErrorCode(error: unknown): "busy" | "notFound" | "stale" | "conflict" | "unknown" {
   if (isNotFoundError(error)) return "notFound"
   const cause = error instanceof Error ? error.cause : undefined
   const body = cause && typeof cause === "object" ? (cause as { body?: unknown }).body : undefined
   const tag = body && typeof body === "object" ? (body as { _tag?: unknown })._tag : undefined
-  if (tag === "KiloReasoningClearStalePreviewError") return "stale"
+  if (tag === "KiloReasoningClearStalePreviewError" || tag === "KiloToolClearStalePreviewError") return "stale"
   if (tag === "SessionBusyError") return "busy"
   if (tag === "ConflictError") return "conflict"
   return "unknown"
@@ -1448,6 +1448,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             this.handleReasoningClear(sessionID, requestID, keepTurns),
           reasoningClear: (sessionID, requestID, keepTurns, token) =>
             this.handleReasoningClear(sessionID, requestID, keepTurns, token),
+          toolPreview: (sessionID, requestID, keepTurns) => this.handleToolClear(sessionID, requestID, keepTurns),
+          toolClear: (sessionID, requestID, keepTurns, token) =>
+            this.handleToolClear(sessionID, requestID, keepTurns, token),
           sessionColors: () => this.postMessage({ type: "sessionColorsLoaded", colors: sessionColors() }),
           setSessionColor: (sessionID, color) => setSessionColor(sessionID, color),
           sessionTagProject: () => this.tagProject(),
@@ -5460,7 +5463,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     token?: string,
   ): Promise<void> {
     const operation = token === undefined ? "preview" : "apply"
-    const fail = (code: ReturnType<typeof reasoningClearCode> | "notConnected", error: string) =>
+    const fail = (code: ReturnType<typeof clearErrorCode> | "notConnected", error: string) =>
       this.postMessage({ type: "sessionReasoningClearFailed", operation, sessionID, requestID, code, error })
     if (!this.client) {
       fail("notConnected", "Not connected to CLI backend")
@@ -5483,7 +5486,41 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.postMessage({ type: "sessionReasoningCleared", sessionID, requestID, ...result.data })
     } catch (error) {
       console.error(`[Kilo New] KiloProvider: Failed to ${operation} reasoning clear:`, error)
-      fail(reasoningClearCode(error), getErrorMessage(error) || "Failed to clear reasoning")
+      fail(clearErrorCode(error), getErrorMessage(error) || "Failed to clear reasoning")
+    }
+  }
+
+  private async handleToolClear(
+    sessionID: string,
+    requestID: string,
+    keepTurns: number,
+    token?: string,
+  ): Promise<void> {
+    const operation = token === undefined ? "preview" : "apply"
+    const fail = (code: ReturnType<typeof clearErrorCode> | "notConnected", error: string) =>
+      this.postMessage({ type: "sessionToolClearFailed", operation, sessionID, requestID, code, error })
+    if (!this.client) {
+      fail("notConnected", "Not connected to CLI backend")
+      return
+    }
+    try {
+      const directory = this.getWorkspaceDirectory(sessionID)
+      if (token === undefined) {
+        const result = await this.client.session.toolClearPreview(
+          { sessionID, directory, keepTurns },
+          { throwOnError: true },
+        )
+        this.postMessage({ type: "sessionToolClearPreviewed", sessionID, requestID, ...result.data })
+        return
+      }
+      const result = await this.client.session.toolClear(
+        { sessionID, directory, keepTurns, token },
+        { throwOnError: true },
+      )
+      this.postMessage({ type: "sessionToolCleared", sessionID, requestID, ...result.data })
+    } catch (error) {
+      console.error(`[Kilo New] KiloProvider: Failed to ${operation} tool clear:`, error)
+      fail(clearErrorCode(error), getErrorMessage(error) || "Failed to clear tool output")
     }
   }
 
