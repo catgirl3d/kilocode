@@ -61,6 +61,10 @@ export function matchLegacyKiloOpenApi(input: Record<string, unknown>) {
   if (reasoningClearPreview) reasoningClearPreview.tags = ["session"]
   const reasoningClear = spec.paths?.["/session/{sessionID}/reasoning/clear"]?.post
   if (reasoningClear) reasoningClear.tags = ["session"]
+  const toolClearPreview = spec.paths?.["/session/{sessionID}/tools/clear/preview"]?.post // [fork]
+  if (toolClearPreview) toolClearPreview.tags = ["session"] // [fork]
+  const toolClear = spec.paths?.["/session/{sessionID}/tools/clear"]?.post // [fork]
+  if (toolClear) toolClear.tags = ["session"] // [fork]
   // kilocode_change end
   const rules = spec.paths?.["/config/rules"]?.get?.parameters?.find(
     (param) => param.in === "query" && param.name === "scope",
