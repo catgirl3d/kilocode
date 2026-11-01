@@ -14,6 +14,7 @@ import {
   invalidatePresence,
 } from "@/kilocode/server/provider-auth-lifecycle" // kilocode_change
 import { providerMetadata } from "@/kilocode/provider/metadata" // kilocode_change
+import { listed, overlay as overlayOpenDesign } from "@/kilocode/provider/opendesign" // kilocode_change - [fork] keep OpenDesign connectable
 import { filterPromptTrainingModels } from "@/kilocode/provider/model-filter" // kilocode_change
 import { overlay as overlayAnacondaDesktop } from "@/kilocode/anaconda-desktop/provider" // kilocode_change
 import { Effect, Schema } from "effect"
@@ -53,7 +54,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
       const config = yield* cfg.get()
-      const all = overlayAnacondaDesktop(yield* ModelsDev.Service.use((s) => s.get())) // kilocode_change
+      const all = overlayOpenDesign(overlayAnacondaDesktop(yield* ModelsDev.Service.use((s) => s.get()))) // kilocode_change - [fork] list OpenDesign before it is connected
       const disabled = new Set(config.disabled_providers ?? [])
       const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
       const filtered: Record<string, (typeof all)[string]> = {}
@@ -81,7 +82,8 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       if (unavailable) failedSet.add("kilo")
       const validProviders = pickBy(
         providers,
-        (item, id) => Object.keys(item.models).length > 0 || id in connected || failedSet.has(id),
+        // [fork] keep OpenDesign listed before it has models so it can be connected
+        (item, id) => Object.keys(item.models).length > 0 || id in connected || failedSet.has(id) || listed(id),
       )
       // A failed provider can be entirely absent from `providers` (e.g. an org-scoped Kilo
       // catalog is deleted above at `delete filtered.kilo`, and `Provider.Service.list()` drops
