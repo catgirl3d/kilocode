@@ -3765,6 +3765,11 @@ export type KiloReasoningClearStalePreviewError = {
   message: string
 }
 
+export type KiloToolClearStalePreviewError = {
+  _tag: "KiloToolClearStalePreviewError"
+  message: string
+}
+
 export type KilocodeMigrateSessionsMigrated = {
   /**
    * Source session UUID.
@@ -16630,6 +16635,96 @@ export type SessionReasoningClearResponses = {
 }
 
 export type SessionReasoningClearResponse = SessionReasoningClearResponses[keyof SessionReasoningClearResponses]
+
+export type SessionToolClearPreviewData = {
+  body?: {
+    keepTurns: number
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/tools/clear/preview"
+}
+
+export type SessionToolClearPreviewErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError
+   */
+  409: ConflictError | SessionBusyError
+}
+
+export type SessionToolClearPreviewError = SessionToolClearPreviewErrors[keyof SessionToolClearPreviewErrors]
+
+export type SessionToolClearPreviewResponses = {
+  /**
+   * Preview manual tool output clear
+   */
+  200: {
+    turns: number
+    parts: number
+    tokens: number
+    token: string
+  }
+}
+
+export type SessionToolClearPreviewResponse = SessionToolClearPreviewResponses[keyof SessionToolClearPreviewResponses]
+
+export type SessionToolClearData = {
+  body?: {
+    keepTurns: number
+    token: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/tools/clear"
+}
+
+export type SessionToolClearErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError | SessionBusyError | KiloToolClearStalePreviewError
+   */
+  409: ConflictError | SessionBusyError | KiloToolClearStalePreviewError
+}
+
+export type SessionToolClearError = SessionToolClearErrors[keyof SessionToolClearErrors]
+
+export type SessionToolClearResponses = {
+  /**
+   * Clear historical tool output
+   */
+  200: {
+    parts: number
+    turns: number
+    tokens: number
+  }
+}
+
+export type SessionToolClearResponse = SessionToolClearResponses[keyof SessionToolClearResponses]
 
 export type KilocodeMigrateSessionsData = {
   body?: {

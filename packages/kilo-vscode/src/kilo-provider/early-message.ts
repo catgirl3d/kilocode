@@ -35,6 +35,8 @@ type Ctx = {
   shake: (sessionID: string) => Promise<void>
   reasoningPreview: (sessionID: string, requestID: string, keepTurns: number) => Promise<void>
   reasoningClear: (sessionID: string, requestID: string, keepTurns: number, token: string) => Promise<void>
+  toolPreview: (sessionID: string, requestID: string, keepTurns: number) => Promise<void>
+  toolClear: (sessionID: string, requestID: string, keepTurns: number, token: string) => Promise<void>
   sessionColors: () => void
   setSessionColor: (sessionID: string, color: string | null) => Promise<void>
   sessionTagProject: () => string | undefined
@@ -86,20 +88,28 @@ function isResume(input: { sessionID?: unknown; messageID?: unknown; requestID?:
 }
 
 // fork_change start
-type ReasoningMessage = {
-  type: "sessionReasoningClearPreview" | "sessionReasoningClear"
+const CLEAR_MESSAGES = {
+  sessionReasoningClearPreview: { kind: "reasoning", operation: "preview" },
+  sessionReasoningClear: { kind: "reasoning", operation: "apply" },
+  sessionToolClearPreview: { kind: "tool", operation: "preview" },
+  sessionToolClear: { kind: "tool", operation: "apply" },
+} as const
+
+type ClearMessage = {
+  type: keyof typeof CLEAR_MESSAGES
   sessionID?: unknown
   requestID?: unknown
   keepTurns?: unknown
   token?: unknown
 }
 
-function isReasoningMessage(message: { type: string }): message is ReasoningMessage {
-  return message.type === "sessionReasoningClearPreview" || message.type === "sessionReasoningClear"
+function isClearMessage(message: { type: string }): message is ClearMessage {
+  return Object.hasOwn(CLEAR_MESSAGES, message.type)
 }
 
-async function routeReasoningMessage(message: ReasoningMessage, ctx: Ctx): Promise<boolean> {
-  const operation = message.type === "sessionReasoningClearPreview" ? "preview" : "apply"
+async function routeClearMessage(message: ClearMessage, ctx: Ctx): Promise<boolean> {
+  const spec = CLEAR_MESSAGES[message.type]
+  const operation = spec.operation
   const sessionID = message.sessionID
   const requestID = message.requestID
   const keepTurns = message.keepTurns
@@ -109,18 +119,22 @@ async function routeReasoningMessage(message: ReasoningMessage, ctx: Ctx): Promi
   if (typeof sessionID !== "string" || typeof requestID !== "string" || !validTurns || !validToken) {
     if (typeof sessionID === "string" && typeof requestID === "string") {
       ctx.post({
-        type: "sessionReasoningClearFailed",
+        type: spec.kind === "reasoning" ? "sessionReasoningClearFailed" : "sessionToolClearFailed",
         operation,
         sessionID,
         requestID,
         code: "invalid",
-        error: "Invalid reasoning clear request",
+        error: `Invalid ${spec.kind} clear request`,
       })
     }
     return true
   }
-  if (operation === "preview") await ctx.reasoningPreview(sessionID, requestID, keepTurns)
-  else await ctx.reasoningClear(sessionID, requestID, keepTurns, token as string)
+  const run =
+    spec.kind === "reasoning"
+      ? { preview: ctx.reasoningPreview, apply: ctx.reasoningClear }
+      : { preview: ctx.toolPreview, apply: ctx.toolClear }
+  if (operation === "preview") await run.preview(sessionID, requestID, keepTurns)
+  else await run.apply(sessionID, requestID, keepTurns, token as string)
   return true
 }
 
@@ -148,7 +162,7 @@ async function routeSessionMessage(
     if (typeof message.sessionID === "string") await ctx.shake(message.sessionID)
     return true
   }
-  if (isReasoningMessage(message)) return routeReasoningMessage(message, ctx)
+  if (isClearMessage(message)) return routeClearMessage(message, ctx)
   if (message.type === "setSessionColor") {
     if (typeof message.sessionId === "string" && (message.color === null || typeof message.color === "string")) {
       await ctx.setSessionColor(message.sessionId, message.color)
