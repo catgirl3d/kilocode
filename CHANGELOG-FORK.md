@@ -36,6 +36,7 @@
 - Allow sending an empty prompt as `continue` when no media or review comments are attached.
 - Clear heavy tool outputs from the active session context on demand.
 - Clear old reasoning from the active session after previewing the affected turns, blocks, and estimated tokens.
+- Replace the one-click "Clear heavy tool output" header action with a previewed "Clear old tool output" dialog: choose how many recent turns to keep, review the affected turns, tool outputs, and estimated tokens, then clear them; the current turn and protected tools stay untouched, and `/shake` still works as the quick action.
 - Include old reasoning from earlier turns in automatic tool-output pruning, sharing its token budget and triggers so long-reasoning models stay within context and the prompt cache is reset once per pass; reasoning in the live turn and provider-signed reasoning are kept.
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
 - Copy the current session ID from the chat header's More actions menu.
@@ -54,6 +55,7 @@
 - Select multiple local sessions in the history list and delete them together after a single confirmation.
 - Delete the current session from the chat header's More actions menu after a confirmation prompt; the action stays out of Agent Manager, which closes sessions through its own flow.
 - Open the edited file in the editor from an "Open in Editor" button on Edit and Write tool cards, next to "Open in Diff Viewer".
+- Connect to OpenDesign as a model provider using an OpenAI-compatible API key and base URL. OpenDesign always appears in **Connect provider**, where the dialog asks for the API key and an optional base URL that defaults to https://amr-link.open-design.ai/v1 (reconnecting with the field empty resets a saved custom URL to the default); `OPENDESIGN_API_KEY` / `OPENDESIGN_BASE_URL` and the matching `provider.opendesign` config options still take precedence over the saved values. Model context size, output limit and image/PDF input support are read from the gateway's model list.
 
 ### Fixes & Enhancements
 
