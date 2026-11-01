@@ -25,6 +25,7 @@ import { KiloCompactionChunks } from "@/kilocode/session/compaction-chunks"
 import { SessionExport } from "@/kilocode/session-export"
 import { KiloSession } from "@/kilocode/session"
 import * as KiloReasoningMarker from "@/kilocode/session/reasoning-marker" // [fork]
+import * as KiloReasoningClear from "@/kilocode/session/reasoning-clear" // [fork]
 // kilocode_change end
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -329,6 +330,7 @@ const layer = Layer.effect(
       let total = 0
       let pruned = 0
       const toPrune: SessionV1.ToolPart[] = []
+      const thoughts: SessionV1.ReasoningPart[] = [] // [fork]
       let turns = 0
       let steps = 0
       let recent = true
@@ -347,6 +349,15 @@ const layer = Layer.effect(
         if (summary) break loop
         for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
           const part = msg.parts[partIndex]
+          if (turns > 0 && KiloReasoningClear.clearable(part)) {
+            // [fork] reasoning shares the tool budget so one pass clears both; the live turn keeps its own
+            const size = Token.estimate(part.text) // [fork]
+            total += size // [fork]
+            if (total <= PRUNE_PROTECT) continue // [fork]
+            pruned += size // [fork]
+            thoughts.push(part) // [fork]
+            continue // [fork]
+          }
           if (part.type !== "tool") continue
           if (part.state.status !== "completed") continue
           if (PRUNE_PROTECTED_TOOLS.includes(part.tool)) continue
@@ -372,8 +383,12 @@ const layer = Layer.effect(
         stored.state.time.compacted = part.state.time.compacted
         yield* session.updatePart(stored)
       }
-      yield* Effect.logInfo("pruned", { reason, count: toPrune.length })
-      return toPrune.length
+      for (const part of thoughts) {
+        // [fork] supplied messages may carry prompt-time transforms, so persist the stored part instead
+        yield* KiloReasoningClear.clear({ part, now: Date.now(), reload: input.messages != null, sessions: session })
+      }
+      yield* Effect.logInfo("pruned", { reason, count: toPrune.length, reasoning: thoughts.length }) // [fork]
+      return toPrune.length + thoughts.length // [fork]
     })
     // kilocode_change end
 
