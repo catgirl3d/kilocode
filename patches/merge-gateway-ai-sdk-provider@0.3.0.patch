@@ -1,5 +1,5 @@
 diff --git a/dist/chunk-5ERZAMCP.mjs b/dist/chunk-5ERZAMCP.mjs
-index a03caba..5ead123 100644
+index a03caba26c05c0d4973d76ba32392462cff77965..fcede11a86efc759b556ee6b8b4aa7d2221c7181 100644
 --- a/dist/chunk-5ERZAMCP.mjs
 +++ b/dist/chunk-5ERZAMCP.mjs
 @@ -14252,7 +14252,10 @@ var chatCompletionResponseSchema = external_exports.object({
@@ -26,8 +26,18 @@ index a03caba..5ead123 100644
    }).nullable().optional()
  }).passthrough();
  var chatCompletionErrorData = external_exports.object({
+@@ -14378,6 +14384,9 @@ var MergeGatewayChatLanguageModel = class {
+           budget_tokens: gatewayOptions.thinking.budgetTokens
+         }
+       },
++      ...gatewayOptions.reasoningEffort != null && {
++        reasoning_effort: gatewayOptions.reasoningEffort
++      },
+       // Per-model settings
+       ...this.settings.user && { user: this.settings.user }
+     };
 diff --git a/dist/index.js b/dist/index.js
-index addbb6f..16b7d7d 100644
+index addbb6f450949683de4e51b0ff0934112dfc8eb7..6db7707a14d9552aed4bc63aa17a8cc2a724926a 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -14270,7 +14270,10 @@ var chatCompletionResponseSchema = external_exports.object({
@@ -54,3 +64,13 @@ index addbb6f..16b7d7d 100644
    }).nullable().optional()
  }).passthrough();
  var chatCompletionErrorData = external_exports.object({
+@@ -14396,6 +14402,9 @@ var MergeGatewayChatLanguageModel = class {
+           budget_tokens: gatewayOptions.thinking.budgetTokens
+         }
+       },
++      ...gatewayOptions.reasoningEffort != null && {
++        reasoning_effort: gatewayOptions.reasoningEffort
++      },
+       // Per-model settings
+       ...this.settings.user && { user: this.settings.user }
+     };
