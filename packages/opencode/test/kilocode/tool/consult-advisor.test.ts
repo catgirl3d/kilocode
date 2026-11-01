@@ -290,7 +290,7 @@ const rateLimit = new APICallError({
 const retried: LLM.StreamInput[] = []
 const itRetried = testEffect(
   layer("high", retried, "guidance", undefined, () => {
-    if (retried.length <= 6) {
+    if (retried.length <= 2) {
       return Stream.make(
         LLMEvent.textStart({ id: "text" }),
         LLMEvent.textDelta({ id: "text", text: "partial failed guidance" }),
@@ -311,7 +311,7 @@ itRetried.live("retries repeated rate limits with fresh streams and returns only
     const tool = yield* Tool.init(yield* ConsultAdvisorTool)
     const result = yield* tool.execute({ question: "review" }, context("ses_retry", undefined, titles))
 
-    expect(retried).toHaveLength(7)
+    expect(retried).toHaveLength(3)
     expect(result.title).toBe("Advisor completed")
     expect(result.output).toBe("guidance from the final attempt")
     expect(result.output).not.toContain("Advisor consultation failed")
@@ -417,7 +417,7 @@ const delayed = new APICallError({
   url: "https://example.com",
   requestBodyValues: {},
   statusCode: 429,
-  responseHeaders: { "retry-after-ms": "60000" },
+  responseHeaders: { "retry-after-ms": "5000" },
   isRetryable: true,
 })
 const waiting: LLM.StreamInput[] = []
@@ -447,6 +447,48 @@ itWaiting.effect("interrupts during an advisor retry wait without another stream
     expect(waiting).toHaveLength(1)
     expect(titles).toContainEqual({ title: "Advisor retrying" })
     expect(titles.at(-1)).toEqual({ title: "Advisor cancelled" })
+  }),
+)
+
+const exhausted: LLM.StreamInput[] = []
+const itExhausted = testEffect(layer("high", exhausted, "guidance", rateLimit))
+
+itExhausted.live("gives up after two retries and returns the failure to the agent", () =>
+  Effect.gen(function* () {
+    exhausted.length = 0
+    const titles: { title?: string; metadata?: Record<string, any> }[] = []
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const result = yield* tool.execute({ question: "review" }, context("ses_exhausted", undefined, titles))
+
+    expect(exhausted).toHaveLength(3)
+    expect(result.title).toBe("Advisor failed")
+    expect(result.output).toContain("Advisor consultation failed: 429 usage limit")
+    expect(titles).toContainEqual({ title: "Advisor retrying" })
+  }),
+)
+
+const slow = new APICallError({
+  message: "429 usage limit",
+  url: "https://example.com",
+  requestBodyValues: {},
+  statusCode: 429,
+  responseHeaders: { "retry-after-ms": "60000" },
+  isRetryable: true,
+})
+const lingering: LLM.StreamInput[] = []
+const itLingering = testEffect(layer("high", lingering, "guidance", slow))
+
+itLingering.effect("does not wait on a provider hint longer than the advisor will wait", () =>
+  Effect.gen(function* () {
+    lingering.length = 0
+    const titles: { title?: string; metadata?: Record<string, any> }[] = []
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const result = yield* tool.execute({ question: "review" }, context("ses_lingering", undefined, titles))
+
+    expect(lingering).toHaveLength(1)
+    expect(result.title).toBe("Advisor failed")
+    expect(result.output).toContain("Advisor consultation failed: 429 usage limit")
+    expect(titles).not.toContainEqual({ title: "Advisor retrying" })
   }),
 )
 
