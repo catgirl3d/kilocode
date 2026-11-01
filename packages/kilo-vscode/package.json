@@ -1291,7 +1291,7 @@
         "kilo-code.new.chat.compactHeaderActions": {
           "type": "boolean",
           "default": true,
-          "description": "Show session actions (search chat, compact session, clear heavy tool output) in a compact More actions menu in the chat header. Disable to show them as separate buttons."
+          "description": "Show session actions (search chat, compact session, clear old tool output, clear old reasoning) in a compact More actions menu in the chat header. Disable to show them as separate buttons."
         },
         "kilo-code.new.agentManager.pushFixes": {
           "type": "boolean",

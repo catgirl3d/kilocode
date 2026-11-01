@@ -170,6 +170,75 @@ describe("routeEarlyMessage reasoning clear", () => {
   })
 })
 
+describe("routeEarlyMessage tool clear", () => {
+  function toolContext(posted: unknown[], previews: unknown[], clears: unknown[], reasoning: unknown[]) {
+    return {
+      post: (message: unknown) => posted.push(message),
+      reasoningPreview: async (...args: unknown[]) => reasoning.push(args),
+      reasoningClear: async (...args: unknown[]) => reasoning.push(args),
+      toolPreview: async (...args: unknown[]) => previews.push(args),
+      toolClear: async (...args: unknown[]) => clears.push(args),
+    } as Ctx
+  }
+
+  it("routes tool preview and apply requests to the tool handlers only", async () => {
+    const previews: unknown[] = []
+    const clears: unknown[] = []
+    const reasoning: unknown[] = []
+    const ctx = toolContext([], previews, clears, reasoning)
+
+    expect(
+      await routeEarlyMessage(
+        { type: "sessionToolClearPreview", sessionID: "ses_1", requestID: "preview-1", keepTurns: 7 },
+        ctx,
+      ),
+    ).toBe(true)
+    expect(
+      await routeEarlyMessage(
+        { type: "sessionToolClear", sessionID: "ses_1", requestID: "clear-1", keepTurns: 7, token: "tool-token" },
+        ctx,
+      ),
+    ).toBe(true)
+    expect(previews).toEqual([["ses_1", "preview-1", 7]])
+    expect(clears).toEqual([["ses_1", "clear-1", 7, "tool-token"]])
+    expect(reasoning).toEqual([])
+  })
+
+  it("rejects invalid tool requests with a tool failure and never calls the host", async () => {
+    const posted: unknown[] = []
+    const previews: unknown[] = []
+    const clears: unknown[] = []
+    const ctx = toolContext(posted, previews, clears, [])
+
+    await routeEarlyMessage(
+      { type: "sessionToolClearPreview", sessionID: "ses_1", requestID: "preview-2", keepTurns: "7" },
+      ctx,
+    )
+    await routeEarlyMessage(
+      { type: "sessionToolClear", sessionID: "ses_1", requestID: "clear-2", keepTurns: 7, token: "" },
+      ctx,
+    )
+
+    expect(previews).toEqual([])
+    expect(clears).toEqual([])
+    expect(posted).toEqual([
+      expect.objectContaining({
+        type: "sessionToolClearFailed",
+        operation: "preview",
+        requestID: "preview-2",
+        code: "invalid",
+        error: "Invalid tool clear request",
+      }),
+      expect.objectContaining({
+        type: "sessionToolClearFailed",
+        operation: "apply",
+        requestID: "clear-2",
+        code: "invalid",
+      }),
+    ])
+  })
+})
+
 describe("routeEarlyMessage session colors", () => {
   it("forwards a sidebar color change using the sessionId field from the webview contract", async () => {
     const calls: Array<[string, string | null]> = []

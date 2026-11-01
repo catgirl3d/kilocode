@@ -360,6 +360,11 @@ export function mockSessionValue(overrides?: {
     reasoningClear: noop,
     reasoningState: () => ({ keepTurns: 10, previewing: false, applying: false }),
     reasoningClearing: () => false,
+    toolPreview: noop,
+    toolCancel: noop,
+    toolClear: noop,
+    toolState: () => ({ keepTurns: 10, previewing: false, applying: false }),
+    toolClearing: () => false,
     // fork_change end
     respondToPermission: noop,
     replyToQuestion: noop,

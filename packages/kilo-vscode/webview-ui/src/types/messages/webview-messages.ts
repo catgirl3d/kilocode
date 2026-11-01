@@ -301,6 +301,21 @@ export interface SessionReasoningClearRequest {
   keepTurns: number
   token: string
 }
+
+export interface SessionToolClearPreviewRequest {
+  type: "sessionToolClearPreview"
+  sessionID: string
+  requestID: string
+  keepTurns: number
+}
+
+export interface SessionToolClearRequest {
+  type: "sessionToolClear"
+  sessionID: string
+  requestID: string
+  keepTurns: number
+  token: string
+}
 // fork_change end
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
@@ -1961,6 +1976,8 @@ export type WebviewMessage =
   | ShakeRequest // fork_change
   | SessionReasoningClearPreviewRequest // fork_change
   | SessionReasoningClearRequest // fork_change
+  | SessionToolClearPreviewRequest // fork_change
+  | SessionToolClearRequest // fork_change
   | RequestAgentsMessage
   | RequestSkillsMessage
   | RequestCommandsMessage

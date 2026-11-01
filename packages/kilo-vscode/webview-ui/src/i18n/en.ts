@@ -125,6 +125,26 @@ export const dict = {
   "command.session.reasoningClear.button": "Clear reasoning",
   "command.session.reasoningClear.success":
     "Cleared {{parts}} reasoning blocks across {{turns}} turns ({{tokens}} tokens).",
+  "command.session.toolClear": "Clear old tool output",
+  "command.session.toolClear.title": "Clear old tool output",
+  "command.session.toolClear.description":
+    "Preview and clear old tool output from the model context without changing the current turn.",
+  "command.session.toolClear.keepTurns": "Keep last N turns",
+  "command.session.toolClear.invalid": "Enter a whole number from 1 to 100",
+  "command.session.toolClear.turns": "Turns to clear",
+  "command.session.toolClear.blocks": "Tool outputs",
+  "command.session.toolClear.tokens": "Estimated tokens",
+  "command.session.toolClear.loading": "Loading preview...",
+  "command.session.toolClear.empty": "No old tool output can be cleared.",
+  "command.session.toolClear.stale": "Context changed, preview again.",
+  "command.session.toolClear.error.busy": "Session is busy. Try again when the session is idle.",
+  "command.session.toolClear.error.notFound": "The session was not found.",
+  "command.session.toolClear.error.notConnected": "Not connected to the Kilo backend.",
+  "command.session.toolClear.error.conflict": "The session changed. Preview again before clearing tool output.",
+  "command.session.toolClear.error.invalid": "The tool output clear request is invalid.",
+  "command.session.toolClear.error.unknown": "Could not clear tool output.",
+  "command.session.toolClear.button": "Clear tool output",
+  "command.session.toolClear.success": "Cleared {{parts}} tool outputs across {{turns}} turns ({{tokens}} tokens).",
   // fork_change end
   // fork_change start - undo compaction
   "compaction.divider.label": "Session compacted",
@@ -1491,7 +1511,7 @@ export const dict = {
   // fork_change start - compact header actions display setting
   "settings.display.compactHeader.title": "Compact Header Actions",
   "settings.display.compactHeader.description":
-    "Show session actions (search chat, compact session, clear heavy tool output, clear old reasoning) in a More actions menu in the chat header. Disable to show them as separate buttons.",
+    "Show session actions (search chat, compact session, clear old tool output, clear old reasoning) in a More actions menu in the chat header. Disable to show them as separate buttons.",
   // fork_change end
   "settings.display.autoApprovalReason.title": "Show Auto-Approval Reason",
   "settings.display.autoApprovalReason.description":

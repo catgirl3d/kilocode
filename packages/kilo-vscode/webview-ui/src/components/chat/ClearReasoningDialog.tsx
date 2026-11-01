@@ -8,7 +8,9 @@ import { TextField } from "@kilocode/kilo-ui/text-field"
 import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useLanguage } from "../../context/language"
 import { useSession } from "../../context/session"
+import { useVSCode } from "../../context/vscode"
 import { previewStale, shouldCloseReasoningDialog, type ReasoningPreview } from "../../context/session-reasoning"
+import { recallKeepTurns, rememberKeepTurns } from "../../utils/keep-turns"
 
 interface Props {
   sessionID: string
@@ -24,7 +26,9 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
   const language = useLanguage()
   const session = useSession()
   const dialog = useDialog()
-  const [value, setValue] = createSignal("10")
+  const vscode = useVSCode()
+  const start = recallKeepTurns(vscode, "reasoning")
+  const [value, setValue] = createSignal(String(start))
   const [submitted, setSubmitted] = createSignal(false)
 
   const current = () => session.reasoningState(props.sessionID)
@@ -48,7 +52,7 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
     return item && item.unsupported > 0 ? item : undefined
   }
 
-  onMount(() => session.reasoningPreview(props.sessionID, 10))
+  onMount(() => session.reasoningPreview(props.sessionID, start))
   // Covers a dialog replaced by another dialog.show(), which disposes it without calling onClose.
   onCleanup(() => session.reasoningCancel(props.sessionID))
   createEffect(
@@ -66,6 +70,8 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
     const item = current()
     if (shouldCloseReasoningDialog(submitted(), item)) {
       setSubmitted(false)
+      // Only a confirmed Clear is remembered, so peeking at other values does not stick.
+      rememberKeepTurns(vscode, "reasoning", item.keepTurns)
       dialog.close()
     }
   })

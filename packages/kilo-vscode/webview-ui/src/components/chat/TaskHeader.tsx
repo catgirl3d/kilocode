@@ -46,6 +46,7 @@ import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { Button } from "@kilocode/kilo-ui/button"
 import { focusPrompt } from "../../utils/tab-navigation"
 import { ClearReasoningDialog } from "./ClearReasoningDialog"
+import { ClearToolsDialog } from "./ClearToolsDialog"
 // fork_change end
 
 interface TaskHeaderProps {
@@ -76,8 +77,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
     () => !busy() && !session.revert() && session.visibleMessages().length > 0 && !!session.selected(),
   )
   // fork_change end
-  const canShake = createMemo(() => !busy() && session.visibleMessages().length > 0 && !session.shaking()) // fork_change
-  // fork_change start - reasoning clear is only offered for an idle local session
+  // fork_change start - reasoning and tool-output clears are only offered for an idle local session
   const canReasoningClear = createMemo(() => {
     const id = sid()
     return (
@@ -87,6 +87,17 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       hasMessages() &&
       !!id &&
       !session.reasoningClearing(id)
+    )
+  })
+  const canToolClear = createMemo(() => {
+    const id = sid()
+    return (
+      !props.readonly &&
+      session.status() === "idle" &&
+      !session.revert() &&
+      hasMessages() &&
+      !!id &&
+      !session.toolClearing(id)
     )
   })
   // fork_change end
@@ -146,6 +157,18 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       },
     )
   }
+  const openToolClear = () => {
+    const id = sid()
+    if (!id || !canToolClear()) return
+    dialog.show(
+      () => <ClearToolsDialog sessionID={id} />,
+      () => {
+        // onClose runs synchronously; the dialog unmounts 100 ms later, after a pending delayed preview may fire.
+        session.toolCancel(id)
+        requestAnimationFrame(focusPrompt)
+      },
+    )
+  }
   const actions = createMemo<OverflowItem[]>(() => [
     {
       key: "search",
@@ -162,11 +185,11 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       run: () => session.compact(),
     },
     {
-      key: "shake",
+      key: "toolClear",
       icon: "collapse",
-      label: language.t("command.session.shake"),
-      disabled: !canShake(),
-      run: () => session.shake(),
+      label: language.t("command.session.toolClear"),
+      disabled: !canToolClear(),
+      run: openToolClear,
     },
     {
       key: "reasoningClear",
@@ -663,14 +686,14 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                   aria-label={language.t("command.session.compact")}
                 />
               </Tooltip>
-              <Tooltip value={language.t("command.session.shake")} placement="bottom">
+              <Tooltip value={language.t("command.session.toolClear")} placement="bottom">
                 <IconButton
                   icon="collapse"
                   size="small"
                   variant="ghost"
-                  disabled={!canShake()}
-                  onClick={() => session.shake()}
-                  aria-label={language.t("command.session.shake")}
+                  disabled={!canToolClear()}
+                  onClick={openToolClear}
+                  aria-label={language.t("command.session.toolClear")}
                 />
               </Tooltip>
               <Tooltip value={language.t("command.session.reasoningClear")} placement="bottom">
