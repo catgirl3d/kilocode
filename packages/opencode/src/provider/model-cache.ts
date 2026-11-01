@@ -5,6 +5,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 import { Config } from "../config/config"
 import { Auth } from "../auth"
 import { compatible, organization, token } from "@/kilocode/provider/catalog"
+import { opendesignURL } from "@/kilocode/provider/opendesign" // kilocode_change - [fork] OpenDesign provider
 import { delay, retryable } from "@/kilocode/provider/catalog-recovery"
 import * as ModelsRefresh from "@opencode-ai/core/kilocode/models-refresh"
 import type { Provider } from "@opencode-ai/core/models-dev"
@@ -59,6 +60,11 @@ const APERTIS_BASE_URL = "https://api.apertis.ai/v1"
 const ApertisItem = Schema.Struct({ id: Schema.String, owned_by: Schema.optional(Schema.String) })
 const ApertisResponse = Schema.Struct({ data: Schema.optional(Schema.Array(ApertisItem)) })
 type ApertisItem = Schema.Schema.Type<typeof ApertisItem>
+// kilocode_change start - [fork] OpenDesign provider
+const OpenDesignItem = Schema.Struct({ id: Schema.String, owned_by: Schema.optional(Schema.String) })
+const OpenDesignResponse = Schema.Struct({ data: Schema.optional(Schema.Array(OpenDesignItem)) })
+type OpenDesignItem = Schema.Schema.Type<typeof OpenDesignItem>
+// kilocode_change end
 
 export const layer: Layer.Layer<
   Service,
@@ -100,6 +106,22 @@ export const layer: Layer.Layer<
       modalities: { input: ["text", "image"], output: ["text"] },
     })
 
+    // kilocode_change start - [fork] OpenDesign provider
+    const openDesignModel = (item: OpenDesignItem): Models[string] => ({
+      id: item.id,
+      name: item.id,
+      family: item.owned_by ?? "",
+      release_date: "",
+      attachment: false,
+      reasoning: false,
+      temperature: true,
+      tool_call: true,
+      cost: { input: 0, output: 0 },
+      limit: { context: 128000, output: 4096 },
+      modalities: { input: ["text"], output: ["text"] },
+    })
+    // kilocode_change end
+
     const fetchApertisModels = Effect.fn("ModelCache.fetchApertisModels")(function* (options: Options) {
       const baseURL = options.baseURL ?? APERTIS_BASE_URL
       if (!options.apiKey) {
@@ -123,8 +145,32 @@ export const layer: Layer.Layer<
       return Object.fromEntries((json.data ?? []).map((item) => [item.id, aperture(item)]))
     })
 
+    // kilocode_change start - [fork] OpenDesign provider
+    const fetchOpenDesignModels = Effect.fn("ModelCache.fetchOpenDesignModels")(function* (options: Options) {
+      if (!options.baseURL || !options.apiKey) {
+        log.debug("no baseURL or API key for opendesign, skipping model fetch")
+        return {}
+      }
+
+      const url = `${options.baseURL.replace(/\/+$/, "")}/models`
+      const response = yield* HttpClientRequest.get(url).pipe(
+        HttpClientRequest.acceptJson,
+        HttpClientRequest.bearerToken(options.apiKey),
+        http.execute,
+        Effect.timeout("10 seconds"),
+      )
+      if (response.status < 200 || response.status >= 300) {
+        log.error("opendesign model fetch failed", { status: response.status })
+        return {}
+      }
+
+      const json = yield* HttpClientResponse.schemaBodyJson(OpenDesignResponse)(response)
+      return Object.fromEntries((json.data ?? []).map((item) => [item.id, openDesignModel(item)]))
+    })
+    // kilocode_change end
+
     const authOptions = Effect.fn("ModelCache.authOptions")(function* (providerID: string) {
-      if (providerID !== "kilo" && providerID !== "apertis") return {}
+      if (providerID !== "kilo" && providerID !== "apertis" && providerID !== "opendesign") return {} // kilocode_change - [fork]
       const config = yield* cfg.get()
       const options: Options = {}
 
@@ -156,12 +202,31 @@ export const layer: Layer.Layer<
         })
       }
 
+      // kilocode_change start - [fork] OpenDesign provider
+      if (providerID === "opendesign") {
+        const item = config.provider?.[providerID]
+        if (item?.options?.apiKey) options.apiKey = item.options.apiKey
+
+        const info = yield* auth.get(providerID)
+        if (info?.type === "api") options.apiKey = info.key
+        if (process.env.OPENDESIGN_API_KEY) options.apiKey = process.env.OPENDESIGN_API_KEY
+        const url = opendesignURL(item?.options?.baseURL, info)
+        if (url) options.baseURL = url
+        log.debug("opendesign auth options resolved", {
+          providerID,
+          hasKey: !!options.apiKey,
+          hasBaseURL: !!options.baseURL,
+        })
+      }
+      // kilocode_change end
+
       return options
     })
 
     const fetchModels = (providerID: string, options: Options): Effect.Effect<Result, unknown> => {
       if (providerID === "kilo") return kilo.fetch(options)
       if (providerID === "apertis") return fetchApertisModels(options).pipe(Effect.map((models) => ({ models })))
+      if (providerID === "opendesign") return fetchOpenDesignModels(options).pipe(Effect.map((models) => ({ models }))) // kilocode_change - [fork]
       log.debug("provider not implemented", { providerID })
       return Effect.succeed({ models: {} })
     }
@@ -188,6 +253,7 @@ export const layer: Layer.Layer<
         return JSON.stringify([providerID, options?.baseURL, options?.kilocodeOrganizationId, options?.kilocodeToken])
       }
       if (providerID === "apertis") return JSON.stringify([providerID, options?.baseURL, options?.apiKey])
+      if (providerID === "opendesign") return JSON.stringify([providerID, options?.baseURL, options?.apiKey]) // kilocode_change - [fork]
       return providerID
     }
 

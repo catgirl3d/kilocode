@@ -7,6 +7,7 @@ import { Context, Effect, Layer } from "effect"
 import { AI_SDK_PROVIDERS, KILO_OPENROUTER_BASE, PROMPTS } from "@kilocode/kilo-gateway"
 import { overlay } from "@/kilocode/anaconda-desktop/provider"
 import { compatible, organization, token } from "@/kilocode/provider/catalog"
+import { CatalogProvider as OpenDesignProvider, OPENDESIGN_ID, opendesignURL } from "@/kilocode/provider/opendesign" // kilocode_change - [fork] OpenDesign provider
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder" // kilocode_change
 
@@ -57,6 +58,11 @@ export const layer: Layer.Layer<Service, never, Core.Service | Config.Service | 
         const apt = cfg.provider?.apertis?.options
         const aptURL = apt?.baseURL ?? "https://api.apertis.ai/v1"
         const aptOpts = apt?.baseURL ? { baseURL: apt.baseURL } : {}
+        // kilocode_change start - [fork] OpenDesign base URL from config, env or the Connect dialog
+        const odInfo = yield* auth.get(OPENDESIGN_ID).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        const odURL = opendesignURL(cfg.provider?.opendesign?.options?.baseURL, odInfo)
+        const odOpts = odURL ? { baseURL: odURL } : {}
+        // kilocode_change end
 
         const addApertis = Effect.fnUntraced(function* () {
           if (providers.apertis) return
@@ -73,8 +79,22 @@ export const layer: Layer.Layer<Service, never, Core.Service | Config.Service | 
             yield* cache.refresh("apertis", aptOpts).pipe(Effect.ignore, Effect.forkDetach)
         })
 
+        // kilocode_change start - [fork] OpenDesign provider
+        const addOpenDesign = Effect.fnUntraced(function* () {
+          if (providers.opendesign) return
+          // No default endpoint: list the provider anyway so the Connect dialog can collect the base URL.
+          const models = odURL
+            ? yield* cache.fetch(OPENDESIGN_ID, odOpts).pipe(Effect.catch(() => Effect.succeed({})))
+            : {}
+          providers.opendesign = { ...OpenDesignProvider, ...(odURL ? { api: odURL } : {}), models }
+          if (odURL && Object.keys(models).length === 0)
+            yield* cache.refresh(OPENDESIGN_ID, odOpts).pipe(Effect.ignore, Effect.forkDetach)
+        })
+        // kilocode_change end
+
         if (!allowed) {
           yield* addApertis()
+          yield* addOpenDesign() // kilocode_change - [fork]
           return providers
         }
 
@@ -100,6 +120,7 @@ export const layer: Layer.Layer<Service, never, Core.Service | Config.Service | 
         if (valid && !org && Object.keys(fetched).length === 0)
           yield* cache.refresh("kilo", fetch).pipe(Effect.ignore, Effect.forkDetach)
         yield* addApertis()
+        yield* addOpenDesign() // kilocode_change - [fork]
         return providers
       })
 
