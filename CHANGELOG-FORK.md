@@ -57,6 +57,7 @@
 
 ### Fixes & Enhancements
 
+- Show reasoning from Merge Gateway models: the selected reasoning effort (for example `max`) is now sent to the gateway, so models such as DeepSeek V4.1 Flash stream thinking into reasoning blocks instead of mixing it into the answer text.
 - Resume subagent tasks on the model from current settings instead of the model they last ran on, so switching the subagent model (for example after a rate limit) takes effect; a model or reasoning effort the parent agent chose explicitly for the task still sticks while Task Subagent Model Selection is enabled.
 - Keep reminding an agent about unread shared-board messages until it reads them. Before this fix, a partial `board_read` page that followed a reminder marked the whole board as read, so the rest of the messages were never announced again. Reading a board after it was cleared also never cleared the reminder, so the agent kept being told to read an empty board.
 - Keep a sub-agent live after its Agent Manager inspector tab is closed and reopened. Closing the tab used to mark the session as deleted for the inspector, so its status, permission, question and suggestion events were dropped until the panel was remounted. This is an upstream bug; closing a tab now only clears the cached view, and only real deletions still ignore late events (#15).
