@@ -15,6 +15,7 @@ import * as Encoding from "@/kilocode/encoding"
 import { assertExternalDirectoryEffect } from "@/tool/external-directory"
 import { hasVariant } from "@/kilocode/provider/provider"
 import { KiloLLM } from "@/kilocode/session/llm"
+import { KiloErrorPolicy } from "@/kilocode/session/error-policy"
 import { KiloSessionProcessor } from "@/kilocode/session/processor"
 import { SessionTranscript } from "@/kilocode/session/transcript"
 import { Tool } from "@/tool/tool"
@@ -411,6 +412,10 @@ const CANCELLED_TITLE = "Advisor cancelled"
 const PREPARING_TITLE = "Preparing advisor context"
 const WAITING_TITLE = "Waiting for first response"
 const RETRYING_TITLE = "Advisor retrying"
+// The agent waits on this tool call, so a failure degrades one consultation instead of holding the run:
+// policy() retries forever without a limit, which is right for chat turns but not here.
+const RETRIES = 2
+const PATIENCE = 10_000
 const REASONING_TITLE = "Advisor is reasoning"
 const WRITING_TITLE = "Advisor is writing"
 const COMPLETED_TITLE = "Advisor completed"
@@ -602,11 +607,16 @@ export const ConsultAdvisorTool = Tool.define<
                 ),
                 SessionRetry.policy({
                   provider: input.model.providerID,
-                  parse: (error) =>
-                    KiloSessionProcessor.parseError(error, {
+                  parse: (error) => {
+                    const parsed = KiloSessionProcessor.parseError(error, {
                       providerID: input.model.providerID,
                       aborted: ctx.abort.aborted,
-                    }),
+                    })
+                    // A provider hint to wait longer than PATIENCE ends the retries, so the failure reaches the agent now.
+                    const wait = SessionV1.APIError.isInstance(parsed) ? SessionRetry.delay(1, parsed) : 0
+                    return wait > PATIENCE ? KiloErrorPolicy.blockRetry(parsed) : parsed
+                  },
+                  limit: RETRIES,
                   set: () => (track ? setTitle(RETRYING_TITLE) : Effect.void),
                 }),
               )
