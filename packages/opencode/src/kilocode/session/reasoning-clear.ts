@@ -68,6 +68,40 @@ function unsupported(part: SessionV1.Part) {
   return part.text.trim().length === 0 && "metadata" in part && part.metadata != null
 }
 
+function eligible(part: SessionV1.Part): part is SessionV1.ReasoningPart {
+  if (part.type !== "reasoning" || KiloReasoningMarker.cleared(part)) return false
+  return part.time.end != null && part.text.trim().length > 0
+}
+
+/** Finished reasoning that replay can omit: no provider state to preserve and not yet cleared. */
+export function clearable(part: SessionV1.Part): part is SessionV1.ReasoningPart {
+  return !unsupported(part) && eligible(part)
+}
+
+/**
+ * Mark reasoning cleared in place and persist it. With `reload`, the stored copy is marked instead,
+ * for callers whose in-memory parts carry prompt-time transforms.
+ */
+export const clear = Effect.fn("KiloReasoningClear.clear")(function* (input: {
+  part: SessionV1.ReasoningPart
+  now: number
+  reload: boolean
+  sessions: Pick<Session.Interface, "getPart" | "updatePart">
+}) {
+  input.part.metadata = KiloReasoningMarker.mark(input.part, input.now).metadata
+  if (!input.reload) {
+    yield* input.sessions.updatePart(input.part)
+    return
+  }
+  const raw = yield* input.sessions.getPart({
+    sessionID: input.part.sessionID,
+    messageID: input.part.messageID,
+    partID: input.part.id,
+  })
+  if (raw?.type !== "reasoning") return
+  yield* input.sessions.updatePart(KiloReasoningMarker.mark(raw, input.now))
+})
+
 function stats(targets: Target[]) {
   return {
     parts: targets.length,
@@ -105,8 +139,7 @@ const plan = Effect.fn("KiloReasoningClear.plan")(function* (input: Input) {
         skipped++
         continue
       }
-      if (part.type !== "reasoning" || KiloReasoningMarker.cleared(part)) continue
-      if (part.time.end == null || part.text.trim().length === 0) continue
+      if (!eligible(part)) continue
       targets.push({ turn, part })
     }
   }
