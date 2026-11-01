@@ -310,6 +310,34 @@ export interface SessionReasoningClearFailedMessage {
   code: ReasoningClearErrorCode
   error: string
 }
+
+export interface SessionToolClearPreviewedMessage {
+  type: "sessionToolClearPreviewed"
+  sessionID: string
+  requestID: string
+  turns: number
+  parts: number
+  tokens: number
+  token: string
+}
+
+export interface SessionToolClearedMessage {
+  type: "sessionToolCleared"
+  sessionID: string
+  requestID: string
+  parts: number
+  turns: number
+  tokens: number
+}
+
+export interface SessionToolClearFailedMessage {
+  type: "sessionToolClearFailed"
+  operation: ReasoningClearOperation
+  sessionID: string
+  requestID: string
+  code: ReasoningClearErrorCode
+  error: string
+}
 // fork_change end
 export interface SessionDeletedMessage {
   type: "sessionDeleted"
@@ -1996,6 +2024,9 @@ export type ExtensionMessage =
   | SessionReasoningClearPreviewedMessage
   | SessionReasoningClearedMessage
   | SessionReasoningClearFailedMessage
+  | SessionToolClearPreviewedMessage
+  | SessionToolClearedMessage
+  | SessionToolClearFailedMessage
   // fork_change end
   | SessionDeletedMessage
   | MessageRemovedMessage

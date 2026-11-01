@@ -222,6 +222,27 @@ describe("Kilo PublicApi OpenAPI contract", () => {
     }
   })
 
+  test("keeps both tool-clear operations in the session SDK group", () => {
+    const spec = OpenApi.fromApi(PublicApi)
+    const routes = [
+      {
+        path: "/session/{sessionID}/tools/clear/preview",
+        operationId: "session.toolClearPreview",
+      },
+      {
+        path: "/session/{sessionID}/tools/clear",
+        operationId: "session.toolClear",
+      },
+    ]
+
+    for (const route of routes) {
+      const operation = spec.paths[route.path]?.post
+      expect(operation).toBeDefined()
+      expect(operation?.operationId).toBe(route.operationId)
+      expect(operation?.tags).toEqual(["session"])
+    }
+  })
+
   test("constrains embedding model metadata", () => {
     const accepts = (dimension: number, scoreThreshold: number) =>
       Result.isSuccess(

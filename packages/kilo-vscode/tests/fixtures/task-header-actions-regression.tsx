@@ -14,12 +14,16 @@ window.addEventListener("error", (event) => {
 })
 
 const sent: WebviewMessage[] = []
+// Real webview state: the clear dialogs remember their last confirmed keep-turns in it.
+let saved: unknown
 const api = {
   postMessage: (message: WebviewMessage) => {
     sent.push(message)
   },
-  getState: () => undefined,
-  setState: () => {},
+  getState: () => saved,
+  setState: (next: unknown) => {
+    saved = next
+  },
 }
 
 Object.assign(globalThis, {
@@ -394,6 +398,12 @@ try {
   const mounted = sent.filter((message) => message.type === "sessionReasoningClearPreview").length
   const cancelledField = cancelledDialog.querySelector<HTMLInputElement>('input[type="number"]')
   assert(cancelledField, "the cancelled reasoning dialog exposes the keep-turns field")
+  assert.equal(cancelledField.value, "5", "the reasoning dialog starts from the last confirmed keep-turns")
+  assert.equal(
+    sent.filter((message) => message.type === "sessionReasoningClearPreview").at(-1)?.keepTurns,
+    5,
+    "the reasoning dialog previews the remembered keep-turns on open",
+  )
   cancelledField.value = "7"
   cancelledField.dispatchEvent(new window.InputEvent("input", { bubbles: true }) as unknown as Event)
   await settle()
@@ -524,6 +534,134 @@ try {
   })
   assert.equal(toasts("error").length, 0, "a non-current reasoning failure shows no error toast")
 
+  // The tool-output dialog: starts at 10, remembers only a confirmed Clear, and keeps its value apart from reasoning.
+  const toolItems = async () => {
+    const menu = await open()
+    const item = items(menu.menu).find((entry) => label(entry) === "command.session.toolClear")
+    assert(item, "the More actions menu exposes Clear old tool output")
+    select(item)
+    await settle()
+    return dialog()
+  }
+  const input = (node: HTMLInputElement, text: string) => {
+    node.value = text
+    node.dispatchEvent(new window.InputEvent("input", { bubbles: true }) as unknown as Event)
+  }
+  const toolPreviews = () => sent.filter((message) => message.type === "sessionToolClearPreview")
+  const peek = await toolItems()
+  const peekField = peek.querySelector<HTMLInputElement>('input[type="number"]')
+  assert(peekField, "the tool dialog exposes the keep-turns field")
+  assert.equal(peekField.value, "10", "the tool dialog starts at 10 before any confirmed clear")
+  const peekPreview = toolPreviews().at(-1)
+  assert(peekPreview, "the tool dialog requests a preview on first open")
+  assert.equal(peekPreview.keepTurns, 10, "the tool dialog previews 10 on first open")
+  await emit({
+    type: "sessionToolClearPreviewed",
+    sessionID: id,
+    requestID: peekPreview.requestID,
+    turns: 1,
+    parts: 1,
+    tokens: 10,
+    token: "tool-token-peek",
+  })
+  input(peekField, "4")
+  await settle()
+  action(peek, "common.cancel").click()
+  await settle()
+  await new Promise((resolve) => window.setTimeout(resolve, 350))
+  await settle()
+  const tools = await toolItems()
+  const toolField = tools.querySelector<HTMLInputElement>('input[type="number"]')
+  assert(toolField, "the reopened tool dialog exposes the keep-turns field")
+  assert.equal(toolField.value, "10", "cancelling a tool dialog does not remember the value that was tried")
+  const toolFirst = toolPreviews().at(-1)
+  assert(toolFirst, "reopening the tool dialog requests a preview")
+  await emit({
+    type: "sessionToolClearPreviewed",
+    sessionID: id,
+    requestID: toolFirst.requestID,
+    turns: 2,
+    parts: 4,
+    tokens: 90,
+    token: "tool-token-10",
+  })
+  input(toolField, "3")
+  await settle()
+  await new Promise((resolve) => window.setTimeout(resolve, 350))
+  await settle()
+  const toolSecond = toolPreviews().at(-1)
+  assert(toolSecond && toolSecond.requestID !== toolFirst.requestID, "changing keep turns previews again")
+  assert.equal(toolSecond.keepTurns, 3, "the tool dialog previews the edited keep-turns")
+  await emit({
+    type: "sessionToolClearPreviewed",
+    sessionID: id,
+    requestID: toolSecond.requestID,
+    turns: 1,
+    parts: 2,
+    tokens: 40,
+    token: "tool-token-3",
+  })
+  action(tools, "command.session.toolClear.button").click()
+  await settle()
+  const toolApply = sent.filter((message) => message.type === "sessionToolClear").at(-1)
+  assert(toolApply, "confirming the tool dialog posts an apply request")
+  assert.deepEqual(toolApply, {
+    type: "sessionToolClear",
+    sessionID: id,
+    requestID: toolApply.requestID,
+    keepTurns: 3,
+    token: "tool-token-3",
+  })
+  await emit({
+    type: "sessionToolCleared",
+    sessionID: id,
+    requestID: toolApply.requestID,
+    parts: 2,
+    turns: 1,
+    tokens: 40,
+  })
+  assert.equal(
+    tools.querySelector('[role="dialog"]')?.hasAttribute("data-closed"),
+    true,
+    "a successful tool clear closes the dialog",
+  )
+  assert.equal(
+    toasts("success").some((node) => node.textContent?.includes("command.session.toolClear.success")),
+    true,
+    "a current-session tool clear shows a success toast",
+  )
+  const again = await toolItems()
+  assert.equal(
+    again.querySelector<HTMLInputElement>('input[type="number"]')?.value,
+    "3",
+    "the tool dialog starts from the last confirmed keep-turns",
+  )
+  assert.equal(toolPreviews().at(-1)?.keepTurns, 3, "the tool dialog previews the remembered keep-turns on open")
+  action(again, "common.cancel").click()
+  await settle()
+  await new Promise((resolve) => window.setTimeout(resolve, 350))
+  await settle()
+  assert.equal(
+    sent.filter((message) => message.type === "sessionToolClear").length,
+    1,
+    "cancelling the reopened tool dialog sends no apply request",
+  )
+  const reasoningAgain = await open()
+  const reasoningRow = items(reasoningAgain.menu).find((entry) => label(entry) === "command.session.reasoningClear")
+  assert(reasoningRow)
+  select(reasoningRow)
+  await settle()
+  const reasoningDialogAgain = dialog()
+  assert.equal(
+    reasoningDialogAgain.querySelector<HTMLInputElement>('input[type="number"]')?.value,
+    "5",
+    "the reasoning value is independent of the tool value",
+  )
+  action(reasoningDialogAgain, "common.cancel").click()
+  await settle()
+  await new Promise((resolve) => window.setTimeout(resolve, 350))
+  await settle()
+
   session.selectCloudSession("preview")
   await emit({
     type: "cloudSessionDataLoaded",
@@ -553,7 +691,7 @@ try {
     [
       "chat.search.toggle",
       "command.session.compact",
-      "command.session.shake",
+      "command.session.toolClear",
       "command.session.reasoningClear",
       "session.action.copyId",
       "chat.action.disconnectCli",
