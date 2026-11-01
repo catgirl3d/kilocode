@@ -8,6 +8,11 @@ import {
   PreviewResult as ReasoningClearPreviewResult,
   StalePreviewError as ReasoningClearStalePreviewError,
 } from "@/kilocode/session/reasoning-clear"
+import {
+  ApplyResult as ToolClearApplyResult,
+  PreviewResult as ToolClearPreviewResult,
+  StalePreviewError as ToolClearStalePreviewError,
+} from "@/kilocode/session/tool-clear"
 import { Authorization } from "@/server/routes/instance/httpapi/middleware/authorization"
 import { InstanceContextMiddleware } from "@/server/routes/instance/httpapi/middleware/instance-context"
 import {
@@ -20,6 +25,8 @@ import { described } from "@/server/routes/instance/httpapi/groups/metadata"
 const path = "/session/:sessionID/shake"
 const reasoningClearPreviewPath = "/session/:sessionID/reasoning/clear/preview"
 const reasoningClearPath = "/session/:sessionID/reasoning/clear"
+const toolClearPreviewPath = "/session/:sessionID/tools/clear/preview"
+const toolClearPath = "/session/:sessionID/tools/clear"
 
 export const ReasoningClearPreviewPayload = Schema.Struct({
   keepTurns: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
@@ -30,10 +37,16 @@ export const ReasoningClearPayload = Schema.Struct({
   token: Schema.String,
 })
 
+export const ToolClearPreviewPayload = ReasoningClearPreviewPayload
+
+export const ToolClearPayload = ReasoningClearPayload
+
 export const KiloSessionPaths = {
   shake: path,
   reasoningClearPreview: reasoningClearPreviewPath,
   reasoningClear: reasoningClearPath,
+  toolClearPreview: toolClearPreviewPath,
+  toolClear: toolClearPath,
 } as const
 
 export const KiloSessionApi = HttpApi.make("kilocode-session")
@@ -76,6 +89,32 @@ export const KiloSessionApi = HttpApi.make("kilocode-session")
             identifier: "session.reasoningClear",
             summary: "Clear reasoning",
             description: "Mark historical unsigned reasoning as cleared without invoking an LLM.",
+          }),
+        ),
+        HttpApiEndpoint.post("toolClearPreview", KiloSessionPaths.toolClearPreview, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: ToolClearPreviewPayload,
+          success: described(ToolClearPreviewResult, "Preview manual tool output clear"),
+          error: [ApiNotFoundError, ConflictError, SessionBusyError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.toolClearPreview",
+            summary: "Preview tool output clear",
+            description: "Preview clearing historical tool output without changing the session.",
+          }),
+        ),
+        HttpApiEndpoint.post("toolClear", KiloSessionPaths.toolClear, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: ToolClearPayload,
+          success: described(ToolClearApplyResult, "Clear historical tool output"),
+          error: [ApiNotFoundError, ConflictError, SessionBusyError, ToolClearStalePreviewError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.toolClear",
+            summary: "Clear tool output",
+            description: "Mark historical tool output as cleared without invoking an LLM.",
           }),
         ),
       )

@@ -457,9 +457,14 @@ describe("Memory control placement contract (source)", () => {
     expect(header).toContain("<Show when={compact()}>")
     expect(header).toContain("<Show when={!compact()}>")
     expect(header).toContain("<Show when={props.readonly}")
-    expect(header).toContain("session.shake()")
-    expect(header).toContain("command.session.shake")
-    expect(header).toContain("!session.shaking()")
+    // The one-click shake moved behind the previewed tool-output dialog; `/shake` still calls session.shake().
+    expect(header).not.toContain("session.shake()")
+    expect(header).toContain("ClearToolsDialog")
+    expect(header).toContain("command.session.toolClear")
+    expect(header).toContain("session.toolCancel(id)")
+    expect(header).toContain('key: "toolClear"')
+    expect(header).toContain("canToolClear")
+    expect(header).toContain("toolClearing")
     expect(header).toContain("ClearReasoningDialog")
     expect(header).toContain("session.reasoningClear")
     expect(header).toContain("session.reasoningCancel(id)")
@@ -473,8 +478,22 @@ describe("Memory control placement contract (source)", () => {
     expect(header).toContain("!props.readonly")
     const context = fs.readFileSync(SESSION_CONTEXT_FILE, "utf-8")
     expect(context).toContain("createSessionShake")
-    expect(context).toContain("createSessionReasoning")
-    expect(context).toContain("reasoningActions.handleMessage")
+    expect(context).toContain("createSessionClears")
+    expect(context).toContain("clearActions.handleMessage")
+    const clears = fs.readFileSync(
+      path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/context/session-clears.ts"),
+      "utf-8",
+    )
+    expect(clears).toContain("createSessionReasoning(deps)")
+    expect(clears).toContain("createSessionTools(deps)")
+    const toolsDialog = fs.readFileSync(
+      path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/components/chat/ClearToolsDialog.tsx"),
+      "utf-8",
+    )
+    expect(toolsDialog).toContain('type="number"')
+    expect(toolsDialog).toContain("command.session.toolClear.keepTurns")
+    expect(toolsDialog).toContain("session.toolClear(")
+    expect(toolsDialog).toContain("onCleanup(() => session.toolCancel(props.sessionID))")
     const reasoningDialog = fs.readFileSync(
       path.join(MONOREPO_ROOT, "packages/kilo-vscode/webview-ui/src/components/chat/ClearReasoningDialog.tsx"),
       "utf-8",
