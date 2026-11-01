@@ -8,7 +8,7 @@ import { MessageV2 } from "@/session/message-v2"
 import { KiloSessionPrompt } from "./prompt"
 import { Token } from "@/util/token"
 
-const PROTECTED_TOOLS = new Set(["skill"])
+export const PROTECTED_TOOLS = new Set(["skill"])
 const TAIL = 7
 const log = Log.create({ service: "kilocode.session.shake" })
 type CompletedPart = SessionV1.ToolPart & { state: SessionV1.ToolStateCompleted }

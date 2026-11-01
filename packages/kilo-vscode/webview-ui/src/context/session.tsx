@@ -31,7 +31,7 @@ import { createSessionModelActions } from "./session-model-actions"
 import { createSessionFavorites } from "./model-favorites"
 import { createSessionShake } from "./session-shake"
 import { createDeferredSends } from "./session-deferred"
-import { createSessionReasoning } from "./session-reasoning"
+import { createSessionClears } from "./session-clears"
 // fork_change end
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { touch } from "@kilocode/kilo-ui/tool-motion"
@@ -177,7 +177,7 @@ export const SessionProvider: ParentComponent = (props) => {
     language,
   })
   const shake = shakeActions.shake
-  const reasoningActions = createSessionReasoning({
+  const clearActions = createSessionClears({
     isConnected: () => server.isConnected(),
     currentSessionID,
     post: vscode.postMessage,
@@ -874,7 +874,7 @@ export const SessionProvider: ParentComponent = (props) => {
   function handleStreamMessage(message: ExtensionMessage): boolean {
     if (handleWakeupMessage(message)) return true
     if (shakeActions.handleMessage(message)) return true // fork_change
-    if (reasoningActions.handleMessage(message)) return true // fork_change
+    if (clearActions.handleMessage(message)) return true // fork_change
     if (!streamMessage(message)) return false
     if (message.type === "partUpdated") {
       handlePartUpdated(message.sessionID, message.messageID, message.part, message.delta)
@@ -3160,15 +3160,11 @@ export const SessionProvider: ParentComponent = (props) => {
     sendCommand,
     abort,
     compact,
-    // fork_change start - compact undo, shake and reasoning-clear session actions
+    // fork_change start - compact undo, shake, reasoning-clear and tool-clear session actions
     undoCompact,
     shake,
     shaking: () => shakeActions.shaking() === currentSessionID(),
-    reasoningPreview: reasoningActions.preview,
-    reasoningCancel: reasoningActions.cancel,
-    reasoningClear: reasoningActions.apply,
-    reasoningState: reasoningActions.state,
-    reasoningClearing: (id) => reasoningActions.clearing(id),
+    ...clearActions.api,
     // fork_change end
     respondToPermission,
     replyToQuestion,

@@ -3,11 +3,10 @@ import { createHash } from "node:crypto"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect, Schema } from "effect"
-import { MessageV2 } from "@/session/message-v2"
 import { Session } from "@/session/session"
 import { MessageID, SessionID } from "@/session/schema"
 import { Token } from "@/util/token"
-import { KiloSessionPrompt } from "./prompt"
+import * as KiloClearScope from "./clear-scope"
 import * as KiloReasoningMarker from "./reasoning-marker"
 
 const log = Log.create({ service: "kilocode.session.reasoning-clear" })
@@ -47,19 +46,6 @@ type Input = {
 type Target = {
   turn: MessageID
   part: SessionV1.ReasoningPart
-}
-
-function realUser(message: SessionV1.WithParts) {
-  if (message.info.role !== "user") return false
-  if (message.parts.some((part) => part.type === "compaction")) return false
-  return message.parts.some((part) => {
-    if (part.type !== "text") return true
-    return !part.synthetic && !part.ignored
-  })
-}
-
-function summary(message: SessionV1.WithParts) {
-  return message.info.role === "assistant" && message.info.summary === true
 }
 
 function unsupported(part: SessionV1.Part) {
@@ -112,43 +98,24 @@ function stats(targets: Target[]) {
 
 const plan = Effect.fn("KiloReasoningClear.plan")(function* (input: Input) {
   const messages = yield* input.sessions.messages({ sessionID: input.sessionID })
-  const projected = KiloSessionPrompt.trimBeforeLastSummary(MessageV2.filterCompacted([...messages].reverse()))
+  const scope = KiloClearScope.old(messages, input.keepTurns)
 
-  // Every user message belongs to the latest real user turn at or before it.
-  const turns: MessageID[] = []
-  const users = new Map<MessageID, MessageID | undefined>()
-  for (const message of messages) {
-    if (message.info.role !== "user") continue
-    if (realUser(message)) turns.push(message.info.id)
-    users.set(message.info.id, turns.at(-1))
-  }
-  const owner = (message: SessionV1.WithParts) => {
-    if (message.info.role === "user") return users.get(message.info.id)
-    if (summary(message)) return undefined
-    return users.get(message.info.parentID)
-  }
-
-  const old = new Set(turns.slice(0, Math.max(0, turns.length - input.keepTurns)))
   const targets: Target[] = []
   let skipped = 0
-  for (const message of projected) {
-    const turn = owner(message)
-    if (!turn || !old.has(turn)) continue
-    for (const part of message.parts) {
-      if (unsupported(part)) {
-        skipped++
-        continue
-      }
-      if (!eligible(part)) continue
-      targets.push({ turn, part })
+  for (const { turn, part } of scope.parts) {
+    if (unsupported(part)) {
+      skipped++
+      continue
     }
+    if (!eligible(part)) continue
+    targets.push({ turn, part })
   }
 
   // The token pins the exact parts shown in the preview.
   const token = createHash("sha256")
     .update(JSON.stringify(targets.map((target) => [target.part.id, target.part.text])))
     .digest("hex")
-  return { messages: messages.length, projected: projected.length, targets, unsupported: skipped, token }
+  return { messages: messages.length, projected: scope.projected, targets, unsupported: skipped, token }
 })
 
 export const preview = Effect.fn("KiloReasoningClear.preview")(function* (input: Input) {

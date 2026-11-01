@@ -487,6 +487,10 @@ import type {
   SessionSummarizeResponses,
   SessionTodoErrors,
   SessionTodoResponses,
+  SessionToolClearErrors,
+  SessionToolClearPreviewErrors,
+  SessionToolClearPreviewResponses,
+  SessionToolClearResponses,
   SessionUnrevertErrors,
   SessionUnrevertResponses,
   SessionUnshareErrors,
@@ -5488,6 +5492,90 @@ export class Session2 extends HeyApiClient {
       ThrowOnError
     >({
       url: "/session/{sessionID}/reasoning/clear",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Preview tool output clear
+   *
+   * Preview clearing historical tool output without changing the session.
+   */
+  public toolClearPreview<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      keepTurns: number
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "keepTurns" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionToolClearPreviewResponses,
+      SessionToolClearPreviewErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/tools/clear/preview",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Clear tool output
+   *
+   * Mark historical tool output as cleared without invoking an LLM.
+   */
+  public toolClear<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      keepTurns: number
+      token: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "keepTurns" },
+            { in: "body", key: "token" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionToolClearResponses, SessionToolClearErrors, ThrowOnError>({
+      url: "/session/{sessionID}/tools/clear",
       ...options,
       ...params,
       headers: {
