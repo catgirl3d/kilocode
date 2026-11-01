@@ -56,7 +56,7 @@ const ERROR_KEYS: Record<ReasoningClearErrorCode, string> = {
   unknown: "command.session.reasoningClear.error.unknown",
 }
 
-export function previewStale(preview: ReasoningPreview | undefined, keepTurns: number | undefined): boolean {
+export function previewStale(preview: { keepTurns: number } | undefined, keepTurns: number | undefined): boolean {
   return preview !== undefined && preview.keepTurns !== keepTurns
 }
 
@@ -67,7 +67,7 @@ function errorText(code: ReasoningClearErrorCode, message: string, language: Lan
 
 export function shouldCloseReasoningDialog(
   submitted: boolean,
-  state: Pick<ReasoningState, "applied" | "applying" | "previewing">,
+  state: Pick<ReasoningState, "applying" | "previewing"> & { applied?: unknown },
 ): boolean {
   return submitted && state.applied !== undefined && !state.applying && !state.previewing
 }

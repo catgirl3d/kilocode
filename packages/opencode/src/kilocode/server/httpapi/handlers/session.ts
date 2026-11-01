@@ -6,6 +6,7 @@ import { SessionStatus } from "@/session/status"
 import { SessionID } from "@/session/schema"
 import * as ManualShake from "@/kilocode/session/shake"
 import * as ManualReasoningClear from "@/kilocode/session/reasoning-clear"
+import * as ManualToolClear from "@/kilocode/session/tool-clear"
 import { KiloSessionTurn } from "@/kilocode/session/turn"
 import { InstanceHttpApi } from "@/server/routes/instance/httpapi/api"
 import * as SessionError from "@/server/routes/instance/httpapi/handlers/session-errors"
@@ -25,10 +26,10 @@ export const sessionShakeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo-
       )
     })
 
-    const guard = Effect.fn("KiloSessionHttpApi.reasoningClearGuard")(function* (sessionID: SessionID) {
+    const guard = Effect.fn("KiloSessionHttpApi.clearGuard")(function* (sessionID: SessionID, what: string) {
       const current = yield* SessionError.mapStorageNotFound(session.get(sessionID))
       if (current.revert || current.time.archived != null)
-        return yield* new ConflictError({ message: "Restore the session before clearing reasoning." })
+        return yield* new ConflictError({ message: `Restore the session before clearing ${what}.` })
       if ((yield* status.get(sessionID)).type !== "idle")
         return yield* new SessionBusyError({ sessionID, message: `Session is busy: ${sessionID}` })
       if (yield* KiloSessionTurn.foreign(sessionID))
@@ -42,7 +43,7 @@ export const sessionShakeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo-
       params: { sessionID: SessionID }
       payload: { keepTurns: number }
     }) {
-      yield* guard(ctx.params.sessionID)
+      yield* guard(ctx.params.sessionID, "reasoning")
       return yield* ManualReasoningClear.preview({
         sessionID: ctx.params.sessionID,
         keepTurns: ctx.payload.keepTurns,
@@ -54,7 +55,7 @@ export const sessionShakeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo-
       params: { sessionID: SessionID }
       payload: { keepTurns: number; token: string }
     }) {
-      yield* guard(ctx.params.sessionID)
+      yield* guard(ctx.params.sessionID, "reasoning")
       return yield* ManualReasoningClear.apply({
         sessionID: ctx.params.sessionID,
         keepTurns: ctx.payload.keepTurns,
@@ -63,6 +64,36 @@ export const sessionShakeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo-
       }).pipe(Effect.catchIf(StorageNotFoundError.isInstance, (error) => Effect.fail(notFound(error.message))))
     })
 
-    return handlers.handle("shake", shake).handle("reasoningClearPreview", preview).handle("reasoningClear", apply)
+    const toolPreview = Effect.fn("KiloSessionHttpApi.toolClearPreview")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: { keepTurns: number }
+    }) {
+      yield* guard(ctx.params.sessionID, "tool output")
+      return yield* ManualToolClear.preview({
+        sessionID: ctx.params.sessionID,
+        keepTurns: ctx.payload.keepTurns,
+        sessions: session,
+      }).pipe(Effect.catchIf(StorageNotFoundError.isInstance, (error) => Effect.fail(notFound(error.message))))
+    })
+
+    const toolApply = Effect.fn("KiloSessionHttpApi.toolClear")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: { keepTurns: number; token: string }
+    }) {
+      yield* guard(ctx.params.sessionID, "tool output")
+      return yield* ManualToolClear.apply({
+        sessionID: ctx.params.sessionID,
+        keepTurns: ctx.payload.keepTurns,
+        token: ctx.payload.token,
+        sessions: session,
+      }).pipe(Effect.catchIf(StorageNotFoundError.isInstance, (error) => Effect.fail(notFound(error.message))))
+    })
+
+    return handlers
+      .handle("shake", shake)
+      .handle("reasoningClearPreview", preview)
+      .handle("reasoningClear", apply)
+      .handle("toolClearPreview", toolPreview)
+      .handle("toolClear", toolApply)
   }),
 )
