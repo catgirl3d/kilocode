@@ -4,7 +4,9 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import type { SessionV1 } from "@opencode-ai/core/v1/session"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import * as KiloReasoningMarker from "@/kilocode/session/reasoning-marker"
 import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
@@ -373,4 +375,154 @@ describe("single-turn tool-output pruning", () => {
       { config: { compaction: { prune: reason === "normal" ? undefined : false } } },
     )
   }
+})
+
+const thought = Effect.fnUntraced(function* (
+  parent: MessageV2.User,
+  text: string,
+  metadata?: Record<string, unknown>,
+) {
+  const sessions = yield* Session.Service
+  const message = yield* assistant(parent)
+  const time = Date.now()
+  return yield* sessions.updatePart({
+    id: PartID.ascending(),
+    sessionID: parent.sessionID,
+    messageID: message.id,
+    type: "reasoning",
+    text,
+    metadata,
+    time: { start: time, end: time },
+  })
+})
+
+// One reasoning part per user turn, oldest first.
+const turns = Effect.fnUntraced(function* (first: MessageV2.User, metadata?: Record<string, unknown>) {
+  const parts: SessionV1.ReasoningPart[] = []
+  for (const [index, output] of outputs.entries()) {
+    const parent = index === 0 ? first : yield* user(first.sessionID)
+    parts.push(yield* thought(parent, output, metadata))
+  }
+  return parts
+})
+
+const thinking = Effect.fnUntraced(function* (sessionID: SessionID) {
+  const sessions = yield* Session.Service
+  const messages = yield* sessions.messages({ sessionID })
+  return messages.flatMap((message) => message.parts).filter((part) => part.type === "reasoning")
+})
+
+const wiped = (parts: SessionV1.ReasoningPart[]) => parts.map((part) => KiloReasoningMarker.cleared(part))
+
+describe("reasoning pruning", () => {
+  it.instance(
+    "clears old reasoning in the same pass and omits it from replay",
+    Effect.gen(function* () {
+      const parent = yield* setup
+      const sessions = yield* Session.Service
+      const compact = yield* SessionCompaction.Service
+      yield* turns(parent)
+
+      const cleared = yield* compact.prune({ sessionID: parent.sessionID })
+
+      expect(cleared).toBe(2)
+      expect(wiped(yield* thinking(parent.sessionID))).toEqual([true, true, false, false, false, false])
+      const converted = yield* MessageV2.toModelMessagesEffect(
+        yield* sessions.messages({ sessionID: parent.sessionID }),
+        model,
+      )
+      const texts = converted.flatMap((message) =>
+        message.role === "assistant" && Array.isArray(message.content)
+          ? message.content.flatMap((part) => (part.type === "reasoning" ? [part.text] : []))
+          : [],
+      )
+      expect(texts).toEqual(outputs.slice(2))
+    }),
+    { config },
+  )
+
+  it.instance(
+    "shares one protect window and one minimum with tool output",
+    Effect.gen(function* () {
+      const parent = yield* setup
+      const compact = yield* SessionCompaction.Service
+      // Three turns of one reasoning part and one tool output, 20k tokens each. Each kind alone leaves
+      // only 20k outside the 40k window, which does not pass the minimum; together the oldest pair does.
+      for (const index of [0, 1, 2]) {
+        const item = index === 0 ? parent : yield* user(parent.sessionID)
+        yield* thought(item, outputs.at(index * 2) ?? "")
+        yield* step(item, outputs.at(index * 2 + 1) ?? "")
+      }
+
+      const cleared = yield* compact.prune({ sessionID: parent.sessionID, reason: "payload-limit" })
+
+      expect(cleared).toBe(2)
+      expect(marked(yield* tools(parent.sessionID))).toEqual([true, false, false])
+      expect(wiped(yield* thinking(parent.sessionID))).toEqual([true, false, false])
+    }),
+  )
+
+  it.instance(
+    "keeps reasoning inside the live turn",
+    Effect.gen(function* () {
+      const parent = yield* setup
+      const compact = yield* SessionCompaction.Service
+      for (const output of outputs) yield* thought(parent, output)
+
+      const cleared = yield* compact.prune({ sessionID: parent.sessionID, reason: "payload-limit" })
+
+      expect(cleared).toBe(0)
+      expect(wiped(yield* thinking(parent.sessionID))).toEqual(Array(6).fill(false))
+    }),
+  )
+
+  it.instance(
+    "leaves provider-signed reasoning alone",
+    Effect.gen(function* () {
+      const parent = yield* setup
+      const compact = yield* SessionCompaction.Service
+      yield* turns(parent, { anthropic: { signature: "sig" } })
+
+      const cleared = yield* compact.prune({ sessionID: parent.sessionID, reason: "payload-limit" })
+
+      expect(cleared).toBe(0)
+      expect(wiped(yield* thinking(parent.sessionID))).toEqual(Array(6).fill(false))
+    }),
+  )
+
+  it.instance(
+    "marks supplied reasoning but persists the stored part",
+    Effect.gen(function* () {
+      const parent = yield* setup
+      const sessions = yield* Session.Service
+      const compact = yield* SessionCompaction.Service
+      yield* turns(parent)
+      const messages = yield* sessions.messages({ sessionID: parent.sessionID })
+      const supplied = messages.flatMap((message) => message.parts).filter((part) => part.type === "reasoning")
+      for (const part of supplied) part.time.start = 0
+
+      const cleared = yield* compact.prune({ sessionID: parent.sessionID, reason: "payload-limit", messages })
+
+      expect(cleared).toBe(2)
+      expect(wiped(supplied)).toEqual([true, true, false, false, false, false])
+      const stored = yield* thinking(parent.sessionID)
+      expect(wiped(stored)).toEqual([true, true, false, false, false, false])
+      expect(stored.map((part) => part.time.start > 0)).toEqual(Array(6).fill(true))
+      expect(stored.map((part) => part.text)).toEqual(outputs)
+    }),
+  )
+
+  it.instance(
+    "does not clear reasoning when pruning is disabled",
+    Effect.gen(function* () {
+      const parent = yield* setup
+      const compact = yield* SessionCompaction.Service
+      yield* turns(parent)
+
+      yield* compact.prune({ sessionID: parent.sessionID, reason: "payload-limit" })
+
+      expect(wiped(yield* thinking(parent.sessionID))).toEqual(Array(6).fill(false))
+    }),
+    { config: { compaction: { prune: false } } },
+  )
 })
