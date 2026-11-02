@@ -35992,6 +35992,12 @@
               "task_model_selection": {
                 "type": "boolean"
               },
+              "task_models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "glob_include_ignored": {
                 "type": "array",
                 "items": {

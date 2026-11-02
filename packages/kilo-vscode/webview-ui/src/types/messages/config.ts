@@ -85,6 +85,7 @@ export interface ExperimentalConfig {
   code_mode?: boolean
   native_notebook_tools?: boolean
   task_model_selection?: boolean // fork_change
+  task_models?: string[] // fork_change
   glob_include_ignored?: string[]
   speech_to_text_model?: string
   speech_to_text_base_url?: string

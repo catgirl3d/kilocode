@@ -13,6 +13,7 @@
 - Copy the files changed in a worktree into the local branch as-is, without relying on the branch diff — a new "Changed files" mode in the Agent Manager apply dialog that lists only the worktree's own changes even after the base branch was rebased or force-pushed, and asks before overwriting files that also changed locally.
 - Show a small quota ring in the chat model selector for providers that report usage limits, with used and remaining percentages and reset times in its tooltip.
 - Restore the opt-in Task Subagent Model Selection experiment — subagent model overrides only work when the setting is enabled and explicitly requested — and align tool guidance so agents never receive conflicting instructions.
+- Limit explicit task subagent model overrides to an allow-list (`experimental.task_models`) managed in Settings → Experimental; an empty list keeps every model available, variant-only overrides are not limited to the list, and resuming a task whose earlier model is no longer allowed fails until an allowed model is passed; an explicitly chosen model without a reasoning effort uses the subagent reasoning effort from settings when it supports it.
 - Favorite local sessions from the history panel and keep them grouped at the top.
 - Filter history sessions by one or more tags in the history panel.
 - Scope session tags to a project or make them visible in every project; existing tags keep working everywhere after the upgrade.
