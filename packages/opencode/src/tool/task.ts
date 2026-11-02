@@ -246,6 +246,7 @@ export const TaskTool = Tool.define(
         workflow: KiloTask.workflow(ctx.extra),
         provider,
         enabled: selection, // [fork] restore opt-in selection gate
+        allowed: cfg.experimental?.task_models, // [fork] limit explicit model choices
         selection: { model: params.model, provider: params.provider, variant: params.variant },
         pin: KiloTask.pinned(session?.metadata), // [fork] resumed tasks follow settings except explicit choices
       })
@@ -620,6 +621,7 @@ export const TaskTool = Tool.define(
             KiloTask.usageDescription,
             ...(flags.experimentalBackgroundSubagents ? [BACKGROUND_DESCRIPTION] : []),
             ...(selection ? [KiloTask.modelDescription] : []),
+            ...KiloTask.allowance(cfg), // [fork] list models allowed for task overrides
           ].join("\n\n"),
           parameters: Parameters,
           jsonSchema: ToolJsonSchema.fromSchema(
