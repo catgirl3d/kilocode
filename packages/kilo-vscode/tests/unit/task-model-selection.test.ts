@@ -33,4 +33,19 @@ describe("task subagent model selection config", () => {
     expect(state.saving).toBe(false)
     expect(state.draft).toEqual({})
   })
+
+  it("replaces the allowed task model list on every update", () => {
+    const state = new ConfigState()
+    state.handleConfigLoaded({ experimental: { task_model_selection: true } })
+
+    state.updateConfig({ experimental: { task_models: ["a/one", "b/two"] } })
+    expect(state.config.experimental?.task_models).toEqual(["a/one", "b/two"])
+
+    state.updateConfig({ experimental: { task_models: ["a/one"] } })
+    expect(state.config.experimental?.task_models).toEqual(["a/one"])
+
+    state.updateConfig({ experimental: { task_models: [] } })
+    expect(state.config.experimental?.task_models).toEqual([])
+    expect(state.draft.experimental?.task_models).toEqual([])
+  })
 })
