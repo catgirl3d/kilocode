@@ -358,6 +358,11 @@ export const Info = Schema.Struct({
       task_model_selection: Schema.optional(Schema.Boolean).annotate({
         description: "Allow task subagents to select a model, provider, and reasoning effort",
       }),
+      // [fork] limit task model selection to listed models
+      task_models: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+        description:
+          "Provider/model IDs that task subagent model selection may choose while it is enabled. When unset or empty, any available model can be selected.",
+      }),
       glob_include_ignored: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
         description:
           "Folders or files, as gitignore-style patterns relative to the workspace root, that the glob tool should search even when they are ignored (for example by .gitignore) or hidden. Patterns without a slash match folders at any depth; list a file inside an ignored folder by its path (for example build/report.json). Ignored or hidden folders nested inside a listed folder stay skipped.",

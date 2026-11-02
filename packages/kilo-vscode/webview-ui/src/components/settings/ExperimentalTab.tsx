@@ -12,6 +12,7 @@ import type { ExtensionMessage } from "../../types/messages"
 import { useProvider } from "../../context/provider"
 import { parseModelString } from "../../../../src/shared/provider-model"
 import { ModelSelectorBase } from "../shared/ModelSelector"
+import { IconButton } from "@kilocode/kilo-ui/icon-button"
 // fork_change end
 import SettingsRow from "./SettingsRow"
 import PatternList from "./PatternList"
@@ -59,6 +60,10 @@ const ExperimentalTab: Component = () => {
     return provider.models().filter((model) => connected.has(model.providerID))
   })
   const pruningModel = createMemo(() => parseModelString(experimental().swe_pruner_model ?? undefined))
+  const allowed = createMemo(() => experimental().task_models ?? [])
+  const choices = createMemo(() =>
+    pruningModels().filter((model) => !allowed().includes(`${model.providerID}/${model.id}`)),
+  )
   // fork_change end
 
   const updateExperimental = (key: string, value: unknown) => {
@@ -382,6 +387,44 @@ const ExperimentalTab: Component = () => {
             {language.t("settings.experimental.taskModelSelection.title")}
           </Switch>
         </SettingsRow>
+
+        <Show when={experimental().task_model_selection}>
+          <SettingsRow
+            title={language.t("settings.experimental.taskModels.title")}
+            description={language.t("settings.experimental.taskModels.description")}
+          >
+            <ModelSelectorBase
+              value={null}
+              onSelect={(providerID, modelID) => {
+                const id = `${providerID}/${modelID}`
+                if (!providerID || !modelID || allowed().includes(id)) return
+                updateExperimental("task_models", [...allowed(), id])
+              }}
+              placement="bottom-start"
+              models={choices()}
+              favorites={false}
+              label={language.t("settings.experimental.taskModels.add")}
+            />
+          </SettingsRow>
+          <For each={allowed()}>
+            {(id) => (
+              <SettingsRow title={id}>
+                <IconButton
+                  size="small"
+                  variant="ghost"
+                  icon="close"
+                  aria-label={language.t("settings.experimental.taskModels.remove", { model: id })}
+                  onClick={() =>
+                    updateExperimental(
+                      "task_models",
+                      allowed().filter((item) => item !== id),
+                    )
+                  }
+                />
+              </SettingsRow>
+            )}
+          </For>
+        </Show>
         {/* fork_change end */}
 
         {/* MCP timeout */}
