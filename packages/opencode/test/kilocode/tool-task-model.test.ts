@@ -235,6 +235,7 @@ function run(input: {
   client?: string
   variant?: string
   enabled?: boolean
+  allowed?: string[]
   config?: Pick<Config.Info, "subagent_model" | "subagent_variant" | "subagent_variant_overrides">
   selection?: { model?: string | null; provider?: string | null; variant?: string | null }
   launch?: { model?: string | null; provider?: string | null; variant?: string | null }
@@ -311,7 +312,7 @@ function run(input: {
       config: {
         ...catalog,
         ...input.config,
-        experimental: { task_model_selection: input.enabled ?? false },
+        experimental: { task_model_selection: input.enabled ?? false, task_models: input.allowed },
         agent: {
           worker: { mode: "subagent" },
           pinned: { mode: "subagent", model: "config-provider/config-model", variant: cfgVariant },
@@ -1129,6 +1130,298 @@ describe("tool.task model resolution", () => {
           expect(result.variant).toBeUndefined()
           expect(result.model).toEqual(parent)
           expect(result.metadataVariant).toBeUndefined()
+        }),
+      ),
+    ),
+  )
+})
+
+describe("tool.task model allow-list", () => {
+  it.live("selects a listed model", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      allowed: ["sub-provider/sub-model"],
+      selection: { model: "sub-provider/sub-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(sub)
+        }),
+      ),
+    ),
+  )
+
+  it.live("selects any model when the list is empty", () =>
+    run({ agent: "worker", enabled: true, allowed: [], selection: { model: "sub-provider/sub-model" } }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(sub)
+        }),
+      ),
+    ),
+  )
+
+  it.live("rejects a model outside the list", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      allowed: ["config-provider/config-model"],
+      selection: { model: "sub-provider/sub-model" },
+    }).pipe(
+      Effect.exit,
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(Exit.isFailure(result)).toBe(true)
+          if (Exit.isFailure(result)) {
+            expect(Cause.pretty(result.cause)).toContain("is not in experimental.task_models")
+            expect(Cause.pretty(result.cause)).toContain("Allowed models: config-provider/config-model")
+          }
+        }),
+      ),
+    ),
+  )
+
+  it.live("keeps the settings model for a variant-only override", () =>
+    run({
+      agent: "pinned",
+      enabled: true,
+      allowed: ["sub-provider/sub-model"],
+      selection: { variant: overrideVariant },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(cfg)
+          expect(result.variant).toEqual(overrideVariant)
+        }),
+      ),
+    ),
+  )
+
+  it.live("rejects resuming a task pinned to a model outside the list", () =>
+    run({
+      agent: "pinned",
+      enabled: true,
+      allowed: ["config-provider/config-model"],
+      pin: { model: sub, variant: subVariant },
+    }).pipe(
+      Effect.exit,
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(Exit.isFailure(result)).toBe(true)
+          if (Exit.isFailure(result)) expect(Cause.pretty(result.cause)).toContain("is not in experimental.task_models")
+        }),
+      ),
+    ),
+  )
+
+  it.live("resumes with an allowed model that replaces the pin", () =>
+    run({
+      agent: "pinned",
+      enabled: true,
+      allowed: ["config-provider/config-model"],
+      pin: { model: sub, variant: subVariant },
+      selection: { model: "config-provider/config-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(cfg)
+          expect(result.pin).toEqual({ model: cfg })
+        }),
+      ),
+    ),
+  )
+
+  it.live("does not substitute a similar allowed model for an excluded one", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      allowed: ["config-provider/slash-name-model"],
+      selection: { model: "config-model" },
+    }).pipe(
+      Effect.exit,
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(Exit.isFailure(result)).toBe(true)
+          if (Exit.isFailure(result)) expect(Cause.pretty(result.cause)).toContain("is not in experimental.task_models")
+        }),
+      ),
+    ),
+  )
+
+  it.live("rejects a provider whose models are all excluded", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      allowed: ["sub-provider/sub-model"],
+      selection: { model: "config-model", provider: "config-provider" },
+    }).pipe(
+      Effect.exit,
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(Exit.isFailure(result)).toBe(true)
+          if (Exit.isFailure(result)) expect(Cause.pretty(result.cause)).toContain("is not in experimental.task_models")
+        }),
+      ),
+    ),
+  )
+
+  it.live("rejects a variant-only resume of a task pinned to an excluded model", () =>
+    run({
+      agent: "pinned",
+      enabled: true,
+      allowed: ["config-provider/config-model"],
+      pin: { model: sub, variant: subVariant },
+      selection: { variant: overrideVariant },
+    }).pipe(
+      Effect.exit,
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(Exit.isFailure(result)).toBe(true)
+          if (Exit.isFailure(result)) expect(Cause.pretty(result.cause)).toContain("is not in experimental.task_models")
+        }),
+      ),
+    ),
+  )
+
+  it.live("matches list entries regardless of case and surrounding spaces", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      allowed: [" Sub-Provider/SUB-model "],
+      selection: { model: "sub-provider/sub-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(sub)
+        }),
+      ),
+    ),
+  )
+
+  it.live("picks the allowed provider when the same model name exists elsewhere", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      allowed: ["saved-provider/shared-model"],
+      selection: { model: "shared-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual({
+            providerID: ProviderV2.ID.make("saved-provider"),
+            modelID: ModelV2.ID.make("shared-model"),
+          })
+        }),
+      ),
+    ),
+  )
+
+  it.live("omits the allowed list when it is empty", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const tool = yield* TaskTool
+          const def = yield* tool.init()
+          expect(def.description.includes("Model overrides are limited")).toBe(false)
+        }),
+      { config: { experimental: { task_model_selection: true, task_models: [] } } },
+    ),
+  )
+
+  for (const enabled of [false, true]) {
+    it.live(
+      `${enabled ? "lists" : "omits"} allowed task models when selection is ${enabled ? "enabled" : "disabled"}`,
+      () =>
+        provideTmpdirInstance(
+          () =>
+            Effect.gen(function* () {
+              const tool = yield* TaskTool
+              const def = yield* tool.init()
+              expect(def.description.includes("Model overrides are limited to these provider/model IDs")).toBe(enabled)
+              expect(def.description.includes("sub-provider/sub-model")).toBe(enabled)
+            }),
+          { config: { experimental: { task_model_selection: enabled, task_models: ["sub-provider/sub-model"] } } },
+        ),
+    )
+  }
+})
+
+describe("tool.task explicit model reasoning effort", () => {
+  it.live("uses the per-model subagent effort for an explicit model", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      config: { subagent_variant_overrides: { "sub-provider/sub-model": overrideVariant } },
+      selection: { model: "sub-provider/sub-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(sub)
+          expect(result.variant).toEqual(overrideVariant)
+          expect(result.metadataVariant).toEqual(overrideVariant)
+          expect(result.pin).toEqual({ model: sub })
+        }),
+      ),
+    ),
+  )
+
+  it.live("falls back to the default subagent effort for an explicit model", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      config: { subagent_variant: subVariant },
+      selection: { model: "sub-provider/sub-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.variant).toEqual(subVariant)
+        }),
+      ),
+    ),
+  )
+
+  it.live("ignores a settings effort the explicit model does not support", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      config: { subagent_variant: cfgVariant },
+      selection: { model: "sub-provider/sub-model" },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.variant).toBeUndefined()
+        }),
+      ),
+    ),
+  )
+
+  it.live("keeps an explicit effort over settings", () =>
+    run({
+      agent: "worker",
+      enabled: true,
+      config: { subagent_variant_overrides: { "sub-provider/sub-model": overrideVariant } },
+      selection: { model: "sub-provider/sub-model", variant: subVariant },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.variant).toEqual(subVariant)
+        }),
+      ),
+    ),
+  )
+
+  it.live("applies the settings effort when resuming a pinned model without one", () =>
+    run({
+      agent: "pinned",
+      enabled: true,
+      config: { subagent_variant_overrides: { "sub-provider/sub-model": overrideVariant } },
+      pin: { model: sub },
+    }).pipe(
+      Effect.tap((result) =>
+        Effect.sync(() => {
+          expect(result.prompt).toEqual(sub)
+          expect(result.variant).toEqual(overrideVariant)
         }),
       ),
     ),

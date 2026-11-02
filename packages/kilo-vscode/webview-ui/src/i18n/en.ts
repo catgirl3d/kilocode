@@ -1153,6 +1153,11 @@ export const dict = {
   "settings.experimental.taskModelSelection.title": "Task Subagent Model Selection",
   "settings.experimental.taskModelSelection.description":
     "Allow task subagents to use an explicitly selected model, provider, and reasoning effort.",
+  "settings.experimental.taskModels.title": "Allowed Task Models",
+  "settings.experimental.taskModels.description":
+    "Models a task subagent may be explicitly switched to. Leave empty to allow any available model.",
+  "settings.experimental.taskModels.add": "Add allowed task model",
+  "settings.experimental.taskModels.remove": "Remove {{model}} from allowed task models",
   // fork_change end
   "settings.experimental.mcpTimeout.title": "MCP Timeout (ms)",
   "settings.experimental.mcpTimeout.description": "Timeout for MCP server requests in milliseconds",
