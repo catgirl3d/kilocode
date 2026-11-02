@@ -17,7 +17,7 @@ import type { Agent } from "../../agent/agent"
 import type { Config } from "../../config/config"
 import { Provider } from "../../provider/provider"
 import z from "zod"
-import { selectModel } from "./model-selection"
+import { permits, selectModel } from "./model-selection" // fork_change
 
 const log = Log.create({ service: "kilocode-task-model" })
 
@@ -90,7 +90,7 @@ export namespace KiloTask {
   }
 
   export const modelDescription =
-    "Subagent model selection is enabled. Omit these fields, or send null, to keep the normal subagent model and reasoning defaults. Only override model, provider, or variant when the user explicitly requests it. Do not choose overrides on your own based on task complexity, cost, or latency. Use agent_manager_models only when an override is requested to find available models, providers, and variants; do not guess names or use model knowledge from training. This does not create Agent Manager sessions. Resumed tasks keep a model or variant explicitly chosen for them earlier; anything not chosen explicitly follows the current subagent settings. A variant-only override keeps the resolved model. A model override does not inherit the parent's reasoning effort." // fork_change
+    "Subagent model selection is enabled. Omit these fields, or send null, to keep the normal subagent model and reasoning defaults. Only override model, provider, or variant when the user explicitly requests it. Do not choose overrides on your own based on task complexity, cost, or latency. Use agent_manager_models only when an override is requested to find available models, providers, and variants; do not guess names or use model knowledge from training. This does not create Agent Manager sessions. Resumed tasks keep a model or variant explicitly chosen for them earlier; anything not chosen explicitly follows the current subagent settings. A variant-only override keeps the resolved model. A model override does not inherit the parent's reasoning effort; without variant it uses the subagent reasoning effort from settings when the model supports it, otherwise the model's default." // fork_change
 
   export const cancelForeground = Effect.fn("KiloTask.cancelForeground")(function* (
     jobs: Pick<BackgroundJob.Interface, "get">,
@@ -484,8 +484,25 @@ export namespace KiloTask {
     }
   }
 
+  /** Subagent reasoning effort from settings for a model chosen without one, when the model supports it. */
+  function preset(
+    config: Pick<Config.Info, "subagent_variant" | "subagent_variant_overrides">,
+    model: Model,
+    variants: Record<string, unknown> | undefined,
+  ) {
+    const supported = (value: string | null | undefined) =>
+      value && variants && Object.hasOwn(variants, value) ? value : undefined
+    return supported(config.subagent_variant_overrides?.[key(model)]) ?? supported(config.subagent_variant)
+  }
+
   const base = Effect.fn("KiloTask.baseModel")(function* (input: Parameters<typeof defaults>[0], pin: Pin) {
-    if (pin.model) return { model: pin.model, variant: pin.variant }
+    if (pin.model) {
+      if (pin.variant) return { model: pin.model, variant: pin.variant }
+      const info = yield* input.provider
+        .getModel(pin.model.providerID, pin.model.modelID)
+        .pipe(Effect.catchTag("ProviderModelNotFoundError", () => Effect.succeed(undefined)))
+      return { model: pin.model, variant: preset(input.config, pin.model, info?.variants) }
+    }
     const resolved = yield* defaults(input)
     if (!pin.variant) return resolved
     const full = yield* input.provider
@@ -495,9 +512,25 @@ export namespace KiloTask {
   })
   // fork_change end
 
+  // fork_change start - [fork] explicit task model choices stay inside experimental.task_models
+  function allows(list: string[], model: Model) {
+    return permits(list, `${model.providerID}/${model.modelID}`)
+  }
+
+  /** Tool description lines for experimental.task_models; empty when every model is allowed. */
+  export function allowance(cfg: Pick<Config.Info, "experimental">) {
+    const list = cfg.experimental?.task_models ?? []
+    if (cfg.experimental?.task_model_selection !== true || list.length === 0) return []
+    return [
+      `Model overrides are limited to these provider/model IDs from Kilo settings: ${list.join(", ")}. Pass one of them as model instead of searching agent_manager_models; any other model is rejected. Resuming a task whose earlier model choice is no longer listed fails until you pass an allowed model.`,
+    ]
+  }
+  // fork_change end
+
   export const resolveModel = Effect.fn("KiloTask.resolveModel")(function* (
     input: Parameters<typeof defaults>[0] & {
       enabled?: boolean // fork_change
+      allowed?: string[] // fork_change - [fork] experimental.task_models
       selection?: { model?: string | null; provider?: string | null; variant?: string | null }
       pin?: Pin // fork_change - explicit choices stored on a resumed child
     },
@@ -520,15 +553,33 @@ export namespace KiloTask {
     // fork_change start - a resumed task follows settings except for its explicit choices
     // Pins come from the opt-in experiment; with it off, a resume follows settings only.
     const pin: Pin = input.enabled ? (input.pin ?? {}) : {}
+    const list = input.allowed ?? []
+    if (!selection.model && pin.model && !allows(list, pin.model)) {
+      return yield* Effect.fail(
+        new Error(
+          `Task model ${pin.model.providerID}/${pin.model.modelID} chosen for this task earlier is not in experimental.task_models. Pass an allowed model to resume it. Allowed models: ${list.join(", ")}.`,
+        ),
+      )
+    }
     const source = selection.model ? undefined : yield* base(input, pin)
     if (!requested && source) return { ...source, pin }
     // fork_change end
     const providers = yield* input.provider.list()
-    const selected = selectModel(selection, providers, source, input.parent.providerID)
+    const selected = selectModel(selection, providers, source, input.parent.providerID, list) // fork_change
     if ("error" in selected) return yield* Effect.fail(new Error(`Task ${selected.error}`))
     // fork_change start - remember what this call chose explicitly
+    const variant =
+      selected.variant ??
+      (selection.model
+        ? preset(
+            input.config,
+            selected.model,
+            providers[selected.model.providerID]?.models[selected.model.modelID]?.variants,
+          )
+        : undefined)
     return {
       ...selected,
+      variant,
       pin: {
         model: selection.model ? selected.model : pin.model,
         variant: selection.variant ? selected.variant : selection.model ? undefined : pin.variant,
