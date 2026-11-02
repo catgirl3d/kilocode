@@ -41,11 +41,20 @@ function rank(provider: string, preferred?: string) {
   return 2
 }
 
+// fork_change start - [fork] experimental.task_models matching
+/** Whether a provider/model ID is in the allow-list; an empty list allows every model. */
+export function permits(list: string[], id: string) {
+  const key = id.toLowerCase()
+  return list.length === 0 || list.some((item) => item.trim().toLowerCase() === key)
+}
+// fork_change end
+
 export function selectModel(
   input: { model?: string | null; provider?: string | null; variant?: string | null },
   providers: Record<string, Provider.Info>,
   source?: Source,
   preferred: string | undefined = source?.model.providerID,
+  allowed: string[] = [], // fork_change - [fork] experimental.task_models
 ): Selection {
   const all = Object.values(providers).flatMap((provider) =>
     Object.values(provider.models).map((model) => ({ providerID: provider.id, model })),
@@ -77,7 +86,17 @@ export function selectModel(
   if (provider && scope.length === 0) {
     return { error: `provider is not available for model selection: ${provider}. Requested model: ${value}.` }
   }
-  const { pool, names } = lookup(scope, value)
+  // fork_change start - [fork] match the whole catalog, then keep only allowed models
+  const found = lookup(scope, value)
+  const pool = found.pool.filter((item) => permits(allowed, `${item.providerID}/${item.model.id}`))
+  const names = [...new Set(pool.map((item) => item.model.name))]
+  if (allowed.length > 0 && pool.length === 0) {
+    const reason = found.names.length
+      ? `model "${value}" (${found.names.slice(0, 5).join(", ")}) is not in experimental.task_models.`
+      : `model is not available: ${value}.`
+    return { error: `${reason} Allowed models: ${allowed.join(", ")}.` }
+  }
+  // fork_change end
   if (pool.length === 0) {
     const close = suggest(scope, value)
     const hint = close.length ? ` Closest matches: ${close.join(", ")}.` : ""
