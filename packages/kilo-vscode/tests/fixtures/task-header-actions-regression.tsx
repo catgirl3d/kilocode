@@ -354,6 +354,7 @@ try {
     sessionID: id,
     requestID: apply.requestID,
     keepTurns: 5,
+    includeCarriers: false,
     token: "token-2",
   })
   assert.equal(field.disabled, true, "the keep-turns field is disabled while reasoning clear applies")
@@ -479,10 +480,95 @@ try {
     ["command.session.reasoningClear.preserved"],
     "a preview with unsupported parts renders the preserved status",
   )
+  assert.equal(
+    emptyDialog.querySelector('[data-slot="checkbox-checkbox-input"]'),
+    null,
+    "unsupported non-carrier state does not expose the carrier option",
+  )
+
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: id,
+    requestID: emptyPreview.requestID,
+    turns: 0,
+    parts: 0,
+    tokens: 0,
+    unsupported: 2,
+    token: "unsupported-only-token",
+  })
+  assert.deepEqual(
+    [...emptyDialog.querySelectorAll<HTMLElement>('[data-slot="reasoning-clear-status"]')].map((node) =>
+      node.textContent?.trim(),
+    ),
+    ["command.session.reasoningClear.preserved"],
+    "unsupported-only zero-target previews do not also claim there is nothing to clear",
+  )
+  assert.equal(
+    action(emptyDialog, "command.session.reasoningClear.button").disabled,
+    true,
+    "unsupported-only zero-target previews cannot apply",
+  )
+
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: id,
+    requestID: emptyPreview.requestID,
+    turns: 1,
+    parts: 1,
+    tokens: 30,
+    carriers: 0,
+    carrierCandidates: 2,
+    unsupported: 1,
+    token: "mixed-token",
+  })
+  assert.deepEqual(
+    [...emptyDialog.querySelectorAll<HTMLElement>('[data-slot="reasoning-clear-status"]')].map((node) =>
+      node.textContent?.trim(),
+    ),
+    ["command.session.reasoningClear.carriers.preserved", "command.session.reasoningClear.preserved"],
+    "mixed carrier and unsupported state renders both statuses",
+  )
+  const appliesBeforeFlag = sent.filter((message) => message.type === "sessionReasoningClear").length
+  session.reasoningClear(id, 5, "mixed-token", true)
+  assert.equal(
+    sent.filter((message) => message.type === "sessionReasoningClear").length,
+    appliesBeforeFlag,
+    "apply with a different carrier flag is rejected before the host",
+  )
+  const carrierInput = emptyDialog.querySelector<HTMLInputElement>('[data-slot="checkbox-checkbox-input"]')
+  assert(carrierInput, "carrier candidates expose the carrier option")
+  carrierInput.click()
+  await settle()
+  const carrierPreview = sent.filter((message) => message.type === "sessionReasoningClearPreview").at(-1)
+  assert(carrierPreview, "toggling carriers requests a fresh preview")
+  assert.equal(
+    (carrierPreview as { includeCarriers?: boolean }).includeCarriers,
+    true,
+    "the carrier option is forwarded to the preview",
+  )
+  await emit({
+    type: "sessionReasoningClearPreviewed",
+    sessionID: id,
+    requestID: carrierPreview.requestID,
+    turns: 1,
+    parts: 3,
+    tokens: 50,
+    carriers: 2,
+    carrierCandidates: 2,
+    unsupported: 1,
+    token: "carrier-token",
+  })
+  assert.deepEqual(
+    [...emptyDialog.querySelectorAll<HTMLElement>('[data-slot="reasoning-clear-status"]')].map((node) =>
+      node.textContent?.trim(),
+    ),
+    ["command.session.reasoningClear.carriers.included", "command.session.reasoningClear.preserved"],
+    "included carriers still report unsupported state",
+  )
   action(emptyDialog, "common.cancel").click()
   await settle()
 
-  session.reasoningPreview(other, 10)
+  session.reasoningPreview(other, 10, { includeCarriers: true })
   const otherPreview = sent.filter((message) => message.type === "sessionReasoningClearPreview").at(-1)
   assert(otherPreview, "a non-current session can request a reasoning preview")
   await emit({
@@ -495,9 +581,10 @@ try {
     unsupported: 0,
     token: "other-token",
   })
-  session.reasoningClear(other, 10, "other-token")
+  session.reasoningClear(other, 10, "other-token", true)
   const otherApply = sent.filter((message) => message.type === "sessionReasoningClear").at(-1)
   assert(otherApply, "a non-current session can request a reasoning apply")
+  assert.equal((otherApply as { includeCarriers?: boolean }).includeCarriers, true, "apply forwards the carrier option")
   await emit({
     type: "sessionReasoningCleared",
     sessionID: other,

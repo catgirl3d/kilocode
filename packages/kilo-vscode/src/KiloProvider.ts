@@ -1444,10 +1444,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           caffeination: () => void vscode.commands.executeCommand("kilo-code.new.toggleCaffeination"),
           shake: (sessionID) => this.handleShake(sessionID), // fork_change
           // fork_change start
-          reasoningPreview: (sessionID, requestID, keepTurns) =>
-            this.handleReasoningClear(sessionID, requestID, keepTurns),
-          reasoningClear: (sessionID, requestID, keepTurns, token) =>
-            this.handleReasoningClear(sessionID, requestID, keepTurns, token),
+          reasoningPreview: (sessionID, requestID, keepTurns, includeCarriers) =>
+            this.handleReasoningClear(sessionID, requestID, keepTurns, includeCarriers),
+          reasoningClear: (sessionID, requestID, keepTurns, includeCarriers, token) =>
+            this.handleReasoningClear(sessionID, requestID, keepTurns, includeCarriers, token),
           toolPreview: (sessionID, requestID, keepTurns) => this.handleToolClear(sessionID, requestID, keepTurns),
           toolClear: (sessionID, requestID, keepTurns, token) =>
             this.handleToolClear(sessionID, requestID, keepTurns, token),
@@ -5460,6 +5460,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     sessionID: string,
     requestID: string,
     keepTurns: number,
+    includeCarriers: boolean,
     token?: string,
   ): Promise<void> {
     const operation = token === undefined ? "preview" : "apply"
@@ -5473,14 +5474,14 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       const directory = this.getWorkspaceDirectory(sessionID)
       if (token === undefined) {
         const result = await this.client.session.reasoningClearPreview(
-          { sessionID, directory, keepTurns },
+          { sessionID, directory, keepTurns, includeCarriers },
           { throwOnError: true },
         )
         this.postMessage({ type: "sessionReasoningClearPreviewed", sessionID, requestID, ...result.data })
         return
       }
       const result = await this.client.session.reasoningClear(
-        { sessionID, directory, keepTurns, token },
+        { sessionID, directory, keepTurns, includeCarriers, token },
         { throwOnError: true },
       )
       this.postMessage({ type: "sessionReasoningCleared", sessionID, requestID, ...result.data })
