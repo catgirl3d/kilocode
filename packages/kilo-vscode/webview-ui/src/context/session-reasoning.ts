@@ -1,8 +1,8 @@
 // fork_change - new file
-import { createStore, produce } from "solid-js/store"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import type { useLanguage } from "./language"
 import type { useVSCode } from "./vscode"
+import { createClearStore, id } from "./session-clear-store"
 import type {
   ExtensionMessage,
   ReasoningClearErrorCode,
@@ -16,15 +16,19 @@ type Post = (message: SessionReasoningClearPreviewRequest | SessionReasoningClea
 
 export interface ReasoningPreview {
   keepTurns: number
+  includeCarriers: boolean
   turns: number
   parts: number
   tokens: number
+  carriers: number
+  carrierCandidates: number
   unsupported: number
   token: string
 }
 
 export interface ReasoningState {
   keepTurns: number
+  includeCarriers: boolean
   requestID?: string
   preview?: ReasoningPreview
   applied?: SessionReasoningClearedMessage
@@ -42,6 +46,7 @@ interface Deps {
 
 const DEFAULT: ReasoningState = {
   keepTurns: 10,
+  includeCarriers: false,
   previewing: false,
   applying: false,
 }
@@ -56,13 +61,13 @@ const ERROR_KEYS: Record<ReasoningClearErrorCode, string> = {
   unknown: "command.session.reasoningClear.error.unknown",
 }
 
-export function previewStale(preview: { keepTurns: number } | undefined, keepTurns: number | undefined): boolean {
-  return preview !== undefined && preview.keepTurns !== keepTurns
-}
-
-function errorText(code: ReasoningClearErrorCode, message: string, language: Language): string {
-  if ((code === "unknown" || code === "conflict") && message.trim()) return message.trim()
-  return language.t(ERROR_KEYS[code])
+export function previewStale(
+  preview: { keepTurns: number; includeCarriers?: boolean } | undefined,
+  keepTurns: number | undefined,
+  includeCarriers = false,
+): boolean {
+  if (preview === undefined) return false
+  return preview.keepTurns !== keepTurns || (preview.includeCarriers ?? false) !== includeCarriers
 }
 
 export function shouldCloseReasoningDialog(
@@ -83,44 +88,21 @@ export function reasoningClearToast(message: SessionReasoningClearedMessage, lan
   }
 }
 
-function id(): string {
-  return crypto.randomUUID()
-}
-
 export function createSessionReasoning(deps: Deps) {
-  const [store, setStore] = createStore<Record<string, ReasoningState>>({})
-  const timers = new Map<string, ReturnType<typeof setTimeout>>()
+  const base = createClearStore({ fallback: DEFAULT, keys: ERROR_KEYS, language: deps.language })
+  const state = base.state
+  const cancel = base.cancel
+  const drop = base.drop
+  const fail = base.fail
+  const setStore = base.setStore
+  const schedule = base.schedule
 
-  function state(sessionID: string): ReasoningState {
-    return store[sessionID] ?? DEFAULT
-  }
-
-  function cancel(sessionID: string) {
-    const timer = timers.get(sessionID)
-    if (timer !== undefined) clearTimeout(timer)
-    timers.delete(sessionID)
-  }
-
-  function drop(sessionID: string) {
-    cancel(sessionID)
-    setStore(
-      produce((map) => {
-        delete map[sessionID]
-      }),
-    )
-  }
-
-  function fail(sessionID: string, code: ReasoningClearErrorCode, message = "") {
-    setStore(sessionID, {
-      ...state(sessionID),
-      previewing: false,
-      applying: false,
-      applied: undefined,
-      error: { code, message: errorText(code, message, deps.language) },
-    })
-  }
-
-  function request(sessionID: string, keepTurns: number, notice?: { code: ReasoningClearErrorCode; message: string }) {
+  function request(
+    sessionID: string,
+    keepTurns: number,
+    includeCarriers: boolean,
+    notice?: { code: ReasoningClearErrorCode; message: string },
+  ) {
     cancel(sessionID)
     const current = state(sessionID)
     if (current.applying) return
@@ -132,6 +114,7 @@ export function createSessionReasoning(deps: Deps) {
     setStore(sessionID, {
       ...current,
       keepTurns,
+      includeCarriers,
       requestID,
       preview: undefined,
       previewing: true,
@@ -139,30 +122,30 @@ export function createSessionReasoning(deps: Deps) {
       applied: undefined,
       error: notice,
     })
-    deps.post({ type: "sessionReasoningClearPreview", sessionID, requestID, keepTurns })
+    deps.post({ type: "sessionReasoningClearPreview", sessionID, requestID, keepTurns, includeCarriers })
   }
 
-  function preview(sessionID: string, keepTurns: number, opts?: { delay?: number }) {
+  function preview(sessionID: string, keepTurns: number, opts?: { delay?: number; includeCarriers?: boolean }) {
     cancel(sessionID)
+    const includeCarriers = opts?.includeCarriers ?? false
     const delay = opts?.delay ?? 0
-    if (delay > 0) {
-      timers.set(
-        sessionID,
-        setTimeout(() => {
-          timers.delete(sessionID)
-          const current = state(sessionID)
-          if (current.keepTurns === keepTurns && (current.previewing || current.preview !== undefined)) return
-          request(sessionID, keepTurns)
-        }, delay),
-      )
-      return
-    }
-    request(sessionID, keepTurns)
+    schedule(sessionID, delay, () => {
+      if (delay > 0) {
+        const current = state(sessionID)
+        if (
+          current.keepTurns === keepTurns &&
+          current.includeCarriers === includeCarriers &&
+          (current.previewing || current.preview !== undefined)
+        )
+          return
+      }
+      request(sessionID, keepTurns, includeCarriers)
+    })
   }
 
-  function apply(sessionID: string, keepTurns: number, token: string) {
+  function apply(sessionID: string, keepTurns: number, token: string, includeCarriers = false) {
     cancel(sessionID)
-    if (previewStale(state(sessionID).preview, keepTurns)) {
+    if (previewStale(state(sessionID).preview, keepTurns, includeCarriers)) {
       fail(sessionID, "stale")
       return
     }
@@ -174,13 +157,14 @@ export function createSessionReasoning(deps: Deps) {
     setStore(sessionID, {
       ...state(sessionID),
       keepTurns,
+      includeCarriers,
       requestID,
       applying: true,
       previewing: false,
       applied: undefined,
       error: undefined,
     })
-    deps.post({ type: "sessionReasoningClear", sessionID, requestID, keepTurns, token })
+    deps.post({ type: "sessionReasoningClear", sessionID, requestID, keepTurns, token, includeCarriers })
   }
 
   function handleMessage(message: ExtensionMessage): boolean {
@@ -206,9 +190,12 @@ export function createSessionReasoning(deps: Deps) {
         error: current.error?.code === "stale" ? current.error : undefined,
         preview: {
           keepTurns: current.keepTurns,
+          includeCarriers: current.includeCarriers,
           turns: message.turns,
           parts: message.parts,
           tokens: message.tokens,
+          carriers: message.carriers ?? 0,
+          carrierCandidates: message.carrierCandidates ?? 0,
           unsupported: message.unsupported,
           token: message.token,
         },
@@ -235,7 +222,7 @@ export function createSessionReasoning(deps: Deps) {
     fail(message.sessionID, message.code, message.error)
     const notice = state(message.sessionID).error
     if (message.operation === "apply" && message.code === "stale") {
-      if (notice) request(message.sessionID, current.keepTurns, notice)
+      if (notice) request(message.sessionID, current.keepTurns, current.includeCarriers, notice)
       return true
     }
     // The dialog may already be closed, so an apply failure also surfaces as a toast.
