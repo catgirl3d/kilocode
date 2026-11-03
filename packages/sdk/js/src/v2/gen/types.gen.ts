@@ -16783,6 +16783,7 @@ export type SessionShakeResponse = SessionShakeResponses[keyof SessionShakeRespo
 export type SessionReasoningClearPreviewData = {
   body?: {
     keepTurns: number
+    includeCarriers?: boolean
   }
   path: {
     sessionID: string
@@ -16820,6 +16821,8 @@ export type SessionReasoningClearPreviewResponses = {
     turns: number
     parts: number
     tokens: number
+    carriers: number
+    carrierCandidates: number
     unsupported: number
     token: string
   }
@@ -16831,6 +16834,7 @@ export type SessionReasoningClearPreviewResponse =
 export type SessionReasoningClearData = {
   body?: {
     keepTurns: number
+    includeCarriers?: boolean
     token: string
   }
   path: {

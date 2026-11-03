@@ -102,11 +102,42 @@ describe("routeEarlyMessage reasoning clear", () => {
         ctx,
       ),
     ).toBe(true)
-    expect(previews).toEqual([["ses_1", "preview-1", 10]])
-    expect(clears).toEqual([["ses_1", "clear-1", 10, "preview-token"]])
+    expect(previews).toEqual([["ses_1", "preview-1", 10, false]])
+    expect(clears).toEqual([["ses_1", "clear-1", 10, false, "preview-token"]])
   })
 
-  it("rejects non-numeric keepTurns and empty apply tokens without invoking the host", async () => {
+  it("forwards includeCarriers for reasoning clear requests", async () => {
+    const previews: unknown[] = []
+    const clears: unknown[] = []
+    const ctx = context([], [], false, [], previews, clears)
+
+    await routeEarlyMessage(
+      {
+        type: "sessionReasoningClearPreview",
+        sessionID: "ses_1",
+        requestID: "preview-carriers",
+        keepTurns: 10,
+        includeCarriers: true,
+      },
+      ctx,
+    )
+    await routeEarlyMessage(
+      {
+        type: "sessionReasoningClear",
+        sessionID: "ses_1",
+        requestID: "clear-carriers",
+        keepTurns: 10,
+        includeCarriers: true,
+        token: "preview-token",
+      },
+      ctx,
+    )
+
+    expect(previews).toEqual([["ses_1", "preview-carriers", 10, true]])
+    expect(clears).toEqual([["ses_1", "clear-carriers", 10, true, "preview-token"]])
+  })
+
+  it("rejects non-numeric keepTurns, invalid carrier flags, and empty apply tokens without invoking the host", async () => {
     const posted: unknown[] = []
     const previews: unknown[] = []
     const clears: unknown[] = []
@@ -142,6 +173,31 @@ describe("routeEarlyMessage reasoning clear", () => {
         ctx,
       ),
     ).toBe(true)
+    expect(
+      await routeEarlyMessage(
+        {
+          type: "sessionReasoningClearPreview",
+          sessionID: "ses_1",
+          requestID: "preview-4",
+          keepTurns: 10,
+          includeCarriers: "yes",
+        },
+        ctx,
+      ),
+    ).toBe(true)
+    expect(
+      await routeEarlyMessage(
+        {
+          type: "sessionReasoningClear",
+          sessionID: "ses_1",
+          requestID: "clear-5",
+          keepTurns: 10,
+          includeCarriers: "yes",
+          token: "preview-token",
+        },
+        ctx,
+      ),
+    ).toBe(true)
     expect(previews).toEqual([])
     expect(clears).toEqual([])
     expect(posted).toEqual([
@@ -164,6 +220,20 @@ describe("routeEarlyMessage reasoning clear", () => {
         operation: "apply",
         sessionID: "ses_1",
         requestID: "clear-3",
+        code: "invalid",
+      }),
+      expect.objectContaining({
+        type: "sessionReasoningClearFailed",
+        operation: "preview",
+        sessionID: "ses_1",
+        requestID: "preview-4",
+        code: "invalid",
+      }),
+      expect.objectContaining({
+        type: "sessionReasoningClearFailed",
+        operation: "apply",
+        sessionID: "ses_1",
+        requestID: "clear-5",
         code: "invalid",
       }),
     ])
