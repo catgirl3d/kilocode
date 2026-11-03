@@ -17,6 +17,8 @@ export const PreviewResult = Schema.Struct({
   turns: Count,
   parts: Count,
   tokens: Count,
+  carriers: Count,
+  carrierCandidates: Count,
   unsupported: Count,
   token: Schema.String,
 })
@@ -40,17 +42,33 @@ export class StalePreviewError extends Schema.TaggedErrorClass<StalePreviewError
 type Input = {
   sessionID: SessionID
   keepTurns: number
+  includeCarriers?: boolean
   sessions: Pick<Session.Interface, "messages" | "updatePart">
 }
 
 type Target = {
   turn: MessageID
   part: SessionV1.ReasoningPart
+  carrier: boolean
 }
 
-function unsupported(part: SessionV1.Part) {
-  if (KiloReasoningMarker.unsupported(part)) return true
-  if (part.type !== "reasoning" || KiloReasoningMarker.cleared(part)) return false
+function object(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function malformed(part: SessionV1.Part) {
+  if (part.type !== "reasoning" || !("metadata" in part) || part.metadata == null) return false
+  return !object(part.metadata)
+}
+
+/** Finished reasoning that carries provider replay state, including encrypted or signed blocks. */
+function providerCarrier(part: SessionV1.Part): boolean {
+  return part.type === "reasoning" && !malformed(part) && KiloReasoningMarker.unsupported(part)
+}
+
+/** Empty reasoning with opaque metadata that this operation cannot clear safely. */
+function opaque(part: SessionV1.Part) {
+  if (part.type !== "reasoning" || KiloReasoningMarker.cleared(part) || providerCarrier(part)) return false
   return part.text.trim().length === 0 && "metadata" in part && part.metadata != null
 }
 
@@ -61,7 +79,7 @@ function eligible(part: SessionV1.Part): part is SessionV1.ReasoningPart {
 
 /** Finished reasoning that replay can omit: no provider state to preserve and not yet cleared. */
 export function clearable(part: SessionV1.Part): part is SessionV1.ReasoningPart {
-  return !unsupported(part) && eligible(part)
+  return !providerCarrier(part) && !malformed(part) && eligible(part)
 }
 
 /**
@@ -88,11 +106,17 @@ export const clear = Effect.fn("KiloReasoningClear.clear")(function* (input: {
   yield* input.sessions.updatePart(KiloReasoningMarker.mark(raw, input.now))
 })
 
+function estimate(target: Target) {
+  const text = Token.estimate(target.part.text)
+  if (!target.carrier) return text
+  return text + Token.estimate(JSON.stringify(target.part.metadata ?? {}))
+}
+
 function stats(targets: Target[]) {
   return {
     parts: targets.length,
     turns: new Set(targets.map((target) => target.turn)).size,
-    tokens: targets.reduce((sum, target) => sum + Token.estimate(target.part.text), 0),
+    tokens: targets.reduce((sum, target) => sum + estimate(target), 0),
   }
 }
 
@@ -101,28 +125,61 @@ const plan = Effect.fn("KiloReasoningClear.plan")(function* (input: Input) {
   const scope = KiloClearScope.old(messages, input.keepTurns)
 
   const targets: Target[] = []
-  let skipped = 0
+  let preserved = 0
+  let candidates = 0
+  let carriers = 0
   for (const { turn, part } of scope.parts) {
-    if (unsupported(part)) {
-      skipped++
+    if (part.type !== "reasoning") {
+      if (KiloReasoningMarker.unsupported(part)) preserved++
+      continue
+    }
+    if (KiloReasoningMarker.cleared(part)) continue
+    if (providerCarrier(part)) {
+      if (part.time.end == null) {
+        preserved++
+        continue
+      }
+      candidates++
+      if (!input.includeCarriers) continue
+      targets.push({ turn, part, carrier: true })
+      carriers++
+      continue
+    }
+    if (malformed(part) || opaque(part)) {
+      preserved++
       continue
     }
     if (!eligible(part)) continue
-    targets.push({ turn, part })
+    targets.push({ turn, part, carrier: false })
   }
 
-  // The token pins the exact parts shown in the preview.
+  // The token pins the exact parts shown in the preview, including carrier metadata.
   const token = createHash("sha256")
-    .update(JSON.stringify(targets.map((target) => [target.part.id, target.part.text])))
+    .update(JSON.stringify(targets.map((target) => [target.part.id, target.part.text, target.part.metadata ?? null])))
     .digest("hex")
-  return { messages: messages.length, projected: scope.projected, targets, unsupported: skipped, token }
+  return {
+    messages: messages.length,
+    projected: scope.projected,
+    targets,
+    carriers,
+    carrierCandidates: candidates,
+    unsupported: preserved,
+    token,
+  }
 })
 
 export const preview = Effect.fn("KiloReasoningClear.preview")(function* (input: Input) {
   const value = yield* plan(input)
-  const output = { ...stats(value.targets), unsupported: value.unsupported, token: value.token }
+  const output = {
+    ...stats(value.targets),
+    carriers: value.carriers,
+    carrierCandidates: value.carrierCandidates,
+    unsupported: value.unsupported,
+    token: value.token,
+  }
   log.debug("manual reasoning clear preview", {
     sessionID: input.sessionID,
+    includeCarriers: input.includeCarriers === true,
     rawMessages: value.messages,
     projectionMessages: value.projected,
     ...output,
@@ -139,6 +196,12 @@ export const apply = Effect.fn("KiloReasoningClear.apply")(function* (input: Inp
   const now = Date.now()
   for (const target of value.targets) yield* input.sessions.updatePart(KiloReasoningMarker.mark(target.part, now))
   const output = stats(value.targets)
-  log.info("manual reasoning clear applied", { sessionID: input.sessionID, ...output })
+  log.info("manual reasoning clear applied", {
+    sessionID: input.sessionID,
+    includeCarriers: input.includeCarriers === true,
+    carriers: value.carriers,
+    carrierCandidates: value.carrierCandidates,
+    ...output,
+  })
   return output satisfies ApplyResult
 })

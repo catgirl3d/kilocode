@@ -26,6 +26,8 @@ function item(keepTurns: number) {
     turns: 1,
     parts: 2,
     tokens: 40,
+    carriers: 0,
+    carrierCandidates: 0,
     unsupported: 0,
     token: "token-1",
   }
@@ -178,6 +180,116 @@ describe("session reasoning clear state", () => {
     expect(previewStale(undefined, 10)).toBe(false)
     expect(previewStale(item(10), 10)).toBe(false)
     expect(previewStale(item(10), 5)).toBe(true)
+    expect(previewStale(item(10), 10, true)).toBe(true)
+    expect(previewStale({ ...item(10), includeCarriers: true }, 10, true)).toBe(false)
+  })
+
+  it("forwards the carrier flag and stores returned carriers", () => {
+    const posted: unknown[] = []
+    const actions = createSessionReasoning({
+      isConnected: () => true,
+      currentSessionID: () => "ses-1",
+      post: (message) => posted.push(message),
+      language: language(),
+    })
+
+    actions.preview("ses-1", 10, { includeCarriers: true })
+    expect(posted[0]).toMatchObject({
+      type: "sessionReasoningClearPreview",
+      keepTurns: 10,
+      includeCarriers: true,
+    })
+
+    const request = posted[0] as { requestID: string }
+    actions.handleMessage({
+      type: "sessionReasoningClearPreviewed",
+      sessionID: "ses-1",
+      requestID: request.requestID,
+      turns: 2,
+      parts: 4,
+      tokens: 350_000,
+      carriers: 3,
+      carrierCandidates: 3,
+      unsupported: 0,
+      token: "carrier-token",
+    })
+
+    expect(actions.state("ses-1").preview).toMatchObject({
+      includeCarriers: true,
+      carriers: 3,
+      carrierCandidates: 3,
+      tokens: 350_000,
+    })
+
+    actions.apply("ses-1", 10, "carrier-token", true)
+    expect(posted[1]).toMatchObject({
+      type: "sessionReasoningClear",
+      keepTurns: 10,
+      includeCarriers: true,
+      token: "carrier-token",
+    })
+  })
+
+  it("rejects apply when the carrier flag differs from the preview", () => {
+    const posted: unknown[] = []
+    const actions = createSessionReasoning({
+      isConnected: () => true,
+      currentSessionID: () => "ses-1",
+      post: (message) => posted.push(message),
+      language: english(),
+    })
+
+    actions.preview("ses-1", 10)
+    const request = posted[0] as { requestID: string }
+    actions.handleMessage({
+      type: "sessionReasoningClearPreviewed",
+      sessionID: "ses-1",
+      requestID: request.requestID,
+      turns: 1,
+      parts: 2,
+      tokens: 40,
+      unsupported: 0,
+      token: "token-1",
+    })
+
+    actions.apply("ses-1", 10, "token-1", true)
+
+    expect(posted).toHaveLength(1)
+    expect(actions.state("ses-1").applying).toBe(false)
+    expect(actions.state("ses-1").error?.message).toBe("Context changed, preview again.")
+  })
+
+  it("refreshes a delayed preview when only the carrier flag changes", async () => {
+    const posted: unknown[] = []
+    const actions = createSessionReasoning({
+      isConnected: () => true,
+      currentSessionID: () => "ses-1",
+      post: (message) => posted.push(message),
+      language: language(),
+    })
+
+    actions.preview("ses-1", 10)
+    const first = posted[0] as { requestID: string }
+    actions.handleMessage({
+      type: "sessionReasoningClearPreviewed",
+      sessionID: "ses-1",
+      requestID: first.requestID,
+      turns: 1,
+      parts: 2,
+      tokens: 40,
+      unsupported: 1,
+      token: "token-1",
+    })
+
+    actions.preview("ses-1", 10, { delay: 20, includeCarriers: true })
+    await Bun.sleep(50)
+
+    expect(posted).toHaveLength(2)
+    expect(posted[1]).toMatchObject({
+      type: "sessionReasoningClearPreview",
+      keepTurns: 10,
+      includeCarriers: true,
+    })
   })
 
   it("rejects stale apply tokens and accepts the matching keep-turns value", () => {
@@ -385,6 +497,7 @@ describe("session reasoning clear state", () => {
       sessionID: "ses-1",
       requestID: expect.any(String),
       keepTurns: 10,
+      includeCarriers: false,
       token: "token-1",
     })
     expect(posted.filter((message) => (message as { type: string }).type === "sessionReasoningClear")).toHaveLength(1)
@@ -445,6 +558,7 @@ describe("session reasoning clear state", () => {
       sessionID: "ses-1",
       requestID: expect.any(String),
       keepTurns: 5,
+      includeCarriers: false,
     })
   })
 
@@ -690,6 +804,7 @@ describe("session reasoning clear state", () => {
       sessionID: "ses-1",
       requestID: expect.any(String),
       keepTurns: 10,
+      includeCarriers: false,
     })
     expect(actions.state("ses-1").error?.message).toBe("command.session.reasoningClear.stale")
     expect(actions.state("ses-1").applied).toBeUndefined()

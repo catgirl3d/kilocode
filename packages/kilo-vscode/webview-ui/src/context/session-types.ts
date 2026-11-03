@@ -234,9 +234,9 @@ export interface SessionContextValue {
   undoCompact: (messageID: string) => void
   shake: () => void
   shaking: () => boolean
-  reasoningPreview: (sessionID: string, keepTurns: number, opts?: { delay?: number }) => void
+  reasoningPreview: (sessionID: string, keepTurns: number, opts?: { delay?: number; includeCarriers?: boolean }) => void
   reasoningCancel: (sessionID: string) => void
-  reasoningClear: (sessionID: string, keepTurns: number, token: string) => void
+  reasoningClear: (sessionID: string, keepTurns: number, token: string, includeCarriers?: boolean) => void
   reasoningState: (sessionID: string) => ReasoningState
   reasoningClearing: (sessionID: string) => boolean
   toolPreview: (sessionID: string, keepTurns: number, opts?: { delay?: number }) => void
