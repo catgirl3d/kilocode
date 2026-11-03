@@ -299,6 +299,7 @@ export interface SessionReasoningClearPreviewRequest {
   sessionID: string
   requestID: string
   keepTurns: number
+  includeCarriers?: boolean
 }
 
 export interface SessionReasoningClearRequest {
@@ -307,6 +308,7 @@ export interface SessionReasoningClearRequest {
   requestID: string
   keepTurns: number
   token: string
+  includeCarriers?: boolean
 }
 
 export interface SessionToolClearPreviewRequest {

@@ -1,8 +1,8 @@
 // fork_change - new file
-import { createStore, produce } from "solid-js/store"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import type { useLanguage } from "./language"
 import type { useVSCode } from "./vscode"
+import { createClearStore, id } from "./session-clear-store"
 import { previewStale } from "./session-reasoning"
 import type {
   ExtensionMessage,
@@ -56,11 +56,6 @@ const ERROR_KEYS: Record<ReasoningClearErrorCode, string> = {
   unknown: "command.session.toolClear.error.unknown",
 }
 
-function errorText(code: ReasoningClearErrorCode, message: string, language: Language): string {
-  if ((code === "unknown" || code === "conflict") && message.trim()) return message.trim()
-  return language.t(ERROR_KEYS[code])
-}
-
 export function toolClearToast(message: SessionToolClearedMessage, language: Language) {
   return {
     variant: "success" as const,
@@ -72,42 +67,14 @@ export function toolClearToast(message: SessionToolClearedMessage, language: Lan
   }
 }
 
-function id(): string {
-  return crypto.randomUUID()
-}
-
 export function createSessionTools(deps: Deps) {
-  const [store, setStore] = createStore<Record<string, ToolState>>({})
-  const timers = new Map<string, ReturnType<typeof setTimeout>>()
-
-  function state(sessionID: string): ToolState {
-    return store[sessionID] ?? DEFAULT
-  }
-
-  function cancel(sessionID: string) {
-    const timer = timers.get(sessionID)
-    if (timer !== undefined) clearTimeout(timer)
-    timers.delete(sessionID)
-  }
-
-  function drop(sessionID: string) {
-    cancel(sessionID)
-    setStore(
-      produce((map) => {
-        delete map[sessionID]
-      }),
-    )
-  }
-
-  function fail(sessionID: string, code: ReasoningClearErrorCode, message = "") {
-    setStore(sessionID, {
-      ...state(sessionID),
-      previewing: false,
-      applying: false,
-      applied: undefined,
-      error: { code, message: errorText(code, message, deps.language) },
-    })
-  }
+  const base = createClearStore({ fallback: DEFAULT, keys: ERROR_KEYS, language: deps.language })
+  const state = base.state
+  const cancel = base.cancel
+  const drop = base.drop
+  const fail = base.fail
+  const setStore = base.setStore
+  const schedule = base.schedule
 
   function request(sessionID: string, keepTurns: number, notice?: { code: ReasoningClearErrorCode; message: string }) {
     cancel(sessionID)
@@ -134,19 +101,13 @@ export function createSessionTools(deps: Deps) {
   function preview(sessionID: string, keepTurns: number, opts?: { delay?: number }) {
     cancel(sessionID)
     const delay = opts?.delay ?? 0
-    if (delay > 0) {
-      timers.set(
-        sessionID,
-        setTimeout(() => {
-          timers.delete(sessionID)
-          const current = state(sessionID)
-          if (current.keepTurns === keepTurns && (current.previewing || current.preview !== undefined)) return
-          request(sessionID, keepTurns)
-        }, delay),
-      )
-      return
-    }
-    request(sessionID, keepTurns)
+    schedule(sessionID, delay, () => {
+      if (delay > 0) {
+        const current = state(sessionID)
+        if (current.keepTurns === keepTurns && (current.previewing || current.preview !== undefined)) return
+      }
+      request(sessionID, keepTurns)
+    })
   }
 
   function apply(sessionID: string, keepTurns: number, token: string) {
