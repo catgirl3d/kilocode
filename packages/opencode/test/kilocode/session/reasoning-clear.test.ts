@@ -15,22 +15,30 @@ test("requires integer ranges in reasoning-clear schemas", () => {
   const decodeApply = Schema.decodeUnknownSync(ReasoningClearPayload)
   const decodePreviewResult = Schema.decodeUnknownSync(Clear.PreviewResult)
   const decodeApplyResult = Schema.decodeUnknownSync(Clear.ApplyResult)
-  const preview = { turns: 0, parts: 0, tokens: 0, unsupported: 0, token: "token" }
+  const preview = { turns: 0, parts: 0, tokens: 0, carriers: 0, carrierCandidates: 0, unsupported: 0, token: "token" }
   const apply = { parts: 0, turns: 0, tokens: 0 }
 
   expect(decodePreview({ keepTurns: 1 })).toEqual({ keepTurns: 1 })
+  expect(decodePreview({ keepTurns: 1, includeCarriers: true })).toEqual({ keepTurns: 1, includeCarriers: true })
   expect(decodePreview({ keepTurns: 100 })).toEqual({ keepTurns: 100 })
   expect(() => decodePreview({ keepTurns: 1.5 })).toThrow()
   expect(() => decodePreview({ keepTurns: 0 })).toThrow()
   expect(() => decodePreview({ keepTurns: 101 })).toThrow()
+  expect(() => decodePreview({ keepTurns: 1, includeCarriers: "yes" })).toThrow()
   expect(() => decodeApply({ keepTurns: 1.5, token: "token" })).toThrow()
   expect(decodeApply({ keepTurns: 1, token: "t" })).toEqual({ keepTurns: 1, token: "t" })
+  expect(decodeApply({ keepTurns: 1, includeCarriers: true, token: "t" })).toEqual({
+    keepTurns: 1,
+    includeCarriers: true,
+    token: "t",
+  })
   expect(decodeApply({ keepTurns: 100, token: "t" })).toEqual({ keepTurns: 100, token: "t" })
   expect(() => decodeApply({ keepTurns: 0, token: "t" })).toThrow()
   expect(() => decodeApply({ keepTurns: 101, token: "t" })).toThrow()
   expect(() => decodeApply({ keepTurns: 10 })).toThrow()
   expect(() => decodeApply({ keepTurns: 10, token: null })).toThrow()
   expect(() => decodeApply({ keepTurns: 10, token: 5 })).toThrow()
+  expect(() => decodeApply({ keepTurns: 10, includeCarriers: "yes", token: "t" })).toThrow()
 
   expect(decodePreviewResult(preview)).toEqual(preview)
   expect(() => decodePreviewResult({ ...preview, turns: 1.5 })).toThrow()
@@ -232,9 +240,7 @@ test("clears only completed reasoning in represented turns outside keepTurns", a
   )
   expect(result).toMatchObject({ parts: 2, turns: 2 })
   expect(stored.updates.map((part) => String(part.id))).toEqual(["prt_11", "prt_22"])
-  expect((stored.stored.get(PartID.make("prt_11")) as SessionV1.ReasoningPart).metadata).toEqual({
-    "kilocode.reasoning": { cleared: expect.any(Number) },
-  })
+  expect(Marker.cleared(stored.stored.get(PartID.make("prt_11")) as SessionV1.ReasoningPart)).toBe(true)
 })
 
 test("does not target summary, empty, incomplete, or already cleared reasoning", async () => {
@@ -271,38 +277,46 @@ test("does not target summary, empty, incomplete, or already cleared reasoning",
   const stored = sessions(messages)
   const result = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
 
-  expect(result).toMatchObject({ parts: 1, unsupported: 1 })
+  expect(result).toMatchObject({ parts: 1, carrierCandidates: 1, unsupported: 0 })
   expect(result.tokens).toBeGreaterThan(0)
 })
 
-test("skips unsupported carriers and finds nothing left after a successful apply", async () => {
+test("keeps provider carriers by default and clears them with includeCarriers", async () => {
   const old = user("40")
   const current = user("50")
-  const unsupportedPart = reasoning("unsupported", "signed", { anthropic: { signature: "opaque" } }, 2)
-  unsupportedPart.messageID = MessageID.make("msg_40")
+  const carrier = reasoning("carrier", "signed", { anthropic: { signature: "opaque" } }, 2)
+  carrier.messageID = MessageID.make("msg_40")
   const messages = [
     old,
-    assistantWithParts("41", old.info.id, [unsupportedPart]),
+    assistantWithParts("41", old.info.id, [carrier]),
     current,
     assistant("51", current.info.id, "current"),
   ]
   const stored = sessions(messages)
+  const before = structuredClone(carrier)
   const preview = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
-  expect(preview.unsupported).toBe(1)
+  expect(preview).toMatchObject({ parts: 0, carriers: 0, carrierCandidates: 1, unsupported: 0 })
   const skipped = await Effect.runPromise(
     Clear.apply({ sessionID, keepTurns: 1, token: preview.token, sessions: stored.service }),
   )
   expect(skipped).toEqual({ parts: 0, turns: 0, tokens: 0 })
   expect(stored.updates).toHaveLength(0)
+  expect(stored.stored.get(carrier.id)).toEqual(before)
 
-  const plain = reasoning("plain", "clear me", undefined, 2)
-  plain.messageID = MessageID.make("msg_40")
-  messages[1]!.parts = [plain]
-  stored.stored.set(plain.id, plain)
-  const next = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
-  await Effect.runPromise(Clear.apply({ sessionID, keepTurns: 1, token: next.token, sessions: stored.service }))
+  const next = await Effect.runPromise(
+    Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
+  )
+  expect(next).toMatchObject({ parts: 1, carriers: 1, carrierCandidates: 1, unsupported: 0 })
+  const cleared = await Effect.runPromise(
+    Clear.apply({ sessionID, keepTurns: 1, includeCarriers: true, token: next.token, sessions: stored.service }),
+  )
+  expect(cleared).toMatchObject({ parts: 1, turns: 1 })
+  const marked = stored.stored.get(carrier.id) as SessionV1.ReasoningPart
+  expect(Marker.cleared(marked)).toBe(true)
+  expect(marked.metadata).toMatchObject({ anthropic: { signature: "opaque" } })
+
   const again = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
-  expect(again.parts).toBe(0)
+  expect(again).toMatchObject({ parts: 0, carriers: 0, carrierCandidates: 0, unsupported: 0 })
 })
 
 test("clears supported reasoning, skips unsupported carriers, and rejects a repeated apply as stale", async () => {
@@ -318,7 +332,7 @@ test("clears supported reasoning, skips unsupported carriers, and rejects a repe
   const before = structuredClone(unsupportedPart)
 
   const preview = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
-  expect(preview).toMatchObject({ parts: 1, unsupported: 1 })
+  expect(preview).toMatchObject({ parts: 1, carrierCandidates: 1, unsupported: 0 })
 
   const result = await Effect.runPromise(
     Clear.apply({ sessionID, keepTurns: 1, token: preview.token, sessions: stored.service }),
@@ -333,7 +347,175 @@ test("clears supported reasoning, skips unsupported carriers, and rejects a repe
   expect(stored.updates).toHaveLength(1)
 
   const after = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
-  expect(after).toMatchObject({ parts: 0, unsupported: 1 })
+  expect(after).toMatchObject({ parts: 0, carrierCandidates: 1, unsupported: 0 })
+})
+
+test("clears provider carriers only when includeCarriers is enabled", async () => {
+  const old = user("500")
+  const plain = reasoning("carrier-plain", "plain text", undefined, 2)
+  plain.messageID = MessageID.make("msg_500")
+  const carrier = reasoning(
+    "carrier-openai",
+    "summary",
+    { openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" } },
+    2,
+  )
+  carrier.messageID = MessageID.make("msg_500")
+  const reply = assistantWithParts("501", old.info.id, [plain, carrier])
+  const current = user("510")
+  const currentReply = assistant("511", current.info.id, "current")
+  const stored = sessions([old, reply, current, currentReply])
+  const before = structuredClone(carrier)
+
+  const preview = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
+  expect(preview).toMatchObject({ parts: 1, unsupported: 0, carriers: 0, carrierCandidates: 1 })
+  const applied = await Effect.runPromise(
+    Clear.apply({ sessionID, keepTurns: 1, token: preview.token, sessions: stored.service }),
+  )
+  expect(applied).toMatchObject({ parts: 1, turns: 1 })
+  expect(stored.stored.get(carrier.id)).toEqual(before)
+
+  const next = await Effect.runPromise(
+    Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
+  )
+  expect(next).toMatchObject({ parts: 1, unsupported: 0, carriers: 1, carrierCandidates: 1 })
+  expect(next.tokens).toBeGreaterThan(preview.tokens)
+  const cleared = await Effect.runPromise(
+    Clear.apply({
+      sessionID,
+      keepTurns: 1,
+      includeCarriers: true,
+      token: next.token,
+      sessions: stored.service,
+    }),
+  )
+  expect(cleared).toMatchObject({ parts: 1, turns: 1 })
+  const marked = stored.stored.get(carrier.id) as SessionV1.ReasoningPart
+  expect(Marker.cleared(marked)).toBe(true)
+  expect(marked.metadata).toMatchObject({
+    openai: { itemId: "rs_1", reasoningEncryptedContent: "encrypted-state" },
+  })
+})
+
+test("includes empty-text provider carriers when includeCarriers is enabled", async () => {
+  const old = user("520")
+  const carrier = reasoning(
+    "carrier-empty",
+    "",
+    { openai: { itemId: "rs_empty", reasoningEncryptedContent: "encrypted-empty" } },
+    2,
+  )
+  carrier.messageID = MessageID.make("msg_520")
+  const reply = assistantWithParts("521", old.info.id, [carrier])
+  const current = user("530")
+  const currentReply = assistant("531", current.info.id, "current")
+  const stored = sessions([old, reply, current, currentReply])
+
+  const preview = await Effect.runPromise(
+    Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
+  )
+
+  expect(preview).toMatchObject({ parts: 1, carriers: 1, carrierCandidates: 1, unsupported: 0 })
+  expect(preview.tokens).toBeGreaterThan(0)
+})
+
+test("keeps provider carriers in kept turns when includeCarriers is enabled", async () => {
+  const old = user("540")
+  const oldReply = assistantWithParts("541", old.info.id, [])
+  const current = user("550")
+  const carrier = reasoning("carrier-kept", "", { anthropic: { signature: "opaque" } }, 2)
+  carrier.messageID = MessageID.make("msg_551")
+  const currentReply = assistantWithParts("551", current.info.id, [carrier])
+  const stored = sessions([old, oldReply, current, currentReply])
+
+  const preview = await Effect.runPromise(
+    Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
+  )
+
+  expect(preview).toMatchObject({ parts: 0, carriers: 0, carrierCandidates: 0, unsupported: 0 })
+  expect(stored.updates).toHaveLength(0)
+})
+
+test("rejects a carrier preview when carrier metadata changes", async () => {
+  const old = user("560")
+  const carrier = reasoning(
+    "carrier-stale",
+    "",
+    { openai: { itemId: "rs_stale", reasoningEncryptedContent: "one" } },
+    2,
+  )
+  carrier.messageID = MessageID.make("msg_560")
+  const reply = assistantWithParts("561", old.info.id, [carrier])
+  const current = user("570")
+  const currentReply = assistant("571", current.info.id, "current")
+  const stored = sessions([old, reply, current, currentReply])
+
+  const preview = await Effect.runPromise(
+    Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
+  )
+  carrier.metadata = { openai: { itemId: "rs_stale", reasoningEncryptedContent: "two" } }
+
+  await expect(
+    Effect.runPromise(
+      Clear.apply({
+        sessionID,
+        keepTurns: 1,
+        includeCarriers: true,
+        token: preview.token,
+        sessions: stored.service,
+      }),
+    ),
+  ).rejects.toThrow("stale")
+  expect(stored.updates).toHaveLength(0)
+})
+
+test("rejects an apply that includes carriers after a preview without them", async () => {
+  const old = user("580")
+  const carrier = reasoning(
+    "carrier-token",
+    "",
+    { openai: { itemId: "rs_token", reasoningEncryptedContent: "encrypted-token" } },
+    2,
+  )
+  carrier.messageID = MessageID.make("msg_580")
+  const reply = assistantWithParts("581", old.info.id, [carrier])
+  const current = user("590")
+  const currentReply = assistant("591", current.info.id, "current")
+  const stored = sessions([old, reply, current, currentReply])
+
+  const preview = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
+  expect(preview).toMatchObject({ parts: 0, carriers: 0, carrierCandidates: 1, unsupported: 0 })
+
+  await expect(
+    Effect.runPromise(
+      Clear.apply({
+        sessionID,
+        keepTurns: 1,
+        includeCarriers: true,
+        token: preview.token,
+        sessions: stored.service,
+      }),
+    ),
+  ).rejects.toThrow("stale")
+  expect(stored.updates).toHaveLength(0)
+})
+
+test("keeps unfinished provider carriers out of the candidate count", async () => {
+  const old = user("600")
+  const carrier = reasoning("carrier-unfinished", "still signed", { openai: { itemId: "rs_unfinished" } })
+  carrier.messageID = MessageID.make("msg_600")
+  const reply = assistantWithParts("601", old.info.id, [carrier])
+  const current = user("610")
+  const currentReply = assistant("611", current.info.id, "current")
+  const stored = sessions([old, reply, current, currentReply])
+
+  const preview = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
+  expect(preview).toMatchObject({ parts: 0, carriers: 0, carrierCandidates: 0, unsupported: 1 })
+  const included = await Effect.runPromise(
+    Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
+  )
+  expect(included).toMatchObject({ parts: 0, carriers: 0, carrierCandidates: 0, unsupported: 1 })
+  expect(stored.updates).toHaveLength(0)
 })
 
 test("does not assign an assistant with an unresolved parent to the latest turn", async () => {
@@ -606,9 +788,13 @@ test("reports OpenRouter tool reasoning details as unsupported regardless of pay
   const stored = sessions([old, toolReply, current, currentReply])
 
   const result = await Effect.runPromise(Clear.preview({ sessionID, keepTurns: 1, sessions: stored.service }))
+  const included = await Effect.runPromise(
+    Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
+  )
 
   expect(result.unsupported).toBe(1)
   expect(result.parts).toBe(0)
+  expect(included).toMatchObject({ unsupported: 1, parts: 0, carriers: 0 })
 })
 
 test("ignores unsupported carriers in kept turns and clears older parts", async () => {
@@ -676,6 +862,19 @@ test("rejects a stale preview before writing any target part", async () => {
 
   await expect(
     Effect.runPromise(Clear.apply({ sessionID, keepTurns: 1, token: preview.token, sessions: stored.service })),
+  ).rejects.toThrow("stale")
+  expect(stored.updates).toHaveLength(0)
+})
+
+test("rejects an apply token that was never previewed", async () => {
+  const old = user("300")
+  const reply = assistant("301", old.info.id, "old")
+  const current = user("310")
+  const currentReply = assistant("311", current.info.id, "current")
+  const stored = sessions([old, reply, current, currentReply])
+
+  await expect(
+    Effect.runPromise(Clear.apply({ sessionID, keepTurns: 1, token: "0".repeat(64), sessions: stored.service })),
   ).rejects.toThrow("stale")
   expect(stored.updates).toHaveLength(0)
 })
