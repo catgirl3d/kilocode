@@ -33,8 +33,14 @@ type Ctx = {
   caffeination: () => void
   // fork_change start
   shake: (sessionID: string) => Promise<void>
-  reasoningPreview: (sessionID: string, requestID: string, keepTurns: number) => Promise<void>
-  reasoningClear: (sessionID: string, requestID: string, keepTurns: number, token: string) => Promise<void>
+  reasoningPreview: (sessionID: string, requestID: string, keepTurns: number, includeCarriers: boolean) => Promise<void>
+  reasoningClear: (
+    sessionID: string,
+    requestID: string,
+    keepTurns: number,
+    includeCarriers: boolean,
+    token: string,
+  ) => Promise<void>
   toolPreview: (sessionID: string, requestID: string, keepTurns: number) => Promise<void>
   toolClear: (sessionID: string, requestID: string, keepTurns: number, token: string) => Promise<void>
   sessionColors: () => void
@@ -100,6 +106,7 @@ type ClearMessage = {
   sessionID?: unknown
   requestID?: unknown
   keepTurns?: unknown
+  includeCarriers?: unknown
   token?: unknown
 }
 
@@ -114,9 +121,11 @@ async function routeClearMessage(message: ClearMessage, ctx: Ctx): Promise<boole
   const requestID = message.requestID
   const keepTurns = message.keepTurns
   const token = message.token
+  const includeCarriers = message.includeCarriers === true
   const validTurns = typeof keepTurns === "number"
   const validToken = operation === "preview" || (typeof token === "string" && token.length > 0)
-  if (typeof sessionID !== "string" || typeof requestID !== "string" || !validTurns || !validToken) {
+  const validCarriers = message.includeCarriers === undefined || typeof message.includeCarriers === "boolean"
+  if (typeof sessionID !== "string" || typeof requestID !== "string" || !validTurns || !validToken || !validCarriers) {
     if (typeof sessionID === "string" && typeof requestID === "string") {
       ctx.post({
         type: spec.kind === "reasoning" ? "sessionReasoningClearFailed" : "sessionToolClearFailed",
@@ -129,12 +138,13 @@ async function routeClearMessage(message: ClearMessage, ctx: Ctx): Promise<boole
     }
     return true
   }
-  const run =
-    spec.kind === "reasoning"
-      ? { preview: ctx.reasoningPreview, apply: ctx.reasoningClear }
-      : { preview: ctx.toolPreview, apply: ctx.toolClear }
-  if (operation === "preview") await run.preview(sessionID, requestID, keepTurns)
-  else await run.apply(sessionID, requestID, keepTurns, token as string)
+  if (spec.kind === "reasoning") {
+    if (operation === "preview") await ctx.reasoningPreview(sessionID, requestID, keepTurns, includeCarriers)
+    else await ctx.reasoningClear(sessionID, requestID, keepTurns, includeCarriers, token as string)
+    return true
+  }
+  if (operation === "preview") await ctx.toolPreview(sessionID, requestID, keepTurns)
+  else await ctx.toolClear(sessionID, requestID, keepTurns, token as string)
   return true
 }
 

@@ -18755,6 +18755,14 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "carriers": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "carrierCandidates": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "unsupported": {
                       "type": "integer",
                       "minimum": 0
@@ -18763,7 +18771,7 @@
                       "type": "string"
                     }
                   },
-                  "required": ["turns", "parts", "tokens", "unsupported", "token"],
+                  "required": ["turns", "parts", "tokens", "carriers", "carrierCandidates", "unsupported", "token"],
                   "additionalProperties": false,
                   "description": "Preview manual reasoning clear"
                 }
@@ -18808,7 +18816,7 @@
             }
           }
         },
-        "description": "Preview clearing historical unsigned reasoning without changing the session.",
+        "description": "Preview clearing historical reasoning without changing the session, optionally including provider reasoning carriers.",
         "summary": "Preview reasoning clear",
         "requestBody": {
           "content": {
@@ -18820,6 +18828,9 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 100
+                  },
+                  "includeCarriers": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["keepTurns"],
@@ -18936,7 +18947,7 @@
             }
           }
         },
-        "description": "Mark historical unsigned reasoning as cleared without invoking an LLM.",
+        "description": "Mark historical reasoning as cleared without invoking an LLM, optionally including provider reasoning carriers.",
         "summary": "Clear reasoning",
         "requestBody": {
           "content": {
@@ -18948,6 +18959,9 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 100
+                  },
+                  "includeCarriers": {
+                    "type": "boolean"
                   },
                   "token": {
                     "type": "string"

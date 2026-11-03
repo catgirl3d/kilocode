@@ -112,7 +112,14 @@ export const dict = {
   "command.session.reasoningClear.turns": "Turns to clear",
   "command.session.reasoningClear.blocks": "Reasoning blocks",
   "command.session.reasoningClear.tokens": "Estimated tokens",
-  "command.session.reasoningClear.preserved": "{{count}} reasoning carrier(s) are preserved and will not be cleared.",
+  "command.session.reasoningClear.carriers.label": "Also clear provider reasoning carriers",
+  "command.session.reasoningClear.carriers.description":
+    "Removes encrypted or signed provider reasoning from old turns. Recent turns stay untouched; reasoning quality may drop for older turns.",
+  "command.session.reasoningClear.carriers.included": "{{count}} provider reasoning carrier(s) will be cleared.",
+  "command.session.reasoningClear.carriers.preserved":
+    "{{count}} provider reasoning carrier(s) are preserved. Turn on the option above to clear them.",
+  "command.session.reasoningClear.preserved":
+    "{{count}} other reasoning state item(s) are preserved and cannot be cleared here.",
   "command.session.reasoningClear.loading": "Loading preview...",
   "command.session.reasoningClear.empty": "No old reasoning can be cleared.",
   "command.session.reasoningClear.stale": "Context changed, preview again.",
