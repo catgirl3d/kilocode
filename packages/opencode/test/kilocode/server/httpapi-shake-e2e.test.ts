@@ -320,6 +320,114 @@ describe("shake HTTP API", () => {
     }),
   )
 
+  it.instance("clears provider carriers when includeCarriers is true", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const sdk = yield* client(instance.directory)
+      const created = yield* Effect.promise(() => sdk.session.create({ title: "carrier clear" }))
+      const sessionID = created.data!.id
+      yield* seedReasoning(instance.directory, sessionID, {
+        openai: { itemId: "rs_e2e", reasoningEncryptedContent: "encrypted-e2e" },
+      })
+
+      const skipped = yield* body(
+        yield* post(instance.directory, `/session/${sessionID}/reasoning/clear/preview`, { keepTurns: 1 }),
+      )
+      expect(skipped).toMatchObject({ parts: 0, carriers: 0, carrierCandidates: 1, unsupported: 0 })
+
+      const previewResponse = yield* post(instance.directory, `/session/${sessionID}/reasoning/clear/preview`, {
+        keepTurns: 1,
+        includeCarriers: true,
+      })
+      const preview = yield* body(previewResponse)
+      expect(previewResponse.status).toBe(200)
+      expect(preview).toMatchObject({
+        parts: 1,
+        carriers: 1,
+        carrierCandidates: 1,
+        unsupported: 0,
+        tokens: expect.any(Number),
+      })
+
+      const applyResponse = yield* post(instance.directory, `/session/${sessionID}/reasoning/clear`, {
+        keepTurns: 1,
+        includeCarriers: true,
+        token: String(preview.token),
+      })
+      expect(applyResponse.status).toBe(200)
+      expect(yield* body(applyResponse)).toMatchObject({ parts: 1, turns: 1 })
+
+      const stored = yield* InstanceStore.Service.use((store) =>
+        store.provide(
+          { directory: instance.directory },
+          Session.Service.use((session) => session.messages({ sessionID: SessionID.make(sessionID) })),
+        ),
+      )
+      const projected = yield* Effect.promise(() => MessageV2.toModelMessages(stored, ProviderTest.model()))
+      expect(JSON.stringify(projected)).not.toContain("encrypted-e2e")
+      expect(JSON.stringify(projected)).not.toContain("old reasoning")
+    }),
+  )
+
+  it.instance("clears signed Anthropic reasoning carriers and rejects a flag mismatch", () =>
+    Effect.gen(function* () {
+      const instance = yield* TestInstance
+      const sdk = yield* client(instance.directory)
+      const created = yield* Effect.promise(() => sdk.session.create({ title: "anthropic carrier clear" }))
+      const sessionID = created.data!.id
+      yield* seedReasoning(instance.directory, sessionID, { anthropic: { signature: "signed-e2e" } })
+
+      const previewResponse = yield* post(instance.directory, `/session/${sessionID}/reasoning/clear/preview`, {
+        keepTurns: 1,
+      })
+      const preview = yield* body(previewResponse)
+      expect(preview).toMatchObject({ parts: 0, carriers: 0, carrierCandidates: 1, unsupported: 0 })
+
+      const mismatch = yield* post(instance.directory, `/session/${sessionID}/reasoning/clear`, {
+        keepTurns: 1,
+        includeCarriers: true,
+        token: String(preview.token),
+      })
+      expect(mismatch.status).toBe(409)
+
+      const includedResponse = yield* post(instance.directory, `/session/${sessionID}/reasoning/clear/preview`, {
+        keepTurns: 1,
+        includeCarriers: true,
+      })
+      const included = yield* body(includedResponse)
+      expect(includedResponse.status).toBe(200)
+      expect(included).toMatchObject({ parts: 1, carriers: 1, carrierCandidates: 1, unsupported: 0 })
+
+      const applyResponse = yield* post(instance.directory, `/session/${sessionID}/reasoning/clear`, {
+        keepTurns: 1,
+        includeCarriers: true,
+        token: String(included.token),
+      })
+      expect(applyResponse.status).toBe(200)
+      expect(yield* body(applyResponse)).toMatchObject({ parts: 1, turns: 1 })
+
+      const afterResponse = yield* post(instance.directory, `/session/${sessionID}/reasoning/clear/preview`, {
+        keepTurns: 1,
+      })
+      expect(yield* body(afterResponse)).toMatchObject({
+        parts: 0,
+        carriers: 0,
+        carrierCandidates: 0,
+        unsupported: 0,
+      })
+
+      const stored = yield* InstanceStore.Service.use((store) =>
+        store.provide(
+          { directory: instance.directory },
+          Session.Service.use((session) => session.messages({ sessionID: SessionID.make(sessionID) })),
+        ),
+      )
+      const projected = yield* Effect.promise(() => MessageV2.toModelMessages(stored, ProviderTest.model()))
+      expect(JSON.stringify(projected)).not.toContain("signed-e2e")
+      expect(JSON.stringify(projected)).not.toContain("old reasoning")
+    }),
+  )
+
   it.instance("returns guarded reasoning-clear HTTP errors and empty-session zeros", () =>
     Effect.gen(function* () {
       const instance = yield* TestInstance
@@ -383,7 +491,7 @@ describe("shake HTTP API", () => {
         { keepTurns: 1 },
       )
       const unsupportedPreview = yield* body(unsupportedPreviewResponse)
-      expect(unsupportedPreview).toMatchObject({ unsupported: 1 })
+      expect(unsupportedPreview).toMatchObject({ carrierCandidates: 1, unsupported: 0 })
       const unsupported = yield* post(instance.directory, `/session/${unsupportedID}/reasoning/clear`, {
         keepTurns: 1,
         token: String(unsupportedPreview.token),
