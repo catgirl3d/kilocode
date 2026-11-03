@@ -30,16 +30,23 @@ const toolClearPath = "/session/:sessionID/tools/clear"
 
 export const ReasoningClearPreviewPayload = Schema.Struct({
   keepTurns: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  includeCarriers: Schema.optional(Schema.Boolean),
 })
 
 export const ReasoningClearPayload = Schema.Struct({
   keepTurns: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  includeCarriers: Schema.optional(Schema.Boolean),
   token: Schema.String,
 })
 
-export const ToolClearPreviewPayload = ReasoningClearPreviewPayload
+export const ToolClearPreviewPayload = Schema.Struct({
+  keepTurns: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+})
 
-export const ToolClearPayload = ReasoningClearPayload
+export const ToolClearPayload = Schema.Struct({
+  keepTurns: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  token: Schema.String,
+})
 
 export const KiloSessionPaths = {
   shake: path,
@@ -75,7 +82,8 @@ export const KiloSessionApi = HttpApi.make("kilocode-session")
           OpenApi.annotations({
             identifier: "session.reasoningClearPreview",
             summary: "Preview reasoning clear",
-            description: "Preview clearing historical unsigned reasoning without changing the session.",
+            description:
+              "Preview clearing historical reasoning without changing the session, optionally including provider reasoning carriers.",
           }),
         ),
         HttpApiEndpoint.post("reasoningClear", KiloSessionPaths.reasoningClear, {
@@ -88,7 +96,8 @@ export const KiloSessionApi = HttpApi.make("kilocode-session")
           OpenApi.annotations({
             identifier: "session.reasoningClear",
             summary: "Clear reasoning",
-            description: "Mark historical unsigned reasoning as cleared without invoking an LLM.",
+            description:
+              "Mark historical reasoning as cleared without invoking an LLM, optionally including provider reasoning carriers.",
           }),
         ),
         HttpApiEndpoint.post("toolClearPreview", KiloSessionPaths.toolClearPreview, {

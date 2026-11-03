@@ -5432,7 +5432,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Preview reasoning clear
    *
-   * Preview clearing historical unsigned reasoning without changing the session.
+   * Preview clearing historical reasoning without changing the session, optionally including provider reasoning carriers.
    */
   public reasoningClearPreview<ThrowOnError extends boolean = false>(
     parameters: {
@@ -5440,6 +5440,7 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       keepTurns: number
+      includeCarriers?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5452,6 +5453,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "keepTurns" },
+            { in: "body", key: "includeCarriers" },
           ],
         },
       ],
@@ -5475,7 +5477,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Clear reasoning
    *
-   * Mark historical unsigned reasoning as cleared without invoking an LLM.
+   * Mark historical reasoning as cleared without invoking an LLM, optionally including provider reasoning carriers.
    */
   public reasoningClear<ThrowOnError extends boolean = false>(
     parameters: {
@@ -5483,6 +5485,7 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       keepTurns: number
+      includeCarriers?: boolean
       token: string
     },
     options?: Options<never, ThrowOnError>,
@@ -5496,6 +5499,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "keepTurns" },
+            { in: "body", key: "includeCarriers" },
             { in: "body", key: "token" },
           ],
         },
