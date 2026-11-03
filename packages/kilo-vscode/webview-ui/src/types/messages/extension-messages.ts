@@ -291,6 +291,8 @@ export interface SessionReasoningClearPreviewedMessage {
   turns: number
   parts: number
   tokens: number
+  carriers?: number
+  carrierCandidates?: number
   unsupported: number
   token: string
 }

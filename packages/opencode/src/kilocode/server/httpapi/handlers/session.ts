@@ -41,24 +41,26 @@ export const sessionShakeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo-
 
     const preview = Effect.fn("KiloSessionHttpApi.reasoningClearPreview")(function* (ctx: {
       params: { sessionID: SessionID }
-      payload: { keepTurns: number }
+      payload: { keepTurns: number; includeCarriers?: boolean }
     }) {
       yield* guard(ctx.params.sessionID, "reasoning")
       return yield* ManualReasoningClear.preview({
         sessionID: ctx.params.sessionID,
         keepTurns: ctx.payload.keepTurns,
+        includeCarriers: ctx.payload.includeCarriers,
         sessions: session,
       }).pipe(Effect.catchIf(StorageNotFoundError.isInstance, (error) => Effect.fail(notFound(error.message))))
     })
 
     const apply = Effect.fn("KiloSessionHttpApi.reasoningClear")(function* (ctx: {
       params: { sessionID: SessionID }
-      payload: { keepTurns: number; token: string }
+      payload: { keepTurns: number; includeCarriers?: boolean; token: string }
     }) {
       yield* guard(ctx.params.sessionID, "reasoning")
       return yield* ManualReasoningClear.apply({
         sessionID: ctx.params.sessionID,
         keepTurns: ctx.payload.keepTurns,
+        includeCarriers: ctx.payload.includeCarriers,
         token: ctx.payload.token,
         sessions: session,
       }).pipe(Effect.catchIf(StorageNotFoundError.isInstance, (error) => Effect.fail(notFound(error.message))))
