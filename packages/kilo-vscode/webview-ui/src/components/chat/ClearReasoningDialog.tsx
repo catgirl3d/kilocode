@@ -1,6 +1,7 @@
 // fork_change - new file
 import { Component, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
+import { Checkbox } from "@kilocode/kilo-ui/checkbox"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
@@ -29,6 +30,7 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
   const vscode = useVSCode()
   const start = recallKeepTurns(vscode, "reasoning")
   const [value, setValue] = createSignal(String(start))
+  const [includeCarriers, setIncludeCarriers] = createSignal(false)
   const [submitted, setSubmitted] = createSignal(false)
 
   const current = () => session.reasoningState(props.sessionID)
@@ -36,23 +38,39 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
   const invalid = () => count() === undefined
   const preview = () => current().preview
   const busy = () => current().previewing || current().applying
-  const pending = () => previewStale(preview(), count())
+  const pending = () => previewStale(preview(), count(), includeCarriers())
   // Display-only: keeps the last numbers on screen while a refreshed preview loads, so the card neither blinks nor resizes.
   // Apply guards still read the real preview().
   const shown = createMemo<ReasoningPreview | undefined>(
     (last) => preview() ?? (current().previewing ? last : undefined),
   )
   const stale = () => current().previewing || pending()
-  const empty = () => {
+  const noTargets = () => {
     const item = shown()
     return !!item && item.parts === 0 && item.turns === 0
+  }
+  const empty = () => {
+    const item = shown()
+    return !!item && item.parts === 0 && item.turns === 0 && item.carrierCandidates === 0 && item.unsupported === 0
   }
   const preserved = () => {
     const item = shown()
     return item && item.unsupported > 0 ? item : undefined
   }
+  const preservedCarriers = () => {
+    const item = shown()
+    return item && !includeCarriers() && item.carrierCandidates > 0 ? item : undefined
+  }
+  const carriers = () => {
+    const item = shown()
+    return item && includeCarriers() && item.carriers > 0 ? item : undefined
+  }
+  const canIncludeCarriers = () => {
+    const item = shown()
+    return !!item && item.carrierCandidates > 0
+  }
 
-  onMount(() => session.reasoningPreview(props.sessionID, start))
+  onMount(() => session.reasoningPreview(props.sessionID, start, { includeCarriers: false }))
   // Covers a dialog replaced by another dialog.show(), which disposes it without calling onClose.
   onCleanup(() => session.reasoningCancel(props.sessionID))
   createEffect(
@@ -61,7 +79,8 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
       (raw) => {
         if (current().applying) return
         const next = turns(raw)
-        if (next !== undefined) session.reasoningPreview(props.sessionID, next, { delay: 300 })
+        if (next !== undefined)
+          session.reasoningPreview(props.sessionID, next, { delay: 300, includeCarriers: includeCarriers() })
       },
       { defer: true },
     ),
@@ -76,12 +95,19 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
     }
   })
 
+  const toggleCarriers = (checked: boolean) => {
+    setIncludeCarriers(checked)
+    const next = count()
+    if (next !== undefined && !current().applying)
+      session.reasoningPreview(props.sessionID, next, { includeCarriers: checked })
+  }
+
   const apply = () => {
     const next = count()
     const item = preview()
-    if (next === undefined || !item || pending() || empty() || busy()) return
+    if (next === undefined || !item || pending() || noTargets() || busy()) return
     setSubmitted(true)
-    session.reasoningClear(props.sessionID, next, item.token)
+    session.reasoningClear(props.sessionID, next, item.token, includeCarriers())
   }
 
   return (
@@ -125,6 +151,16 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
             </div>
           )}
         </Show>
+        <Show when={canIncludeCarriers()}>
+          <Checkbox
+            checked={includeCarriers()}
+            disabled={current().applying}
+            onChange={toggleCarriers}
+            description={language.t("command.session.reasoningClear.carriers.description")}
+          >
+            {language.t("command.session.reasoningClear.carriers.label")}
+          </Checkbox>
+        </Show>
         <Show when={shown() || current().previewing}>
           <div data-slot="reasoning-clear-preview" data-stale={stale() ? "" : undefined}>
             <div>
@@ -148,6 +184,22 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
               {language.t("command.session.reasoningClear.loading")}
             </div>
           </Show>
+          <Show when={carriers()}>
+            {(item) => (
+              <div data-slot="reasoning-clear-status" role="status">
+                {language.t("command.session.reasoningClear.carriers.included", { count: String(item().carriers) })}
+              </div>
+            )}
+          </Show>
+          <Show when={preservedCarriers()}>
+            {(item) => (
+              <div data-slot="reasoning-clear-status" role="status">
+                {language.t("command.session.reasoningClear.carriers.preserved", {
+                  count: String(item().carrierCandidates),
+                })}
+              </div>
+            )}
+          </Show>
           <Show when={preserved()}>
             {(item) => (
               <div data-slot="reasoning-clear-status" role="status">
@@ -168,7 +220,7 @@ export const ClearReasoningDialog: Component<Props> = (props) => {
           <Button
             variant="primary"
             size="large"
-            disabled={busy() || invalid() || empty() || pending() || !preview()}
+            disabled={busy() || invalid() || noTargets() || pending() || !preview()}
             onClick={apply}
           >
             <Show when={current().applying}>

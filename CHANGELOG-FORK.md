@@ -37,6 +37,7 @@
 - Allow sending an empty prompt as `continue` when no media or review comments are attached.
 - Clear heavy tool outputs from the active session context on demand.
 - Clear old reasoning from the active session after previewing the affected turns, blocks, and estimated tokens.
+- Allow the Clear old reasoning dialog to remove old provider reasoning carriers, including encrypted OpenAI and signed Anthropic reasoning, after previewing how much context they free.
 - Replace the one-click "Clear heavy tool output" header action with a previewed "Clear old tool output" dialog: choose how many recent turns to keep, review the affected turns, tool outputs, and estimated tokens, then clear them; the current turn and protected tools stay untouched, and `/shake` still works as the quick action. Both this dialog and "Clear old reasoning" now reopen with the number of turns last confirmed by a successful clear (remembered separately for each, in the webview state).
 - Include old reasoning from earlier turns in automatic tool-output pruning, sharing its token budget and triggers so long-reasoning models stay within context and the prompt cache is reset once per pass; reasoning in the live turn and provider-signed reasoning are kept.
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.

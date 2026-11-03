@@ -912,6 +912,7 @@ describe("KiloProvider route integration", () => {
           turns: 2,
           parts: 3,
           tokens: 88,
+          carriers: 1,
           unsupported: 0,
           token: "token-1",
         },
@@ -929,17 +930,23 @@ describe("KiloProvider route integration", () => {
     const posted: unknown[] = []
     internal.webview = { postMessage: async (message) => posted.push(message) }
 
-    await internal.handleReasoningClear("ses-reasoning", "preview-1", 10)
-    await internal.handleReasoningClear("ses-reasoning", "apply-1", 10, "token-1")
+    await internal.handleReasoningClear("ses-reasoning", "preview-1", 10, true)
+    await internal.handleReasoningClear("ses-reasoning", "apply-1", 10, true, "token-1")
 
     expect(calls).toEqual([
       {
         operation: "preview",
-        input: { sessionID: "ses-reasoning", directory: "/repo/project", keepTurns: 10 },
+        input: { sessionID: "ses-reasoning", directory: "/repo/project", keepTurns: 10, includeCarriers: true },
       },
       {
         operation: "apply",
-        input: { sessionID: "ses-reasoning", directory: "/repo/project", keepTurns: 10, token: "token-1" },
+        input: {
+          sessionID: "ses-reasoning",
+          directory: "/repo/project",
+          keepTurns: 10,
+          includeCarriers: true,
+          token: "token-1",
+        },
       },
     ])
     expect(posted).toEqual([
@@ -950,6 +957,7 @@ describe("KiloProvider route integration", () => {
         turns: 2,
         parts: 3,
         tokens: 88,
+        carriers: 1,
         unsupported: 0,
         token: "token-1",
       },
@@ -972,7 +980,7 @@ describe("KiloProvider route integration", () => {
     const internal = provider as unknown as ProviderInternals
     const posted: unknown[] = []
     internal.webview = { postMessage: async (message) => posted.push(message) }
-    await internal.handleReasoningClear("ses-reasoning", "preview-null", 10)
+    await internal.handleReasoningClear("ses-reasoning", "preview-null", 10, false)
 
     await connection.connect()
     const client = connection.getClient() as unknown as {
@@ -987,7 +995,7 @@ describe("KiloProvider route integration", () => {
       })
     }
     connect(internal)
-    await internal.handleReasoningClear("ses-reasoning", "apply-fail", 10, "token-1")
+    await internal.handleReasoningClear("ses-reasoning", "apply-fail", 10, false, "token-1")
 
     expect(posted).toEqual([
       {
@@ -1049,7 +1057,7 @@ describe("KiloProvider route integration", () => {
       const posted: unknown[] = []
       internal.webview = { postMessage: async (value) => posted.push(value) }
 
-      await internal.handleReasoningClear("ses-reasoning", `request-${status}-${code}`, 10)
+      await internal.handleReasoningClear("ses-reasoning", `request-${status}-${code}`, 10, false)
 
       expect(posted).toContainEqual({
         type: "sessionReasoningClearFailed",

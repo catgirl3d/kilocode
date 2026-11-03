@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { build } from "esbuild"
+import { build, type Plugin } from "esbuild"
 import { solidPlugin } from "esbuild-plugin-solid"
 
 export type Mutation = {
@@ -20,7 +20,9 @@ const output = path.join(os.tmpdir(), "kilo")
 const happy = pathToFileURL(Bun.resolveSync("happy-dom", webview)).href
 
 async function compile(name: string, mutation?: Mutation) {
-  const text = mutation === undefined ? undefined : await Bun.file(mutation.file ?? source).text()
+  const target = mutation?.file
+  const text = mutation === undefined ? undefined : await Bun.file(target ?? source).text()
+  const generic = target !== undefined && !/\.(t|j)sx$/.test(target)
   let hits = 0
   const parser = (code: string, opts: object, parse: (code: string, opts: object) => unknown) => {
     if (code !== text || mutation === undefined) return parse(code, opts)
@@ -29,6 +31,21 @@ async function compile(name: string, mutation?: Mutation) {
     hits++
     return parse(code.replace(mutation.anchor, mutation.replace), opts)
   }
+  const genericPlugin: Plugin | undefined = generic
+    ? {
+        name: "mutation-source",
+        setup(ctx) {
+          ctx.onLoad({ filter: /\.(t|j)s$/ }, async (args) => {
+            if (target === undefined || path.resolve(args.path) !== path.resolve(target)) return
+            const code = await Bun.file(args.path).text()
+            const count = code.split(mutation!.anchor).length - 1
+            if (count !== 1) throw new Error(`mutation ${mutation!.id}: anchor count ${count}`)
+            hits++
+            return { contents: code.replace(mutation!.anchor, mutation!.replace), loader: "ts" as const }
+          })
+        },
+      }
+    : undefined
   const solid = path.dirname(Bun.resolveSync("solid-js/package.json", webview))
   const aliases: Record<string, string> = {
     "solid-js": path.join(solid, "dist/solid.js"),
@@ -65,6 +82,7 @@ async function compile(name: string, mutation?: Mutation) {
           }))
         },
       },
+      ...(genericPlugin ? [genericPlugin] : []),
       mutation === undefined ? solidPlugin() : solidPlugin({ babel: { plugins: [{ parserOverride: parser }] } }),
     ],
   })
