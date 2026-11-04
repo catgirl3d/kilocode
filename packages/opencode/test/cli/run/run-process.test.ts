@@ -210,7 +210,7 @@ describe.skipIf(process.platform === "win32")("opencode run (non-interactive sub
   )
 
   cliIt.concurrent(
-    "--format json emits error records for a rejected prompt request",
+    "--format json carries the readable model error for a rejected prompt request",
     ({ opencode }) =>
       Effect.gen(function* () {
         const result = yield* opencode.run("use an unknown model", {
@@ -229,6 +229,8 @@ describe.skipIf(process.platform === "win32")("opencode run (non-interactive sub
             error: expect.any(Object),
           })
         }
+        expect(JSON.stringify(events)).toContain("Model not found: test/nonexistent-model")
+        expect(JSON.stringify(events)).toContain("InvalidRequestError")
       }),
     30_000,
   )

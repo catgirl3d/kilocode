@@ -12,6 +12,7 @@ import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Command } from "@/command"
 import { Permission } from "@/permission"
+import { Provider } from "@/provider/provider" // kilocode_change - map ModelNotFoundError to a readable request error
 import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
@@ -336,6 +337,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           // kilocode_change start - reject only typed user image validation defects as request errors
           Effect.catchCause((cause) => {
             const error = Cause.squash(cause)
+            // return the readable model error instead of masking it as a generic 500
+            if (Provider.ModelNotFoundError.isInstance(error))
+              return Effect.fail(new InvalidRequestError({ message: error.message, kind: "model" }))
             if (
               error instanceof Image.InvalidDataUrlError ||
               error instanceof Image.DecodeError ||
