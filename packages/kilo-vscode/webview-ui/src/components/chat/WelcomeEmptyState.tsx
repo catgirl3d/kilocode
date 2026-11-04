@@ -1,4 +1,4 @@
-import { type Component, createSignal, For, Show, createMemo } from "solid-js" // fork_change - feedback footer removed (no JSX type), createMemo for date groups
+import { type Component, type JSX, createSignal, For, Show, createMemo } from "solid-js" // fork_change - createMemo for date groups, footer slot kept for splash
 import { Icon } from "@kilocode/kilo-ui/icon"
 import { AnimatedKiloLogo, reduced } from "../brand/AnimatedKiloLogo"
 import { useSession } from "../../context/session"
@@ -16,6 +16,7 @@ interface WelcomeEmptyStateProps {
   sessions?: () => SessionInfo[]
   onSelectSession?: (id: string) => void
   onShowHistory?: () => void
+  footer?: JSX.Element
 }
 
 /**
@@ -110,6 +111,7 @@ export const WelcomeEmptyState: Component<WelcomeEmptyStateProps> = (props) => {
           </Show>
         </div>
       </Show>
+      {props.footer}
     </div>
   )
 }
