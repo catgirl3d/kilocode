@@ -13,7 +13,7 @@ import { MessageID, SessionID } from "@/session/schema"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Database } from "@opencode-ai/core/database/database"
-import { run as runSandbox, type Profile } from "@kilocode/sandbox"
+import { backendSupport, run as runSandbox, type Profile } from "@kilocode/sandbox"
 import { TestConfig } from "../../fixture/config"
 import { provideInstance, testInstanceStoreLayer, tmpdirScoped } from "../../fixture/fixture"
 
@@ -105,8 +105,15 @@ const executeConfigured = Effect.fn("ShellNetworkTest.executeConfigured")(functi
   )
 })
 
+const live =
+  process.platform !== "darwin" && process.platform !== "linux"
+    ? test.skip
+    : backendSupport().available
+      ? test
+      : test.skip
+
 describe("model shell network integration", () => {
-  test.skipIf(process.platform !== "darwin" && process.platform !== "linux")(
+  live(
     "enforces allow and deny profiles through the actual shell tool and process spawner",
     async () => {
       const effect = Effect.gen(function* () {
@@ -135,7 +142,7 @@ describe("model shell network integration", () => {
     },
   )
 
-  test.skipIf(process.platform !== "darwin" && process.platform !== "linux")(
+  live(
     "honors configured shell network access without authenticated server control",
     async () => {
       const effect = Effect.gen(function* () {
