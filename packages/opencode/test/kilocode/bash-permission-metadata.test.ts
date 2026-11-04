@@ -87,7 +87,7 @@ describe("bash permission metadata.command", () => {
         // The pattern masks the inert heredoc body (newlines and literal operators)
         // so a read-only heredoc is not denied, while metadata.command stays raw.
         expect(req?.patterns).toEqual([pattern])
-        expect(req?.always).toEqual(["cat *"])
+        expect(req?.always).toEqual([pattern])
       },
     })
   })

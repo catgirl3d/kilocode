@@ -57,7 +57,7 @@ function server() {
 
 const restricted = testEffect(layer())
 const open = testEffect(layer(false))
-const supported = process.platform === "win32" ? test.skip : test
+const supported = process.platform === "win32" || !backendSupport({ mode: "proxy", allowedHosts: [] }).available ? test.skip : test
 
 supported("allows only configured HTTP destinations through the scoped proxy", async () => {
   const target = server()
