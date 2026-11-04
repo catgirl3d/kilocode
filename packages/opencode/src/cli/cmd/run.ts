@@ -804,6 +804,7 @@ export const RunCommand = effectCmd({
         // created, and replies issued from inside the loop must use that client.
         async function loop(client: KiloClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
           const toggles = new Map<string, boolean>()
+          const steps = new Set<string>() // kilocode_change - [fork] one boundary record per step part
           const MAX_RETRIES = 3 // kilocode_change
           let retries = 0 // kilocode_change
           const sessions = new Set([sessionID])
@@ -868,10 +869,18 @@ export const RunCommand = effectCmd({
               }
 
               if (part.type === "step-start") {
+                // kilocode_change start - [fork] snapshot rewrites re-publish the same step part
+                if (steps.has(part.id)) continue
+                steps.add(part.id)
+                // kilocode_change end
                 if (emit("step_start", { part })) continue
               }
 
               if (part.type === "step-finish") {
+                // kilocode_change start - [fork] snapshot rewrites re-publish the same step part
+                if (steps.has(part.id)) continue
+                steps.add(part.id)
+                // kilocode_change end
                 if (emit("step_finish", { part })) continue
               }
 

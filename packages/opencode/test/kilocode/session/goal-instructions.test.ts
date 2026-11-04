@@ -71,7 +71,7 @@ test("the goal prompt tells the model to schedule a wait instead of exploring", 
 })
 
 test("timing descriptions tell the model not to explore or bash-sleep a goal wait", () => {
-  expect(scheduleWakeup).toMatch(/Do not explore the repository, search for a deploy, or poll with bash instead of scheduling/)
+  expect(scheduleWakeup).toMatch(/Do not explore the repository, search for a deploy, or poll with bash instead of using the matching process or wakeup wait/)
   expect(cronCreate).toMatch(/Do not explore the repository, search for a deploy, or poll with bash first/)
   expect(backgroundProcess).toMatch(/time-based wait must use `schedule_wakeup` or `cron_create`/)
   expect(backgroundProcess).toMatch(/blocking shell sleep is progress/)
