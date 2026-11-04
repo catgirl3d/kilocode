@@ -638,62 +638,69 @@ describe("workspace revert status", () => {
     30_000,
   )
 
-  // the pre-revert snapshot needs the index lock too, and without it there is no baseline
+  // a stale index lock is recovered before the pre-revert snapshot, so the revert still runs
   guarded(
-    "fails instead of rewinding when a locked index blocks the pre-revert snapshot",
+    "recovers a stale index lock before the pre-revert snapshot and reverts",
     provideTmpdirInstance(
       (dir) =>
         Effect.gen(function* () {
           const item = yield* setup(dir)
           const lock = yield* plantLock()
 
-          const outcome = yield* item.revert
-            .revert({ sessionID: item.session.id, messageID: item.user.id })
-            .pipe(Effect.exit, Effect.ensuring(Effect.promise(() => fs.rm(lock, { force: true }))))
-          const current = yield* item.sessions.get(item.session.id)
+          const result = yield* Effect.gen(function* () {
+            const outcome = yield* item.revert
+              .revert({ sessionID: item.session.id, messageID: item.user.id })
+              .pipe(Effect.exit)
+            const current = yield* item.sessions.get(item.session.id)
+            return {
+              failed: Exit.isFailure(outcome),
+              reverted: current.revert !== undefined,
+              protected: yield* Effect.promise(() => fs.readFile(item.protected, "utf8")),
+              writable: yield* Effect.promise(() => fs.readFile(item.writable, "utf8")),
+              lock: yield* Effect.promise(() => fs.stat(lock).then(() => true, () => false)),
+            }
+          }).pipe(Effect.ensuring(Effect.promise(() => fs.rm(lock, { force: true }))))
 
-          expect({
-            failed: Exit.isFailure(outcome),
-            reverted: current.revert !== undefined,
-            protected: yield* Effect.promise(() => fs.readFile(item.protected, "utf8")),
-            writable: yield* Effect.promise(() => fs.readFile(item.writable, "utf8")),
-          }).toEqual({ failed: true, reverted: false, protected: "after", writable: "after" })
+          expect(result).toEqual({
+            failed: false,
+            reverted: true,
+            protected: "before",
+            writable: "before",
+            lock: false,
+          })
         }),
       { git: true },
     ),
     30_000,
   )
 
-  // a locked index leaves the workspace unchanged even when the rollback hits the same lock
+  // a stale index lock is recovered by the guarded revert as well
   it.live(
-    "keeps the workspace unchanged when a locked index blocks both the revert and its rollback",
+    "recovers a stale index lock during a guarded revert",
     provideTmpdirInstance(
       (dir) =>
         Effect.gen(function* () {
           const item = yield* setup(dir)
           const lock = yield* plantLock()
 
-          const outcome = yield* KiloSessionRevert.apply(
-            item.snapshot,
-            item.after,
-            item.patch.files,
-            Effect.gen(function* () {
-              yield* item.snapshot.revert([item.patch])
-            }),
-          ).pipe(Effect.exit)
+          const result = yield* Effect.gen(function* () {
+            const outcome = yield* KiloSessionRevert.apply(
+              item.snapshot,
+              item.after,
+              item.patch.files,
+              Effect.gen(function* () {
+                yield* item.snapshot.revert([item.patch])
+              }),
+            ).pipe(Effect.exit)
 
-          // git cannot take the index lock, so the revert fails rather than reporting a success it
-          // did not perform; the reason is on stderr in the log, not in the failure value.
-          expect(Exit.isFailure(outcome)).toBe(true)
+            return {
+              failed: Exit.isFailure(outcome),
+              protected: yield* Effect.promise(() => fs.readFile(item.protected, "utf8")),
+              writable: yield* Effect.promise(() => fs.readFile(item.writable, "utf8")),
+            }
+          }).pipe(Effect.ensuring(Effect.promise(() => fs.rm(lock, { force: true }))))
 
-          expect(yield* Effect.promise(() => fs.readFile(item.protected, "utf8"))).toBe("after")
-          expect(yield* Effect.promise(() => fs.readFile(item.writable, "utf8"))).toBe("after")
-
-          // The failed rollback must still release the snapshot lock, or every later
-          // operation on this repository would hang instead of failing.
-          yield* Effect.promise(() => fs.rm(lock, { force: true }))
-          yield* item.snapshot.revert([item.patch])
-          expect(yield* Effect.promise(() => fs.readFile(item.protected, "utf8"))).toBe("before")
+          expect(result).toEqual({ failed: false, protected: "before", writable: "before" })
         }),
       { git: true },
     ),

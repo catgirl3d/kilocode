@@ -712,6 +712,7 @@ describe("session compaction cap", () => {
             const compaction = yield* SessionCompaction.Service
             const events = yield* EventV2Bridge.Service
             const chat = yield* sessions.create({
+              title: "Empty compaction cap",
               permission: [{ permission: "*", pattern: "*", action: "allow" }],
             })
             const errors: Array<typeof Session.Event.Error.data.Type> = []
