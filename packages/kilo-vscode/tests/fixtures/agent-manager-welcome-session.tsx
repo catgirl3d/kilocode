@@ -41,6 +41,7 @@ Object.assign(window, { KILO_AGENT_MANAGER_INTRO_DISMISSED: true })
 const { createSignal } = await import("solid-js")
 const { render } = await import("solid-js/web")
 const { VSCodeProvider } = await import("../../webview-ui/src/context/vscode")
+const { ConfigProvider } = await import("../../webview-ui/src/context/config")
 const { SessionTagsProvider } = await import("../../webview-ui/src/context/session-tags")
 const { LanguageContext } = await import("../../webview-ui/src/context/language")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
@@ -117,6 +118,7 @@ const Probe = () =>
     onShowHistory: () => {},
     reveal: () => {},
     focus: () => {},
+    compose: () => {},
   }).render()
 const root = document.createElement("div")
 document.body.append(root)
@@ -126,7 +128,9 @@ const dispose = render(
       <LanguageContext.Provider value={language}>
         <SessionTagsProvider>
           <SessionContext.Provider value={session}>
-            <Probe />
+            <ConfigProvider>
+              <Probe />
+            </ConfigProvider>
           </SessionContext.Provider>
         </SessionTagsProvider>
       </LanguageContext.Provider>
