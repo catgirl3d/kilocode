@@ -30,6 +30,7 @@ import { KiloErrorPolicy } from "@/kilocode/session/error-policy" // [fork]
 import { KiloRoutedModel } from "@/kilocode/session/routed-model"
 import { KiloResponseMetadata } from "@/kilocode/session/response-metadata"
 import { KiloGeneratedFile } from "@/kilocode/session/generated-file"
+import { KiloCompactionInternal } from "@/kilocode/session/compaction-internal" // [fork]
 import { KiloReasoningReplay } from "@/kilocode/session/reasoning-replay"
 import * as Progress from "@/kilocode/session/progress"
 import { Suggestion } from "@/kilocode/suggestion"
@@ -426,6 +427,9 @@ const layer = Layer.effect(
         switch (value.type) {
           case "reasoning-start":
             if (value.id in ctx.reasoningMap) return
+            // kilocode_change start - [fork] internal compaction reasoning is not session content
+            if (KiloCompactionInternal.internal(ctx.assistantMessage)) return
+            // kilocode_change end
             ctx.reasoningMap[value.id] = {
               id: PartID.ascending(),
               messageID: ctx.assistantMessage.id,
@@ -654,7 +658,7 @@ const layer = Layer.effect(
             // kilocode_change end
             // kilocode_change start - persist late-arriving OpenRouter reasoning details for replay
             const details = KiloReasoningReplay.details(value.providerMetadata)
-            if (details) {
+            if (details && !KiloCompactionInternal.internal(ctx.assistantMessage)) {
               const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
                 Effect.provideService(Database.Service, database),
               )
