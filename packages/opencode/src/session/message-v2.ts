@@ -40,6 +40,7 @@ import { SessionNetwork } from "./network" // kilocode_change
 import { CodexAuthExpiredError } from "@/kilocode/provider/codex-refresh" // kilocode_change
 import { KiloSessionMessageOrder } from "@/kilocode/session/message-order" // kilocode_change
 import { KiloPartLifecycle } from "@/kilocode/session/part-lifecycle" // kilocode_change
+import { KiloCompactionInternal } from "@/kilocode/session/compaction-internal" // kilocode_change - [fork]
 import * as KiloReasoningMarker from "@/kilocode/session/reasoning-marker" // kilocode_change - [fork]
 import * as TextStream from "@/kilocode/text-stream" // kilocode_change
 import { BoardNotice } from "@/kilocode/board/notice" // kilocode_change
@@ -223,6 +224,11 @@ const older = (row: Cursor) =>
 
 function hydrate(db: Database.Interface["db"], rows: (typeof MessageTable.$inferSelect)[]) {
   const ids = rows.map((row) => row.id)
+  // kilocode_change start - [fork] internal compaction reasoning is not session content
+  const internal = new Set(
+    rows.filter((row) => KiloCompactionInternal.internal(row.data as Record<string, unknown>)).map((row) => row.id),
+  )
+  // kilocode_change end
   const partByMessage = new Map<string, Part[]>()
   return Effect.gen(function* () {
     if (ids.length > 0) {
@@ -235,6 +241,7 @@ function hydrate(db: Database.Interface["db"], rows: (typeof MessageTable.$infer
         .pipe(Effect.orDie)
       for (const row of partRows) {
         const next = part(row)
+        if (next.type === "reasoning" && internal.has(row.message_id)) continue // kilocode_change - [fork]
         const list = partByMessage.get(row.message_id)
         if (list) list.push(next)
         else partByMessage.set(row.message_id, [next])
@@ -662,10 +669,15 @@ export const get = Effect.fn("MessageV2.get")(function* (input: { sessionID: Ses
     .get()
     .pipe(Effect.orDie)
   if (!row) return yield* new NotFoundError({ message: `Message not found: ${input.messageID}` })
+  // kilocode_change start - [fork] internal compaction reasoning is not session content
+  const found = info(row)
+  const loaded = yield* parts(input.messageID)
+  const visible = KiloCompactionInternal.internal(found) ? loaded.filter((part) => part.type !== "reasoning") : loaded
   return {
-    info: info(row),
-    parts: yield* parts(input.messageID),
+    info: found,
+    parts: visible,
   }
+  // kilocode_change end
 })
 
 export function filterCompacted(msgs: Iterable<WithParts>) {
