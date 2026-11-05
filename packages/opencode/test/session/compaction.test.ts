@@ -1419,6 +1419,53 @@ describe("session.compaction.process", () => {
   )
 
   itCompaction.instance(
+    "keeps compaction reasoning out of the summary message",
+    () => {
+      const stub = llm()
+      stub.push(
+        Stream.make(
+          LLMEvent.reasoningStart({ id: "compaction-reasoning" }),
+          LLMEvent.reasoningDelta({ id: "compaction-reasoning", text: "internal planning" }),
+          LLMEvent.reasoningEnd({ id: "compaction-reasoning" }),
+          LLMEvent.textStart({ id: "txt-0" }),
+          LLMEvent.textDelta({ id: "txt-0", text: "summary" }),
+          LLMEvent.textEnd({ id: "txt-0" }),
+          LLMEvent.stepFinish({
+            index: 0,
+            reason: "stop",
+            usage: basicUsage(),
+            providerMetadata: {
+              openrouter: { reasoning_details: [{ type: "reasoning.encrypted", data: "signature" }] },
+            },
+          }),
+          LLMEvent.finish({ reason: "stop", usage: basicUsage() }),
+        ),
+      )
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* createUserMessage(session.id, "hello")
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        yield* SessionCompaction.use.process({
+          parentID: msg.id,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        const summary = (yield* ssn.messages({ sessionID: session.id })).find(
+          (item) => item.info.role === "assistant" && item.info.summary,
+        )
+        if (summary?.info.role !== "assistant") throw new Error("missing compaction summary")
+        expect(summary.info.mode).toBe("compaction")
+        expect(summary.parts.some((part) => part.type === "reasoning")).toBe(false)
+        expect(summary.parts.some((part) => part.type === "text" && part.text === "summary")).toBe(true)
+      }).pipe(withCompaction({ llm: stub.llmLayer }))
+    },
+    { git: true },
+  )
+
+  itCompaction.instance(
     "does not allow tool calls while generating the summary",
     () => {
       const stub = llm()
