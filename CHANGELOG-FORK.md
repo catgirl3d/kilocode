@@ -59,6 +59,7 @@
 - Delete the current session from the chat header's More actions menu after a confirmation prompt; the action stays out of Agent Manager, which closes sessions through its own flow.
 - Open the edited file in the editor from an "Open in Editor" button on Edit and Write tool cards, next to "Open in Diff Viewer".
 - Connect to OpenDesign as a model provider using an OpenAI-compatible API key and base URL. OpenDesign always appears in **Connect provider**, where the dialog asks for the API key and an optional base URL that defaults to https://amr-link.open-design.ai/v1 (reconnecting with the field empty resets a saved custom URL to the default); `OPENDESIGN_API_KEY` / `OPENDESIGN_BASE_URL` and the matching `provider.opendesign` config options still take precedence over the saved values. Model context size, output limit and image/PDF input support are read from the gateway's model list.
+- Revert to an answered agent question with the new "Revert to here" button on the question card: the question and your answer stay, files go back to a checkpoint taken when the question was asked, everything after the answer is undone, and Redo works until you send a new message.
 
 ### Fixes & Enhancements
 

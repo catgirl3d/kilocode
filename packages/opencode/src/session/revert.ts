@@ -44,6 +44,11 @@ const layer = Layer.effect(
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
       let lastUser: SessionV1.User | undefined
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      // kilocode_change start - [fork] an answered question reverts to just after itself
+      const target = KiloSessionRevert.target(all, input)
+      if (!target) return session
+      input = target
+      // kilocode_change end
 
       let rev: Session.Info["revert"]
       const patches: Snapshot.Patch[] = []
@@ -76,7 +81,7 @@ const layer = Layer.effect(
       // is possible only when the historical turn retained checkpoint data.
       const index = all.findIndex((msg) => msg.info.id === rev.messageID)
       const range = index < 0 ? [] : all.slice(index)
-      const checkpoint = patches.length > 0
+      const checkpoint = patches.length > 0 || !!target.checkpoint // [fork] a question checkpoint restores files on its own
       const ctx = yield* InstanceState.context
       rev.workspace = checkpoint
         ? "restored"
@@ -103,7 +108,7 @@ const layer = Layer.effect(
 
           // Compute the user-facing diff while files still contain the changes being undone.
           const diffs = yield* summary.computeDiff({ messages: range })
-          yield* snap.revert(patches)
+          yield* KiloSessionRevert.rewind(snap, patches, target.checkpoint) // [fork] an answered question restores its own checkpoint
           if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
           yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
           yield* events.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
