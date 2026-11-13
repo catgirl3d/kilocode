@@ -35,7 +35,6 @@ export async function enhanceWith(input: {
   const options = mergeDeep(ProviderTransform.smallOptions(input.model), input.model.options)
   const common = {
     model: input.language,
-    temperature: input.model.capabilities.temperature ? 0.7 : undefined,
     providerOptions: ProviderTransform.providerOptions(
       input.model,
       openai ? { ...options, instructions: INSTRUCTION } : options,

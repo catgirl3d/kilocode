@@ -45,7 +45,15 @@ const model: Provider.Model = {
 
 const plugin: Plugin.Interface = {
   init: () => Effect.void,
-  trigger: (_name, _input, output) => Effect.succeed(output),
+  trigger: (name, _input, output) => {
+    if (name === "chat.params" && typeof output === "object" && output !== null) {
+      Object.assign(output, { temperature: 0.7 })
+      if ("options" in output && typeof output.options === "object" && output.options !== null) {
+        Object.assign(output.options, { temperature: 0.8, reasoningEffort: "high" })
+      }
+    }
+    return Effect.succeed(output)
+  },
   list: () => Effect.succeed([]),
 }
 
@@ -127,6 +135,16 @@ describe("Kilo persona in generated metadata requests", () => {
 
     expect(result.system[0]).toContain(SystemPrompt.soul())
     expect(oauth.params.options.instructions).toContain(SystemPrompt.soul())
+  })
+})
+
+describe("LLM request sampling parameters", () => {
+  test("strips plugin-added temperature from prepared params", async () => {
+    const result = await prepare("code")
+
+    expect(result.params).not.toHaveProperty("temperature")
+    expect(result.params.options.temperature).toBe(0.8)
+    expect(result.params.options.reasoningEffort).toBe("high")
   })
 })
 
