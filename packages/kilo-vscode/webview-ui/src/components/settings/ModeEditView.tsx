@@ -211,6 +211,7 @@ const ModeEditView: Component<Props> = (props) => {
           description={language.t("settings.agentBehaviour.temperature.description")}
         >
           <TextField
+            disabled /* fork_change - temperature is not sent to model providers */
             value={cfg().temperature?.toString() ?? ""}
             placeholder={language.t("common.default")}
             onChange={(val) => {

@@ -76,6 +76,7 @@ function lang(outputs: (string | Error)[] = ["{}"], calls?: unknown[], hang?: bo
 
 function provider(
   input: {
+    model?: string
     outputs?: (string | Error)[]
     seen?: string[]
     calls?: unknown[]
@@ -86,7 +87,7 @@ function provider(
   } = {},
 ): Provider.Interface {
   const providerID = input.providerID ?? pid
-  const base = mdl(mid, input.npm, providerID)
+  const base = mdl(ModelV2.ID.make(input.model ?? "fake-memory-model"), input.npm, providerID)
   const mem = mdl(ModelV2.ID.make("memory-config-model"), input.npm, providerID)
   const info = {
     id: providerID,
@@ -455,6 +456,25 @@ describe("memory ports", () => {
     } finally {
       server.stop(true)
     }
+  })
+
+  test("model port omits temperature while preserving other sampling options", async () => {
+    const calls: unknown[] = []
+    const port = MemoryModel.port({ provider: provider({ model: "gemini-3-flash", calls }) })
+    const resolved = await Effect.runPromise(port.resolve({ configured: "test/gemini-3-flash", session: ref }))
+
+    await port.run({
+      handle: resolved.handle,
+      sessionID: "ses_test",
+      system: "system",
+      prompt: "prompt",
+      timeoutMs: 30_000,
+    })
+
+    const opts = calls[0] as { temperature?: number; topP?: number; topK?: number }
+    expect(opts.temperature).toBeUndefined()
+    expect(opts.topP).toBe(0.95)
+    expect(opts.topK).toBe(64)
   })
 
   test("model port retries a transient provider failure once", async () => {

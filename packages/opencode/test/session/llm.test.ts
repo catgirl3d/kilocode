@@ -3,7 +3,7 @@ import { ConfigV1 } from "@opencode-ai/core/v1/config/config"
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import path from "path"
-import { tool, type ModelMessage } from "ai"
+import { tool, type ModelMessage, type Tool } from "ai"
 import { Cause, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
@@ -29,10 +29,16 @@ import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { LayerNodePlatform } from "@opencode-ai/core/effect/app-node-platform"
 import { ProviderError } from "@/provider/error"
+import { Plugin } from "@/plugin"
 
 type ConfigModel = NonNullable<NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]>["models"]>[string] // kilocode_change
+type ModelOverrides = Partial<Pick<NonNullable<ConfigModel>, "options" | "variants">>
 
-const openAIConfig = (model: ModelsDev.Provider["models"][string], baseURL: string): Partial<ConfigV1.Info> => {
+const openAIConfig = (
+  model: ModelsDev.Provider["models"][string],
+  baseURL: string,
+  overrides: ModelOverrides = {},
+): Partial<ConfigV1.Info> => {
   const { experimental: _experimental, ...configModel } = model
   return {
     enabled_providers: ["openai"],
@@ -43,7 +49,7 @@ const openAIConfig = (model: ModelsDev.Provider["models"][string], baseURL: stri
         npm: "@ai-sdk/openai",
         api: "https://api.openai.com/v1",
         models: {
-          [model.id]: JSON.parse(JSON.stringify(configModel)) as ConfigModel,
+          [model.id]: { ...(JSON.parse(JSON.stringify(configModel)) as NonNullable<ConfigModel>), ...overrides },
         },
         options: {
           apiKey: "test-openai-key",
@@ -60,8 +66,9 @@ const it = testEffect(AppNodeBuilder.build(LayerNode.group([LLM.node, Provider.n
 const drain = (input: LLM.StreamInput) => LLM.Service.use((svc) => svc.stream(input).pipe(Stream.runDrain))
 
 // collect runs the stream and returns every emitted LLMEvent for assertions. // kilocode_change
-const collect = (input: LLM.StreamInput) => // kilocode_change
-  LLM.Service.use((svc) => svc.stream(input).pipe(Stream.runCollect)) // kilocode_change
+const collect = (
+  input: LLM.StreamInput, // kilocode_change
+) => LLM.Service.use((svc) => svc.stream(input).pipe(Stream.runCollect)) // kilocode_change
 
 // drainWith builds an isolated runtime so custom replacements fully own LLM and
 // its transitive deps.
@@ -791,6 +798,107 @@ function createEventResponse(chunks: unknown[], includeDone = false) {
   })
 }
 
+function createOpenAIResponse(text = "Hello") {
+  return createEventResponse(
+    [
+      {
+        type: "response.created",
+        response: {
+          id: "resp-temperature-options",
+          created_at: Math.floor(Date.now() / 1000),
+          model: "gpt-5.2",
+          service_tier: null,
+        },
+      },
+      {
+        type: "response.output_item.added",
+        output_index: 0,
+        item: {
+          type: "message",
+          id: "item-temperature-options",
+          status: "in_progress",
+          role: "assistant",
+          content: [],
+        },
+      },
+      {
+        type: "response.content_part.added",
+        item_id: "item-temperature-options",
+        output_index: 0,
+        content_index: 0,
+        part: { type: "output_text", text: "", annotations: [] },
+      },
+      { type: "response.output_text.delta", item_id: "item-temperature-options", delta: text, logprobs: null },
+      {
+        type: "response.completed",
+        response: {
+          incomplete_details: null,
+          usage: {
+            input_tokens: 1,
+            input_tokens_details: null,
+            output_tokens: 1,
+            output_tokens_details: null,
+          },
+          service_tier: null,
+        },
+      },
+    ],
+    true,
+  )
+}
+
+type Params = {
+  temperature?: number
+  topP?: number
+  topK?: number
+  options: Record<string, unknown>
+}
+
+function paramsLayer(change: (output: Params) => void) {
+  const trigger = ((name: string, _input: unknown, output: unknown) =>
+    Effect.sync(() => {
+      if (name === "chat.params") change(output as Params)
+      return output
+    })) as Plugin.Interface["trigger"]
+  return Layer.mock(Plugin.Service)({
+    init: () => Effect.void,
+    list: () => Effect.succeed([]),
+    trigger,
+  })
+}
+
+function responseInput(input: {
+  model: Provider.Model
+  agent: Agent.Info
+  session: string
+  variant?: string
+  messages?: ModelMessage[]
+  tools?: Record<string, Tool>
+}): LLM.StreamInput {
+  const sessionID = SessionID.make(input.session)
+  return {
+    user: {
+      id: MessageID.make(`msg-${input.session}`),
+      sessionID,
+      role: "user",
+      time: { created: Date.now() },
+      agent: input.agent.name,
+      model: { providerID: ProviderV2.ID.openai, modelID: input.model.id, variant: input.variant },
+    } satisfies SessionV1.User,
+    sessionID,
+    model: input.model,
+    agent: input.agent,
+    system: ["You are a helpful assistant."],
+    messages: input.messages ?? [{ role: "user", content: "Hello" }],
+    tools: input.tools ?? {},
+  }
+}
+
+function expectOpenAIOptionsBody(body: Record<string, unknown>) {
+  expect("temperature" in body).toBe(false)
+  expect((body.reasoning as { mode?: string } | undefined)?.mode).toBe("pro")
+}
+
 describe("session.llm.stream", () => {
   const vivgridFixture = { providerID: "vivgrid", modelID: "gemini-3.1-pro-preview" }
   const opencodeFixture = { providerID: "opencode-test", modelID: vivgridFixture.modelID }
@@ -863,7 +971,7 @@ describe("session.llm.stream", () => {
   )
 
   it.instance(
-    "sends temperature, tokens, and reasoning options for openai-compatible models",
+    "omits temperature while sending tokens and reasoning options for openai-compatible models",
     () =>
       Effect.gen(function* () {
         const fixture = loadFixture(vivgridFixture.providerID, vivgridFixture.modelID)
@@ -919,7 +1027,7 @@ describe("session.llm.stream", () => {
         expect(headers.get("User-Agent") ?? "").toMatch(/^Kilo-Code\//) // kilocode_change
 
         expect(body.model).toBe(resolved.api.id)
-        expect(body.temperature).toBe(0.4)
+        expect(body.temperature).toBeUndefined()
         expect(body.top_p).toBe(0.8)
         expect(body.stream).toBe(true)
 
@@ -1409,9 +1517,228 @@ describe("session.llm.stream", () => {
         expect(body.stream).toBe(true)
         expect((body.reasoning as { effort?: string } | undefined)?.effort).toBe("high")
         expect((body.reasoning as { mode?: string } | undefined)?.mode).toBe("pro")
+        expect("top_p" in body).toBe(false)
+        expect("top_k" in body).toBe(false)
 
         const maxTokens = body.max_output_tokens as number | undefined
         expect(maxTokens).toBe(undefined) // match codex cli behavior
+      }),
+    { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
+  )
+
+  it.instance(
+    "omits temperature from model options on the OpenAI Responses wire",
+    () =>
+      Effect.gen(function* () {
+        const model = loadFixture("openai", "gpt-5.2").model
+        const request = waitRequest("/responses", createOpenAIResponse())
+        const resolved = yield* Provider.use.getModel(ProviderV2.ID.openai, ModelV2.ID.make(model.id))
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain(
+          responseInput({
+            model: resolved,
+            agent,
+            session: "session-model-options-temperature",
+          }),
+        )
+
+        expectOpenAIOptionsBody((yield* Effect.promise(() => request)).body)
+      }),
+    {
+      config: () =>
+        openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`, {
+          options: { temperature: 0.2, reasoningMode: "pro" },
+        }),
+    },
+  )
+
+  it.instance(
+    "omits temperature from agent options on the OpenAI Responses wire",
+    () =>
+      Effect.gen(function* () {
+        const model = loadFixture("openai", "gpt-5.2").model
+        const request = waitRequest("/responses", createOpenAIResponse())
+        const resolved = yield* Provider.use.getModel(ProviderV2.ID.openai, ModelV2.ID.make(model.id))
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: { temperature: 0.2, reasoningMode: "pro" },
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain(
+          responseInput({
+            model: resolved,
+            agent,
+            session: "session-agent-options-temperature",
+          }),
+        )
+
+        expectOpenAIOptionsBody((yield* Effect.promise(() => request)).body)
+      }),
+    { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
+  )
+
+  it.instance(
+    "omits temperature from a selected model variant on the OpenAI Responses wire",
+    () =>
+      Effect.gen(function* () {
+        const model = loadFixture("openai", "gpt-5.2").model
+        const request = waitRequest("/responses", createOpenAIResponse())
+        const resolved = yield* Provider.use.getModel(ProviderV2.ID.openai, ModelV2.ID.make(model.id))
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain(
+          responseInput({
+            model: resolved,
+            agent,
+            session: "session-variant-temperature",
+            variant: "wire",
+          }),
+        )
+
+        expectOpenAIOptionsBody((yield* Effect.promise(() => request)).body)
+      }),
+    {
+      config: () =>
+        openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`, {
+          variants: { wire: { temperature: 0.2, reasoningMode: "pro" } },
+        }),
+    },
+  )
+
+  it.instance(
+    "omits plugin-added top-level temperature on the OpenAI Responses wire",
+    () =>
+      Effect.gen(function* () {
+        const model = loadFixture("openai", "gpt-5.2").model
+        const request = waitRequest("/responses", createOpenAIResponse())
+        const resolved = yield* Provider.use.getModel(ProviderV2.ID.openai, ModelV2.ID.make(model.id))
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drainWith(
+          AppNodeBuilder.build(LLM.node, [
+            [
+              Plugin.node,
+              paramsLayer((output) => {
+                output.temperature = 0.2
+                output.options.reasoningMode = "pro"
+              }),
+            ],
+          ]),
+          responseInput({
+            model: resolved,
+            agent,
+            session: "session-plugin-temperature",
+          }),
+        )
+
+        expectOpenAIOptionsBody((yield* Effect.promise(() => request)).body)
+      }),
+    { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
+  )
+
+  it.instance(
+    "omits plugin-added options temperature without stripping message or tool-schema fields",
+    () =>
+      Effect.gen(function* () {
+        const model = loadFixture("openai", "gpt-5.2").model
+        const request = waitRequest("/responses", createOpenAIResponse())
+        const resolved = yield* Provider.use.getModel(ProviderV2.ID.openai, ModelV2.ID.make(model.id))
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drainWith(
+          AppNodeBuilder.build(LLM.node, [
+            [
+              Plugin.node,
+              paramsLayer((output) => {
+                output.options.temperature = 0.2
+                output.options.reasoningMode = "pro"
+              }),
+            ],
+          ]),
+          responseInput({
+            model: resolved,
+            agent,
+            session: "session-plugin-options-temperature",
+            messages: [{ role: "user", content: "Discuss temperature settings" }],
+            tools: {
+              measure: tool({
+                description: "Read a temperature value",
+                inputSchema: z.object({ temperature: z.number() }),
+                execute: async () => ({ value: 20 }),
+              }),
+            },
+          }),
+        )
+
+        const body = (yield* Effect.promise(() => request)).body
+        expectOpenAIOptionsBody(body)
+
+        const input = body.input as Array<{ role?: string; content?: Array<{ text?: string }> }>
+        expect(
+          input.some(
+            (item) =>
+              item.role === "user" && item.content?.some((part) => part.text === "Discuss temperature settings"),
+          ),
+        ).toBe(true)
+
+        const tools = body.tools as Array<{ name?: string; parameters?: { properties?: Record<string, unknown> } }>
+        const measure = tools.find((item) => item.name === "measure")
+        expect(measure?.parameters?.properties?.temperature).toBeDefined()
+      }),
+    { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
+  )
+
+  it.instance(
+    "omits explicit topP and topK on the OpenAI Responses reasoning wire",
+    () =>
+      Effect.gen(function* () {
+        const model = loadFixture("openai", "gpt-5.2").model
+        const request = waitRequest("/responses", createOpenAIResponse())
+        const resolved = yield* Provider.use.getModel(ProviderV2.ID.openai, ModelV2.ID.make(model.id))
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          topP: 0.4,
+        } satisfies Agent.Info
+
+        yield* drainWith(
+          AppNodeBuilder.build(LLM.node, [[Plugin.node, paramsLayer((output) => (output.topK = 13))]]),
+          responseInput({
+            model: resolved,
+            agent,
+            session: "session-responses-sampling",
+            variant: "high",
+          }),
+        )
+
+        const body = (yield* Effect.promise(() => request)).body
+        expect("top_p" in body).toBe(false)
+        expect("top_k" in body).toBe(false)
       }),
     { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
   )
@@ -1549,7 +1876,7 @@ describe("session.llm.stream", () => {
         const agent = {
           name: "test",
           mode: "primary",
-          options: {},
+          options: { temperature: 0.2 },
           permission: [{ permission: "*", pattern: "*", action: "allow" }],
           temperature: 0.2,
         } satisfies Agent.Info
@@ -1576,6 +1903,7 @@ describe("session.llm.stream", () => {
         expect(capture.headers.get("Authorization")).toBe("Bearer test-openai-key")
         expect(capture.body.model).toBe(model.id)
         expect(capture.body.stream).toBe(true)
+        expect("temperature" in capture.body).toBe(false)
         expect((capture.body.reasoning as { effort?: string } | undefined)?.effort).toBe("high")
         expect(capture.body.include).toEqual(["reasoning.encrypted_content"])
         expect(JSON.stringify(capture.body.input)).toContain("You are a helpful assistant.")
@@ -1970,7 +2298,7 @@ describe("session.llm.stream", () => {
         expect(capture.url.pathname.endsWith("/messages")).toBe(true)
         expect(body.model).toBe(resolved.api.id)
         expect(body.max_tokens).toBe(ProviderTransform.maxOutputTokens(resolved))
-        expect(body.temperature).toBe(0.4)
+        expect(body.temperature).toBeUndefined()
         expect(body.top_p).toBe(0.9)
       }),
     {
@@ -2278,7 +2606,7 @@ describe("session.llm.stream", () => {
         expect(capture.headers.get("authorization")).toBeNull()
         expect(capture.url.searchParams.get("key")).toBeNull()
         // kilocode_change end
-        expect(config?.temperature).toBe(0.3)
+        expect(config?.temperature).toBeUndefined()
         expect(config?.topP).toBe(0.8)
         expect(config?.maxOutputTokens).toBe(ProviderTransform.maxOutputTokens(resolved))
       }),
@@ -2315,7 +2643,9 @@ describe("session.llm.stream", () => {
                     delta: {
                       role: "assistant",
                       content: null,
-                      tool_calls: [{ index: 0, id: "call-1", type: "function", function: { name: " bash", arguments: "" } }],
+                      tool_calls: [
+                        { index: 0, id: "call-1", type: "function", function: { name: " bash", arguments: "" } },
+                      ],
                     },
                   },
                 ],
@@ -2407,7 +2737,9 @@ describe("session.llm.stream", () => {
                     delta: {
                       role: "assistant",
                       content: null,
-                      tool_calls: [{ index: 0, id: "call-1", type: "function", function: { name: "Write", arguments: "" } }],
+                      tool_calls: [
+                        { index: 0, id: "call-1", type: "function", function: { name: "Write", arguments: "" } },
+                      ],
                     },
                   },
                 ],

@@ -82,3 +82,4 @@ packages/opencode/.artifacts/
 #fork
 docs/internal/*
 .mcp-brain/*
+WATCHDOG.yml

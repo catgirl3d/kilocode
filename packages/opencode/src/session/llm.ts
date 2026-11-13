@@ -352,7 +352,9 @@ const live: Layer.Layer<
           messages: prepared.messages,
           tools: prepared.tools,
           toolChoice: input.toolChoice,
-          temperature: prepared.params.temperature,
+          // kilocode_change start - [fork] never send sampling temperature to providers
+          // temperature: prepared.params.temperature,
+          // kilocode_change end
           topP: prepared.params.topP,
           topK: prepared.params.topK,
           // kilocode_change start
@@ -430,7 +432,9 @@ const live: Layer.Layer<
           return null
           // kilocode_change end
         },
-        temperature: prepared.params.temperature,
+        // kilocode_change start - [fork] never send sampling temperature to providers
+        // temperature: prepared.params.temperature,
+        // kilocode_change end
         topP: prepared.params.topP,
         topK: prepared.params.topK,
         providerOptions: ProviderTransform.providerOptions(input.model, prepared.params.options),

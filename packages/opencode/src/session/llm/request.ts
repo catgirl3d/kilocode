@@ -54,7 +54,6 @@ export type Prepared = {
   readonly messages: ModelMessage[]
   readonly tools: Record<string, Tool>
   readonly params: {
-    readonly temperature?: number
     readonly topP?: number
     readonly topK?: number
     readonly maxOutputTokens?: number
@@ -164,6 +163,9 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       options,
     },
   )
+  // kilocode_change start - [fork] never send sampling temperature to providers
+  delete params.temperature
+  // kilocode_change end
 
   const { headers } = yield* input.plugin.trigger(
     "chat.headers",

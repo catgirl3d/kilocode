@@ -380,7 +380,7 @@ Every hook is optional. Return only the ones you care about.
 | Hook | Description |
 |---|---|
 | `chat.message` | Fires when a new user message arrives. Inspect or modify `parts`. |
-| `chat.params` | Mutate `temperature`, `topP`, `topK`, `maxOutputTokens`, provider `options`. |
+| `chat.params` | Mutate `temperature`, `topP`, `topK`, `maxOutputTokens`, and provider `options`; plugin-set `temperature` values, including values in `options`, are ignored for chat requests. `topP`, `topK`, `maxOutputTokens`, and `options` remain mutable. |
 | `chat.headers` | Add or replace HTTP headers on the LLM API call. |
 | `permission.ask` | Auto-allow or auto-deny permission prompts. |
 | `command.execute.before` | Intercept slash command execution; mutate the resulting `parts`. |

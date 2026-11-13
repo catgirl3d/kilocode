@@ -13,7 +13,7 @@ function mdl(providerID: string, npm: string): Provider.Model {
       toolcall: true,
       attachment: false,
       reasoning: true,
-      temperature: false,
+      temperature: true,
       input: { text: true, image: false, audio: false, video: false },
       output: { text: true, image: false, audio: false, video: false },
     },
@@ -141,6 +141,7 @@ describe("enhance-prompt", () => {
 
       expect(calls.generate).toHaveLength(0)
       expect(calls.stream).toHaveLength(1)
+      expect(calls.stream.at(0)?.temperature).toBeUndefined()
       expect(calls.stream.at(0)?.providerOptions?.openai?.instructions).toBe(INSTRUCTION)
       expect(calls.stream.at(0)?.prompt.some((part) => part.role === "system")).toBe(false)
       expect(result).toBe("streamed rewrite")
@@ -159,6 +160,7 @@ describe("enhance-prompt", () => {
 
       expect(calls.generate).toHaveLength(1)
       expect(calls.stream).toHaveLength(0)
+      expect(calls.generate.at(0)?.temperature).toBeUndefined()
       expect(calls.generate.at(0)?.prompt).toContainEqual({ role: "system", content: INSTRUCTION })
       expect(calls.generate.at(0)?.providerOptions?.test?.instructions).toBeUndefined()
       expect(result).toBe("generated rewrite")

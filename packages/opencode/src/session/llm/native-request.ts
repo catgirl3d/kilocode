@@ -134,7 +134,9 @@ const tools = (input: Record<string, ToolInput> | undefined): ToolDefinition[] =
 
 const generation = (input: RequestInput) => {
   const result = {
-    temperature: input.temperature,
+    // kilocode_change start - [fork] never send sampling temperature to providers
+    // temperature: input.temperature,
+    // kilocode_change end
     topP: input.topP,
     topK: input.topK,
     maxTokens: input.maxOutputTokens,

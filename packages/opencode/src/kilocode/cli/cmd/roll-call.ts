@@ -320,7 +320,6 @@ async function call(
     const maxOutputTokens = await AppRuntime.runPromise(
       RuntimeFlags.Service.useSync((flags) => outputLimit(model, flags.outputTokenMax)),
     )
-    const temperature = ProviderTransform.temperature(model)
     const topP = ProviderTransform.topP(model)
     const topK = ProviderTransform.topK(model)
     const messages: Parameters<typeof generateText>[0]["messages"] = [{ role: "user", content: prompt }]
@@ -330,7 +329,6 @@ async function call(
       messages: transformed,
       abortSignal: AbortSignal.timeout(timeout),
       maxOutputTokens,
-      temperature,
       topP,
       topK,
       providerOptions,

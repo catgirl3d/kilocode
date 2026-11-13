@@ -114,7 +114,7 @@ Project configuration cannot grant this permission. External agent files remain 
 description: Reviews code for quality and best practices
 mode: subagent
 model: anthropic/claude-sonnet-4-20250514
-temperature: 0.1
+temperature: 0.1 # Accepted for compatibility; not sent in chat requests.
 permission:
   edit: deny
   bash: deny
@@ -171,8 +171,8 @@ The following options are available when configuring a subagent:
 | `mode` | `"subagent" \| "primary" \| "all"` | How the agent can be used. Defaults to `all` for custom agents. |
 | `model` | `string` | Override the model for this agent (format: `provider/model-id`). If not set, subagents inherit the model of the invoking primary agent. |
 | `prompt` | `string` | Custom system prompt. In JSON, can use `{file:./path}` syntax. In markdown, the body is the prompt. |
-| `temperature` | `number` | Controls response randomness (0.0-1.0). Lower = more deterministic. |
-| `top_p` | `number` | Alternative to temperature for controlling response diversity (0.0-1.0). |
+| `temperature` | `number` | Accepted and stored for compatibility but not sent in chat requests; FIM/autocomplete is unaffected. |
+| `top_p` | `number` | Controls response diversity (0.0-1.0). |
 | `permission` | `object` | Controls tool access. See [Permissions](#permissions) below. |
 | `hidden` | `boolean` | If `true`, hides the subagent from the `@` autocomplete menu. It can still be invoked by agents via the Task tool. Only applies to `mode: subagent`. |
 | `steps` | `number` | Maximum agentic iterations before forcing a text-only response. Useful for cost control. |
