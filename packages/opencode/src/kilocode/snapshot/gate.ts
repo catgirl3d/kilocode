@@ -42,6 +42,7 @@ export namespace KiloSnapshotGate {
     finishStep: () => Effect.Effect<void>
     restore: (baseline?: string, tried?: boolean) => Effect.Effect<void>
     checkpoint: (input?: Checkpoint) => Effect.Effect<void>
+    mark: (messageID?: MessageID) => Effect.Effect<string | undefined> // fork_change
     observe: (id: string, start: (settle: Effect.Effect<void>) => Effect.Effect<void>) => Effect.Effect<void>
   }
 
@@ -169,7 +170,24 @@ export namespace KiloSnapshotGate {
         )
       })
 
-    return { startStep, ensure, finishStep, restore, checkpoint, observe }
+    // A fresh snapshot of the current workspace that leaves the turn baseline alone.
+    // Without a baseline nothing has mutated yet, so the lazy baseline taken later
+    // already matches this moment.
+    const mark = Effect.fn("KiloSnapshotGate.mark")(function* (messageID?: MessageID) {
+      return yield* sem.withPermits(1)(
+        Effect.gen(function* () {
+          if (flight) yield* Deferred.await(flight)
+          if (!baseline) return undefined
+          const id = messageID ?? anchor
+          if (!id) return undefined
+          return yield* input
+            .track({ sessionID: input.sessionID, messageID: id, snapshotInitialization: input.snapshotInitialization })
+            .pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+        }),
+      )
+    })
+
+    return { startStep, ensure, finishStep, restore, checkpoint, observe, mark }
   }
   // fork_change end
 }

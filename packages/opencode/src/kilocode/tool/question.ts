@@ -1,5 +1,7 @@
 import { Effect } from "effect"
 import { Question } from "@/question"
+import type { KiloSnapshotGate } from "@/kilocode/snapshot/gate" // fork_change
+import type { Context } from "@/tool/tool" // fork_change
 
 /**
  * Helpers for the shared `@/tool/question` tool that surface a dismissed-question
@@ -19,9 +21,19 @@ export namespace KiloQuestionTool {
 
   export const isDismissed = (v: unknown): v is Dismissed => v === DISMISSED
 
-  export const dismissedResult = () => ({
+  // fork_change start - [fork] keep the question checkpoint on dismissed questions too
+  export const dismissedResult = (checkpoint?: string) => ({
     title: "Question dismissed",
     output: "User dismissed the question.",
-    metadata: { answers: [] as ReadonlyArray<Question.Answer>, dismissed: true as const },
+    metadata: { answers: [] as ReadonlyArray<Question.Answer>, dismissed: true as const, checkpoint },
   })
+  // fork_change end
+
+  // fork_change start - [fork] remember the workspace at question time so "Revert to here" can restore it
+  export const checkpoint = (ctx: Pick<Context, "messageID" | "extra">): Effect.Effect<string | undefined> => {
+    const ops = ctx.extra?.promptOps as { snapshot?: KiloSnapshotGate.Owner } | undefined
+    if (!ops?.snapshot) return Effect.succeed(undefined)
+    return ops.snapshot.mark(ctx.messageID).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+  }
+  // fork_change end
 }

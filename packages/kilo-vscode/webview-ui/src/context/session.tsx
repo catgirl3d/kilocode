@@ -2896,11 +2896,11 @@ export const SessionProvider: ParentComponent = (props) => {
   const revertedCount = createMemo(() => {
     const boundary = revert()?.messageID
     if (!boundary) return 0
-    // fork_change start
+    // fork_change start - the boundary message always counts, so a reverted reply is never "0 messages"
     const list = messages()
     const index = list.findIndex((message) => message.id === boundary)
     if (index < 0) return 0
-    return list.slice(index).filter((message) => message.role === "user").length
+    return list.slice(index).filter((message, i) => i === 0 || message.role === "user").length
     // fork_change end
   })
 
@@ -2913,15 +2913,19 @@ export const SessionProvider: ParentComponent = (props) => {
     const id = currentSessionID()
     if (!id) return
     clearClose(id)
-    // Restore the reverted user message's prompt text and attachments into the
-    // input. Dispatch as a window message so PromptInput picks it up via onMessage.
-    const state = revertPromptState(getParts(messageID))
-    const { text, paths, sessions, images, review, browser } = state
-    // Paths carry the attachments' exact locations so PromptInput can seed them
-    // directly rather than re-deriving mentions from the text via regex, which
-    // truncates at the first space in a filename (see PromptInput's
-    // setChatBoxMessage handler).
-    window.postMessage({ type: "setChatBoxMessage", text, paths, sessions, images, review, browser }, window.origin)
+    // fork_change start - reverting to an answered question keeps the composer draft
+    if (partID == null) {
+      // Restore the reverted user message's prompt text and attachments into the
+      // input. Dispatch as a window message so PromptInput picks it up via onMessage.
+      const state = revertPromptState(getParts(messageID))
+      const { text, paths, sessions, images, review, browser } = state
+      // Paths carry the attachments' exact locations so PromptInput can seed them
+      // directly rather than re-deriving mentions from the text via regex, which
+      // truncates at the first space in a filename (see PromptInput's
+      // setChatBoxMessage handler).
+      window.postMessage({ type: "setChatBoxMessage", text, paths, sessions, images, review, browser }, window.origin)
+    }
+    // fork_change end
     vscode.postMessage({ type: "revertSession", sessionID: id, messageID, partID })
   }
 

@@ -43,6 +43,7 @@ import type { Part as TimelinePart, QuestionRequest } from "../../types/messages
 import type { TimelineHighlight } from "../../utils/timeline/highlight"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { QuestionDock } from "./QuestionDock"
+import { QuestionRevert, revertible } from "./QuestionRevert" // fork_change
 import { SuggestBar } from "./SuggestBar"
 import { toolDefaultOpen } from "./tool-default-open"
 
@@ -524,6 +525,18 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                   >
                     {(req) => <QuestionDock request={req()} />}
                   </Show>
+                  {/* fork_change start */}
+                  <Show
+                    when={
+                      !props.readonly &&
+                      props.interactivePrompts !== false &&
+                      props.message.sessionID === session.currentSessionID() &&
+                      revertible(part)
+                    }
+                  >
+                    <QuestionRevert messageID={props.message.id} partID={part.id} />
+                  </Show>
+                  {/* fork_change end */}
                 </div>
               </div>
             </Show>

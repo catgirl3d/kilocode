@@ -393,3 +393,11 @@
 [data-component="question-dock"][data-collapsed="true"] [data-slot="question-collapse-toggle"] {
   transform: rotate(180deg);
 }
+
+/* fork_change start */
+[data-slot="question-revert"] {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+/* fork_change end */

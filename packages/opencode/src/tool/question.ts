@@ -11,6 +11,7 @@ export const Parameters = Schema.Struct({
 type Metadata = {
   answers: ReadonlyArray<Question.Answer>
   dismissed?: boolean // kilocode_change
+  checkpoint?: string // kilocode_change - [fork] workspace snapshot taken before asking
 }
 
 export const QuestionTool = Tool.define<typeof Parameters, Metadata, Question.Service>(
@@ -26,6 +27,7 @@ export const QuestionTool = Tool.define<typeof Parameters, Metadata, Question.Se
           // kilocode_change start - surface Question.dismissAll's RejectedError as a normal
           // tool result via KiloQuestionTool helpers, so Effect.orDie below does not turn
           // it into a defect and kill the in-flight stream.
+          const checkpoint = yield* KiloQuestionTool.checkpoint(ctx) // [fork] snapshot before asking for "Revert to here"
           const answers = yield* question
             .ask({
               sessionID: ctx.sessionID,
@@ -33,7 +35,7 @@ export const QuestionTool = Tool.define<typeof Parameters, Metadata, Question.Se
               tool: ctx.callID ? { messageID: ctx.messageID, callID: ctx.callID } : undefined,
             })
             .pipe(KiloQuestionTool.catchDismissed)
-          if (KiloQuestionTool.isDismissed(answers)) return KiloQuestionTool.dismissedResult()
+          if (KiloQuestionTool.isDismissed(answers)) return KiloQuestionTool.dismissedResult(checkpoint) // [fork]
           // kilocode_change end
 
           const formatted = params.questions
@@ -45,6 +47,7 @@ export const QuestionTool = Tool.define<typeof Parameters, Metadata, Question.Se
             output: `User has answered your questions: ${formatted}. You can now continue with the user's answers in mind.`,
             metadata: {
               answers,
+              checkpoint, // kilocode_change - [fork] workspace snapshot taken before asking
             },
           }
         }).pipe(Effect.orDie),
