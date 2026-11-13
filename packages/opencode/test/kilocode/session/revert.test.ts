@@ -775,3 +775,446 @@ describe("workspace revert status", () => {
     30_000,
   )
 })
+
+describe("question revert", () => {
+  it.live(
+    "keeps the question when it opens its step",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const revert = yield* SessionRevert.Service
+          const session = yield* sessions.create({})
+          const providerID = ProviderV2.ID.make("test")
+          const model = { providerID, modelID: ModelV2.ID.make("test") }
+          const user = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: session.id,
+            role: "user",
+            agent: "default",
+            model,
+            time: { created: Date.now() },
+          })
+          const assistant = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: session.id,
+            role: "assistant",
+            parentID: user.id,
+            mode: "default",
+            agent: "default",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: model.modelID,
+            providerID,
+            time: { created: Date.now(), completed: Date.now() },
+            finish: "tool-calls",
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "step-start",
+          })
+          const question = yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "tool",
+            callID: "call_q",
+            tool: "question",
+            state: {
+              status: "completed",
+              input: { questions: [] },
+              output: "answered",
+              title: "Asked 1 question",
+              metadata: { answers: [["A"]] },
+              time: { start: 1, end: 2 },
+            },
+          })
+          const finish = yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "step-finish",
+            reason: "tool-calls",
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+          const followup = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: session.id,
+            role: "assistant",
+            parentID: user.id,
+            mode: "default",
+            agent: "default",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: model.modelID,
+            providerID,
+            time: { created: Date.now(), completed: Date.now() },
+            finish: "end_turn",
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: followup.id,
+            sessionID: session.id,
+            type: "text",
+            text: "after",
+          })
+
+          const result = yield* revert.revert({
+            sessionID: session.id,
+            messageID: assistant.id,
+            partID: question.id,
+          })
+
+          expect(result.revert?.messageID).toBe(assistant.id)
+          expect(result.revert?.partID).toBe(finish.id)
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live(
+    "restores files from the question checkpoint",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const revert = yield* SessionRevert.Service
+          const snapshot = yield* Snapshot.Service
+          const session = yield* sessions.create({})
+          const file = path.join(dir, "a.txt")
+          const providerID = ProviderV2.ID.make("test")
+          const model = { providerID, modelID: ModelV2.ID.make("test") }
+          yield* Effect.promise(() => fs.writeFile(file, "before"))
+          const start = yield* snapshot.track()
+          if (!start) throw new Error("expected snapshot")
+          yield* Effect.promise(() => fs.writeFile(file, "asked"))
+          const asked = yield* snapshot.track()
+          if (!asked) throw new Error("expected snapshot")
+          yield* Effect.promise(() => fs.writeFile(file, "after"))
+          const user = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: session.id,
+            role: "user",
+            agent: "default",
+            model,
+            time: { created: Date.now() },
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: user.id,
+            sessionID: session.id,
+            type: "text",
+            text: "change a file",
+          })
+          const assistant = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: session.id,
+            role: "assistant",
+            parentID: user.id,
+            mode: "default",
+            agent: "default",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: model.modelID,
+            providerID,
+            time: { created: Date.now(), completed: Date.now() },
+            finish: "tool-calls",
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "text",
+            text: "ask",
+          })
+          const question = yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "tool",
+            callID: "call_q",
+            tool: "question",
+            state: {
+              status: "completed",
+              input: { questions: [] },
+              output: "answered",
+              title: "Asked 1 question",
+              metadata: { answers: [["A"]], checkpoint: asked },
+              time: { start: 1, end: 2 },
+            },
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "step-finish",
+            reason: "tool-calls",
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+          const followup = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: session.id,
+            role: "assistant",
+            parentID: user.id,
+            mode: "default",
+            agent: "default",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: model.modelID,
+            providerID,
+            time: { created: Date.now(), completed: Date.now() },
+            finish: "end_turn",
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: followup.id,
+            sessionID: session.id,
+            type: "text",
+            text: "after",
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: followup.id,
+            sessionID: session.id,
+            type: "patch",
+            hash: start,
+            files: [file],
+          })
+
+          yield* revert.revert({ sessionID: session.id, messageID: assistant.id, partID: question.id })
+          expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toBe("asked")
+
+          yield* revert.unrevert({ sessionID: session.id })
+          expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toBe("after")
+        }),
+      { git: true },
+    ),
+  )
+
+  const answeredQuestion = Effect.fnUntraced(function* (dir: string, metadata: Record<string, unknown>) {
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({})
+    const providerID = ProviderV2.ID.make("test")
+    const model = { providerID, modelID: ModelV2.ID.make("test") }
+    const user = yield* sessions.updateMessage({
+      id: MessageID.ascending(),
+      sessionID: session.id,
+      role: "user",
+      agent: "default",
+      model,
+      time: { created: Date.now() },
+    })
+    const assistant = yield* sessions.updateMessage({
+      id: MessageID.ascending(),
+      sessionID: session.id,
+      role: "assistant",
+      parentID: user.id,
+      mode: "default",
+      agent: "default",
+      path: { cwd: dir, root: dir },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: model.modelID,
+      providerID,
+      time: { created: Date.now(), completed: Date.now() },
+      finish: "tool-calls",
+    })
+    const start = yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: assistant.id,
+      sessionID: session.id,
+      type: "step-start",
+    })
+    const ask = yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: assistant.id,
+      sessionID: session.id,
+      type: "text",
+      text: "ask",
+    })
+    const question = yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: assistant.id,
+      sessionID: session.id,
+      type: "tool",
+      callID: "call_q",
+      tool: "question",
+      state: {
+        status: "completed",
+        input: { questions: [] },
+        output: "answered",
+        title: "Asked 1 question",
+        metadata,
+        time: { start: 1, end: 2 },
+      },
+    })
+    return { sessions, session, user, assistant, model, providerID, prior: [start.id, ask.id], question }
+  })
+
+  it.live(
+    "falls back to the turn patch without a question checkpoint",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const revert = yield* SessionRevert.Service
+          const snapshot = yield* Snapshot.Service
+          const file = path.join(dir, "a.txt")
+          yield* Effect.promise(() => fs.writeFile(file, "before"))
+          const start = yield* snapshot.track()
+          if (!start) throw new Error("expected snapshot")
+          yield* Effect.promise(() => fs.writeFile(file, "after"))
+          const { sessions, session, user, assistant, model, providerID, question } = yield* answeredQuestion(dir, {
+            answers: [["A"]],
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "step-finish",
+            reason: "tool-calls",
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+          const followup = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: session.id,
+            role: "assistant",
+            parentID: user.id,
+            mode: "default",
+            agent: "default",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: model.modelID,
+            providerID,
+            time: { created: Date.now(), completed: Date.now() },
+            finish: "end_turn",
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: followup.id,
+            sessionID: session.id,
+            type: "patch",
+            hash: start,
+            files: [file],
+          })
+
+          yield* revert.revert({ sessionID: session.id, messageID: assistant.id, partID: question.id })
+          expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toBe("before")
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live(
+    "reports the workspace restored from the question checkpoint alone",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const revert = yield* SessionRevert.Service
+          const snapshot = yield* Snapshot.Service
+          const asked = yield* snapshot.track()
+          if (!asked) throw new Error("expected snapshot")
+          const { sessions, session, assistant, question } = yield* answeredQuestion(dir, {
+            answers: [["A"]],
+            checkpoint: asked,
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "step-finish",
+            reason: "tool-calls",
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+
+          const result = yield* revert.revert({ sessionID: session.id, messageID: assistant.id, partID: question.id })
+          expect(result.revert?.workspace).toBe("restored")
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live(
+    "keeps the question and its answer after cleanup",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const revert = yield* SessionRevert.Service
+          const { sessions, session, user, assistant, model, providerID, prior, question } = yield* answeredQuestion(
+            dir,
+            { answers: [["A"]] },
+          )
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: assistant.id,
+            sessionID: session.id,
+            type: "step-finish",
+            reason: "tool-calls",
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          })
+          const followup = yield* sessions.updateMessage({
+            id: MessageID.ascending(),
+            sessionID: session.id,
+            role: "assistant",
+            parentID: user.id,
+            mode: "default",
+            agent: "default",
+            path: { cwd: dir, root: dir },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            modelID: model.modelID,
+            providerID,
+            time: { created: Date.now(), completed: Date.now() },
+            finish: "end_turn",
+          })
+          yield* sessions.updatePart({
+            id: PartID.ascending(),
+            messageID: followup.id,
+            sessionID: session.id,
+            type: "text",
+            text: "after",
+          })
+
+          yield* revert.revert({ sessionID: session.id, messageID: assistant.id, partID: question.id })
+          yield* revert.cleanup(yield* sessions.get(session.id))
+
+          const messages = yield* sessions.messages({ sessionID: session.id })
+          expect(messages.map((message) => message.info.id)).toEqual([user.id, assistant.id])
+          const kept = messages.find((message) => message.info.id === assistant.id)
+          expect(kept?.parts.map((part) => part.id)).toEqual([...prior, question.id])
+          expect((yield* sessions.get(session.id)).revert).toBeUndefined()
+        }),
+      { git: true },
+    ),
+  )
+
+  it.live(
+    "does nothing when no part follows the question",
+    provideTmpdirInstance(
+      (dir) =>
+        Effect.gen(function* () {
+          const revert = yield* SessionRevert.Service
+          const { sessions, session, assistant, question } = yield* answeredQuestion(dir, {
+            answers: [["A"]],
+            checkpoint: "snap_q",
+          })
+
+          const result = yield* revert.revert({ sessionID: session.id, messageID: assistant.id, partID: question.id })
+          expect(result.revert).toBeUndefined()
+          expect((yield* sessions.get(session.id)).revert).toBeUndefined()
+        }),
+      { git: true },
+    ),
+  )
+})
