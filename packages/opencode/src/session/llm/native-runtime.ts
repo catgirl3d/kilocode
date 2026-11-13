@@ -94,7 +94,9 @@ export function stream(input: StreamInput): StreamResult {
     baseURL: current.baseURL,
     messages: ProviderTransform.message(input.messages, input.model, input.messageTransformOptions ?? input.providerOptions ?? {}), // kilocode_change
     toolChoice: input.toolChoice,
-    temperature: input.temperature,
+    // kilocode_change start - [fork] never send sampling temperature to providers
+    // temperature: input.temperature,
+    // kilocode_change end
     topP: input.topP,
     topK: input.topK,
     maxOutputTokens: input.maxOutputTokens,

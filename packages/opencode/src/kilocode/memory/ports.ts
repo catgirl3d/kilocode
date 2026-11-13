@@ -176,7 +176,6 @@ async function memoryText(input: {
   prompt: string
   timeoutMs: number
   sessionID: string
-  temperature?: number
   topP?: number
   topK?: number
   signal?: AbortSignal
@@ -191,7 +190,6 @@ async function memoryText(input: {
     prompt: input.prompt,
     providerOptions: params.providerOptions,
     abortSignal: input.signal ? AbortSignal.any([ctl.signal, input.signal]) : ctl.signal,
-    temperature: input.temperature,
     topP: input.topP,
     topK: input.topK,
     maxRetries: 1,
@@ -230,10 +228,9 @@ function modelOptions(model: Provider.Model, language: LanguageModelV3) {
   const options = consolidationOptions(model)
   // No explicit output cap: valid output is already bounded by the compact-JSON prompt, the parser's
   // 64KB guard, and the capture timeout — and some backends reject explicit caps outright.
-  const temperature = ProviderTransform.temperature(model)
   const topP = ProviderTransform.topP(model)
   const topK = ProviderTransform.topK(model)
-  return { source: model, language, options, temperature, topP, topK }
+  return { source: model, language, options, topP, topK } // fork_change - [fork] no sampling temperature
 }
 
 type ModelHandle = ReturnType<typeof modelOptions>
@@ -328,7 +325,6 @@ export namespace MemoryModel {
           prompt,
           timeoutMs,
           sessionID,
-          temperature: resolved.temperature,
           topP: resolved.topP,
           topK: resolved.topK,
           signal,
