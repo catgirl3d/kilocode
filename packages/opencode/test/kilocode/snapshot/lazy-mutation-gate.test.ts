@@ -362,6 +362,57 @@ describe("lazy snapshot mutation gate", () => {
 
     expect(state).toBe(2)
   })
+  it("marks nothing before a baseline exists", async () => {
+    let tracks = 0
+    const gate = makeGate({
+      sessionID: "ses_test" as never,
+      messageID: "msg_test" as never,
+      track: () => Effect.sync(() => `snap_${++tracks}`),
+      updatePart: (part) => Effect.succeed(part),
+    })
+
+    expect(await run(gate.mark())).toBeUndefined()
+    expect(tracks).toBe(0)
+  })
+
+  it("marks a fresh snapshot without moving the baseline", async () => {
+    let tracks = 0
+    const seen: string[] = []
+    const gate = makeGate({
+      sessionID: "ses_test" as never,
+      messageID: "msg_test" as never,
+      track: () => Effect.sync(() => `snap_${++tracks}`),
+      updatePart: (part) => Effect.succeed(part),
+      patch: (before, after) => Effect.sync(() => (seen.push(`${before}->${after}`), { hash: before, files: ["a"] })),
+    })
+
+    expect(await run(gate.ensure())).toBe("snap_1")
+    expect(await run(gate.mark())).toBe("snap_2")
+    await run(gate.checkpoint())
+    expect(seen).toEqual(["snap_1->snap_3"])
+  })
+
+  it("mark never marks the turn dirty", async () => {
+    let tracks = 0
+    const persisted: string[] = []
+    const gate = makeGate({
+      sessionID: "ses_test" as never,
+      messageID: "msg_test" as never,
+      track: () => Effect.sync(() => `snap_${++tracks}`),
+      updatePart: (part) => Effect.succeed(part),
+      persist: (input) =>
+        Effect.sync(() => {
+          persisted.push(input.snapshot)
+        }),
+    })
+
+    await run(gate.restore("base"))
+    expect(await run(gate.mark())).toBe("snap_1")
+    expect(tracks).toBe(1)
+    await run(gate.checkpoint())
+    expect(persisted).toEqual([])
+  })
+
   // Keep classifier cases in this serial suite because Effect's test runtime
   // owns shared fibers while the gate tests exercise concurrency.
   const check = (tool: string, args: Record<string, unknown> = {}, shell?: "read" | "unknown") =>
