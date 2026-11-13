@@ -238,8 +238,7 @@ describe("session.llm-native.request", () => {
       { type: "text", text: "agent system" },
       { type: "text", text: "system from messages" },
     ])
-    expect(request.generation).toMatchObject({
-      temperature: 0.2,
+    expect(request.generation).toEqual({
       topP: 0.9,
       topK: 40,
       maxTokens: 1024,
