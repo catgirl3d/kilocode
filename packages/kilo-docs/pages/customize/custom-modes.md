@@ -31,6 +31,10 @@ Organization-managed agents are controlled at the organization level:
 
 For organization members, contact the person or team that manages Kilo for your organization if an organization agent appears unexpectedly, needs different instructions, or needs different tool access. For admins and support teams, keep the purpose and owner of each organization-managed agent clear so members know when to use it and where to request changes.
 
+{% callout type="note" %}
+The agent `temperature` setting is accepted and stored for compatibility but is not sent in chat requests; FIM/autocomplete is unaffected.
+{% /callout %}
+
 {% tabs %}
 {% tab label="VSCode" %}
 
@@ -48,7 +52,7 @@ In the VSCode extension and CLI, custom behavioral profiles are called **agents*
 | **permission** | Per-agent permission overrides controlling which tools the agent can use (e.g., deny `edit`, `bash`) |
 | **color** | Hex color (`#FF5733`) or theme keyword (`primary`, `accent`, `warning`, etc.) for the agent picker UI |
 | **steps** | Maximum agentic iterations before forcing a text-only response |
-| **temperature** / **top_p** | Sampling parameters for the agent's model |
+| **temperature** / **top_p** | `temperature` is accepted for compatibility; `top_p` remains a sampling parameter for the agent's model |
 | **variant** | Default model variant |
 | **hidden** | If `true`, the agent is hidden from the UI (only meaningful for subagents) |
 | **disable** | If `true`, removes the agent entirely |
@@ -279,7 +283,7 @@ In the CLI, custom behavioral profiles are called **agents** instead of modes. A
 | **permission** | Per-agent permission overrides controlling which tools the agent can use (e.g., deny `edit`, `bash`) |
 | **color** | Hex color (`#FF5733`) or theme keyword (`primary`, `accent`, `warning`, etc.) for the agent picker UI |
 | **steps** | Maximum agentic iterations before forcing a text-only response |
-| **temperature** / **top_p** | Sampling parameters for the agent's model |
+| **temperature** / **top_p** | `temperature` is accepted for compatibility; `top_p` remains a sampling parameter for the agent's model |
 | **variant** | Default model variant |
 | **hidden** | If `true`, the agent is hidden from the UI (only meaningful for subagents) |
 | **disable** | If `true`, removes the agent entirely |
