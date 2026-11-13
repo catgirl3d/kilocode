@@ -552,7 +552,9 @@ const layer = Layer.effect(
           // kilocode_change start - enable telemetry with custom PostHog tracer
           experimental_telemetry: KiloAgent.telemetryOptions(cfg),
           // kilocode_change end
-          temperature: 0.3,
+          // kilocode_change start - [fork] never send sampling temperature to providers
+          // temperature: 0.3,
+          // kilocode_change end
           messages: [
             ...(isOpenaiOauth
               ? []
