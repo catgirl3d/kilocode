@@ -1605,6 +1605,7 @@ export const dict = {
   // Agent Manager strings live in webview-ui/agent-manager/i18n/en.ts
 
   "question.summary": "{{n}} of {{total}} questions",
+  "question.revert": "Revert to here", // fork_change
   "common.review": "Review",
 
   "settings.aboutKiloCode.rooImport.description": "Import conversation history from a Roo Code installation.",
