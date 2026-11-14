@@ -5,12 +5,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version override (leave empty to use package.json version)"
+        description: "Release version override (leave empty to use <package.json version>-fork.<run number>)"
         required: false
         type: string
         default: ""
       notes:
-        description: "Release notes override (leave empty to use CHANGELOG-FORK.md)"
+        description: "Release notes override (leave empty to list CHANGELOG-FORK.md entries added since the previous release)"
         required: false
         type: string
         default: ""
@@ -41,25 +41,72 @@ jobs:
       - name: Determine version, tag, and release notes
         id: meta
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_NOTES: ${{ inputs.notes }}
         run: |
           if [ -n "$INPUT_VERSION" ]; then
             VERSION="$INPUT_VERSION"
           else
-            VERSION="$(bun -e 'console.log((await Bun.file("packages/kilo-vscode/package.json").json()).version)')"
+            BASE="$(bun -e 'console.log((await Bun.file("packages/kilo-vscode/package.json").json()).version)')"
+            VERSION="$BASE-fork.$GITHUB_RUN_NUMBER"
           fi
           TAG="v$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Building VSIX for version: $VERSION (tag: $TAG)"
 
+          # Releases and tags are never replaced: stop before the build if this one is taken.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Pick another version or delete the release and its tag first."
+            exit 1
+          fi
+          if [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
+            echo "::error::Tag $TAG already exists on origin. Pick another version or delete the tag first."
+            exit 1
+          fi
+
           if [ -n "$INPUT_NOTES" ]; then
             echo "$INPUT_NOTES" > release_notes.md
-          elif [ -f "CHANGELOG-FORK.md" ]; then
-            cp CHANGELOG-FORK.md release_notes.md
-          else
+            exit 0
+          fi
+          if [ ! -f "CHANGELOG-FORK.md" ]; then
             echo "Kilo Code Fork VSIX Build ($VERSION)" > release_notes.md
+            exit 0
+          fi
+
+          PREV="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
+            --json tagName,publishedAt --jq 'sort_by(.publishedAt) | last | .tagName // ""')"
+          if [ -z "$PREV" ]; then
+            cp CHANGELOG-FORK.md release_notes.md
+            exit 0
+          fi
+
+          # Compare file contents at the previous release tag, not a commit range: rebases rewrite history.
+          git fetch origin "+refs/tags/$PREV:refs/fork-release/prev" --no-tags
+          git show "refs/fork-release/prev:CHANGELOG-FORK.md" > "$RUNNER_TEMP/changelog_prev.md" 2>/dev/null \
+            || : > "$RUNNER_TEMP/changelog_prev.md"
+          awk -v prev="$RUNNER_TEMP/changelog_prev.md" '
+            BEGIN { while ((getline line < prev) > 0) old[line] = 1 }
+            /^### / { head = $0; next }
+            /^- / && !($0 in old) {
+              if (head != "") {
+                if (seen) print ""
+                print head
+                print ""
+                head = ""
+                seen = 1
+              }
+              print
+            }
+          ' CHANGELOG-FORK.md > "$RUNNER_TEMP/changelog_delta.md"
+
+          echo "Changes since [$PREV]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$PREV):" > release_notes.md
+          echo "" >> release_notes.md
+          if [ -s "$RUNNER_TEMP/changelog_delta.md" ]; then
+            cat "$RUNNER_TEMP/changelog_delta.md" >> release_notes.md
+          else
+            echo "No new CHANGELOG-FORK.md entries." >> release_notes.md
           fi
 
       - name: Install VSIX packager
@@ -88,29 +135,16 @@ jobs:
         run: |
           bun run script/build.ts
 
-      - name: Create or recreate GitHub Release
+      - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.tag }}
-          VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Removing existing release and tag for $TAG to recreate clean release..."
-            gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" || true
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f "$TAG" "$GITHUB_SHA"
-          git push origin "$TAG" --force --no-verify
-
           gh release create "$TAG" \
-            --target "$GITHUB_SHA" \
-            --title "$TAG (Fork)" \
-            --notes-file release_notes.md \
-            --repo "$GITHUB_REPOSITORY"
-
-          gh release upload "$TAG" \
             packages/kilo-vscode/out/kilo-vscode-linux-x64.vsix \
             packages/kilo-vscode/out/kilo-vscode-win32-x64.vsix \
-            --clobber --repo "$GITHUB_REPOSITORY"
+            --target "$GITHUB_SHA" \
+            --title "$TAG (Fork)" \
+            --latest \
+            --notes-file release_notes.md \
+            --repo "$GITHUB_REPOSITORY"
