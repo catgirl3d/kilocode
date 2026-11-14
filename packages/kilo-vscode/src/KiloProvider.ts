@@ -237,6 +237,7 @@ import {
   watchShortcutHintsConfig,
 } from "./kilo-provider/shortcut-hints-settings"
 import { buildShortcutContextMessage, watchShortcutContext } from "./kilo-provider/shortcut-context"
+import { commit } from "./commit" // fork_change
 
 type ReviewCommentsHandler = (comments: unknown[], autoSend: boolean, sessionID?: string, directory?: string) => void
 
@@ -1063,6 +1064,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       enableScripts: true,
       localResourceRoots: [this.extensionUri],
     }
+
+    // fork_change start - show the build commit in the sidebar title ("Kilo Code: #abc1234")
+    if (commit) webviewView.title = `#${commit}`
+    // fork_change end
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview, true)
     this.setupWebviewMessageHandler(webviewView.webview)
