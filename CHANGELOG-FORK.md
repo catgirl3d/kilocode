@@ -64,6 +64,7 @@
 
 ### Fixes & Enhancements
 
+- Give every fork VSIX build its own version (`<upstream version>-fork.<run number>`) and its own GitHub Release instead of replacing the previous release and tag, and list only the changes since the previous release in the release notes.
 - Keep internal compaction reasoning out of chats and session history: the summarizer's thinking no longer appears as a Reasoning block.
 - Show reasoning from Merge Gateway models: the selected reasoning effort (for example `max`) is now sent to the gateway, so models such as DeepSeek V4.1 Flash stream thinking into reasoning blocks instead of mixing it into the answer text.
 - Resume subagent tasks on the model from current settings instead of the model they last ran on, so switching the subagent model (for example after a rate limit) takes effect; a model or reasoning effort the parent agent chose explicitly for the task still sticks while Task Subagent Model Selection is enabled.
