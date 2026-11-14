@@ -11,6 +11,18 @@ const playwright = require("./script/playwright-runtime")
 const production = process.argv.includes("--production")
 const watch = process.argv.includes("--watch")
 
+// fork_change start - short hash of the commit the extension is built from
+const commit = (() => {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA.slice(0, 7)
+  const result = require("child_process").spawnSync("git", ["rev-parse", "--short=7", "HEAD"], {
+    cwd: __dirname,
+    encoding: "utf8",
+    windowsHide: true,
+  })
+  return result.status === 0 ? result.stdout.trim() : ""
+})()
+// fork_change end
+
 /**
  * Cache transformed Solid JSX files in memory and on disk to avoid
  * re-parsing and re-transforming unchanged files across builds and webviews.
@@ -426,6 +438,7 @@ function getExtensionConfig() {
     platform: "node",
     outfile: "dist/extension.js",
     external: ["vscode"],
+    define: { KILO_COMMIT: JSON.stringify(commit) }, // fork_change
     logLevel: "silent",
     plugins: [playwright, ...(watch ? [esbuildProblemMatcherPlugin] : [])],
   }
