@@ -8,9 +8,18 @@ This fork publishes custom VSIX packages through `publish-vscode-release.yml`. T
 
 1. Maintain fork modifications and notes in `CHANGELOG-FORK.md`.
 2. In GitHub Actions, go to **publish-vscode-release** -> **Run workflow**.
-3. (Optional) Provide a custom version or release note override, or leave them empty to build the current version (`7.4.22`) with notes from `CHANGELOG-FORK.md`.
+3. (Optional) Provide a custom version or release note override, or leave them empty.
 
-The workflow builds Linux x64 and Windows x64 VSIX packages and creates/updates a GitHub Release in this fork with both `.vsix` assets attached. VSIX files are attached only to the GitHub Release — they are not duplicated as Actions Artifacts.
+With the inputs left empty:
+
+- **Version**: `<upstream version>-fork.<run number>`, for example `7.8.28-fork.31`. The upstream version comes from `packages/kilo-vscode/package.json`; the run number is the workflow's `github.run_number`, so it always grows and does not restart when the upstream version changes. The same version is used for the tag (`v7.8.28-fork.31`), the VSIX, and the bundled CLI.
+- **Release notes**: the `CHANGELOG-FORK.md` entries that are not in the file at the previous release's tag, grouped under their section headings. The first release in a repository gets the whole file.
+
+The workflow builds Linux x64 and Windows x64 VSIX packages and creates a GitHub Release in this fork with both `.vsix` assets attached. VSIX files are attached only to the GitHub Release — they are not duplicated as Actions Artifacts.
+
+Releases and tags are never replaced. If the release or the tag for the chosen version already exists, the workflow fails before building; this also happens when a run that already published is re-run, because the run number stays the same. Pick another version, or delete the release and its tag by hand first.
+
+By semver, `7.8.28-fork.31` is lower than `7.8.28`, and the fork keeps the upstream extension ID (`kilocode.kilo-code`). Turn off auto-update for the extension in VS Code so a Marketplace version does not replace the fork build.
 
 ## How to Trigger a Release
 
