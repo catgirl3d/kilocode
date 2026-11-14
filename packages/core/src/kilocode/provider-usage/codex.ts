@@ -4,6 +4,7 @@ import { createHash } from "node:crypto"
 import { Integration } from "../../integration"
 import { ProviderV2 } from "../../provider"
 import type { Adapter, AdapterContext } from "../provider-usage"
+import { read } from "./response" // fork_change - shared response reader
 
 const url = "https://chatgpt.com/backend-api/wham/usage"
 const manage = "https://chatgpt.com/codex/settings/usage"
@@ -185,40 +186,6 @@ export function decode(input: unknown): Native {
   }
 }
 
-async function body(response: Response) {
-  const declared = Number(response.headers.get("content-length"))
-  if (Number.isFinite(declared) && declared > limit) {
-    response.body?.cancel().catch(() => undefined)
-    throw new Failure("size")
-  }
-  if (!response.body) {
-    const value = await response.arrayBuffer()
-    if (value.byteLength > limit) throw new Failure("size")
-    return new TextDecoder().decode(value)
-  }
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  while (true) {
-    const chunk = await reader.read()
-    if (chunk.done) break
-    if (!chunk.value) continue
-    size += chunk.value.byteLength
-    if (size > limit) {
-      await reader.cancel().catch(() => undefined)
-      throw new Failure("size")
-    }
-    chunks.push(chunk.value)
-  }
-  const value = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    value.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return new TextDecoder().decode(value)
-}
-
 export async function query(candidate: Candidate, fetcher: typeof fetch = fetch): Promise<Native> {
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -238,7 +205,7 @@ export async function query(candidate: Candidate, fetcher: typeof fetch = fetch)
     response.body?.cancel().catch(() => undefined)
     throw new Failure(response.status === 401 || response.status === 403 ? "auth" : "http")
   }
-  const text = await body(response)
+  const text = await read(response, limit, () => new Failure("size")) // fork_change - shared response reader
   try {
     return decode(JSON.parse(text))
   } catch {

@@ -10,6 +10,7 @@ import { PluginV2 } from "../plugin"
 import { ProviderV2 } from "../provider"
 import * as Cloud from "./provider-usage/cloud"
 import * as Codex from "./provider-usage/codex"
+import * as OpencodeGo from "./provider-usage/opencode-go" // fork_change
 import { bindings, direct, type Candidate } from "./provider-usage/minimax/usage"
 
 const successTtl = 60_000
@@ -24,6 +25,10 @@ export interface AdapterContext {
   token: string | undefined
   cloudIdentity: string | undefined
   cloudReliable: boolean
+  // fork_change start - OpenCode Go usage discovery state
+  opencodeGo: { label: string; key: string; url: string } | undefined
+  opencodeGoFailed: boolean
+  // fork_change end
   fetch: typeof fetch
   usage: typeof Cloud.fetchCodingPlanUsage
   identityCurrent(identity: string): boolean
@@ -82,6 +87,27 @@ const minimax: Adapter = {
     return { items: merged }
   },
 }
+
+// fork_change start - OpenCode Go direct usage adapter
+const opencodeGo: Adapter = {
+  cachePrefixes: ["opencode-go"],
+  async run(ctx) {
+    if (ctx.opencodeGoFailed) return { items: ctx.preserve("opencode-go") }
+    const candidate = ctx.opencodeGo
+    if (!candidate) {
+      ctx.prune("opencode-go", [])
+      return { items: [] }
+    }
+    const item = await ctx.source(
+      "opencode-go",
+      () => OpencodeGo.load(candidate, ctx.fetch),
+      fingerprint(candidate.key),
+    )
+    ctx.prune("opencode-go", [item.id])
+    return { items: [item] }
+  },
+}
+// fork_change end
 
 export class ServiceError extends Schema.TaggedErrorClass<ServiceError>()("ProviderUsageServiceError", {
   message: Schema.String,
@@ -303,6 +329,31 @@ const inputs = Effect.fn("ProviderUsage.inputs")(function* (
       return { providerID, label: provider.name, key: value.trim() } satisfies Candidate
     }),
   )
+  // fork_change start - discover an eligible OpenCode Go API key
+  const opencodeGoProvider = byID.get(ProviderV2.ID.make("opencode-go"))
+  const opencodeGoUrl =
+    opencodeGoProvider && !opencodeGoProvider.disabled ? OpencodeGo.base(opencodeGoProvider.api.url) : undefined
+  let opencodeGo: { label: string; key: string; url: string } | undefined
+  let opencodeGoFailed = false
+  if (opencodeGoProvider && opencodeGoUrl) {
+    const resolved = yield* resolve(
+      integrations,
+      opencodeGoProvider.integrationID ?? Integration.ID.make(opencodeGoProvider.id),
+    )
+    if (!resolved.ok) {
+      opencodeGoFailed = true
+    } else {
+      const value =
+        resolved.value?.type === "key"
+          ? resolved.value.key
+          : resolved.value?.type === "oauth"
+            ? resolved.value.access
+            : configuredKey(opencodeGoProvider)
+      const key = nonempty(value)
+      if (key) opencodeGo = { label: opencodeGoProvider.name, key, url: opencodeGoUrl }
+    }
+  }
+  // fork_change end
   const kilo = yield* resolve(integrations, Integration.ID.make("kilo"))
   const kiloProvider = byID.get(ProviderV2.ID.kilo)
   const configuredOrg = nonempty(process.env.KILO_ORG_ID) ?? nonempty(kiloProvider?.request.body.kilocodeOrganizationId)
@@ -316,6 +367,10 @@ const inputs = Effect.fn("ProviderUsage.inputs")(function* (
     providers,
     candidates: candidates.filter((item): item is Candidate => item !== undefined),
     failedCandidates,
+    // fork_change start - pass OpenCode Go discovery state to its adapter
+    opencodeGo,
+    opencodeGoFailed,
+    // fork_change end
     token,
     cloudReliable,
   }
@@ -345,6 +400,10 @@ function makeService(
       token: current.token,
       cloudIdentity,
       cloudReliable: current.cloudReliable,
+      // fork_change start - OpenCode Go adapter context
+      opencodeGo: current.opencodeGo,
+      opencodeGoFailed: current.opencodeGoFailed,
+      // fork_change end
       fetch: transport.fetch,
       usage: transport.usage,
       identityCurrent: (identity) => state.cloudIdentity === identity,
@@ -352,7 +411,7 @@ function makeService(
       preserve: (prefix, identity) => preserve(state, prefix, identity),
       prune: (prefix, keep) => prune(state, prefix, keep),
     }
-    const registry: readonly Adapter[] = [managed, minimax, yield* codex(ctx)]
+    const registry: readonly Adapter[] = [managed, minimax, opencodeGo, yield* codex(ctx)] // fork_change
     const results = yield* Effect.promise(() =>
       Promise.all(
         registry.map((adapter) =>
