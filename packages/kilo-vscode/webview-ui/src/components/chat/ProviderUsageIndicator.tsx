@@ -5,7 +5,7 @@ import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useServer } from "../../context/server"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
-import { localeToBcp47 } from "../../context/language-utils"
+import { formatDateTime } from "@kilocode/kilo-gateway/provider-usage"
 import { usageLabels } from "../profile/ProviderUsageCards"
 import {
   ringProgress,
@@ -33,8 +33,7 @@ export const ProviderUsageIndicator: Component<{ sessionID?: Accessor<string | u
     const item = snapshot()
     return item ? usageTone(item, worst()) : "muted"
   })
-  const reset = (value: string) =>
-    language.t("profile.usage.reset", { date: new Date(value).toLocaleString(localeToBcp47(language.locale())) })
+  const reset = (value: string) => language.t("profile.usage.reset", { date: formatDateTime(value) })
   const rows = createMemo(() => {
     const item = snapshot()
     if (!item) return []

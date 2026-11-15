@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { ProviderUsage, ProviderUsageWindow } from "@kilocode/sdk/v2/client"
-import { formatWindow, windowLabel, windowProgress } from "@kilocode/kilo-gateway/provider-usage"
+import { formatDateTime, formatWindow, windowLabel, windowProgress } from "@kilocode/kilo-gateway/provider-usage"
 
 const { KiloProvider } = await import("../../src/KiloProvider")
 
@@ -84,6 +84,11 @@ describe("provider usage presentation", () => {
     expect(windowLabel(window({ period: { unit: "hour", value: 5 } }))).toBe("Shared · 5-hour quota")
     expect(windowLabel(window({ period: { unit: "week", value: 1 } }))).toBe("Shared · Weekly quota")
     expect(windowLabel(window({ resource: "image" }))).toBe("image · Quota")
+  })
+
+  it("formats timestamps day-first with a 24-hour clock in local time", () => {
+    expect(formatDateTime(new Date(2026, 10, 14, 20, 0, 5).getTime())).toBe("14.11.2026 20:00:05")
+    expect(formatDateTime(new Date(2026, 0, 3, 9, 7, 1).toISOString())).toBe("03.01.2026 09:07:01")
   })
 })
 
