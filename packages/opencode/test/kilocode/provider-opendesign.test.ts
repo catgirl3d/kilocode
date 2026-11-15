@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Schema } from "effect"
+import type * as ModelsDev from "@opencode-ai/core/models-dev"
+import { Provider } from "../../src/provider/provider"
 import {
   CatalogProvider,
   OPENDESIGN_ID,
@@ -180,5 +182,46 @@ describe("OpenDesign model list", () => {
     expect(models["sparse"]?.family).toBe("")
     expect(models["sparse"]?.limit).toEqual({ context: 500000, output: 0 })
     expect(models["sparse"]?.modalities).toEqual({ input: ["text"], output: ["text"] })
+  })
+})
+
+describe("OpenDesign reasoning", () => {
+  const efforts = ["none", "low", "medium", "high", "xhigh", "max"]
+
+  test("advertises every gateway model as reasoning-capable with effort levels from none to max", () => {
+    const model = openDesignModel({ id: "deepseek-v4.1-flash" })
+    expect(model.reasoning).toBe(true)
+    expect(model.reasoning_options).toEqual([{ type: "effort", values: efforts }])
+  })
+
+  test("keeps only the effort levels the gateway model accepts", () => {
+    expect(openDesignModel({ id: "glm-5.3-flashx" }).reasoning_options).toEqual([
+      { type: "effort", values: ["none", "low", "high", "xhigh", "max"] },
+    ])
+    expect(openDesignModel({ id: "kimi-k2.7-code" }).reasoning_options).toEqual([
+      { type: "effort", values: ["none", "low", "medium", "high", "xhigh"] },
+    ])
+    expect(openDesignModel({ id: "minimax-m3.1-flash" }).reasoning_options).toEqual([
+      { type: "effort", values: ["low", "medium", "high", "xhigh", "max"] },
+    ])
+  })
+
+  test("turns the advertised efforts into selectable reasoning variants", () => {
+    const provider = {
+      id: OPENDESIGN_ID,
+      name: "OpenDesign",
+      env: [],
+      api: OPENDESIGN_URL,
+      npm: "@ai-sdk/openai-compatible",
+      models: {
+        "deepseek-v4.1-flash": openDesignModel({ id: "deepseek-v4.1-flash" }),
+        "glm-5.3-flashx": openDesignModel({ id: "glm-5.3-flashx" }),
+      },
+    } as unknown as ModelsDev.Provider
+
+    const models = Provider.fromModelsDevProvider(provider).models
+    expect(Object.keys(models["deepseek-v4.1-flash"]?.variants ?? {})).toEqual(efforts)
+    expect(models["deepseek-v4.1-flash"]?.variants?.["max"]).toEqual({ reasoningEffort: "max" })
+    expect(Object.keys(models["glm-5.3-flashx"]?.variants ?? {})).toEqual(["none", "low", "high", "xhigh", "max"])
   })
 })
