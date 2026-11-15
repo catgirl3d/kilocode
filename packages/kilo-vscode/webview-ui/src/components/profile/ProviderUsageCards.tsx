@@ -9,7 +9,7 @@ import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { Tag } from "@kilocode/kilo-ui/tag"
 import { useLanguage } from "../../context/language"
 import { localeToBcp47 } from "../../context/language-utils"
-import { formatWindow, windowLabel, windowProgress } from "@kilocode/kilo-gateway/provider-usage"
+import { formatDateTime, formatWindow, windowLabel, windowProgress } from "@kilocode/kilo-gateway/provider-usage" // fork_change
 
 export interface ProviderUsageCardsProps {
   data: ProviderUsageData | undefined
@@ -63,7 +63,7 @@ const stale = (item: ProviderUsageSnapshot, language: Language) => {
   if (!item.fetchedAt) return notice
   const date = new Date(item.fetchedAt)
   if (Number.isNaN(date.getTime())) return notice
-  return `${notice} (${date.toLocaleString(localeToBcp47(language.locale()))})`
+  return `${notice} (${formatDateTime(item.fetchedAt)})` // fork_change
 }
 
 const order = (items: ProviderUsageSnapshot[]) =>
@@ -146,7 +146,7 @@ const UsageCard: Component<{
                 {(reset) => (
                   <CardDescription>
                     {props.language.t("profile.usage.reset", {
-                      date: new Date(reset()).toLocaleString(localeToBcp47(props.language.locale())),
+                      date: formatDateTime(reset()), // fork_change
                     })}
                   </CardDescription>
                 )}
