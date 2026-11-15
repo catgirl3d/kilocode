@@ -108,3 +108,13 @@ export const windowProgress = (window: UsageWindowLike) => {
   if (window.remaining !== undefined) return Math.min(100, Math.max(0, 100 - (window.remaining / window.limit) * 100))
   return undefined
 }
+
+// fork_change start
+const pad = (value: number) => String(value).padStart(2, "0")
+
+/** Day-first local timestamp shared by every usage surface, for example "14.11.2026 20:00:23". */
+export const formatDateTime = (value: string | number) => {
+  const date = new Date(value)
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+}
+// fork_change end
