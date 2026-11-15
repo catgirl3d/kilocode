@@ -23,6 +23,18 @@ type Modality = "text" | "audio" | "image" | "video" | "pdf"
 // The openai-compatible SDK throws on video and on most audio formats, so only advertise input it can send.
 const known: readonly Modality[] = ["text", "image", "pdf"]
 
+const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"]
+const unsupported: Record<string, string> = {
+  "glm-5.3-flashx": "medium",
+  "kimi-k2.7-code": "max",
+  "minimax-m3.1-flash": "none",
+}
+
+function efforts(id: string) {
+  const skip = unsupported[id]
+  return skip === undefined ? EFFORTS : EFFORTS.filter((effort) => effort !== skip)
+}
+
 // Optional fields also accept null, so one sparse entry cannot fail the whole model list.
 export const OpenDesignItem = Schema.Struct({
   id: Schema.String,
@@ -67,7 +79,8 @@ export function openDesignModel(item: OpenDesignItem): Model {
     family: item.owned_by ?? "",
     release_date: "",
     attachment: input.some((mode) => mode !== "text"),
-    reasoning: false,
+    reasoning: true,
+    reasoning_options: [{ type: "effort", values: efforts(item.id) }],
     temperature: true,
     tool_call: true,
     cost: { input: 0, output: 0 },
