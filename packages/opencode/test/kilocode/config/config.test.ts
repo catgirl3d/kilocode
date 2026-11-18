@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { Effect, Fiber, Layer, Logger, Option, Schema } from "effect"
 import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import path from "path"
+import { parse, type ParseError } from "jsonc-parser"
 import { Global } from "@opencode-ai/core/global"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { EffectFlock } from "@opencode-ai/core/util/effect-flock"
@@ -1850,6 +1851,102 @@ describe("advisor slot config writes", () => {
       })
       expect(cleared.ok).toBe(true)
       expect(ConfigParse.jsonc(await Bun.file(file).text(), file)).toEqual({ username: "marius", experimental: {} })
+    } finally {
+      ;(Global.Path as { config: string }).config = prev
+    }
+  })
+})
+
+describe("deleting a key followed by a trailing comma", () => {
+  const fixture = `{
+  "username": "marius",
+  "agent": {
+    "explore": {
+      "model": "kilo/anthropic/claude-sonnet-4-6",
+    },
+  },
+}
+`
+
+  test("global update deletes the only key of an object that ends with a trailing comma", async () => {
+    await using globalTmp = await tmpdir()
+    const file = path.join(globalTmp.path, "kilo.jsonc")
+    const prev = Global.Path.config
+    ;(Global.Path as { config: string }).config = globalTmp.path
+    await clear()
+    await disposeAllInstances()
+
+    try {
+      await Filesystem.write(file, fixture)
+
+      await saveGlobal(decode({ agent: { explore: { model: null } } }))
+
+      const errors: ParseError[] = []
+      const saved = parse(await Bun.file(file).text(), errors, { allowTrailingComma: true })
+      expect(errors).toEqual([])
+      expect(saved).toEqual({ username: "marius", agent: { explore: {} } })
+    } finally {
+      ;(Global.Path as { config: string }).config = prev
+      await clear()
+      await disposeAllInstances()
+    }
+  })
+
+  test("unset propagation keeps a sibling jsonc valid when the key ends with a trailing comma", async () => {
+    await using globalTmp = await tmpdir()
+    const opencode = path.join(globalTmp.path, "opencode.jsonc")
+    const prev = Global.Path.config
+    ;(Global.Path as { config: string }).config = globalTmp.path
+    await clear()
+    await disposeAllInstances()
+
+    try {
+      await Filesystem.write(path.join(globalTmp.path, "kilo.jsonc"), '{ "username": "marius" }\n')
+      await Filesystem.write(opencode, fixture)
+
+      await saveGlobal(decode({ agent: { explore: { model: null } } }))
+
+      const errors: ParseError[] = []
+      const saved = parse(await Bun.file(opencode).text(), errors, { allowTrailingComma: true })
+      expect(errors).toEqual([])
+      expect(saved.agent?.explore?.model).toBeUndefined()
+    } finally {
+      ;(Global.Path as { config: string }).config = prev
+      await clear()
+      await disposeAllInstances()
+    }
+  })
+
+  test("settings writer unsets the only key of an object that ends with a trailing comma", async () => {
+    await using globalTmp = await tmpdir()
+    await using project = await tmpdir()
+    const file = path.join(globalTmp.path, "kilo.jsonc")
+    const prev = Global.Path.config
+    ;(Global.Path as { config: string }).config = globalTmp.path
+
+    try {
+      await Filesystem.write(
+        file,
+        `{
+  "username": "marius",
+  "experimental": {
+    "advisor_model": "provider/legacy",
+  },
+}
+`,
+      )
+
+      const result = await KilocodeConfigWriter.write({
+        directory: project.path,
+        scope: "global",
+        set: {},
+        unset: [["experimental", "advisor_model"]],
+      })
+      expect(result.ok).toBe(true)
+      expect(ConfigParse.jsonc(await Bun.file(file).text(), file)).toEqual({
+        username: "marius",
+        experimental: {},
+      })
     } finally {
       ;(Global.Path as { config: string }).config = prev
     }
