@@ -31,6 +31,7 @@ import type { MessageMutation } from "./session-utils"
 import type { DeferredSend, DeferredSendInput } from "./session-deferred" // fork_change
 import type { ReasoningState } from "./session-reasoning" // fork_change
 import type { ToolState } from "./session-tools" // fork_change
+import type { createSessionBtw } from "./session-btw" // fork_change
 
 export interface SessionContextValue {
   // Current session
@@ -244,6 +245,9 @@ export interface SessionContextValue {
   toolClear: (sessionID: string, keepTurns: number, token: string) => void
   toolState: (sessionID: string) => ToolState
   toolClearing: (sessionID: string) => boolean
+  // fork_change end
+  // fork_change start - per-session /btw side question state
+  btw: ReturnType<typeof createSessionBtw>
   // fork_change end
   respondToPermission: (
     permissionId: string,

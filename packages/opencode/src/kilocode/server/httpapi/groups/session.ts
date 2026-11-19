@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { SessionID } from "@/session/schema"
 import { Result as ShakeResult } from "@/kilocode/session/shake"
+import { BtwItem } from "@/kilocode/btw/schema"
 import {
   ApplyResult as ReasoningClearApplyResult,
   PreviewResult as ReasoningClearPreviewResult,
@@ -27,6 +28,8 @@ const reasoningClearPreviewPath = "/session/:sessionID/reasoning/clear/preview"
 const reasoningClearPath = "/session/:sessionID/reasoning/clear"
 const toolClearPreviewPath = "/session/:sessionID/tools/clear/preview"
 const toolClearPath = "/session/:sessionID/tools/clear"
+const btwPath = "/session/:sessionID/btw"
+const btwCancelPath = "/session/:sessionID/btw/:btwID/cancel"
 
 export const ReasoningClearPreviewPayload = Schema.Struct({
   keepTurns: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
@@ -48,12 +51,25 @@ export const ToolClearPayload = Schema.Struct({
   token: Schema.String,
 })
 
+export const BtwPayload = Schema.Struct({
+  question: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8000)).annotate({
+    description: "The side question to answer",
+  }),
+  threadID: Schema.optional(Schema.String),
+})
+
+export const BtwList = Schema.Struct({ items: Schema.Array(BtwItem) })
+
+export const BtwCancelResult = Schema.Struct({ cancelled: Schema.Boolean })
+
 export const KiloSessionPaths = {
   shake: path,
   reasoningClearPreview: reasoningClearPreviewPath,
   reasoningClear: reasoningClearPath,
   toolClearPreview: toolClearPreviewPath,
   toolClear: toolClearPath,
+  btw: btwPath,
+  btwCancel: btwCancelPath,
 } as const
 
 export const KiloSessionApi = HttpApi.make("kilocode-session")
@@ -124,6 +140,44 @@ export const KiloSessionApi = HttpApi.make("kilocode-session")
             identifier: "session.toolClear",
             summary: "Clear tool output",
             description: "Mark historical tool output as cleared without invoking an LLM.",
+          }),
+        ),
+        HttpApiEndpoint.post("btw", KiloSessionPaths.btw, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: BtwPayload,
+          success: described(BtwItem, "Started side question"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError, ConflictError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.btw",
+            summary: "Ask a side question",
+            description:
+              "Answer a quick side question from the session's context without adding it to the session. Progress is published as session.btw.updated events.",
+          }),
+        ),
+        HttpApiEndpoint.get("btwList", KiloSessionPaths.btw, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(BtwList, "Side question history"),
+          error: [ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.btwList",
+            summary: "List side questions",
+            description: "List the side questions asked in this session, oldest first.",
+          }),
+        ),
+        HttpApiEndpoint.post("btwCancel", KiloSessionPaths.btwCancel, {
+          params: { sessionID: SessionID, btwID: Schema.String },
+          query: WorkspaceRoutingQuery,
+          success: described(BtwCancelResult, "Whether a running side question was cancelled"),
+          error: [ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.btwCancel",
+            summary: "Cancel a side question",
+            description: "Cancel the running side question with this id.",
           }),
         ),
       )

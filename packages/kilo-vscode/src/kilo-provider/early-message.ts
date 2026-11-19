@@ -46,6 +46,7 @@ type Ctx = {
   sessionColors: () => void
   setSessionColor: (sessionID: string, color: string | null) => Promise<void>
   sessionTagProject: () => string | undefined
+  btw: (message: Record<string, unknown>) => Promise<void>
   // fork_change end
 }
 
@@ -173,6 +174,10 @@ async function routeSessionMessage(
     return true
   }
   if (isClearMessage(message)) return routeClearMessage(message, ctx)
+  if (message.type === "btwAsk" || message.type === "btwCancel" || message.type === "btwHistory") {
+    await ctx.btw(message)
+    return true
+  }
   if (message.type === "setSessionColor") {
     if (typeof message.sessionId === "string" && (message.color === null || typeof message.color === "string")) {
       await ctx.setSessionColor(message.sessionId, message.color)

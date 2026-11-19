@@ -11,6 +11,9 @@ import { resolveRenderLib, TextAttributes } from "@opentui/core"
 import { KiloTerminalActivity } from "./terminal-activity"
 import * as Clipboard from "@tui/clipboard"
 import { useBindings } from "@tui/keymap"
+import { useProject } from "@tui/context/project" // fork_change
+import { useRoute } from "@tui/context/route" // fork_change
+import { usePromptRef } from "@tui/context/prompt" // fork_change
 import { useSDK } from "@tui/context/sdk"
 import { useSync } from "@tui/context/sync"
 import { useDialog } from "@tui/ui/dialog"
@@ -23,6 +26,7 @@ import { isKiloError, showKiloErrorToast } from "@/kilocode/kilo-errors"
 import { registerKiloCommands } from "@/kilocode/kilo-commands"
 import { initializeTUIDependencies } from "@kilocode/kilo-gateway/tui"
 import { DialogProcessList } from "@/kilocode/cli/cmd/tui/component/dialog-process-list"
+import { DialogBtw } from "@/kilocode/cli/cmd/tui/component/dialog-btw" // fork_change
 import { useIndexingWarnings } from "@/kilocode/cli/cmd/tui/indexing-warning"
 import { KiloTerminalTitle } from "./terminal-title"
 import type { KiloTitleIcon } from "./title-icon"
@@ -244,6 +248,9 @@ export function init() {
   const sdk = useSDK()
   const toast = useToast()
   const dialog = useDialog()
+  const project = useProject() // fork_change
+  const router = useRoute() // fork_change
+  const prompt = usePromptRef() // fork_change
 
   useIndexingWarnings()
 
@@ -281,6 +288,33 @@ export function init() {
           dialog.replace(() => <DialogProcessList />)
         },
       },
+      // fork_change start
+      {
+        namespace: "palette",
+        name: "btw.ask",
+        title: "Side question",
+        desc: "Type /btw <question> to ask without interrupting the agent; select to open the history",
+        category: "Kilo",
+        slashName: "btw",
+        // Opens the history, not an ask: the palette and slash lists share one visibility filter, so
+        // appending "/btw " here would also paste into a draft at the cursor.
+        run: () => {
+          const sessionID = router.data.type === "session" ? router.data.sessionID : undefined
+          if (!sessionID) {
+            toast.show({ variant: "warning", message: "Start a conversation first, then ask a side question." })
+            return
+          }
+          dialog.replace(() => (
+            <DialogBtw
+              sessionID={sessionID}
+              workspace={project.workspace.current()}
+              directory={sync.session.get(sessionID)?.directory}
+              draft={() => prompt.current?.current.input ?? ""}
+            />
+          ))
+        },
+      },
+      // fork_change end
       {
         namespace: "palette",
         name: "permission.allow_everything",

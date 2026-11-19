@@ -21,6 +21,9 @@ type SyncEventMessagePartRemoved = Extract<SyncPayload, { name: "message.part.re
 type SyncEventSessionCreated = Extract<SyncPayload, { name: "session.created.1" }>
 type SyncEventSessionUpdated = Extract<SyncPayload, { name: "session.updated.1" }>
 type SyncEventSessionDeleted = Extract<SyncPayload, { name: "session.deleted.1" }>
+// fork_change start
+type BtwUpdatedItem = Extract<Event, { type: "session.btw.updated" }>["properties"]["item"]
+// fork_change end
 
 /** A single provider entry as returned by the /provider list endpoint. */
 export type ProviderInfo = ProviderListResponse["all"][number]
@@ -589,6 +592,9 @@ export type WebviewMessage =
       reason?: string
       version: number
     }
+  // fork_change start
+  | { type: "btwUpdated"; sessionID: string; item: BtwUpdatedItem }
+  // fork_change end
   | null
 
 type PartEvent =
@@ -777,6 +783,14 @@ export function mapSSEEventToWebviewMessage(event: StreamEvent, sessionID: strin
         reason: event.properties.reason,
         version: event.properties.version,
       }
+    // fork_change start
+    case "session.btw.updated":
+      return {
+        type: "btwUpdated",
+        sessionID: event.properties.sessionID,
+        item: event.properties.item,
+      }
+    // fork_change end
     case "indexing.status":
       return {
         type: "indexingStatusLoaded",

@@ -68,6 +68,7 @@ export namespace ModelUsage {
   // using part_session_idx and forces a full scan of the entire part table
   // (seconds on large histories), which blocks the single-threaded server on
   // every session open. A concrete IN list lets the planner seek the index.
+  // fork_change start - /btw spend in model usage
   const usageSql = (sessionIDs: SessionID[], subtree: SessionID[]) => sql`
     WITH step AS (
       SELECT
@@ -89,6 +90,23 @@ export namespace ModelUsage {
         AND json_valid(part.data)
         AND json_extract(part.data, '$.type') = 'step-finish'
         AND json_extract(message.data, '$.role') = 'assistant'
+      UNION ALL
+      SELECT
+        session_id AS sessionID,
+        provider_id AS providerID,
+        model_id AS modelID,
+        max(0.0, cost) AS cost,
+        tokens_input AS input,
+        tokens_output AS output,
+        tokens_reasoning AS reasoning,
+        tokens_cache_read AS cache_read,
+        tokens_cache_write AS cache_write
+      FROM kilo_btw
+      WHERE session_id IN (${sql.join(
+        sessionIDs.map((id) => sql`${id}`),
+        sql`,`,
+      )})
+        AND status <> 'running'
     )
     SELECT
       providerID,
@@ -108,6 +126,7 @@ export namespace ModelUsage {
     WHERE providerID IS NOT NULL AND modelID IS NOT NULL
     GROUP BY providerID, modelID
     ORDER BY cost DESC, providerID, modelID`
+  // fork_change end
 
   const empty = () => ({
     steps: 0,
