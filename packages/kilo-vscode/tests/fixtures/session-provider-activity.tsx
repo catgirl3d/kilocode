@@ -1611,11 +1611,18 @@ try {
       assert(button.classList.contains("prompt-send-holding"), "The hold indicator starts immediately")
       assert.equal(button.getAttribute("aria-label"), "prompt.action.send.holding")
       await new Promise((resolve) => setTimeout(resolve, 850))
-      assert(button.classList.contains("prompt-send-defer"), "The hold arms after the threshold")
-      assert.equal(button.getAttribute("aria-label"), "prompt.action.send.deferred")
+      await settle()
+      assert(!button.classList.contains("prompt-send-holding"), "The hold indicator clears when the timer commits")
+      assert.equal(value.deferredMessages("composer").length, 1, "Timer completion defers the prompt before release")
+      assert.equal(input().value, "", "Timer completion clears the composer before release")
       button.dispatchEvent(new window.PointerEvent("pointerup", { bubbles: true }) as unknown as Event)
       button.dispatchEvent(new window.MouseEvent("click", { bubbles: true, detail: 1 }) as unknown as Event)
       await settle()
+      assert.equal(
+        value.deferredMessages("composer").length,
+        1,
+        "Releasing after the commit does not defer a duplicate",
+      )
       return count
     }
 

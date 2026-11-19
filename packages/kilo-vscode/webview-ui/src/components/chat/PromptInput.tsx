@@ -842,37 +842,33 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const isBusy = () =>
     isPromptBusy(session.status(), !!props.suggesting?.(), !!props.questioning?.(), session.submitting())
-  // fork_change start - long press on Send holds the prompt until the turn ends
+  // fork_change start - holding Send queues the prompt once the ring completes
   let holdTimer: ReturnType<typeof setTimeout> | undefined
-  let holdDeferred = false
+  let holdCommitted = false
   const [holding, setHolding] = createSignal(false)
-  const [holdArmed, setHoldArmed] = createSignal(false)
   const holdStop = () => {
     if (holdTimer) clearTimeout(holdTimer)
     holdTimer = undefined
   }
   const resetHold = () => {
     holdStop()
-    holdDeferred = false
     setHolding(false)
-    setHoldArmed(false)
   }
   const holdDown = (event: PointerEvent) => {
     resetHold()
+    holdCommitted = false
     if (event.button !== 0) return
     if (!isBusy()) return
     setHolding(true)
     holdTimer = setTimeout(() => {
       holdTimer = undefined
-      setHoldArmed(true)
+      setHolding(false)
+      if (!isBusy() || !canSend()) return
+      holdCommitted = true
+      submit(true)
     }, DEFER_HOLD_MS)
   }
-  const holdUp = () => {
-    holdDeferred = holdArmed() && isBusy()
-    holdStop()
-    setHolding(false)
-    setHoldArmed(false)
-  }
+  const holdUp = () => resetHold()
   const holdCancel = () => resetHold()
   createEffect(() => {
     if (!isBusy()) resetHold()
@@ -913,7 +909,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
-    if (holdArmed()) return language.t("prompt.action.send.deferred") // fork_change
     if (holding()) return language.t("prompt.action.send.holding") // fork_change
     if (speech.state() === "recording") return language.t("prompt.action.send.recording")
     if (goal.active()) return language.t("prompt.goal.start")
@@ -1742,9 +1737,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   onCleanup(shortcut.reset)
 
   // fork_change start
-  const handleSendClick = (event: MouseEvent) => {
-    const afterTurn = event.detail > 0 && holdDeferred
-    resetHold()
+  const submit = (afterTurn: boolean) => {
     // fork_change end
     if (speech.state() !== "recording" || !canSend()) {
       void handleSend(afterTurn) // fork_change
@@ -1752,6 +1745,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
     transcribeAndSend()
   }
+  // fork_change start
+  const handleSendClick = () => {
+    if (holdCommitted) {
+      holdCommitted = false
+      resetHold()
+      return
+    }
+    resetHold()
+    submit(false)
+  }
+  // fork_change end
 
   // fork_change start - Stop returns held prompts to the composer instead of dropping them
   const restoreCancelled = (event: Event) => {
@@ -2757,7 +2761,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         aria-label={sendLabel()}
                         /* fork_change start */
                         style={`--prompt-send-hold-duration:${DEFER_HOLD_MS}ms`}
-                        classList={{ "prompt-send-holding": holding(), "prompt-send-defer": holdArmed() }}
+                        classList={{ "prompt-send-holding": holding() }}
                         onPointerDown={holdDown}
                         onPointerUp={holdUp}
                         onPointerLeave={holdCancel}

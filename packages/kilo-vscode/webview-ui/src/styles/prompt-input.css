@@ -77,16 +77,6 @@
   color: var(--text-weak, var(--vscode-descriptionForeground));
 }
 
-[data-component="icon-button"].prompt-send-defer {
-  color: var(--vscode-focusBorder);
-  background: var(--vscode-list-activeSelectionBackground);
-}
-
-[data-component="icon-button"].prompt-send-defer:hover {
-  color: var(--vscode-focusBorder);
-  background: var(--vscode-list-activeSelectionBackground);
-}
-
 @property --prompt-send-hold-angle {
   syntax: "<angle>";
   inherits: false;

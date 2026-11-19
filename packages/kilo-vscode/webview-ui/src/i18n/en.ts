@@ -276,7 +276,6 @@ export const dict = {
   "prompt.action.send.recording": "Transcribe and send",
   // fork_change start
   "prompt.action.send.holding": "Hold to send after this turn",
-  "prompt.action.send.deferred": "Release to send after this turn",
   "prompt.deferred.afterTurn": "After this turn",
   "prompt.deferred.cancel": "Cancel deferred message",
   "prompt.deferred.attachment": "Attachment",
