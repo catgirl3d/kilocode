@@ -67,6 +67,7 @@
 
 ### Fixes & Enhancements
 
+- Keep `kilo.jsonc` valid when removing the last remaining key of an object that ends with a trailing comma: deleting a provider, agent, or setting no longer fails with `ValueExpected`, agent removal and unset propagation can no longer write a broken config file, and config parse errors show only the failing line instead of the whole file.
 - Give every fork VSIX build its own version (`<upstream version>-fork.<run number>`) and its own GitHub Release instead of replacing the previous release and tag, and list only the changes since the previous release in the release notes.
 - Keep internal compaction reasoning out of chats and session history: the summarizer's thinking no longer appears as a Reasoning block.
 - Show reasoning from Merge Gateway models: the selected reasoning effort (for example `max`) is now sent to the gateway, so models such as DeepSeek V4.1 Flash stream thinking into reasoning blocks instead of mixing it into the answer text.

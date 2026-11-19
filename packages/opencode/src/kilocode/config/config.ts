@@ -10,6 +10,7 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import type { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceRef } from "@/effect/instance-ref"
 import { isRecord } from "@/util/record"
+import { ConfigParse } from "@/config/parse" // fork_change
 import { ConfigErrorV1 as ConfigError } from "@opencode-ai/core/v1/config/error"
 import type { Config } from "../../config/config"
 import type { ConfigAgentV1 } from "@opencode-ai/core/v1/config/agent"
@@ -19,6 +20,7 @@ import { RulesMigrator } from "../rules-migrator"
 import { WorkflowsMigrator } from "../workflows-migrator"
 import { McpMigrator } from "../mcp-migrator"
 import { IgnoreMigrator } from "../ignore-migrator"
+import { KilocodeJsonc } from "./jsonc" // fork_change
 
 export namespace KilocodeConfig {
   const log = Log.create({ service: "kilocode.config" })
@@ -159,12 +161,9 @@ export namespace KilocodeConfig {
       const hits = paths.filter((parts) => has(parsed, parts))
       if (hits.length === 0) continue
       if (file.endsWith(".jsonc")) {
-        const updated = hits.reduce(
-          (acc, parts) =>
-            applyEdits(acc, modify(acc, parts, undefined, { formattingOptions: { insertSpaces: true, tabSize: 2 } })),
-          text,
-        )
+        const updated = hits.reduce((acc, parts) => KilocodeJsonc.remove(acc, parts), text) // fork_change
         if (updated === text) continue
+        ConfigParse.jsonc(updated, file) // fork_change - never write a config file that no longer parses
         yield* input.fs.writeFileString(file, updated).pipe(Effect.orDie)
         changed = true
         continue

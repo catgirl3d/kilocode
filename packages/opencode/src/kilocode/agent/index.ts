@@ -9,10 +9,12 @@ import { Schema } from "effect"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { applyEdits, modify, parse as parseJsonc } from "jsonc-parser"
+import { parse as parseJsonc } from "jsonc-parser" // fork_change
 import type { RuntimeFlags } from "@/effect/runtime-flags"
 import { BoardEnabled } from "@/kilocode/board/enabled"
 import { KilocodeConfigSources } from "../config/sources"
+import { KilocodeJsonc } from "../config/jsonc" // fork_change
+import { ConfigParse } from "../../config/parse" // fork_change
 
 import PROMPT_DEBUG from "../../agent/prompt/debug.txt"
 import PROMPT_ORCHESTRATOR from "../../agent/prompt/orchestrator.txt"
@@ -778,11 +780,10 @@ async function removeConfigAgent(name: string, sources: KilocodeConfigSources.So
     const root = parseJsonc(text)
     if (!root?.agent || !Object.hasOwn(root.agent, name)) continue
 
-    const opts = { formattingOptions: { insertSpaces: true, tabSize: 2 } }
-    const next = applyEdits(text, modify(text, ["agent", name], undefined, opts))
+    const next = KilocodeJsonc.remove(text, ["agent", name]) // fork_change
     const parsed = parseJsonc(next)
-    const final =
-      parsed.default_agent === name ? applyEdits(next, modify(next, ["default_agent"], undefined, opts)) : next
+    const final = parsed.default_agent === name ? KilocodeJsonc.remove(next, ["default_agent"]) : next // fork_change
+    ConfigParse.jsonc(final, file) // fork_change - never write a config file that no longer parses
     await Bun.write(file, final)
     found = true
   }
