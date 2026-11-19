@@ -1,6 +1,7 @@
 // fork_change - new file
 import type { ProviderUsage } from "@opencode-ai/schema/kilocode/provider-usage"
 import { InstallationVersion } from "../../installation/version"
+import { read } from "./response"
 
 const limit = 64 * 1024
 const timeout = 5_000
@@ -83,40 +84,6 @@ export function decode(input: unknown): Native {
   return native
 }
 
-async function body(response: Response) {
-  const declared = Number(response.headers.get("content-length"))
-  if (Number.isFinite(declared) && declared > limit) {
-    response.body?.cancel().catch(() => undefined)
-    throw new Failure("size")
-  }
-  if (!response.body) {
-    const value = await response.arrayBuffer()
-    if (value.byteLength > limit) throw new Failure("size")
-    return new TextDecoder().decode(value)
-  }
-  const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  while (true) {
-    const chunk = await reader.read()
-    if (chunk.done) break
-    if (!chunk.value) continue
-    size += chunk.value.byteLength
-    if (size > limit) {
-      await reader.cancel().catch(() => undefined)
-      throw new Failure("size")
-    }
-    chunks.push(chunk.value)
-  }
-  const value = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    value.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return new TextDecoder().decode(value)
-}
-
 export async function query(url: string, key: string, fetcher: typeof fetch = fetch): Promise<Native> {
   const response = await fetcher(url, {
     method: "GET",
@@ -137,7 +104,7 @@ export async function query(url: string, key: string, fetcher: typeof fetch = fe
   }
   let text: string
   try {
-    text = await body(response)
+    text = await read(response, limit, () => new Failure("size"))
   } catch (error) {
     if (error instanceof Failure) throw error
     throw new Failure("network")
