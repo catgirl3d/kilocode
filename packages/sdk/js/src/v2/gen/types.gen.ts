@@ -12,6 +12,7 @@ export type Event =
   | EventSessionTurnOpen
   | EventSessionTurnClose
   | EventSessionQueueChanged
+  | EventSessionBtwUpdated
   | EventBackgroundProcessUpdated
   | EventBackgroundProcessDeleted
   | EventSandboxStatusChanged
@@ -1064,6 +1065,7 @@ export type GlobalEvent = {
     | EventSessionTurnOpen
     | EventSessionTurnClose
     | EventSessionQueueChanged
+    | EventSessionBtwUpdated
     | EventBackgroundProcessUpdated
     | EventBackgroundProcessDeleted
     | EventSandboxStatusChanged
@@ -4900,6 +4902,39 @@ export type EventSessionQueueChanged = {
   properties: {
     sessionID: string
     queued: Array<string>
+  }
+}
+
+export type EventSessionBtwUpdated = {
+  id: string
+  type: "session.btw.updated"
+  properties: {
+    sessionID: string
+    item: {
+      id: string
+      sessionID: string
+      threadID: string
+      status: "running" | "done" | "error" | "cancelled" | "interrupted"
+      question: string
+      answer: string
+      error?: string
+      providerID: string
+      modelID: string
+      cost: number
+      tokens: {
+        input: number
+        output: number
+        reasoning: number
+        cache: {
+          read: number
+          write: number
+        }
+      }
+      time: {
+        created: number
+        completed?: number
+      }
+    }
   }
 }
 
@@ -17004,6 +17039,171 @@ export type SessionToolClearResponses = {
 }
 
 export type SessionToolClearResponse = SessionToolClearResponses[keyof SessionToolClearResponses]
+
+export type SessionBtwListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/btw"
+}
+
+export type SessionBtwListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionBtwListError = SessionBtwListErrors[keyof SessionBtwListErrors]
+
+export type SessionBtwListResponses = {
+  /**
+   * Side question history
+   */
+  200: {
+    items: Array<{
+      id: string
+      sessionID: string
+      threadID: string
+      status: "running" | "done" | "error" | "cancelled" | "interrupted"
+      question: string
+      answer: string
+      error?: string
+      providerID: string
+      modelID: string
+      cost: number
+      tokens: {
+        input: number
+        output: number
+        reasoning: number
+        cache: {
+          read: number
+          write: number
+        }
+      }
+      time: {
+        created: number
+        completed?: number
+      }
+    }>
+  }
+}
+
+export type SessionBtwListResponse = SessionBtwListResponses[keyof SessionBtwListResponses]
+
+export type SessionBtwData = {
+  body?: {
+    /**
+     * The side question to answer
+     */
+    question: string
+    threadID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/btw"
+}
+
+export type SessionBtwErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type SessionBtwError = SessionBtwErrors[keyof SessionBtwErrors]
+
+export type SessionBtwResponses = {
+  /**
+   * Started side question
+   */
+  200: {
+    id: string
+    sessionID: string
+    threadID: string
+    status: "running" | "done" | "error" | "cancelled" | "interrupted"
+    question: string
+    answer: string
+    error?: string
+    providerID: string
+    modelID: string
+    cost: number
+    tokens: {
+      input: number
+      output: number
+      reasoning: number
+      cache: {
+        read: number
+        write: number
+      }
+    }
+    time: {
+      created: number
+      completed?: number
+    }
+  }
+}
+
+export type SessionBtwResponse = SessionBtwResponses[keyof SessionBtwResponses]
+
+export type SessionBtwCancelData = {
+  body?: never
+  path: {
+    sessionID: string
+    btwID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/btw/{btwID}/cancel"
+}
+
+export type SessionBtwCancelErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionBtwCancelError = SessionBtwCancelErrors[keyof SessionBtwCancelErrors]
+
+export type SessionBtwCancelResponses = {
+  /**
+   * Whether a running side question was cancelled
+   */
+  200: {
+    cancelled: boolean
+  }
+}
+
+export type SessionBtwCancelResponse = SessionBtwCancelResponses[keyof SessionBtwCancelResponses]
 
 export type KilocodeMigrateSessionsData = {
   body?: {

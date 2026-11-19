@@ -32,6 +32,7 @@ import { createSessionFavorites } from "./model-favorites"
 import { createSessionShake } from "./session-shake"
 import { createDeferredSends } from "./session-deferred"
 import { createSessionClears } from "./session-clears"
+import { createSessionBtw } from "./session-btw"
 // fork_change end
 import { showToast } from "@kilocode/kilo-ui/toast"
 import { touch } from "@kilocode/kilo-ui/tool-motion"
@@ -182,6 +183,14 @@ export const SessionProvider: ParentComponent = (props) => {
     currentSessionID,
     post: vscode.postMessage,
     language,
+  })
+  // fork_change end
+  // fork_change start - per-session /btw side question state
+  const btw = createSessionBtw({
+    post: vscode.postMessage,
+    usage: (sessionID) => {
+      if (modelUsageRelated(sessionID)) queueModelUsageRefresh()
+    },
   })
   // fork_change end
   // Per-session status map — keyed by sessionID
@@ -883,6 +892,7 @@ export const SessionProvider: ParentComponent = (props) => {
     if (handleWakeupMessage(message)) return true
     if (shakeActions.handleMessage(message)) return true // fork_change
     if (clearActions.handleMessage(message)) return true // fork_change
+    if (btw.handleMessage(message)) return true // fork_change
     if (!streamMessage(message)) return false
     if (message.type === "partUpdated") {
       handlePartUpdated(message.sessionID, message.messageID, message.part, message.delta)
@@ -3194,6 +3204,7 @@ export const SessionProvider: ParentComponent = (props) => {
     shaking: () => shakeActions.shaking() === currentSessionID(),
     ...clearActions.api,
     // fork_change end
+    btw, // fork_change
     respondToPermission,
     replyToQuestion,
     rejectQuestion,
