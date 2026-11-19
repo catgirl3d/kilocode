@@ -9,6 +9,7 @@ import { Filesystem } from "@/util/filesystem"
 import { isRecord } from "@/util/record"
 import { KilocodeConfigOverlay } from "./overlay"
 import { Excess } from "./excess"
+import { KilocodeJsonc } from "./jsonc" // fork_change
 
 export namespace KilocodeConfigWriter {
   export type Conflict = {
@@ -110,6 +111,7 @@ export namespace KilocodeConfigWriter {
         // jsonc-parser cannot delete a nested path when its parent is absent.
         const tree = parseTree(input)
         if (!tree || !findNodeAtLocation(tree, parts)) return input
+        return KilocodeJsonc.remove(input, parts) // fork_change - keep the JSONC valid when a trailing comma follows the deleted key
       }
       return applyEdits(
         input,
