@@ -25,7 +25,7 @@ export function jsonc(text: string, filepath: string): unknown {
       .join("\n")
     throw new JsonError({
       path: filepath,
-      message: `\n--- JSONC Input ---\n${text}\n--- Errors ---\n${issues}\n--- End ---`,
+      message: `\n--- Errors ---\n${issues}\n--- End ---`, // kilocode_change - [fork] do not echo the whole config (it can hold API keys) into the error
     })
   }
 

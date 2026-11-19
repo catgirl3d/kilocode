@@ -1,6 +1,6 @@
 import path from "path"
 import { access, constants } from "fs/promises" // kilocode_change
-import { type ParseError as JsoncParseError, applyEdits, modify, parse as parseJsonc } from "jsonc-parser"
+import { type ParseError as JsoncParseError, parse as parseJsonc } from "jsonc-parser" // kilocode_change - [fork] key deletion goes through KilocodeJsonc
 import { unique } from "remeda"
 import { Option, Schema } from "effect"
 import { TuiConfig } from "@opencode-ai/tui/config"
@@ -8,6 +8,7 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 import { Filesystem } from "@/util/filesystem"
 import * as ConfigPaths from "@/config/paths"
+import { KilocodeJsonc } from "@/kilocode/config/jsonc" // kilocode_change - [fork]
 
 const TUI_SCHEMA_URL = "https://app.kilo.ai/tui.json" // kilocode_change
 
@@ -107,16 +108,7 @@ async function backupAndStripLegacy(file: string, source: string) {
         .catch(() => false)
   if (!backed) return false
 
-  const text = ["theme", "keybinds", "tui"].reduce((acc, key) => {
-    const edits = modify(acc, [key], undefined, {
-      formattingOptions: {
-        insertSpaces: true,
-        tabSize: 2,
-      },
-    })
-    if (!edits.length) return acc
-    return applyEdits(acc, edits)
-  }, source)
+  const text = ["theme", "keybinds", "tui"].reduce((acc, key) => KilocodeJsonc.remove(acc, [key]), source) // kilocode_change - [fork] keep the JSONC valid when a trailing comma follows a moved key
 
   return Filesystem.write(file, text)
     .then(() => true)
