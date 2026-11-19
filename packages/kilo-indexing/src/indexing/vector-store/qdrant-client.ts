@@ -1,4 +1,5 @@
 import { QdrantClient, type Schemas } from "@qdrant/js-client-rest"
+import { MemoryRedact } from "@kilocode/kilo-memory/redact" // fork_change
 import { createHash } from "crypto"
 import * as path from "path"
 import type { IVectorStore } from "../interfaces/vector-store"
@@ -32,13 +33,24 @@ export class QdrantVectorStore implements IVectorStore {
   private readonly qdrantUrl: string = "http://localhost:6333"
   private readonly workspacePath: string
   private readonly profile: EmbeddingProfile
+  private readonly redact: boolean // fork_change
 
   /**
    * Creates a new Qdrant vector store
    * @param workspacePath Path to the workspace
    * @param url Optional URL to the Qdrant server
    */
-  constructor(workspacePath: string, url: string, vectorSize: number, apiKey?: string, profile?: EmbeddingProfile) {
+  // fork_change start - Accept the redaction flag from the configured services.
+  constructor(
+    workspacePath: string,
+    url: string,
+    vectorSize: number,
+    apiKey?: string,
+    profile?: EmbeddingProfile,
+    redact = false,
+  ) {
+    this.redact = redact
+    // fork_change end
     // Parse the URL to determine the appropriate QdrantClient configuration
     const parsedUrl = this.parseQdrantUrl(url)
 
@@ -440,7 +452,10 @@ export class QdrantVectorStore implements IVectorStore {
     }>,
   ): Promise<void> {
     try {
-      const processedPoints = points.map((point) => {
+      // fork_change start - Redact points before deriving path segments from the payload.
+      const redactedPoints = points.map((point) => this.redactedPoint(point))
+      const processedPoints = redactedPoints.map((point) => {
+        // fork_change end
         if (point.payload?.filePath) {
           const segments = point.payload.filePath.split(/[\\/]+/).filter(Boolean)
           const pathSegments = segments.reduce((acc: Record<string, string>, segment: string, index: number) => {
@@ -467,6 +482,26 @@ export class QdrantVectorStore implements IVectorStore {
       throw error
     }
   }
+
+  // fork_change start - Redact the outgoing code chunk and refuse to send a key in its path.
+  private redactedPoint<T extends { payload: Record<string, unknown> }>(point: T): T {
+    if (!this.redact) return point
+
+    const path = point.payload?.filePath
+    if (typeof path === "string" && MemoryRedact.has(path, { values: true })) throw new MemoryRedact.Failure()
+
+    const code = point.payload?.codeChunk
+    if (typeof code !== "string") return point
+
+    return {
+      ...point,
+      payload: {
+        ...point.payload,
+        codeChunk: MemoryRedact.text(code, { values: true }),
+      },
+    }
+  }
+  // fork_change end
 
   /**
    * Checks if a payload is valid

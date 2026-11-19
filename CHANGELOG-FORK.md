@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Hide recognizable access keys and tokens before they are sent to a model: the protection is on by default for chat, subagents, prompt enhancement, memory, autocomplete, model checks, and new code copies sent for indexing, while your files and saved chat history stay unchanged. Images and PDFs, terminal commands, and previously indexed records are not covered, file tools refuse to replace a key with a `[redacted]` marker, and Settings → Experimental or the CLI can turn the protection off globally.
 - Show the short hash of the commit the extension was built from in the Kilo Code sidebar title (`Kilo Code: #abc1234`), so an installed build can be matched to its source.
 - Keep model choices per workspace with a new Workspace models switch in Settings → Models: it copies the current default, small, subagent, advisor, compaction and mode models into the workspace's `.kilo/kilo.jsonc` and saves later edits there; turning it off returns the workspace to the global models.
 - Hold the Send button in chat until its ring completes to defer a prompt until the current turn finishes instead of interrupting the agent; the prompt is queued as soon as the ring closes, appears above the input, can be cancelled, and returns to the composer when you press Stop.

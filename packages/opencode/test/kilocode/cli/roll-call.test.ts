@@ -1,4 +1,9 @@
 import { test, expect, describe } from "bun:test"
+import type { LanguageModelV3, LanguageModelV3CallOptions } from "@ai-sdk/provider"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@opencode-ai/core/provider"
+import { ProviderTest } from "../../fake/provider"
+import { call } from "../../../src/kilocode/cli/cmd/roll-call"
 import { Provider } from "../../../src/provider/provider"
 import { formatTable, formatMarkdown, handle, isTextModel, outputLimit } from "../../../src/kilocode/cli/cmd/roll-call"
 
@@ -168,5 +173,60 @@ describe("handle", () => {
     }
 
     expect(logs).toEqual([formatMarkdown([])])
+  })
+})
+
+// fork tests - outbound access key redaction
+const KEY = "sk-test-1234567890abcdefghijklmnop"
+
+function capture() {
+  const calls: LanguageModelV3CallOptions[] = []
+  const language = {
+    specificationVersion: "v3",
+    provider: "test",
+    modelId: "roll-call-model",
+    supportedUrls: {},
+    doGenerate: async (options: LanguageModelV3CallOptions) => {
+      calls.push(options)
+      return {
+        content: [{ type: "text", text: "ok" }],
+        finishReason: { unified: "stop" },
+        usage: { inputTokens: { total: 1 }, outputTokens: { total: 1 }, raw: {} },
+        warnings: [],
+        providerMetadata: {},
+        request: {},
+        response: {},
+      }
+    },
+  } as unknown as LanguageModelV3
+  return { calls, language }
+}
+
+describe("call redaction", () => {
+  const model = ProviderTest.model({
+    id: ModelV2.ID.make("roll-call-model"),
+    providerID: ProviderV2.ID.make("acme"),
+  })
+
+  test("sends a redacted copy and keeps the prompt argument unchanged", async () => {
+    const { calls, language } = capture()
+    const prompt = `is ${KEY} configured?`
+    const result = await call(model, prompt, 5_000, Date.now(), { language, policy: {} })
+
+    expect(result.access).toBe(true)
+    expect(prompt).toContain(KEY)
+    expect(JSON.stringify(calls[0]?.prompt)).not.toContain(KEY)
+    expect(JSON.stringify(calls[0]?.prompt)).toContain("[redacted]")
+  })
+
+  test("sends the original prompt when the personal policy disables redaction", async () => {
+    const { calls, language } = capture()
+    const result = await call(model, `is ${KEY} configured?`, 5_000, Date.now(), {
+      language,
+      policy: { experimental: { redact_secrets: false } },
+    })
+
+    expect(result.access).toBe(true)
+    expect(JSON.stringify(calls[0]?.prompt)).toContain(KEY)
   })
 })

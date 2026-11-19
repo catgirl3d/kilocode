@@ -374,6 +374,11 @@ export const Info = Schema.Struct({
         description:
           "Exact provider/model ID for SWE-Pruner. Falls back to the configured small_model; without either model, output remains unchanged.",
       }),
+      // [fork] personal, global opt-out for outbound access key redaction
+      redact_secrets: Schema.optional(Schema.Boolean).annotate({
+        description: // [fork] describe the global-only redaction setting
+          "Redact access keys and tokens in the text sent to models. Defaults to enabled; only the global config is read, so project configuration cannot override it.", // [fork]
+      }), // [fork]
       code_mode: Schema.optional(Schema.Boolean).annotate({
         description:
           "Route MCP tool calls through a confined JavaScript runtime with on-demand tool discovery instead of exposing every MCP tool directly",

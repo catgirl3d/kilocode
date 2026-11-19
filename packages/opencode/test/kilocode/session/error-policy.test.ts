@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test"
+import { NamedError } from "@opencode-ai/core/util/error"
+import { MemoryRedact } from "@kilocode/kilo-memory/redact"
 import { LoadAPIKeyError } from "ai"
 import { Effect, Exit, Schedule } from "effect"
 import fs from "fs"
 import path from "path"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { KiloErrorPolicy } from "../../../src/kilocode/session/error-policy"
+import { KiloSessionProcessor } from "../../../src/kilocode/session/processor"
 import { KiloSessionOverflow } from "../../../src/kilocode/session/overflow"
 import { MessageV2 } from "../../../src/session/message-v2"
 import { SessionRetry } from "../../../src/session/retry"
@@ -37,6 +40,7 @@ const hopeless: Record<string, unknown> = {
     responseBody: JSON.stringify({ error: { type: "invalid_request_error", message: "Unsupported parameter" } }),
   }),
   "programmer-error": new TypeError("x is not a function"),
+  "privacy-secret": new MemoryRedact.Failure(),
 }
 
 // Errors that keep waiting for the operator or the provider.
@@ -407,4 +411,54 @@ describe("KiloErrorPolicy.TERMINAL", () => {
       expect(fs.existsSync(file)).toBe(true)
       expect(fs.readFileSync(file, "utf-8")).toContain(item.symbol)
     })
+})
+
+// A recognized access key that cannot be hidden in place is terminal for the chat: the saved
+// history is unchanged, so every retry would resend it.
+describe("privacy failure", () => {
+  const failure = () => new MemoryRedact.Failure()
+  const parseFailure = (raw: unknown) => KiloSessionProcessor.parseError(raw, { providerID, aborted: false })
+
+  test("parseError keeps the failure recognisable through the privacy ref", () => {
+    const raw = failure()
+    const error = parseFailure(raw)
+    expect(error).toMatchObject({
+      name: "UnknownError",
+      data: { message: raw.message, ref: "privacy" },
+    })
+    expect(JSON.stringify(error)).not.toContain("sk-")
+  })
+
+  test("SessionRetry.retryable never retries a privacy failure", () => {
+    expect(SessionRetry.retryable(parseFailure(failure()))).toBeUndefined()
+  })
+
+  test("the ref alone is terminal even when the wording looks retryable", () => {
+    const error = new NamedError.Unknown({ message: "timeout, try again later", ref: "privacy" }).toObject()
+    expect(SessionRetry.retryable(error)).toBeUndefined()
+    expect(KiloErrorPolicy.decide({ raw: error, error, attempt: idle })).toMatchObject({
+      rule: "not-retried",
+      action: "stop",
+    })
+  })
+
+  test("the policy stops the run and does not fall back", () => {
+    const raw = failure()
+    const error = parseFailure(raw)
+    expect(KiloErrorPolicy.decide({ raw, error, attempt: idle })).toMatchObject({ rule: "not-retried", action: "stop" })
+    expect(KiloErrorPolicy.decide({ raw, error, attempt: ran })).toMatchObject({ rule: "not-retried", action: "stop" })
+    expect(KiloErrorPolicy.fallback(error, raw)).toBeUndefined()
+    expect(
+      KiloErrorPolicy.HOPELESS.filter((item) => item.match(error, raw)).map((item) => item.id),
+    ).toEqual(["privacy-secret"])
+  })
+
+  test("the message offers a way out and names no key", () => {
+    const raw = failure()
+    expect(raw.message).toContain("access key")
+    expect(raw.message).toContain("Roll back")
+    expect(raw.message).toContain("Redact access keys before sending")
+    expect(raw.message).toContain("Experimental")
+    expect(raw.message).not.toMatch(/Bearer|sk-|ghp_|AIza|gsk_|xai-/)
+  })
 })

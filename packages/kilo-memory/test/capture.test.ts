@@ -857,3 +857,262 @@ describe("memory capture parsing", () => {
     ).toBeUndefined()
   })
 })
+
+describe("memory redact values mode", () => {
+  const values = { values: true }
+  const marker = "[redacted]"
+
+  test("redacts every prefix key format", () => {
+    const keys = [
+      "sk-proj-abcdefghijklmnopqrstuvwxyz012345",
+      "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+      "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz",
+      "AIzaSyA1234567890abcdefghijklmnopqrstu",
+      "xo" + "xb-123456789012-abcdefghijklmnop",
+      "AKIAIOSFODNN7EXAMPLE",
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+      "gsk_abcdefghijklmnopqrstuvwxyz012345",
+      "xai-abcdefghijklmnopqrstuvwxyz012345",
+      "hf_abcdefghijklmnopqrstuvwxyz012345",
+      "sk_" + "live_abcdefghijklmnopqrstuvwx",
+      "rk_" + "live_abcdefghijklmnopqrstuvwx",
+    ]
+    for (const key of keys) {
+      const input = `key ${key} here`
+      expect(MemoryRedact.has(input, values), key).toBe(true)
+      const redacted = MemoryRedact.text(input, values)
+      expect(redacted, key).not.toContain(key)
+      expect(redacted, key).toContain(marker)
+    }
+    // A publishable Stripe key is not a secret.
+    expect(MemoryRedact.has("pk_live_abcdefghijklmnopqrstuvwxyz012345", values)).toBe(false)
+  })
+
+  test("redacts named assignment values, keeping names, separators and quotes", () => {
+    const key = "test0123456789abcdef0123456789abc"
+    const cases = [
+      [`MISTRAL_API_KEY="${key}"`, 'MISTRAL_API_KEY="[redacted]"'],
+      [`client_secret: "${key}"`, 'client_secret: "[redacted]"'],
+      [`SECRET_KEY=${key}`, "SECRET_KEY=[redacted]"],
+      [`const githubToken = "${key}"`, 'const githubToken = "[redacted]"'],
+      [`"api_key": "${key}"`, '"api_key": "[redacted]"'],
+      [`provider.clientSecretKeys=${key}`, "provider.clientSecretKeys=[redacted]"],
+      ['API_KEY = "abcdef1234567890xyz"', 'API_KEY = "[redacted]"'],
+      ["OPENAI_API_KEY='abcdef1234567890xyz'", "OPENAI_API_KEY='[redacted]'"],
+      ['{"client_secret": "abcdef1234567890xyz"}', '{"client_secret": "[redacted]"}'],
+      ["token: abcdef1234567890xyz", "token: [redacted]"],
+      ["refresh_token: refreshabcdef1234567890", "refresh_token: [redacted]"],
+      ["apiKey: abcdef1234567890xyz", "apiKey: [redacted]"],
+      ["access_key = abcdef1234567890xyz", "access_key = [redacted]"],
+      ["API_KEY: abcdef1234567890xyz", "API_KEY: [redacted]"],
+    ] as const
+    for (const [input, expected] of cases) {
+      expect(MemoryRedact.has(input, values), input).toBe(true)
+      expect(MemoryRedact.text(input, values), input).toBe(expected)
+    }
+  })
+
+  test("redacts quoted and bare Authorization credentials, keeping the scheme", () => {
+    expect(MemoryRedact.text('Authorization="Bearer abcdef1234567890xyz"', values)).toBe(
+      'Authorization="Bearer [redacted]"',
+    )
+    expect(MemoryRedact.text("Authorization: Basic dXNlcjpwYXNzd29yZA==", values)).toBe(
+      "Authorization: Basic [redacted]",
+    )
+    // A short base64 user:pass with no digit or padding is still a credential under an Authorization
+    // header, while prose that merely names the scheme stays intact.
+    expect(MemoryRedact.has("Authorization: Basic dXNlcjpwYXNz", values)).toBe(true)
+    expect(MemoryRedact.text("Authorization: Basic dXNlcjpwYXNz", values)).toBe("Authorization: Basic [redacted]")
+    expect(MemoryRedact.has("Basic authentication is required", values)).toBe(false)
+    expect(MemoryRedact.text("Basic authentication is required", values)).toBe("Basic authentication is required")
+    expect(MemoryRedact.text(`Authorization: Bearer abcdefghijklmnop123456`, values)).toBe(
+      "Authorization: Bearer [redacted]",
+    )
+  })
+
+  test("hides a private key block whole", () => {
+    const block = ["-----BEGIN RSA PRIVATE KEY-----", "MIIEabcdefgh12345678", "-----END RSA PRIVATE KEY-----"].join("\n")
+    expect(MemoryRedact.text(`before\n${block}\nafter`, values)).toBe("before\n[redacted]\nafter")
+  })
+
+  test("handles escaped quotes and line continuation across the whole value", () => {
+    expect(MemoryRedact.text(`API_KEY="abc\\"def1234567890\\"ghi"`, values)).toBe(`API_KEY="[redacted]"`)
+    const continued = 'API_KEY="abc\\\n1234567890abcdef"'
+    expect(MemoryRedact.text(continued, values)).toBe(continued)
+  })
+
+  test("leaves ordinary code, passwords, URLs, cards and templates alone", () => {
+    const clean = [
+      "token: string",
+      "token?: string",
+      "apiKey: ApiKey",
+      "login(token: string)",
+      "if (token === x) {}",
+      "token == null",
+      "const secret = process.env.SECRET",
+      "headers.authorization = build(token)",
+      "api_key: config.key",
+      "max_tokens: 4096",
+      "Bearer ${token}",
+      "sk-learn",
+      "const course = 'sk-learn-more'",
+      "password=hunter2",
+      "https://user:pass@host",
+      "4111 1111 1111 1111",
+      'token = "${token}"',
+      "secret: enabled",
+      "author: Jane",
+      "tokenize(x)",
+      'type Token = "access" | "refresh"',
+      'token_type: "Bearer"',
+      'secret_name = "prod-db"',
+      '{"max_tokens": "4096"}',
+      '"provider.apiKey": "API key"',
+      '{ token: "abc" }',
+      'token_type: "abcdef1234567890xyz"',
+      'secret_name = "abcdef1234567890xyz"',
+      'api_key_env = "abcdef1234567890xyz"',
+      'githubtoken = "abcdef1234567890xyz"',
+      'token = "abcdef1234567890${token}"',
+    ]
+    for (const item of clean) {
+      expect(MemoryRedact.has(item, values), item).toBe(false)
+      expect(MemoryRedact.text(item, values), item).toBe(item)
+    }
+  })
+
+  test("does not treat Hugging Face identifiers as keys", () => {
+    for (const input of ["hf_hub_download_with_retries(repo)", "hf_abcdefghijklmnopqrstuvwxyz_012345"]) {
+      expect(MemoryRedact.text(input, values)).toBe(input)
+    }
+  })
+
+  test("is idempotent and does not treat a marker-only value as a key", () => {
+    const key = 'API_KEY = "abcdef1234567890xyz"'
+    const once = MemoryRedact.text(key, values)
+    expect(once).toBe(`API_KEY = "${marker}"`)
+    expect(MemoryRedact.has(once, values)).toBe(false)
+    expect(MemoryRedact.text(once, values)).toBe(once)
+
+    const only = `API_KEY = "${marker}"`
+    expect(MemoryRedact.has(only, values)).toBe(false)
+    expect(MemoryRedact.text(only, values)).toBe(only)
+
+    // A marker as part of a real value does not make the value safe.
+    expect(MemoryRedact.has(`API_KEY = "${marker}suffix123"`, values)).toBe(true)
+    expect(MemoryRedact.text(`API_KEY = "${marker}suffix123"`, values)).toBe(`API_KEY = "${marker}"`)
+    expect(MemoryRedact.text(`API_KEY = "prefix123${marker}"`, values)).toBe(`API_KEY = "${marker}"`)
+  })
+
+  test("value() redacts only recognized key strings under sensitive names", () => {
+    expect(MemoryRedact.value({ api_key: "sk-abcdefghijklmnopqrstuvwxyz012345" }, undefined, values)).toEqual({
+      api_key: "[redacted]",
+    })
+    expect(MemoryRedact.value({ token: "abcdef1234567890xyz" }, undefined, values)).toEqual({ token: "[redacted]" })
+    expect(MemoryRedact.value({ token: "short" }, undefined, values)).toEqual({ token: "short" })
+    expect(MemoryRedact.value({ token: 4096 }, undefined, values)).toEqual({ token: 4096 })
+    expect(MemoryRedact.value({ token: true }, undefined, values)).toEqual({ token: true })
+    expect(MemoryRedact.value({ token: null }, undefined, values)).toEqual({ token: null })
+    expect(MemoryRedact.value({ note: 'API_KEY = "abcdef1234567890xyz"' }, undefined, values)).toEqual({
+      note: 'API_KEY = "[redacted]"',
+    })
+    // A structured credential keeps its name and scheme; only the credential is scrubbed.
+    expect(MemoryRedact.value({ Authorization: "Bearer abcdef1234567890xyz" }, undefined, values)).toEqual({
+      Authorization: "Bearer [redacted]",
+    })
+    expect(MemoryRedact.value({ Authorization: "Basic dXNlcjpwYXNzd29yZA==" }, undefined, values)).toEqual({
+      Authorization: "Basic [redacted]",
+    })
+    // The legacy contract is unchanged without opts.
+    expect(MemoryRedact.value({ token: 4096 })).toEqual({ token: "[redacted]" })
+  })
+
+  test("stays linear on large inputs", () => {
+    const solid = "a1._-".repeat(200_000)
+    const code = "const token = process.env.TOKEN\nif (apiKey === null) login(token)\n".repeat(20_000)
+    for (const item of [solid, code]) {
+      const start = performance.now()
+      const redacted = MemoryRedact.text(item, values)
+      expect(performance.now() - start).toBeLessThan(100)
+      expect(redacted).toBe(item)
+    }
+  })
+
+  test("checks Basic candidates in a 1 MiB line within the values-mode budget", () => {
+    for (const word of ["basic x ", "basic abcd1234 "]) {
+      const input = word.repeat(Math.ceil(1024 ** 2 / word.length)).slice(0, 1024 ** 2)
+      const start = performance.now()
+      const output = MemoryRedact.text(input, values)
+      expect(performance.now() - start).toBeLessThan(100)
+      expect(output).toBe(input)
+    }
+  })
+
+  test("Failure is an Error without the value and names the way out", () => {
+    const failure = new MemoryRedact.Failure()
+    expect(failure).toBeInstanceOf(Error)
+    expect(failure.name).toBe("MemoryRedactFailure")
+    expect(failure.cause).toBeUndefined()
+    expect(failure.message).toContain("access key")
+    expect(failure.message).toContain("Roll back")
+    expect(failure.message).toContain("Redact access keys before sending")
+    expect(failure.message).toContain("Experimental")
+    expect(failure.message).not.toMatch(/try again|timeout|network|unsupported|overloaded/i)
+  })
+})
+
+describe("memory redact file write guard", () => {
+  const key = "sk-proj-abcdefghijklmnopqrstuvwxyz012345"
+  const marker = "[redacted]"
+
+  test("blocks replacing a named key with the marker", () => {
+    expect(MemoryRedact.blocksWrite('API_KEY = "abcdef1234567890xyz"', 'API_KEY = "[redacted]"')).toBe(true)
+    expect(MemoryRedact.blocksWrite(`API_KEY="prefix123${marker}suffix"`, `API_KEY="${marker}"`)).toBe(true)
+    expect(MemoryRedact.blocksWrite("API_KEY=abcdef1234567890xyz", "API_KEY=[redacted]")).toBe(true)
+  })
+
+  test("blocks replacing a standalone prefixed key with the marker", () => {
+    expect(MemoryRedact.blocksWrite(`const key = "${key}"`, `const key = "${marker}"`)).toBe(true)
+    expect(MemoryRedact.blocksWrite(`Authorization: Bearer ${key}`, `Authorization: Bearer ${marker}`)).toBe(true)
+  })
+
+  test("does not count a named assignment value as a standalone key", () => {
+    // Exact marker replacement is still blocked through the named comparison.
+    expect(MemoryRedact.blocksWrite(`API_KEY=${key}`, `API_KEY=${marker}`)).toBe(true)
+    expect(MemoryRedact.blocksWrite(`API_KEY="${key}"`, `API_KEY="${marker}"`)).toBe(true)
+    // A marker with a suffix leaves a key-shaped value, so the named rule allows the edit and the
+    // prefixed key inside the assignment value must not block it on its own.
+    expect(MemoryRedact.blocksWrite(`API_KEY=${key}`, `API_KEY=${marker}suffix`)).toBe(false)
+    expect(MemoryRedact.blocksWrite(`API_KEY="${key}"`, `API_KEY="${marker}suffix"`)).toBe(false)
+    // A prefixed key that is not a named assignment value still blocks when replaced.
+    expect(MemoryRedact.blocksWrite(`payload = "${key}"`, `payload = "${marker}"`)).toBe(true)
+  })
+
+  test("does not block masking values that the named rule leaves unchanged", () => {
+    expect(MemoryRedact.blocksWrite('MISTRAL_API_KEY="abc123"', `MISTRAL_API_KEY="${marker}"`)).toBe(false)
+    expect(MemoryRedact.blocksWrite('config.api_key = "abc123"', `config.api_key = "${marker}"`)).toBe(false)
+    expect(MemoryRedact.blocksWrite('{ "api_key": "abc123" }', `{ "api_key": "${marker}" }`)).toBe(false)
+    expect(MemoryRedact.blocksWrite('token_type="abcdef1234567890xyz"', `token_type="${marker}"`)).toBe(false)
+    // An exact marker is not a key, and an interpolated template is not redacted in the first place.
+    expect(MemoryRedact.blocksWrite(`MISTRAL_API_KEY="${marker}"`, `MISTRAL_API_KEY="${marker}"`)).toBe(false)
+    expect(MemoryRedact.blocksWrite('MISTRAL_API_KEY="${value}"', `MISTRAL_API_KEY="${marker}"`)).toBe(false)
+    // A short bare value is neither redacted by text() nor counted as a key.
+    expect(MemoryRedact.text("API_KEY=abc123", { values: true })).toBe("API_KEY=abc123")
+    expect(MemoryRedact.blocksWrite("API_KEY=abc123", `API_KEY=${marker}`)).toBe(false)
+  })
+
+  test("allows new files, key deletion and edits that keep every key", () => {
+    // A new file has nothing to lose.
+    expect(MemoryRedact.blocksWrite("", `API_KEY="${key}"`)).toBe(false)
+    // Deleting the key line without adding a marker is a normal edit.
+    expect(MemoryRedact.blocksWrite(`A=1\nAPI_KEY="${key}"\nB=2`, "A=1\nB=2")).toBe(false)
+    // An unrelated marker elsewhere does not block deleting a key.
+    expect(MemoryRedact.blocksWrite(`NOTE="${marker}"\nAPI_KEY="${key}"`, `NOTE="${marker}"`)).toBe(false)
+    // Adding marker expectations while the key stays in place passes.
+    expect(MemoryRedact.blocksWrite(`API_KEY="${key}"`, `API_KEY="${key}"\nEXPECTED = "${marker}"`)).toBe(false)
+    // No keys at all.
+    expect(MemoryRedact.blocksWrite("const x = 1", "const x = 2")).toBe(false)
+    // A value already equal to the marker is not a key.
+    expect(MemoryRedact.blocksWrite(`API_KEY="${marker}"`, `API_KEY="${marker}"`)).toBe(false)
+  })
+})

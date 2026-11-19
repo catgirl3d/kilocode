@@ -1066,6 +1066,9 @@ export const dict = {
   "settings.experimental.batch.title": "Batch Tool",
   "settings.experimental.batch.description": "Enable batching of multiple tool calls",
   // fork_change start
+  "settings.experimental.redactSecrets.title": "Redact access keys before sending",
+  "settings.experimental.redactSecrets.description":
+    "Replace access keys and tokens in the text sent to models. Card numbers, passwords, and images or PDFs are not checked. The agent sees markers instead of keys, and file tools will not write a marker over an existing key, but terminal commands are not caught. Turning this off is risky, and previously indexed records are not cleaned.",
   "settings.experimental.swePruner.title": "SWE-Pruner",
   "settings.experimental.swePruner.description":
     "Prune large read, grep, and bash outputs to task-relevant lines using an explicitly configured model.",
@@ -1082,10 +1085,8 @@ export const dict = {
   "settings.experimental.imageGenerationModel.description": "Image Generation Model",
   "settings.experimental.imageGenerationModel.placeholder": "Default (Auto Router)",
 
-  // fork_change start
   "settings.models.speechToText.disabledDescription":
-    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.",
-  // fork_change end
+    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.", // fork_change
   "settings.models.speechToText.remoteDescription":
     "Voice input is unavailable in remote windows. Open Kilo in a local window to use the microphone.",
   "settings.models.speechToTextModel.title": "Speech to Text Model",
@@ -1728,9 +1729,7 @@ export const dict = {
   "plan.exit.ready": "Plan is ready:",
   "chat.search.placeholder": "Search chat…",
   "chat.search.toggle": "Search chat",
-  // fork_change start - [fork] manual CLI disconnect action
-  "chat.action.disconnectCli": "Disconnect from CLI",
-  // fork_change end
+  "chat.action.disconnectCli": "Disconnect from CLI", // fork_change - [fork] manual CLI disconnect action
   "chat.search.matchCase": "Match Case",
   "chat.search.matchWholeWord": "Match Whole Word",
   "chat.search.useRegex": "Use Regular Expression",
