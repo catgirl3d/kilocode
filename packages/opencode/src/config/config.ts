@@ -49,6 +49,7 @@ import { sanitizeProjectMcpHeaders } from "../kilocode/config/mcp-headers"
 import { primaryPaths } from "../kilocode/primary-worktree"
 import { Git } from "@/git"
 import { KilocodeDefaultPlugins } from "@/kilocode/config/default-plugins"
+import { KilocodeJsonc } from "@/kilocode/config/jsonc" // [fork]
 import { KilocodeGlobalConfigStamp } from "@/kilocode/config/global-stamp"
 import { SandboxConfig } from "@/kilocode/sandbox/config"
 import { ExternalMarkdown } from "@/kilocode/config/external-markdown"
@@ -234,6 +235,7 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
     if (patch === null) {
       const tree = parseTree(input)
       if (!tree || !findNodeAtLocation(tree, path)) return input
+      return KilocodeJsonc.remove(input, path) // [fork] keep the JSONC valid when a trailing comma follows the deleted key
     }
     // kilocode_change end
     const edits = modify(input, path, patch === null ? undefined : patch, {
