@@ -37,6 +37,7 @@ import {
 // fork_change end
 import { ThinkingSelectorBase } from "../src/components/shared/ThinkingSelector"
 import { PromptSelectors } from "../src/components/chat/PromptSelectors"
+import { MentionRowContent } from "../src/components/chat/MentionRowContent"
 import { SandboxButtonBase, SandboxTooltipContent } from "../src/components/shared/SandboxButton"
 import {
   MultiModelSelector,
@@ -127,39 +128,18 @@ const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigat
 function MentionRow(props: { item: MentionResult }) {
   const { t } = useLanguage()
   const item = props.item
-  if (item.type === "model")
-    return (
-      <>
-        <Icon name="models" class="file-mention-icon" />
-        <span class="file-mention-name">{item.label}</span>
-        <span class="file-mention-dir">{item.description}</span>
-      </>
-    )
+  if (item.type === "model") return <MentionRowContent icon="models" label={item.label} detail={item.description} />
   if (item.type === "past-chats")
-    return (
-      <>
-        <Icon name="history" class="file-mention-icon" />
-        <span class="file-mention-name">{item.label}</span>
-        <span class="file-mention-dir">{item.description}</span>
-      </>
-    )
+    return <MentionRowContent icon="history" label={item.label} detail={item.description} />
   if (item.type === "worktrees")
-    return (
-      <>
-        <Icon name="branch" class="file-mention-icon" />
-        <span class="file-mention-name">{t("prompt.worktrees.title")}</span>
-        <span class="file-mention-dir">{t("prompt.worktrees.search")}</span>
-      </>
-    )
+    return <MentionRowContent icon="branch" label={t("prompt.worktrees.title")} detail={t("prompt.worktrees.search")} />
   if (item.type === "session")
     return (
-      <>
-        <Icon name="history" class="file-mention-icon" />
-        <span class="file-mention-name">{item.session.title}</span>
-        <span class="file-mention-dir">
-          {item.session.worktreeName ?? formatRelativeDate(new Date(item.session.updated).toISOString())}
-        </span>
-      </>
+      <MentionRowContent
+        icon="history"
+        label={item.session.title}
+        detail={item.session.worktreeName ?? formatRelativeDate(new Date(item.session.updated).toISOString())}
+      />
     )
   return null
 }
