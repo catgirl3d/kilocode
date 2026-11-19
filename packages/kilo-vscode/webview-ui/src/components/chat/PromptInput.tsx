@@ -43,6 +43,7 @@ import { useVSCode } from "../../context/vscode"
 import { useConfig } from "../../context/config"
 import { recommend, type ManagerContext } from "../../utils/shortcut-hint"
 import { PromptHint } from "./PromptHint"
+import { MentionRowContent } from "./MentionRowContent" // fork_change
 import { useProvider } from "../../context/provider"
 import { ModelSelector, ModelSelectorBase } from "../shared/ModelSelector"
 import { FavoriteModelSwitcher } from "../shared/FavoriteModelSwitcher" // fork_change
@@ -225,80 +226,42 @@ const MENTION_MODEL_TRIGGER = "mention-model"
 function MentionItemContent(props: { item: MentionResult }) {
   const item = props.item
   const language = useLanguage()
-  if (item.type === "terminal")
-    return (
-      <>
-        <Icon name="console" class="file-mention-icon" />
-        <span class="file-mention-name">{item.label}</span>
-        <span class="file-mention-dir">{item.description}</span>
-      </>
-    )
+  if (item.type === "terminal") return <MentionRowContent icon="console" label={item.label} detail={item.description} /> // fork_change
+  // fork_change start - shared mention row
   if (item.type === "git-changes" || item.type === "worktrees")
     return (
-      <>
-        <Icon name="branch" class="file-mention-icon" />
-        <span class="file-mention-name">
-          {item.type === "worktrees" ? language.t("prompt.worktrees.title") : item.label}
-        </span>
-        <span class="file-mention-dir">
-          {item.type === "worktrees" ? language.t("prompt.worktrees.search") : item.description}
-        </span>
-      </>
+      <MentionRowContent
+        icon="branch"
+        label={item.type === "worktrees" ? language.t("prompt.worktrees.title") : item.label}
+        detail={item.type === "worktrees" ? language.t("prompt.worktrees.search") : item.description}
+      />
     )
+  // fork_change end
   // fork_change start
   if (item.type === "git-commits")
-    return (
-      <>
-        <Icon name="git-commit" class="file-mention-icon" />
-        <span class="file-mention-name">{item.label}</span>
-        <span class="file-mention-dir">{item.description}</span>
-      </>
-    )
+    return <MentionRowContent icon="git-commit" label={item.label} detail={item.description} />
   // fork_change end
+  // fork_change start - shared mention row
   if (item.type === "past-chats")
-    return (
-      <>
-        <Icon name="history" class="file-mention-icon" />
-        <span class="file-mention-name">{item.label}</span>
-        <span class="file-mention-dir">{item.description}</span>
-      </>
-    )
-  if (item.type === "model")
-    return (
-      <>
-        <Icon name="models" class="file-mention-icon" />
-        <span class="file-mention-name">{item.label}</span>
-        <span class="file-mention-dir">{item.description}</span>
-      </>
-    )
+    return <MentionRowContent icon="history" label={item.label} detail={item.description} />
+  if (item.type === "model") return <MentionRowContent icon="models" label={item.label} detail={item.description} />
   if (item.type === "session")
     return (
-      <>
-        <Icon name="history" class="file-mention-icon" />
-        <span class="file-mention-name">{item.session.title}</span>
-        <span class="file-mention-dir">
-          {item.session.worktreeName ?? formatRelativeDate(new Date(item.session.updated).toISOString())}
-        </span>
-      </>
-    )
-  // fork_change start
-  if (item.type === "commit")
-    return (
-      <>
-        <Icon name="git-commit" class="file-mention-icon" />
-        <span class="file-mention-name">{item.commit.subject}</span>
-        <span class="file-mention-dir">{item.commit.shortHash}</span>
-      </>
+      <MentionRowContent
+        icon="history"
+        label={item.session.title}
+        detail={item.session.worktreeName ?? formatRelativeDate(new Date(item.session.updated).toISOString())}
+      />
     )
   // fork_change end
+  // fork_change start
+  if (item.type === "commit")
+    return <MentionRowContent icon="git-commit" label={item.commit.subject} detail={item.commit.shortHash} />
+  // fork_change end
+  // fork_change start - shared mention row
   if (item.type === "file-picker")
-    return (
-      <>
-        <Icon name="folder" class="file-mention-icon" />
-        <span class="file-mention-name">{item.label}</span>
-        <span class="file-mention-dir">{item.description}</span>
-      </>
-    )
+    return <MentionRowContent icon="folder" label={item.label} detail={item.description} />
+  // fork_change end
   return (
     <>
       <FileIcon
