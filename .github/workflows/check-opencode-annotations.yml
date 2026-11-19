@@ -1,6 +1,32 @@
 name: Check shared upstream annotations
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/**"
+      - "github/**"
+      - "packages/extensions/**"
+      - "packages/kilo-*/**"
+      - "packages/*/src/kilocode/**"
+      - "packages/*/src/kilo-*/**"
+      - "packages/plugin-atomic-chat/**"
+      - "packages/opencode/**"
+      - "packages/core/**"
+      - "packages/llm/**"
+      - "packages/schema/**"
+      - "packages/protocol/**"
+      - "packages/server/**"
+      - "packages/tui/**"
+      - "packages/script/**"
+      - "packages/shared/**"
+      - "packages/storybook/**"
+      - "packages/ui/**"
+      - "script/**"
+      - "package.json"
+      - "bun.lock"
+      - "!packages/kilo-jetbrains/**"
   pull_request:
     paths:
       - ".github/**"
