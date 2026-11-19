@@ -80,6 +80,12 @@ jobs:
           fi
 
       # kilocode_change start
+      - name: Check fork marker coverage
+        run: |
+          git remote get-url upstream >/dev/null 2>&1 || git remote add upstream https://github.com/Kilo-Org/kilocode.git
+          git fetch --no-tags upstream main
+          bun run script/fork-audit.ts
+
       - name: Check Effect Promise facade allowlist
         run: bun run script/check-opencode-promise-facades.ts
 
