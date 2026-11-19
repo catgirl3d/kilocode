@@ -1,8 +1,8 @@
 // fork_change - new file
-import { createStore, produce } from "solid-js/store"
 import { showToast } from "@kilocode/kilo-ui/toast"
 import type { useLanguage } from "./language"
 import type { useVSCode } from "./vscode"
+import { createClearStore, id } from "./session-clear-store"
 import type {
   ExtensionMessage,
   ReasoningClearErrorCode,
@@ -70,11 +70,6 @@ export function previewStale(
   return preview.keepTurns !== keepTurns || (preview.includeCarriers ?? false) !== includeCarriers
 }
 
-function errorText(code: ReasoningClearErrorCode, message: string, language: Language): string {
-  if ((code === "unknown" || code === "conflict") && message.trim()) return message.trim()
-  return language.t(ERROR_KEYS[code])
-}
-
 export function shouldCloseReasoningDialog(
   submitted: boolean,
   state: Pick<ReasoningState, "applying" | "previewing"> & { applied?: unknown },
@@ -93,42 +88,14 @@ export function reasoningClearToast(message: SessionReasoningClearedMessage, lan
   }
 }
 
-function id(): string {
-  return crypto.randomUUID()
-}
-
 export function createSessionReasoning(deps: Deps) {
-  const [store, setStore] = createStore<Record<string, ReasoningState>>({})
-  const timers = new Map<string, ReturnType<typeof setTimeout>>()
-
-  function state(sessionID: string): ReasoningState {
-    return store[sessionID] ?? DEFAULT
-  }
-
-  function cancel(sessionID: string) {
-    const timer = timers.get(sessionID)
-    if (timer !== undefined) clearTimeout(timer)
-    timers.delete(sessionID)
-  }
-
-  function drop(sessionID: string) {
-    cancel(sessionID)
-    setStore(
-      produce((map) => {
-        delete map[sessionID]
-      }),
-    )
-  }
-
-  function fail(sessionID: string, code: ReasoningClearErrorCode, message = "") {
-    setStore(sessionID, {
-      ...state(sessionID),
-      previewing: false,
-      applying: false,
-      applied: undefined,
-      error: { code, message: errorText(code, message, deps.language) },
-    })
-  }
+  const base = createClearStore({ fallback: DEFAULT, keys: ERROR_KEYS, language: deps.language })
+  const state = base.state
+  const cancel = base.cancel
+  const drop = base.drop
+  const fail = base.fail
+  const setStore = base.setStore
+  const schedule = base.schedule
 
   function request(
     sessionID: string,
@@ -162,24 +129,18 @@ export function createSessionReasoning(deps: Deps) {
     cancel(sessionID)
     const includeCarriers = opts?.includeCarriers ?? false
     const delay = opts?.delay ?? 0
-    if (delay > 0) {
-      timers.set(
-        sessionID,
-        setTimeout(() => {
-          timers.delete(sessionID)
-          const current = state(sessionID)
-          if (
-            current.keepTurns === keepTurns &&
-            current.includeCarriers === includeCarriers &&
-            (current.previewing || current.preview !== undefined)
-          )
-            return
-          request(sessionID, keepTurns, includeCarriers)
-        }, delay),
-      )
-      return
-    }
-    request(sessionID, keepTurns, includeCarriers)
+    schedule(sessionID, delay, () => {
+      if (delay > 0) {
+        const current = state(sessionID)
+        if (
+          current.keepTurns === keepTurns &&
+          current.includeCarriers === includeCarriers &&
+          (current.previewing || current.preview !== undefined)
+        )
+          return
+      }
+      request(sessionID, keepTurns, includeCarriers)
+    })
   }
 
   function apply(sessionID: string, keepTurns: number, token: string, includeCarriers = false) {
