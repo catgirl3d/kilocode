@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdir, rm } from "fs/promises"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
-import { parse as parseJsonc } from "jsonc-parser"
+import { parse as parseJsonc, type ParseError } from "jsonc-parser"
 import { RemoveError, remove } from "../../src/kilocode/agent"
 import type { Info as AgentInfo } from "../../src/agent/agent"
 import { tmpdir } from "../fixture/fixture"
@@ -126,5 +126,35 @@ describe("Kilo agent remove", () => {
     )
     expect(RemoveError.isInstance(err)).toBe(true)
     expect(await Bun.file(file).exists()).toBe(true)
+  })
+
+  test("removes the only agent when a trailing comma follows it", async () => {
+    await using tmp = await tmpdir()
+    const dir = path.join(tmp.path, ".kilo")
+    const file = path.join(dir, "kilo.jsonc")
+    await mkdir(dir, { recursive: true })
+    await Bun.write(
+      file,
+      `{
+  "agent": {
+    "reviewer": {
+      "description": "Reviews code"
+    },
+  },
+}
+`,
+    )
+
+    await remove({
+      name: "reviewer",
+      agent: { name: "reviewer", native: false, options: {} } as AgentInfo,
+      dirs: [dir],
+      directory: tmp.path,
+    })
+
+    const errors: ParseError[] = []
+    const cfg = parseJsonc(await Bun.file(file).text(), errors, { allowTrailingComma: true })
+    expect(errors).toEqual([])
+    expect(cfg.agent.reviewer).toBeUndefined()
   })
 })
