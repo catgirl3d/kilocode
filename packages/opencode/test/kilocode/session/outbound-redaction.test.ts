@@ -673,4 +673,63 @@ describe("outbound redaction boundary", () => {
       }),
     { config: openaiConfig },
   )
+
+  it.instance(
+    "a JSON file read as a tool result loses escaped named keys but keeps near misses",
+    () =>
+      Effect.gen(function* () {
+        const request = waitRequest("/chat/completions", createChatStream())
+        const resolved = yield* Provider.use.getModel(ProviderV2.ID.make("acme"), ModelV2.ID.make("test-model"))
+        const named = "test0123456789abcdef0123456789abc"
+        const near = "abcdef1234567890xyz"
+        const dsn = "DbPass1234567890"
+        const file = [
+          `"input": "MISTRAL_API_KEY=\\"${named}\\"",`,
+          `"other": "token_type=\\"${near}\\"",`,
+          `"dsn": "postgres://app:${dsn}@db.example.test/app",`,
+        ].join("\n")
+
+        yield* drainWith(
+          input({
+            model: resolved,
+            session: "ses_redact_json_tool",
+            system: [],
+            messages: [
+              { role: "user", content: "Read the corpus file" },
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "tool-call",
+                    toolCallId: "call-json",
+                    toolName: "read",
+                    input: { path: "text-cases.json" },
+                  },
+                ],
+              },
+              {
+                role: "tool",
+                content: [
+                  {
+                    type: "tool-result",
+                    toolCallId: "call-json",
+                    toolName: "read",
+                    output: { type: "text", value: file },
+                  },
+                ],
+              },
+            ],
+          }),
+        )
+
+        const capture = yield* Effect.promise(() => request)
+        const rendered = JSON.stringify(capture.body)
+        expect(rendered).not.toContain(named)
+        expect(rendered).not.toContain(dsn)
+        expect(rendered).toContain("[redacted]")
+        expect(rendered).toContain(near)
+        expect(rendered).toContain("postgres://[redacted]@db.example.test/app")
+      }),
+    { config: compatibleConfig },
+  )
 })

@@ -139,10 +139,10 @@
       "expected": "my_tokenizer = \"test0123456789abcdef0123456789abc\""
     },
     {
-      "id": "miss-password",
-      "group": "near-miss",
+      "id": "named-password-upper",
+      "group": "named",
       "input": "PASSWORD=\"test0123456789abcdef0123456789abc\"",
-      "expected": "PASSWORD=\"test0123456789abcdef0123456789abc\""
+      "expected": "PASSWORD=\"[redacted]\""
     },
     {
       "id": "miss-short-value",
@@ -323,6 +323,696 @@
       "group": "private-key",
       "input": "before\n-----BEGIN RSA PRIVATE KEY-----\nMIIEabcdefgh12345678\n-----END RSA PRIVATE KEY-----\nafter",
       "expected": "before\n[redacted]\nafter"
+    },
+    {
+      "id": "named-env-export-bare",
+      "group": "named",
+      "input": "export BUILD_TOKEN=Alpha1234567890xy",
+      "expected": "export BUILD_TOKEN=[redacted]"
+    },
+    {
+      "id": "named-env-export-quoted",
+      "group": "named",
+      "input": "export SERVICE_SECRET=\"Beta1234567890xyz\"",
+      "expected": "export SERVICE_SECRET=\"[redacted]\""
+    },
+    {
+      "id": "named-ini",
+      "group": "named",
+      "input": "access_key=Gamma1234567890xy",
+      "expected": "access_key=[redacted]"
+    },
+    {
+      "id": "named-toml-dotted",
+      "group": "named",
+      "input": "provider.client_secret = \"Delta1234567890xy\"",
+      "expected": "provider.client_secret = \"[redacted]\""
+    },
+    {
+      "id": "named-yaml-camel",
+      "group": "named",
+      "input": "serviceToken: Epsilon1234567890x",
+      "expected": "serviceToken: [redacted]"
+    },
+    {
+      "id": "named-json-camel",
+      "group": "named",
+      "input": "{\"refreshToken\":\"Zeta1234567890xyz\"}",
+      "expected": "{\"refreshToken\":\"[redacted]\"}"
+    },
+    {
+      "id": "named-js-camel",
+      "group": "named",
+      "input": "const stripeToken = \"Eta1234567890xyz\"",
+      "expected": "const stripeToken = \"[redacted]\""
+    },
+    {
+      "id": "named-python",
+      "group": "named",
+      "input": "client_secret = \"Iota1234567890xyz\"",
+      "expected": "client_secret = \"[redacted]\""
+    },
+    {
+      "id": "named-go-var",
+      "group": "named",
+      "input": "var apiToken = \"Kappa1234567890xy\"",
+      "expected": "var apiToken = \"[redacted]\""
+    },
+    {
+      "id": "named-java-properties",
+      "group": "named",
+      "input": "service.access-key=Mu1234567890abcd",
+      "expected": "service.access-key=[redacted]"
+    },
+    {
+      "id": "named-shell-flag",
+      "group": "named",
+      "input": "curl --api-key=Nu1234567890abcd",
+      "expected": "curl --api-key=[redacted]"
+    },
+    {
+      "id": "named-http-header",
+      "group": "named",
+      "input": "x-api-key: Xi1234567890abcd",
+      "expected": "x-api-key: [redacted]"
+    },
+    {
+      "id": "named-query-token",
+      "group": "named",
+      "input": "https://api.example.test/v1?token=Query1234567890x",
+      "expected": "https://api.example.test/v1?token=[redacted]"
+    },
+    {
+      "id": "named-dotted-api-key",
+      "group": "named",
+      "input": "config.api.key=Omicron1234567890x",
+      "expected": "config.api.key=[redacted]"
+    },
+    {
+      "id": "named-secret-key-plural",
+      "group": "named",
+      "input": "vault.secretKeys=Pi1234567890abcd",
+      "expected": "vault.secretKeys=[redacted]"
+    },
+    {
+      "id": "named-k8s-token",
+      "group": "named",
+      "input": "api-token: QWxwaGExMjM0NTY3ODkw",
+      "expected": "api-token: [redacted]"
+    },
+    {
+      "id": "named-go-short-quoted",
+      "group": "named",
+      "input": "token := \"Lambda1234567890x\"",
+      "expected": "token := \"[redacted]\""
+    },
+    {
+      "id": "named-go-short-bare",
+      "group": "named",
+      "input": "token := Lambda1234567890x",
+      "expected": "token := [redacted]"
+    },
+    {
+      "id": "named-tokens-suffix",
+      "group": "named",
+      "input": "max_tokens=Alpha1234567890xy",
+      "expected": "max_tokens=[redacted]"
+    },
+    {
+      "id": "named-value-underscore",
+      "group": "named",
+      "input": "API_KEY=abcde_1234567890",
+      "expected": "API_KEY=[redacted]"
+    },
+    {
+      "id": "named-value-dash",
+      "group": "named",
+      "input": "API_KEY=abcde-1234567890",
+      "expected": "API_KEY=[redacted]"
+    },
+    {
+      "id": "miss-access-key-id",
+      "group": "near-miss",
+      "input": "access_key_id=Alpha1234567890xy",
+      "expected": "access_key_id=Alpha1234567890xy"
+    },
+    {
+      "id": "miss-access-key-id-camel",
+      "group": "near-miss",
+      "input": "accessKeyId=Alpha1234567890xy",
+      "expected": "accessKeyId=Alpha1234567890xy"
+    },
+    {
+      "id": "miss-cache-key",
+      "group": "near-miss",
+      "input": "cache_key=Alpha1234567890xy",
+      "expected": "cache_key=Alpha1234567890xy"
+    },
+    {
+      "id": "miss-api-key-version",
+      "group": "near-miss",
+      "input": "apiKeyVersion=Alpha1234567890xy",
+      "expected": "apiKeyVersion=Alpha1234567890xy"
+    },
+    {
+      "id": "miss-refresh-token-value",
+      "group": "near-miss",
+      "input": "refresh_token_value=Alpha1234567890xy",
+      "expected": "refresh_token_value=Alpha1234567890xy"
+    },
+    {
+      "id": "miss-secret-key-file",
+      "group": "near-miss",
+      "input": "secret_key_file=Alpha1234567890xy",
+      "expected": "secret_key_file=Alpha1234567890xy"
+    },
+    {
+      "id": "miss-token-hash",
+      "group": "near-miss",
+      "input": "token_hash=9f2c7a1b4d8e0f3a6b5c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a",
+      "expected": "token_hash=9f2c7a1b4d8e0f3a6b5c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a"
+    },
+    {
+      "id": "named-credential",
+      "group": "named",
+      "input": "credential=Abcdefghijklmn1234",
+      "expected": "credential=[redacted]"
+    },
+    {
+      "id": "named-password",
+      "group": "named",
+      "input": "password=Abcdefghijklmn1234",
+      "expected": "password=[redacted]"
+    },
+    {
+      "id": "miss-15-chars",
+      "group": "value-shape",
+      "input": "API_KEY=abcde1234567890",
+      "expected": "API_KEY=abcde1234567890"
+    },
+    {
+      "id": "miss-aiza-29",
+      "group": "value-shape",
+      "input": "AIzaabcdefghij1234567890abcdefg",
+      "expected": "AIzaabcdefghij1234567890abcdefg"
+    },
+    {
+      "id": "miss-sk-19",
+      "group": "value-shape",
+      "input": "sk-abcdefghij123456789",
+      "expected": "sk-abcdefghij123456789"
+    },
+    {
+      "id": "prefix-gho",
+      "group": "prefix",
+      "input": "gho_abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-ghu",
+      "group": "prefix",
+      "input": "ghu_abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-ghs",
+      "group": "prefix",
+      "input": "ghs_abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-ghr",
+      "group": "prefix",
+      "input": "ghr_abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-slack-segments",
+      "group": "prefix",
+      "input": "xoxb-123456789012-234567890123-abcdef0123456789abcdef01",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-sk-proj",
+      "group": "prefix",
+      "input": "sk-proj-abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-sk-ant",
+      "group": "prefix",
+      "input": "sk-ant-api03-abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-akia-min",
+      "group": "prefix",
+      "input": "AKIAABCDEFGHIJ123456",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "miss-akia-15",
+      "group": "prefix-near-miss",
+      "input": "AKIAABCDEFGHIJ12345",
+      "expected": "AKIAABCDEFGHIJ12345"
+    },
+    {
+      "id": "prefix-parenthesized",
+      "group": "prefix",
+      "input": "(sk-abcdefghij1234567890)",
+      "expected": "([redacted])"
+    },
+    {
+      "id": "prefix-after-newline",
+      "group": "prefix",
+      "input": "key:\n sk-abcdefghij1234567890",
+      "expected": "key:\n [redacted]"
+    },
+    {
+      "id": "pos-postgres-url",
+      "group": "url",
+      "input": "postgres://app:DbPass1234567890@db.example.test/app",
+      "expected": "postgres://[redacted]@db.example.test/app"
+    },
+    {
+      "id": "pos-redis-url",
+      "group": "url",
+      "input": "redis://:RedisPass123456789@cache.example.test/0",
+      "expected": "redis://[redacted]@cache.example.test/0"
+    },
+    {
+      "id": "pos-mongo-url",
+      "group": "url",
+      "input": "mongodb+srv://svc:MongoPass123456789@cluster.example.test/db",
+      "expected": "mongodb+srv://[redacted]@cluster.example.test/db"
+    },
+    {
+      "id": "pos-database-url-quoted",
+      "group": "url",
+      "input": "DATABASE_URL=\"postgres://app:DbPass1234567890@db.example.test/app\"",
+      "expected": "DATABASE_URL=\"postgres://[redacted]@db.example.test/app\""
+    },
+    {
+      "id": "miss-ssh-git-url",
+      "group": "url-near-miss",
+      "input": "git clone ssh://git@github.com/acme/repo.git",
+      "expected": "git clone ssh://git@github.com/acme/repo.git"
+    },
+    {
+      "id": "miss-scp-url",
+      "group": "url-near-miss",
+      "input": "git@github.com:acme/repo.git",
+      "expected": "git@github.com:acme/repo.git"
+    },
+    {
+      "id": "miss-plain-url",
+      "group": "url-near-miss",
+      "input": "https://example.test/path",
+      "expected": "https://example.test/path"
+    },
+    {
+      "id": "named-credentials-plural",
+      "group": "named",
+      "input": "credentials = \"Abcdefghijklmn1234\"",
+      "expected": "credentials = \"[redacted]\""
+    },
+    {
+      "id": "named-auth",
+      "group": "named",
+      "input": "auth=Abcdefghijklmn1234",
+      "expected": "auth=[redacted]"
+    },
+    {
+      "id": "named-private-key",
+      "group": "named",
+      "input": "private_key=Abcdefghijklmn1234",
+      "expected": "private_key=[redacted]"
+    },
+    {
+      "id": "named-private-key-camel",
+      "group": "named",
+      "input": "privateKey = \"Abcdefghijklmn1234\"",
+      "expected": "privateKey = \"[redacted]\""
+    },
+    {
+      "id": "miss-oauth-client",
+      "group": "near-miss",
+      "input": "oauth_client=Abcdefghijklmn1234",
+      "expected": "oauth_client=Abcdefghijklmn1234"
+    },
+    {
+      "id": "miss-auth-mode",
+      "group": "near-miss",
+      "input": "auth_mode=Abcdefghijklmn1234",
+      "expected": "auth_mode=Abcdefghijklmn1234"
+    },
+    {
+      "id": "miss-password-hash",
+      "group": "near-miss",
+      "input": "password_hash=Abcdefghijklmn1234",
+      "expected": "password_hash=Abcdefghijklmn1234"
+    },
+    {
+      "id": "miss-credential-id",
+      "group": "near-miss",
+      "input": "credential_id=Abcdefghijklmn1234",
+      "expected": "credential_id=Abcdefghijklmn1234"
+    },
+    {
+      "id": "miss-private-key-file",
+      "group": "near-miss",
+      "input": "private_key_file=Abcdefghijklmn1234",
+      "expected": "private_key_file=Abcdefghijklmn1234"
+    },
+    {
+      "id": "prefix-sendgrid",
+      "group": "prefix",
+      "input": "SG.a1B2c3D4e5F6g7H8i9J0k1.m3N4p5Q6r7S8t9U0v1W2x3Y4z5",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-vault",
+      "group": "prefix",
+      "input": "hvs.A1b2C3d4E5f6G7h8J9k0L1m2N3p4Q5r6",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-vault-batch",
+      "group": "prefix",
+      "input": "hvb.A1b2C3d4E5f6G7h8J9k0L1m2N3p4Q5r6",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-terraform",
+      "group": "prefix",
+      "input": "A7b8C9d0E1f2G3h4.atlasv1.J5k6L7m8N9p0Q1r2S3t4U5v6",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-asia",
+      "group": "prefix",
+      "input": "ASIAH4K8P2D6M9R3T7W5",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-gitlab",
+      "group": "prefix",
+      "input": "glpat-a1B2c3D4e5F6g7H8i9J0",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-npm",
+      "group": "prefix",
+      "input": "npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4p5Q6r7S8",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-pypi",
+      "group": "prefix",
+      "input": "pypi-AgEIcHlwaS5vcmc7aBcD9eFgH1jKlM3nOpQ5rStU7vWxY9zA",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-digitalocean",
+      "group": "prefix",
+      "input": "dop_v1_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-cloudflare-user",
+      "group": "prefix",
+      "input": "cfut_a1B2c3D4e5F6g7H8i9J0k1L2m3N4p5Q6r7S8t9U0",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-newrelic",
+      "group": "prefix",
+      "input": "NRAK-a1b2c3d4e5f6a7b8c9d0e1f2",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "named-sendgrid",
+      "group": "named",
+      "input": "SENDGRID_API_KEY=\"SG.a1B2c3D4e5F6g7H8i9J0k1.m3N4p5Q6r7S8t9U0v1W2x3Y4z5\"",
+      "expected": "SENDGRID_API_KEY=\"[redacted]\""
+    },
+    {
+      "id": "named-vault",
+      "group": "named",
+      "input": "VAULT_TOKEN=hvs.A1b2C3d4E5f6G7h8J9k0L1m2N3p4Q5r6",
+      "expected": "VAULT_TOKEN=[redacted]"
+    },
+    {
+      "id": "named-terraform",
+      "group": "named",
+      "input": "TF_TOKEN_app_terraform_io=A7b8C9d0E1f2G3h4.atlasv1.J5k6L7m8N9p0Q1r2S3t4U5v6",
+      "expected": "TF_TOKEN_app_terraform_io=[redacted]"
+    },
+    {
+      "id": "miss-npm-env",
+      "group": "prefix-near-miss",
+      "input": "npm_package_scripts_test=value",
+      "expected": "npm_package_scripts_test=value"
+    },
+    {
+      "id": "miss-pypi-short",
+      "group": "prefix-near-miss",
+      "input": "pypi-short",
+      "expected": "pypi-short"
+    },
+    {
+      "id": "miss-sendgrid-short",
+      "group": "prefix-near-miss",
+      "input": "SG.short",
+      "expected": "SG.short"
+    },
+    {
+      "id": "miss-atlas-short",
+      "group": "prefix-near-miss",
+      "input": "A7b8.atlasv1.short",
+      "expected": "A7b8.atlasv1.short"
+    },
+    {
+      "id": "named-password-short",
+      "group": "named",
+      "input": "password=hunter2",
+      "expected": "password=[redacted]"
+    },
+    {
+      "id": "named-password-symbols",
+      "group": "named",
+      "input": "DB_PASSWORD=Tr0ub4dor&3",
+      "expected": "DB_PASSWORD=[redacted]"
+    },
+    {
+      "id": "named-password-quoted",
+      "group": "named",
+      "input": "password: \"MyP@ssw0rd\"",
+      "expected": "password: \"[redacted]\""
+    },
+    {
+      "id": "named-passwd",
+      "group": "named",
+      "input": "passwd=123456",
+      "expected": "passwd=[redacted]"
+    },
+    {
+      "id": "miss-credential-short",
+      "group": "near-miss",
+      "input": "credential=pass123",
+      "expected": "credential=pass123"
+    },
+    {
+      "id": "miss-credentials-userinfo",
+      "group": "near-miss",
+      "input": "credentials=\"user:pass\"",
+      "expected": "credentials=\"user:pass\""
+    },
+    {
+      "id": "named-password-default",
+      "group": "named",
+      "input": "password=changeme",
+      "expected": "password=[redacted]"
+    },
+    {
+      "id": "miss-password-template",
+      "group": "near-miss",
+      "input": "password=${DB_PASSWORD}",
+      "expected": "password=${DB_PASSWORD}"
+    },
+    {
+      "id": "miss-password-reference",
+      "group": "near-miss",
+      "input": "password=process.env.DB_PASSWORD",
+      "expected": "password=process.env.DB_PASSWORD"
+    },
+    {
+      "id": "miss-credentials-cors",
+      "group": "near-miss",
+      "input": "credentials=include",
+      "expected": "credentials=include"
+    },
+    {
+      "id": "miss-password-empty",
+      "group": "near-miss",
+      "input": "password=",
+      "expected": "password="
+    },
+    {
+      "id": "miss-password-marker",
+      "group": "near-miss",
+      "input": "password=[redacted]",
+      "expected": "password=[redacted]"
+    },
+    {
+      "id": "miss-password-compound",
+      "group": "near-miss",
+      "input": "password_hash=hunter2",
+      "expected": "password_hash=hunter2"
+    },
+    {
+      "id": "named-password-period",
+      "group": "named",
+      "input": "password=\"hunter2.\"",
+      "expected": "password=\"[redacted]\""
+    },
+    {
+      "id": "named-password-dollar-literal",
+      "group": "named",
+      "input": "password=\"$ecret123\"",
+      "expected": "password=\"[redacted]\""
+    },
+    {
+      "id": "miss-password-dollar-ref",
+      "group": "near-miss",
+      "input": "password=$DB_PASSWORD",
+      "expected": "password=$DB_PASSWORD"
+    },
+    {
+      "id": "miss-password-type",
+      "group": "near-miss",
+      "input": "password: string",
+      "expected": "password: string"
+    },
+    {
+      "id": "named-openai-key",
+      "group": "named",
+      "input": "AZURE_OPENAI_KEY=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c",
+      "expected": "AZURE_OPENAI_KEY=[redacted]"
+    },
+    {
+      "id": "named-storage-account-key",
+      "group": "named",
+      "input": "AZURE_STORAGE_ACCOUNT_KEY=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c",
+      "expected": "AZURE_STORAGE_ACCOUNT_KEY=[redacted]"
+    },
+    {
+      "id": "named-storage-account-key-camel",
+      "group": "named",
+      "input": "storageAccountKey=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c",
+      "expected": "storageAccountKey=[redacted]"
+    },
+    {
+      "id": "named-dd-app-key",
+      "group": "named",
+      "input": "DD_APP_KEY=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c",
+      "expected": "DD_APP_KEY=[redacted]"
+    },
+    {
+      "id": "named-license-key",
+      "group": "named",
+      "input": "LICENSE_KEY=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c",
+      "expected": "LICENSE_KEY=[redacted]"
+    },
+    {
+      "id": "named-connection-account-key",
+      "group": "named",
+      "input": "AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=demo;AccountKey=Zm9vYmFyMTIzNDU2Nzg5MGFiY2RlZmdoaWprbG1ub3A=;EndpointSuffix=core.windows.net",
+      "expected": "AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=demo;AccountKey=[redacted];EndpointSuffix=core.windows.net"
+    },
+    {
+      "id": "miss-dd-app-key-env",
+      "group": "near-miss",
+      "input": "DD_APP_KEY_ENV=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c",
+      "expected": "DD_APP_KEY_ENV=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c"
+    },
+    {
+      "id": "miss-local-storage-key",
+      "group": "near-miss",
+      "input": "LOCAL_STORAGE_KEY=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c",
+      "expected": "LOCAL_STORAGE_KEY=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c"
+    },
+    {
+      "id": "miss-public-key-alias",
+      "group": "near-miss",
+      "input": "PUBLIC_KEY=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c",
+      "expected": "PUBLIC_KEY=7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c"
+    },
+    {
+      "id": "named-pwd",
+      "group": "named",
+      "input": "pwd=hunter2",
+      "expected": "pwd=[redacted]"
+    },
+    {
+      "id": "named-db-pwd",
+      "group": "named",
+      "input": "DB_PWD=123456",
+      "expected": "DB_PWD=[redacted]"
+    },
+    {
+      "id": "named-pwd-camel",
+      "group": "named",
+      "input": "dbPwd=short",
+      "expected": "dbPwd=[redacted]"
+    },
+    {
+      "id": "miss-shell-pwd",
+      "group": "near-miss",
+      "input": "PWD=/home/user",
+      "expected": "PWD=/home/user"
+    },
+    {
+      "id": "miss-pwd-template",
+      "group": "near-miss",
+      "input": "pwd=${PWD}",
+      "expected": "pwd=${PWD}"
+    },
+    {
+      "id": "named-email-pair",
+      "group": "credential-pair",
+      "input": "test@example.com:123456",
+      "expected": "test@example.com:[redacted]"
+    },
+    {
+      "id": "named-email-pair-plus",
+      "group": "credential-pair",
+      "input": "user.name+tag@sub.example.co.uk:Hunter2!",
+      "expected": "user.name+tag@sub.example.co.uk:[redacted]"
+    },
+    {
+      "id": "named-email-pair-list",
+      "group": "credential-pair",
+      "input": "creds test@example.com:123456, next",
+      "expected": "creds test@example.com:[redacted], next"
+    },
+    {
+      "id": "miss-scp-url",
+      "group": "credential-pair-near-miss",
+      "input": "git@github.com:acme/repo.git",
+      "expected": "git@github.com:acme/repo.git"
+    },
+    {
+      "id": "miss-email-port",
+      "group": "credential-pair-near-miss",
+      "input": "user@example.com:8080",
+      "expected": "user@example.com:8080"
+    },
+    {
+      "id": "miss-email-prose",
+      "group": "credential-pair-near-miss",
+      "input": "support@example.com:welcome",
+      "expected": "support@example.com:welcome"
     }
   ]
 }

@@ -116,6 +116,21 @@ export namespace MemoryRedact {
     return index - start >= 10 ? index : -1
   }
 
+  // Dotted token body: SendGrid and Terraform carry a literal dot inside the credential.
+  function dotted(input: string, at: number, prefix: string, min: number) {
+    if (!input.startsWith(prefix, at)) return -1
+    const start = at + prefix.length
+    let end = start
+    while (end < input.length) {
+      const code = input.charCodeAt(end)
+      if (!isKeyChar(code) && code !== 46 /* . */) break
+      end++
+    }
+    return end - start >= min ? end : -1
+  }
+
+  const ATLAS = /[A-Za-z0-9]+\.atlasv1\.[A-Za-z0-9]{16,}/g
+
   function prefixEnd(input: string, at: number) {
     if (at > 0 && isKeyChar(input.charCodeAt(at - 1))) return -1
     const code = input.charCodeAt(at)
@@ -129,7 +144,8 @@ export namespace MemoryRedact {
       if (github > 0) return github
       if (input.startsWith("gh", at) && "pousr".includes(input.charAt(at + 2)) && input.charAt(at + 3) === "_")
         return body(input, at, input.slice(at, at + 4), 20)
-      return body(input, at, "gsk_", 20)
+      const gitlab = body(input, at, "glpat-", 20)
+      return gitlab > 0 ? gitlab : body(input, at, "gsk_", 20)
     }
     if (code === 120 /* x */) {
       const xai = body(input, at, "xai-", 20)
@@ -138,12 +154,18 @@ export namespace MemoryRedact {
         return body(input, at, input.slice(at, at + 5), 20)
       return -1
     }
-    if (code === 104 /* h */) return body(input, at, "hf_", 20, isAlnum)
+    if (code === 104 /* h */) {
+      const vault = body(input, at, "hvs.", 24)
+      if (vault > 0) return vault
+      const vaultBatch = body(input, at, "hvb.", 24)
+      if (vaultBatch > 0) return vaultBatch
+      return body(input, at, "hf_", 20, isAlnum)
+    }
     if (code === 101 /* e */) return jwtEnd(input, at)
     if (code === 65 /* A */) {
       const google = body(input, at, "AIza", 30)
       if (google > 0) return google
-      if (!input.startsWith("AKIA", at)) return -1
+      if (!input.startsWith("AKIA", at) && !input.startsWith("ASIA", at)) return -1
       let end = at + 4
       const start = end
       while (end < input.length) {
@@ -152,6 +174,17 @@ export namespace MemoryRedact {
         end++
       }
       return end - start >= 16 ? end : -1
+    }
+    if (code === 83 /* S */) return dotted(input, at, "SG.", 20)
+    if (code === 78 /* N */) return body(input, at, "NRAK-", 20)
+    if (code === 110 /* n */) return body(input, at, "npm_", 32)
+    if (code === 112 /* p */) return body(input, at, "pypi-", 32)
+    if (code === 100 /* d */) return body(input, at, "dop_v1_", 32)
+    if (code === 99 /* c */) {
+      const key = body(input, at, "cfk_", 30)
+      if (key > 0) return key
+      const user = body(input, at, "cfut_", 30)
+      return user > 0 ? user : body(input, at, "cfat_", 30)
     }
     return -1
   }
@@ -217,7 +250,28 @@ export namespace MemoryRedact {
     let end = -1
     if (code === 97 && words(input, at, "api")) end = keyTail(input, at + 3)
     if (code === 97 && words(input, at, "access")) end = keyTail(input, at + 6)
+    if (code === 97 && words(input, at, "auth")) end = at + 4
+    if (code === 97 && words(input, at, "app")) {
+      const sep = input.charCodeAt(at - 1)
+      if ((sep === 95 || sep === 45 || sep === 46) && words(input, at - 3, "dd") && !isNameChar(input.charCodeAt(at - 4)))
+        end = keyTail(input, at + 3)
+    }
+    if (code === 97 && input.charCodeAt(at - 1) === 59 && input.startsWith("AccountKey", at))
+      end = keyTail(input, at + 7)
+    if (code === 99 && words(input, at, "credential")) end = at + 10
+    if (code === 108 && words(input, at, "license")) end = keyTail(input, at + 7)
+    if (code === 111 && words(input, at, "openai")) end = keyTail(input, at + 6)
+    if (code === 112 && words(input, at, "password")) end = at + 8
+    if (code === 112 && words(input, at, "passwd")) end = at + 6
+    if (code === 112 && words(input, at, "pwd")) end = at + 3
+    if (code === 112 && words(input, at, "private")) end = keyTail(input, at + 7)
     if (code === 115 && words(input, at, "secret")) end = Math.max(at + 6, keyTail(input, at + 6))
+    if (code === 115 && words(input, at, "storage")) {
+      const after = at + 7
+      const code2 = input.charCodeAt(after)
+      const word = code2 === 95 || code2 === 45 || code2 === 46 || code2 === 32 ? after + 1 : after
+      if (words(input, word, "account")) end = keyTail(input, word + 7)
+    }
     if (code === 116 && words(input, at, "token")) end = at + 5
     if (end < 0) return -1
     const prev = input.charCodeAt(at - 1)
@@ -255,13 +309,24 @@ export namespace MemoryRedact {
     const name = input.slice(nameStart, nameEnd)
     const close = input.charAt(nameEnd)
     if ((close === '"' || close === "'") && nameStart > 0 && input.charAt(nameStart - 1) === close) nameEnd++
+    // `\"name\":` inside a JSON string keeps the closing quote escaped.
+    const mark = input.charAt(nameEnd + 1)
+    if (
+      close === "\\" &&
+      (mark === '"' || mark === "'") &&
+      nameStart > 1 &&
+      input.charAt(nameStart - 1) === mark &&
+      input.charAt(nameStart - 2) === "\\"
+    )
+      nameEnd += 2
     let index = nameEnd
     while (index < input.length && isSpace(input.charCodeAt(index))) index++
     const separator = input.charCodeAt(index)
     if (separator !== 58 && separator !== 61) return
     const next = input.charCodeAt(index + 1)
     if (separator === 61 && (next === 61 || next === 62)) return
-    index++
+    // `token := value` is a Go short variable declaration, not two operators.
+    index += separator === 58 && next === 61 ? 2 : 1
     while (index < input.length && isSpace(input.charCodeAt(index))) index++
     const quote = input.charCodeAt(index)
     if (quote === 34 || quote === 39) {
@@ -282,10 +347,31 @@ export namespace MemoryRedact {
       if (closed < 0) return
       return { name, start: index, end: closed + 1, quote: input.charAt(index) }
     }
+    // `\"value\"` is the JSON-escaped form of a quoted value; keep both escape bytes.
+    if (quote === 92 /* \ */) {
+      const escaped = input.charAt(index + 1)
+      if (escaped === '"' || escaped === "'") {
+        const close = `\\${escaped}`
+        const start = index + close.length
+        const end = input.indexOf(close, start)
+        if (end < 0) return
+        return { name, start: index, end: end + close.length, quote: close }
+      }
+    }
     let end = index
     while (end < input.length) {
       const code = input.charCodeAt(end)
-      if (isSpace(code) || code === 34 || code === 39 || code === 44 || code === 59 || code === 41 || code === 125 || code === 93)
+      if (
+        isSpace(code) ||
+        code === 34 ||
+        code === 39 ||
+        code === 44 ||
+        code === 59 ||
+        code === 41 ||
+        code === 125 ||
+        code === 93 ||
+        (code === 92 && (input.charAt(end + 1) === '"' || input.charAt(end + 1) === "'"))
+      )
         break
       end++
     }
@@ -295,8 +381,9 @@ export namespace MemoryRedact {
   function assignmentSpan(input: string, at: number) {
     const found = assignmentAt(input, at)
     if (!found) return
-    const value = found.quote ? input.slice(found.start + 1, found.end - 1) : input.slice(found.start, found.end)
-    if (!keyValue(value)) return
+    const size = found.quote.length
+    const value = found.quote ? input.slice(found.start + size, found.end - size) : input.slice(found.start, found.end)
+    if (!(weak(found.name) ? explicit(value, found.quote !== "") : keyValue(value))) return
     return { start: found.start, end: found.end, replacement: `${found.quote}${MARKER}${found.quote}` }
   }
 
@@ -347,15 +434,19 @@ export namespace MemoryRedact {
       }
       index++
     }
-    chunks.push(input.slice(last))
-    return chunks.join("")
+    if (chunks.length > 0) chunks.push(input.slice(last))
+    const joined = chunks.length > 0 ? chunks.join("") : input
+    const atlas = joined.includes("atlasv1") ? joined.replace(ATLAS, MARKER) : joined
+    const mail = mailMask(atlas)
+    // Connection strings carry a password without a key-shaped name; reuse the parser-primary rule.
+    return mail.includes("://") ? redactUri(mail) : mail
   }
 
   // File guard: compare the file before and after a write, using the same values-mode matcher, and
   // report whether the next content replaces a recognized key with the marker. Never looks at config
   // and never exposes a value.
   function namedValues(input: string) {
-    const found = new Map<string, string[]>()
+    const found = new Map<string, { value: string; quoted: boolean }[]>()
     let index = 0
     while (index < input.length) {
       if (!isAlnum(input.charCodeAt(index))) {
@@ -368,7 +459,7 @@ export namespace MemoryRedact {
         continue
       }
       const value = (() => {
-        if (span.quote) return input.slice(span.start + 1, span.end - 1)
+        if (span.quote) return input.slice(span.start + span.quote.length, span.end - span.quote.length)
         // The bare scanner stops before the closing bracket of the marker; keep it and any suffix.
         if (!input.startsWith(MARKER, span.start)) return input.slice(span.start, span.end)
         let end = span.start + MARKER.length
@@ -381,9 +472,10 @@ export namespace MemoryRedact {
         return input.slice(span.start, end)
       })()
       const name = span.name.replaceAll(/[_\s-]/g, "").toLowerCase()
+      const item = { value, quoted: span.quote !== "" }
       const list = found.get(name)
-      if (list) list.push(value)
-      if (!list) found.set(name, [value])
+      if (list) list.push(item)
+      if (!list) found.set(name, [item])
       index = span.end
     }
     return found
@@ -430,7 +522,15 @@ export namespace MemoryRedact {
       }
       index++
     }
-    return count
+    return count + (input.match(ATLAS) ?? []).length
+  }
+
+  // The marker itself is not a live credential, so a masked URL does not count as protected.
+  function uriKeys(input: string) {
+    return (input.match(candidate) ?? []).filter((raw) => {
+      const info = userinfo(raw)
+      return info !== undefined && info !== MARKER
+    }).length
   }
 
   function markerCount(input: string) {
@@ -447,9 +547,62 @@ export namespace MemoryRedact {
     return bareKey(value) && !value.includes("${")
   }
 
-  function count(items: string[]) {
+  // Password-shaped names carry short or all-letter secrets that the key shape rejects.
+  const WEAK = new Set(["password", "passwd", "pwd"])
+  const TYPES = new Set(["string", "boolean", "number", "any", "unknown", "null", "undefined", "true", "false"])
+  const REFERENCE = /^(?:process\.env|os\.environ|env|config|settings|ctx|this|secrets?|vars|options)\./i
+  // Leaked credential dumps use `email:password`; a clone URL has a path and a port has five digits.
+  const MAIL_PAIR = /[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}:[^\s@/\\;,"'()[\]{}<>:]+/g
+
+  function weak(name: string) {
+    // `PWD` is the shell working directory, not a password.
+    if (name === "PWD") return false
+    const plain = name.replaceAll(/[_\s.-]/g, "").toLowerCase()
+    return [...WEAK].some((word) => plain.endsWith(word) || plain.endsWith(`${word}s`))
+  }
+
+  function mailPass(token: string) {
+    const pass = token.slice(token.lastIndexOf(":") + 1)
+    if (pass.length < 6 || pass.length > 64 || !/[0-9]/.test(pass)) return
+    if (pass.includes("${") || pass === MARKER) return
+    return pass
+  }
+
+  function mailMask(input: string) {
+    if (!input.includes("@")) return input
+    return input.replace(MAIL_PAIR, (token) => {
+      if (!mailPass(token)) return token
+      return `${token.slice(0, token.lastIndexOf(":") + 1)}${MARKER}`
+    })
+  }
+
+  function mailKeys(input: string) {
+    let count = 0
+    input.replace(MAIL_PAIR, (token) => {
+      if (mailPass(token)) count++
+      return token
+    })
+    return count
+  }
+
+  function explicit(value: string, quoted: boolean) {
+    if (!value || value === MARKER) return false
+    // A bare scan stops before `]`, so a marker prefix arrives without its last byte.
+    if (value.startsWith("[redacted") || MARKER.startsWith(value)) return false
+    if (value.includes("${")) return false
+    if (!quoted && /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(value)) return false
+    if (!quoted && TYPES.has(value.toLowerCase())) return false
+    if (value.startsWith("<") && value.endsWith(">")) return false
+    return !REFERENCE.test(value)
+  }
+
+  function valueKey(item: { value: string; quoted: boolean }, name: string) {
+    return weak(name) ? explicit(item.value, item.quoted) : keyValue(item.value)
+  }
+
+  function count(items: { value: string; quoted: boolean }[], name: string) {
     // A named value can also contain a key picked up by the standalone rules.
-    return items.filter((value) => keyValue(value) || valuesText(value) !== value).length
+    return items.filter((item) => valueKey(item, name) || valuesText(item.value) !== item.value).length
   }
 
   /**
@@ -460,14 +613,23 @@ export namespace MemoryRedact {
     const before = namedValues(old)
     const after = namedValues(next)
     for (const [name, items] of before) {
-      const keys = count(items)
+      const keys = count(items, name)
       if (keys === 0) continue
       const later = after.get(name)
       // A name missing from the next content was deleted, which is a normal edit.
-      if (!later || !later.includes(MARKER)) continue
-      if (count(later) < keys) return true
+      if (!later) continue
+      const marked = weak(name)
+        ? later.some((item) => item.value.startsWith("[redacted"))
+        : later.some((item) => item.value === MARKER)
+      if (!marked) continue
+      if (count(later, name) < keys) return true
     }
-    return standaloneKeys(next) < standaloneKeys(old) && markerCount(next) > markerCount(old)
+    return (
+      (standaloneKeys(next) < standaloneKeys(old) ||
+        uriKeys(next) < uriKeys(old) ||
+        mailKeys(next) < mailKeys(old)) &&
+      markerCount(next) > markerCount(old)
+    )
   }
   // fork_change end
 
@@ -546,12 +708,15 @@ export namespace MemoryRedact {
    */
   function valuesValue(input: unknown, name?: string): unknown {
     if (typeof input === "string") {
+      // A weak name has no key shape to check: any explicit literal is the secret.
+      if (name && weak(name) && explicit(input, true)) return MARKER
       // A whole key leaf collapses to the bare marker; a structured value (e.g. "Bearer [redacted]")
       // keeps its scheme and only has the credential scrubbed by valuesText.
       if (name && sensitive(name) && input !== MARKER && (input.includes(MARKER) || bareKey(input))) return MARKER
       return valuesText(input, name !== undefined && name.toLowerCase().includes("authorization"))
     }
-    if (Array.isArray(input)) return input.map((item) => valuesValue(item))
+    // Array elements inherit the name of the property that holds the array.
+    if (Array.isArray(input)) return input.map((item) => valuesValue(item, name))
     if (typeof input !== "object" || input === null) return input
     return Object.fromEntries(Object.entries(input).map(([key, item]) => [key, valuesValue(item, key)]))
   }
