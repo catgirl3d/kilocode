@@ -68,8 +68,10 @@ function modalities(list: readonly string[] | null | undefined): Modality[] {
   return found.length > 0 ? found : ["text"]
 }
 
-// Limits come from the gateway's model metadata. context_budget is the smaller, safer figure, so it wins over the
-// full context_limit. An output of 0 lets the default output cap apply when the gateway reports none.
+// Limits come from the gateway's model metadata. context_limit is the model's full context window, while the
+// gateway's context_budget is a narrower working budget, so the full window is advertised and the budget is only
+// a fallback when context_limit is missing. An output of 0 lets the default output cap apply when the gateway
+// reports none.
 export function openDesignModel(item: OpenDesignItem): Model {
   const meta = item.metadata
   const input = modalities(item.architecture?.input_modalities)
@@ -84,7 +86,7 @@ export function openDesignModel(item: OpenDesignItem): Model {
     temperature: true,
     tool_call: true,
     cost: { input: 0, output: 0 },
-    limit: { context: meta?.context_budget ?? meta?.context_limit ?? 128000, output: meta?.output_budget ?? 0 },
+    limit: { context: meta?.context_limit ?? meta?.context_budget ?? 128000, output: meta?.output_budget ?? 0 },
     modalities: { input, output: modalities(item.architecture?.output_modalities) },
   }
 }
