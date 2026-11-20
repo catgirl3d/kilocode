@@ -1022,6 +1022,14 @@ describe("memory redact values mode", () => {
     expect(MemoryRedact.blocksWrite("X-Api-Key: abcdefghijklmnop", "")).toBe(false)
     expect(MemoryRedact.blocksWrite("X-Api-Key: [redacted]", "OTHER: [redacted]")).toBe(false)
     expect(MemoryRedact.blocksWrite("GOCSPX-demoA1b2C3d4E5f6G7h8", "OTHER: [redacted]")).toBe(false)
+    expect(MemoryRedact.blocksWrite("oc_sk_" + "0123456789ab_" + "a".repeat(39), "[redacted]")).toBe(true)
+    expect(MemoryRedact.blocksWrite("Authorization: Token " + "a".repeat(32), "Authorization: Token [redacted]")).toBe(
+      true,
+    )
+    expect(MemoryRedact.blocksWrite("tool --api-key " + "a".repeat(20), "tool --api-key [redacted]")).toBe(true)
+    expect(
+      MemoryRedact.blocksWrite('KILO_AUTH_CONTENT={"azure":{"key":"abc123"}}', "KILO_AUTH_CONTENT=[redacted]"),
+    ).toBe(true)
     expect(
       MemoryRedact.blocksWrite("X-Api-Key: abcdefghijklmnop\nnext=1", "X-Api-Key: [redacted]\nnext=1"),
     ).toBe(true)
@@ -1056,6 +1064,90 @@ describe("memory redact values mode", () => {
       expect(big).toBeLessThan(small * 10 + 20)
       expect(big).toBeLessThan(2_000)
     }
+  })
+
+  test("strong names accept letter-only values but keep placeholders and public keys", () => {
+    const cases = [
+      ["API_KEY=abcdefghijklmnop", "API_KEY=[redacted]"],
+      ['API_KEY="ABCDEFGHIJKLMNOP"', 'API_KEY="[redacted]"'],
+      ["CLIENT_SECRET=abcdefghijklmnop", "CLIENT_SECRET=[redacted]"],
+      ["SECRET_KEY=abcdefghijklmnop", "SECRET_KEY=[redacted]"],
+      ["SIGNING_KEY=abcdefghijklmnop", "SIGNING_KEY=[redacted]"],
+      ["ENCRYPTION_KEY=abcdefghijklmnop", "ENCRYPTION_KEY=[redacted]"],
+      ["AUTH_TOKEN=abcdefghijklmnop", "AUTH_TOKEN=[redacted]"],
+      ["AWS_SECRET_ACCESS_KEY=abcdefghijklmnop", "AWS_SECRET_ACCESS_KEY=[redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      "API_KEY=abc123",
+      "API_KEY=1234567890123456",
+      "PUBLIC_KEY=abcdefghijklmnop",
+      "CACHE_KEY=abcdefghijklmnop",
+      "API_KEY=string",
+      "API_KEY=${API_KEY}",
+      "API_KEY=",
+    ]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+
+    expect(MemoryRedact.blocksWrite("API_KEY=abcdefghijklmnop", "API_KEY=[redacted]")).toBe(true)
+  })
+
+  test("catches additional token families and context carriers", () => {
+    const make = (prefix: string, body: string) => prefix + body
+    const rep = (char: string, size: number) => char.repeat(size)
+    const cases = [
+      [make("oc_sk_", `0123456789ab_${rep("a", 39)}`), "[redacted]"],
+      [make("A3T", rep("A", 17)), "[redacted]"],
+      [make("ABIA", rep("A", 16)), "[redacted]"],
+      [make("ACCA", rep("A", 16)), "[redacted]"],
+      [make("ABSK", rep("A", 100)), "[redacted]"],
+      [make("doo_v1_", rep("a", 64)), "[redacted]"],
+      [make("dor_v1_", rep("a", 64)), "[redacted]"],
+      [make("dp.pt.", rep("a", 32)), "[redacted]"],
+      [make("dapi", rep("a", 32)), "[redacted]"],
+      [make("sk_test_", rep("a", 20)), "[redacted]"],
+      [make("sk_prod_", rep("a", 20)), "[redacted]"],
+      [make("rk_test_", rep("a", 20)), "[redacted]"],
+      [make("rk_prod_", rep("a", 20)), "[redacted]"],
+      [make("glpat-", `${rep("a", 20)}.ab.${rep("c", 9)}`), "[redacted]"],
+      [make("whsec_", rep("a", 32)), "[redacted]"],
+      [make("sb_secret_", `${rep("a", 20)}_${rep("b", 20)}`), "[redacted]"],
+      [make("ntn_", rep("a", 40)), "[redacted]"],
+      [make("sntryu_", rep("a", 40)), "[redacted]"],
+      [make("sntrys_", rep("a", 40)), "[redacted]"],
+      [make("vck_", rep("a", 20)), "[redacted]"],
+      [make("cfoat_", rep("a", 30)), "[redacted]"],
+      [make("rpa_", rep("a", 20)), "[redacted]"],
+      [make("fw_", rep("a", 20)), "[redacted]"],
+      [make("api_org_", rep("a", 34)), "[redacted]"],
+      [`https://hooks.slack.com/services/T000/B000/XXXX`, "[redacted]"],
+      [`${rep("a", 20)}.atlasv1.${rep("b", 20)}-tail`, "[redacted]"],
+      [`KILO_AUTH_CONTENT={"azure":{"key":"abc123"}}`, "KILO_AUTH_CONTENT=[redacted]"],
+      [`SUPABASE_SERVICE_ROLE_KEY=${rep("a", 32)}`, "SUPABASE_SERVICE_ROLE_KEY=[redacted]"],
+      [`Authorization: Token ${rep("a", 32)}`, "Authorization: Token [redacted]"],
+      [`tool --api-key ${rep("a", 20)}`, "tool --api-key [redacted]"],
+      [`tool --auth-token ${rep("a", 20)}`, "tool --auth-token [redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      make("oc_sk_", `${rep("A", 12)}_${rep("a", 39)}`),
+      make("oc_sk_", `0123456789ab_${rep("a", 19)}`),
+      `document_${make("oc_sk_", `0123456789ab_${rep("a", 39)}`)}`,
+      make("A3T", rep("A", 15)),
+      make("sk_test_", rep("a", 8)),
+      make("whsec_", rep("a", 8)),
+      make("sntrys_", rep("a", 8)),
+      make("api_org_", rep("a", 8)),
+      `KILO_CONFIG_CONTENT={"experimental":{}}`,
+      "SUPABASE_SERVICE_ROLE=public",
+      "Authorization: Token short",
+      "Token is required",
+      "tool --api-key",
+      "https://hooks.slack.com/",
+    ] as const
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
   })
 
   test("reads CLI flags and credential files", () => {

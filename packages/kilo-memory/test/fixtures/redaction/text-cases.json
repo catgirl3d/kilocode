@@ -151,10 +151,10 @@
       "expected": "API_KEY=\"abc123\""
     },
     {
-      "id": "miss-letters-only",
-      "group": "value-shape",
+      "id": "named-letters-only",
+      "group": "named",
       "input": "API_KEY=\"abcdefghijklmnop\"",
-      "expected": "API_KEY=\"abcdefghijklmnop\""
+      "expected": "API_KEY=\"[redacted]\""
     },
     {
       "id": "miss-digits-only",

@@ -856,6 +856,72 @@ describe("outbound redaction boundary", () => {
       secret: "test0123456789abcdef0123456789abc",
       expected: '{"input":"password=\\"[redacted]\\""}',
     },
+    {
+      id: "opencode-console",
+      input: "oc_sk_" + "0123456789ab_" + "a".repeat(39),
+      secret: "oc_sk_" + "0123456789ab_" + "a".repeat(39),
+      expected: "[redacted]",
+    },
+    {
+      id: "aws-access-id-variant",
+      input: "A3T" + "A".repeat(17),
+      secret: "A3T" + "A".repeat(17),
+      expected: "[redacted]",
+    },
+    {
+      id: "bedrock",
+      input: "ABSK" + "A".repeat(100),
+      secret: "ABSK" + "A".repeat(100),
+      expected: "[redacted]",
+    },
+    {
+      id: "doppler",
+      input: "dp.pt." + "a".repeat(32),
+      secret: "dp.pt." + "a".repeat(32),
+      expected: "[redacted]",
+    },
+    {
+      id: "stripe-test",
+      input: "sk_test_" + "a".repeat(20),
+      secret: "sk_test_" + "a".repeat(20),
+      expected: "[redacted]",
+    },
+    {
+      id: "gitlab-dotted",
+      input: "glpat-" + "a".repeat(20) + ".ab." + "c".repeat(9),
+      secret: "glpat-" + "a".repeat(20) + ".ab." + "c".repeat(9),
+      expected: "[redacted]",
+    },
+    {
+      id: "slack-webhook",
+      input: "https://hooks.slack.com/services/T000/B000/XXXX",
+      secret: "https://hooks.slack.com/services/T000/B000/XXXX",
+      expected: "[redacted]",
+    },
+    {
+      id: "kilo-auth-content",
+      input: 'KILO_AUTH_CONTENT={"azure":{"key":"abc123"}}',
+      secret: '{"azure":{"key":"abc123"}}',
+      expected: "KILO_AUTH_CONTENT=[redacted]",
+    },
+    {
+      id: "authorization-token",
+      input: "Authorization: Token " + "a".repeat(32),
+      secret: "a".repeat(32),
+      expected: "Authorization: Token [redacted]",
+    },
+    {
+      id: "cli-api-key",
+      input: "tool --api-key " + "a".repeat(20),
+      secret: "a".repeat(20),
+      expected: "tool --api-key [redacted]",
+    },
+    {
+      id: "supabase-service-role",
+      input: "SUPABASE_SERVICE_ROLE_KEY=" + "a".repeat(32),
+      secret: "a".repeat(32),
+      expected: "SUPABASE_SERVICE_ROLE_KEY=[redacted]",
+    },
   ]
 
   const cases = rules.map((rule) => ({

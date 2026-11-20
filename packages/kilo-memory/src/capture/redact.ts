@@ -129,24 +129,170 @@ export namespace MemoryRedact {
     return end - start >= min ? end : -1
   }
 
-  const ATLAS = /[A-Za-z0-9]+\.atlasv1\.[A-Za-z0-9]{16,}/g
+  const ATLAS = /[A-Za-z0-9_-]+\.atlasv1\.[A-Za-z0-9_=-]{16,}/g
+  const EXACT = new Set(["kiloauthcontent", "supabaseservicerolekey"])
+  const STRONG = new Set([
+    "apikey",
+    "secretkey",
+    "accesskey",
+    "privatekey",
+    "clientsecret",
+    "signingkey",
+    "encryptionkey",
+    "authtoken",
+    "apitoken",
+    "accesstoken",
+    "refreshtoken",
+    "sessiontoken",
+    "token",
+    "secret",
+  ])
   const BLOCK = new Set(["|", ">", "|-", "|+", ">-", ">+"])
   const CHALLENGE = /^(?:realm|error|error_description|scope|state|service|client_id)=/i
+
+  function plainName(name: string) {
+    return name.replaceAll(/[_\s.-]/g, "").toLowerCase()
+  }
+
+  function exactName(name: string) {
+    return EXACT.has(plainName(name))
+  }
+
+  function strongName(name: string) {
+    const plain = plainName(name)
+    return [...STRONG].some((word) => plain === word || plain.endsWith(word))
+  }
+
+  function lowerHex(code: number) {
+    return (code >= 48 && code <= 57) || (code >= 97 && code <= 102)
+  }
+
+  // OpenCode Console keys keep a 12-hex segment before the payload.
+  function ocEnd(input: string, at: number) {
+    if (!input.startsWith("oc_sk_", at)) return -1
+    let index = at + 6
+    for (let part = 0; part < 12; part++, index++) if (!lowerHex(input.charCodeAt(index))) return -1
+    if (input.charCodeAt(index) !== 95 /* _ */) return -1
+    index++
+    const start = index
+    while (index < input.length && isKeyChar(input.charCodeAt(index))) index++
+    return index - start >= 20 && !isKeyChar(input.charCodeAt(index)) ? index : -1
+  }
+
+  // AWS access-key IDs share a 20-character uppercase/digit body across these prefixes.
+  function awsEnd(input: string, at: number) {
+    for (const prefix of ["AKIA", "ASIA", "ABIA", "ACCA", "A3T"]) {
+      if (!input.startsWith(prefix, at)) continue
+      let index = at + prefix.length
+      const start = index
+      while (index < input.length) {
+        const code = input.charCodeAt(index)
+        if (!((code >= 48 && code <= 57) || (code >= 65 && code <= 90))) break
+        index++
+      }
+      const need = prefix.length === 3 ? 17 : 16
+      return index - start >= need ? index : -1
+    }
+    return -1
+  }
+
+  // Slack incoming webhooks are URLs, not tokens; only the exact host and a path are masked.
+  function webhookEnd(input: string, at: number) {
+    const prefix = "https://hooks.slack.com/"
+    if (!input.startsWith(prefix, at)) return -1
+    let index = at + prefix.length
+    while (index < input.length) {
+      const code = input.charCodeAt(index)
+      if (isSpace(code) || code === 34 || code === 39 || code === 41 || code === 93 || code === 125 || code === 44 || code === 59)
+        break
+      index++
+    }
+    return index - at >= prefix.length + 12 ? index : -1
+  }
+
+  // A JSON carrier such as KILO_AUTH_CONTENT spans past the first `}`; keep the object opaque.
+  function objectEnd(input: string, at: number) {
+    if (input.charCodeAt(at) !== 123 /* { */) return -1
+    let depth = 0
+    let quote = 0
+    let escape = false
+    for (let index = at; index < input.length; index++) {
+      const code = input.charCodeAt(index)
+      if (escape) {
+        escape = false
+        continue
+      }
+      if (code === 92 /* \ */) {
+        escape = true
+        continue
+      }
+      if (quote !== 0) {
+        if (code === quote) quote = 0
+        continue
+      }
+      if (code === 34 || code === 39) {
+        quote = code
+        continue
+      }
+      if (code === 123) depth++
+      if (code === 125) depth--
+      if (depth === 0) return index + 1
+    }
+    return -1
+  }
+
+  function gitlabEnd(input: string, at: number) {
+    const base = body(input, at, "glpat-", 20)
+    if (base < 0) return -1
+    let index = base
+    for (let part = 0; part < 2 && input.charCodeAt(index) === 46 /* . */; part++) {
+      const start = index + 1
+      let cursor = start
+      while (cursor < input.length && isAlnum(input.charCodeAt(cursor))) cursor++
+      if (cursor - start < 2) break
+      index = cursor
+    }
+    return index
+  }
 
   function prefixEnd(input: string, at: number) {
     if (at > 0 && isKeyChar(input.charCodeAt(at - 1))) return -1
     const code = input.charCodeAt(at)
+    if (code === 111 /* o */) return ocEnd(input, at)
+    if (code === 119 /* w */) return body(input, at, "whsec_", 24)
+    if (code === 118 /* v */) return body(input, at, "vck_", 20)
+    if (code === 102 /* f */) return body(input, at, "fw_", 20)
+    if (code === 97 /* a */) return body(input, at, "api_org_", 34, isAlnum)
     if (code === 115 /* s */) {
       const stripe = body(input, at, "sk_live_", 16)
-      return stripe > 0 ? stripe : body(input, at, "sk-", 20)
+      if (stripe > 0) return stripe
+      const test = body(input, at, "sk_test_", 16)
+      if (test > 0) return test
+      const prod = body(input, at, "sk_prod_", 16)
+      if (prod > 0) return prod
+      const secret = body(input, at, "sb_secret_", 20)
+      if (secret > 0) return secret
+      for (const sentry of ["sntryu_", "sntrys_", "sntryc_", "sntryh_", "sntrya_", "sntryi_"]) {
+        const found = body(input, at, sentry, 32)
+        if (found > 0) return found
+      }
+      return body(input, at, "sk-", 20)
     }
-    if (code === 114 /* r */) return body(input, at, "rk_live_", 16)
+    if (code === 114 /* r */) {
+      const live = body(input, at, "rk_live_", 16)
+      if (live > 0) return live
+      const test = body(input, at, "rk_test_", 16)
+      if (test > 0) return test
+      const prod = body(input, at, "rk_prod_", 16)
+      if (prod > 0) return prod
+      return body(input, at, "rpa_", 20)
+    }
     if (code === 103 /* g */) {
       const github = body(input, at, "github_pat_", 20)
       if (github > 0) return github
       if (input.startsWith("gh", at) && "pousr".includes(input.charAt(at + 2)) && input.charAt(at + 3) === "_")
         return body(input, at, input.slice(at, at + 4), 20)
-      const gitlab = body(input, at, "glpat-", 20)
+      const gitlab = gitlabEnd(input, at)
       return gitlab > 0 ? gitlab : body(input, at, "gsk_", 20)
     }
     if (code === 120 /* x */) {
@@ -157,6 +303,8 @@ export namespace MemoryRedact {
       return -1
     }
     if (code === 104 /* h */) {
+      const webhook = webhookEnd(input, at)
+      if (webhook > 0) return webhook
       const vault = body(input, at, "hvs.", 24)
       if (vault > 0) return vault
       const vaultBatch = body(input, at, "hvb.", 24)
@@ -165,24 +313,33 @@ export namespace MemoryRedact {
     }
     if (code === 101 /* e */) return jwtEnd(input, at)
     if (code === 65 /* A */) {
+      const bedrock = body(input, at, "ABSK", 100, credentialChar)
+      if (bedrock > 0) return bedrock
       const google = body(input, at, "AIza", 30)
       if (google > 0) return google
-      if (!input.startsWith("AKIA", at) && !input.startsWith("ASIA", at)) return -1
-      let end = at + 4
-      const start = end
-      while (end < input.length) {
-        const next = input.charCodeAt(end)
-        if (!((next >= 48 && next <= 57) || (next >= 65 && next <= 90))) break
-        end++
-      }
-      return end - start >= 16 ? end : -1
+      return awsEnd(input, at)
     }
     if (code === 83 /* S */) return dotted(input, at, "SG.", 20)
     if (code === 78 /* N */) return body(input, at, "NRAK-", 20)
-    if (code === 110 /* n */) return body(input, at, "npm_", 32)
+    if (code === 110 /* n */) {
+      const notion = body(input, at, "ntn_", 32)
+      return notion > 0 ? notion : body(input, at, "npm_", 32)
+    }
     if (code === 112 /* p */) return body(input, at, "pypi-", 32)
-    if (code === 100 /* d */) return body(input, at, "dop_v1_", 32)
+    if (code === 100 /* d */) {
+      const doppler = dotted(input, at, "dp.pt.", 20)
+      if (doppler > 0) return doppler
+      const ocean = body(input, at, "dop_v1_", 32)
+      if (ocean > 0) return ocean
+      const oceanOther = body(input, at, "doo_v1_", 32)
+      if (oceanOther > 0) return oceanOther
+      const oceanRefresh = body(input, at, "dor_v1_", 32)
+      if (oceanRefresh > 0) return oceanRefresh
+      return body(input, at, "dapi", 32)
+    }
     if (code === 99 /* c */) {
+      const oauth = body(input, at, "cfoat_", 30)
+      if (oauth > 0) return oauth
       const key = body(input, at, "cfk_", 30)
       if (key > 0) return key
       const user = body(input, at, "cfut_", 30)
@@ -212,7 +369,15 @@ export namespace MemoryRedact {
   }
 
   function credentialSpan(input: string, at: number, auth: (at: number) => boolean) {
-    const kind = words(input, at, "bearer") ? "bearer" : words(input, at, "basic") ? "basic" : undefined
+    const kind = words(input, at, "bearer")
+      ? "bearer"
+      : words(input, at, "basic")
+        ? "basic"
+        : words(input, at, "token")
+          ? "token"
+          : words(input, at, "api-key") || words(input, at, "api_key")
+            ? "api-key"
+            : undefined
     if (!kind) return
     if (at > 0 && isAlnum(input.charCodeAt(at - 1))) return
     let index = at + kind.length
@@ -226,8 +391,12 @@ export namespace MemoryRedact {
       if (CHALLENGE.test(input.slice(start, index))) return
       return { start, end: index, replacement: MARKER }
     }
-    if (length < 8 || !BASIC.test(input.slice(start, index))) return
-    if (!auth(at)) return
+    if (kind === "basic") {
+      if (length < 8 || !BASIC.test(input.slice(start, index))) return
+      if (!auth(at)) return
+      return { start, end: index, replacement: MARKER }
+    }
+    if (length < 8 || !auth(at)) return
     return { start, end: index, replacement: MARKER }
   }
 
@@ -265,6 +434,8 @@ export namespace MemoryRedact {
     if (code === 97 && input.charCodeAt(at - 1) === 59 && input.startsWith("AccountKey", at))
       end = keyTail(input, at + 7)
     if (code === 99 && words(input, at, "credential")) end = at + 10
+    if (code === 101 && words(input, at, "encryption")) end = keyTail(input, at + 10)
+    if (code === 107 && words(input, at, "kilo_auth_content")) end = at + 17
     if (code === 108 && words(input, at, "license")) end = keyTail(input, at + 7)
     if (code === 111 && words(input, at, "openai")) end = keyTail(input, at + 6)
     if (code === 112 && words(input, at, "password")) end = at + 8
@@ -272,11 +443,24 @@ export namespace MemoryRedact {
     if (code === 112 && words(input, at, "pwd")) end = at + 3
     if (code === 112 && words(input, at, "private")) end = keyTail(input, at + 7)
     if (code === 115 && words(input, at, "secret")) end = Math.max(at + 6, keyTail(input, at + 6))
+    if (code === 115 && words(input, at, "signing")) end = keyTail(input, at + 7)
     if (code === 115 && words(input, at, "storage")) {
       const after = at + 7
       const code2 = input.charCodeAt(after)
       const word = code2 === 95 || code2 === 45 || code2 === 46 || code2 === 32 ? after + 1 : after
       if (words(input, word, "account")) end = keyTail(input, word + 7)
+    }
+    if (code === 115 && words(input, at, "service")) {
+      const after = at + 7
+      const sep = input.charCodeAt(after)
+      const role = sep === 95 || sep === 45 || sep === 46 || sep === 32 ? after + 1 : after
+      if (words(input, role, "role")) end = keyTail(input, role + 4)
+    }
+    if (code === 115 && words(input, at, "session")) {
+      const after = at + 7
+      const sep = input.charCodeAt(after)
+      const token = sep === 95 || sep === 45 || sep === 46 || sep === 32 ? after + 1 : after
+      if (words(input, token, "token")) end = token + 5
     }
     if (code === 116 && words(input, at, "token")) end = at + 5
     if (end < 0) return -1
@@ -343,6 +527,11 @@ export namespace MemoryRedact {
     // A query parameter ends at the next separator, not at the end of the URL.
     const query = nameStart > 0 && "?&#".includes(input.charAt(nameStart - 1))
     const quote = input.charCodeAt(index)
+    if (exactName(name) && quote === 123 /* { */) {
+      const end = objectEnd(input, index)
+      if (end < 0) return
+      return { name, start: index, end, quote: "" }
+    }
     if (input.startsWith('"""', index) || input.startsWith("'''", index)) {
       const mark = input.slice(index, index + 3)
       const close = input.indexOf(mark, index + 3)
@@ -470,15 +659,17 @@ export namespace MemoryRedact {
     if (!found) return
     const size = found.quote.length
     const value = found.quote ? input.slice(found.start + size, found.end - size) : input.slice(found.start, found.end)
-    if (!(weak(found.name) ? explicit(value, found.quote !== "") : keyValue(value) || headerKey(found.name, value)))
+    if (
+      !namedValue(found.name, value, found.quote !== "")
+    )
       return
     return { start: found.start, end: found.end, replacement: `${found.quote}${MARKER}${found.quote}` }
   }
 
   // `authorized` is set when the string is the value of an Authorization-named field, which supplies
   // the context a bare `Basic <credential>` string cannot carry on its own.
-  const PREFIX = new Set([115, 114, 103, 120, 104, 101, 65, 83, 78, 110, 112, 100, 99])
-  const KEY_START = new Set([97, 99, 108, 111, 112, 115, 116, 65, 67, 76, 79, 80, 83, 84])
+  const PREFIX = new Set([111, 119, 118, 102, 97, 115, 114, 103, 120, 104, 101, 65, 83, 78, 110, 112, 100, 99])
+  const KEY_START = new Set([97, 99, 101, 108, 111, 112, 115, 116, 65, 67, 69, 75, 76, 79, 80, 83, 84])
 
   // A keyword may start a word, follow a separator, or open a camelCase segment.
   function boundary(input: string, at: number) {
@@ -512,7 +703,7 @@ export namespace MemoryRedact {
           continue
         }
       }
-      if (lower(code) === 98 /* b */) {
+      if (lower(code) === 98 /* b */ || lower(code) === 116 /* t */ || lower(code) === 97 /* a */) {
         const span = credentialSpan(input, index, auth)
         if (span) {
           chunks.push(input.slice(last, span.start), span.replacement)
@@ -602,7 +793,7 @@ export namespace MemoryRedact {
           continue
         }
       }
-      if (lower(code) === 98 /* b */) {
+      if (lower(code) === 98 /* b */ || lower(code) === 116 /* t */ || lower(code) === 97 /* a */) {
         const span = credentialSpan(input, index, auth)
         if (span) {
           count++
@@ -667,7 +858,7 @@ export namespace MemoryRedact {
     [".", /\b[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}/g],
     [":", /\b\d{8,10}:[A-Za-z0-9_-]{30,}/g],
   ]
-  const CLI = /(^|[\s"'])(--?(?:password|passwd|pwd|token|secret))(\s+)((?:[^\s"'`\\]|\\(?!["']))+)/gi
+  const CLI = /(^|[\s"'])(--?(?:password|passwd|pwd|token|secret|api-key|api_key|auth-token|auth_token))(\s+)((?:[^\s"'`\\]|\\(?!["']))+)/gi
   const MYSQL = /(\b(?:mysql|mariadb)\b[^\n]{0,256}?\s-p)([^\s"'`\]\\&,;)}]{4,})/gi
   const CURL = /(\s(?:-u|--user)\s+)([^\s:]+):((?:[^\s"'`\\]|\\(?!["']))+)/g
   const PGPASS = /(^|\n|["'])([^\s:]{1,255}:\d+:[^:\n]*:[^:\n]*:)((?:[^"\n\\]|\\(?!["']))+)/g
@@ -790,8 +981,21 @@ export namespace MemoryRedact {
     return !REFERENCE.test(value)
   }
 
+  function strongValue(value: string, quoted: boolean) {
+    if (/[\s.()]/.test(value)) return false
+    if (value.startsWith("[redacted") && value !== MARKER) return value.length > MARKER.length
+    if (!explicit(value, quoted)) return false
+    return value.length >= 16 && !/^\d+$/.test(value)
+  }
+
+  function namedValue(name: string, value: string, quoted: boolean) {
+    if (weak(name) || exactName(name)) return explicit(value, quoted)
+    if (strongName(name)) return strongValue(value, quoted)
+    return keyValue(value) || headerKey(name, value)
+  }
+
   function valueKey(item: { value: string; quoted: boolean }, name: string) {
-    return weak(name) ? explicit(item.value, item.quoted) : keyValue(item.value)
+    return namedValue(name, item.value, item.quoted)
   }
 
   function count(items: { value: string; quoted: boolean }[], name: string) {
@@ -868,9 +1072,10 @@ export namespace MemoryRedact {
       const later = after.get(name)
       // A name missing from the next content was deleted, which is a normal edit.
       if (!later) continue
-      const marked = weak(name)
-        ? later.some((item) => item.value.startsWith("[redacted"))
-        : later.some((item) => item.value === MARKER)
+      const marked =
+        weak(name) || exactName(name)
+          ? later.some((item) => item.value.startsWith("[redacted"))
+          : later.some((item) => item.value === MARKER)
       if (!marked) continue
       if (count(later, name) < keys) return true
     }

@@ -27,6 +27,11 @@ directory is a real credential or was taken from a real file.
   unquoted `$VAR` references, `<...>` placeholders, member references (`process.env.X`), and
   unquoted type or boolean words (`string`, `boolean`, `false`, ...). A quoted `"$literal"` is masked.
 - `credential` and `credentials` stay on the key shape because they often name an option or an object.
+- Strong names (`api_key`, `secret_key`, `client_secret`, `access_key`, `private_key`, `signing_key`,
+  `encryption_key`, `auth_token`, `api_token`, `access_token`, `refresh_token`, `session_token`, `token`,
+  `secret`) accept a 16+ character value without whitespace, dots, or parentheses and with at least one
+  letter. This catches letter-only values such as `API_KEY=abcdefghijklmnop`; numeric-only values and
+  short placeholders stay readable. `PUBLIC_KEY` and `CACHE_KEY` are not strong names.
 - An `email:password` pair masks only the password after the colon. A password shorter than six characters,
   without a digit, containing a path slash, or containing whitespace is not treated as a pair, so ports,
   dates used as prose, and clone URLs stay intact for those shapes.
@@ -39,6 +44,13 @@ directory is a real credential or was taken from a real file.
 - Additional prefixes: Google OAuth `GOCSPX-`, Shopify `shpat_`, Linear `lin_api_`, Replicate `r8_`,
   Perplexity `pplx-`, Square `sq0csp-`, age `AGE-SECRET-KEY-`, Mailgun `key-`, Notion `secret_`,
   Discord and Telegram tokens.
+- Newer families are covered by `capture.test.ts` and `outbound-redaction.test.ts` rather than static
+  corpus rows: OpenCode `oc_sk_`, AWS `A3T`/`ABIA`/`ACCA`, Bedrock `ABSK`, DigitalOcean `doo_v1_`/
+  `dor_v1_`, Doppler `dp.pt.`, Databricks `dapi`, Stripe/Clerk `sk_test_`/`sk_prod_`/`rk_*`, dotted
+  GitLab, Stripe `whsec_`, Supabase `sb_secret_`, Notion `ntn_`, Sentry `sntry*`, Vercel `vck_`,
+  Cloudflare `cfoat_`, RunPod `rpa_`, Fireworks `fw_`, Hugging Face `api_org_`, and Slack webhook URLs.
+- Context carriers: `Authorization: Token`/`Api-Key`, `--api-key`/`--auth-token`, `KILO_AUTH_CONTENT`,
+  and `SUPABASE_SERVICE_ROLE_KEY` are recognized in addition to the named assignments.
 - Signed URL fields (`sig=`, `X-Amz-Signature=`, `X-Amz-Credential=`, `X-Amz-Security-Token=`),
   AWS SigV4 `Signature=`, Cookie values (`session`, `sessionid`, `connect.sid`, `auth`), and
   letters-only `X-Api-Key` values of at least 16 characters are masked.
@@ -63,7 +75,7 @@ follow-up work:
   - a value that is all letters, all digits, or contains dots.
 - Names outside the alias list that end in bare `key` are not recognized.
 - Opaque vendor tokens without a prefix or a recognized name: PayPal, Mistral, Cohere, Together,
-  Fireworks, ElevenLabs, Kaggle, Weights & Biases, WireGuard, PGP private-key blocks.
+  ElevenLabs, Kaggle, Weights & Biases, WireGuard, and PGP private-key blocks.
 - Base64 blobs are not decoded: Kubernetes `data`, Docker `auth`, and short base64 credentials pass.
 - XML `<add key="Password" value="...">`, positional arguments for arbitrary tools, and raw JSON arrays
   do not propagate the property name, so they stay readable. Recognized flag names such as
