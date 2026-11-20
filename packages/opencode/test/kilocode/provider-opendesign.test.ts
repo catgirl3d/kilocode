@@ -144,18 +144,26 @@ describe("OpenDesign model list", () => {
           architecture: null,
           metadata: { context_limit: 500000, context_budget: null, output_budget: null },
         },
+        {
+          id: "budget-only",
+          metadata: { context_budget: 300000, output_budget: 64000 },
+        },
         { id: "bare" },
       ],
     }).data ?? []
   const models = Object.fromEntries(list.map((item) => [item.id, openDesignModel(item)]))
 
-  test("reads context and output limits from the gateway metadata", () => {
-    expect(models["deepseek-v4-flash"]?.limit).toEqual({ context: 232000, output: 32000 })
-    expect(models["claude-haiku-5.5"]?.limit).toEqual({ context: 228000, output: 128000 })
+  test("prefers the full context window over the gateway budget", () => {
+    expect(models["deepseek-v4-flash"]?.limit).toEqual({ context: 1048000, output: 32000 })
+    expect(models["claude-haiku-5.5"]?.limit).toEqual({ context: 1000000, output: 128000 })
   })
 
-  test("falls back to the full context window when no budget is reported", () => {
+  test("uses the reported context limit when no budget is present", () => {
     expect(models["minimax-m3.1-flash"]?.limit).toEqual({ context: 1000000, output: 0 })
+  })
+
+  test("falls back to the gateway budget when the context limit is missing", () => {
+    expect(models["budget-only"]?.limit).toEqual({ context: 300000, output: 64000 })
   })
 
   test("keeps the old context and leaves output to the default cap for bare entries", () => {
