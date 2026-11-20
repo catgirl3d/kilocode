@@ -35,6 +35,27 @@ function efforts(id: string) {
   return skip === undefined ? EFFORTS : EFFORTS.filter((effort) => effort !== skip)
 }
 
+// The gateway reports only a low/medium/high cost category, so price the models from the public Kilo catalog
+// entries they map to. Values are USD per million tokens: input, output, cache read, cache write. DeepSeek
+// V4 Flash uses the 0731 build price, matching the gateway's medium category, and Eco reuses the V4.1 Flash
+// price because it has no separate entry.
+const COSTS: Record<string, Model["cost"]> = {
+  "claude-haiku-5.5": { input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0.125 },
+  "deepseek-v4-flash": { input: 0.44, output: 1.32, cache_read: 0.028 },
+  "deepseek-v4-flash-vision-exp": { input: 0.44, output: 1.32, cache_read: 0.014 },
+  "deepseek-v4-pro": { input: 1.6, output: 3.2, cache_read: 0.135 },
+  "deepseek-v4.1-flash": { input: 0.3, output: 1.2, cache_read: 0.006 },
+  "deepseek-v4.1-flash-eco": { input: 0.3, output: 1.2, cache_read: 0.006 },
+  "glm-5.3-flash": { input: 0.15, output: 0.5, cache_read: 0.03 },
+  "glm-5.3-flashx": { input: 0.37, output: 1.25, cache_read: 0.075 },
+  "gpt-6-luna": { input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0.125 },
+  "hy4-preview": { input: 0.834, output: 2.501, cache_read: 0.042 },
+  "kimi-k2.7-code": { input: 0.6, output: 3, cache_read: 0.12 },
+  "mimo-v2.6-flash": { input: 0.1, output: 0.28, cache_read: 0.0028 },
+  "mimo-v2.6-pro": { input: 0.435, output: 0.87, cache_read: 0.004 },
+  "minimax-m3.1-flash": { input: 0.15, output: 0.6, cache_read: 0.015 },
+}
+
 // Optional fields also accept null, so one sparse entry cannot fail the whole model list.
 export const OpenDesignItem = Schema.Struct({
   id: Schema.String,
@@ -85,7 +106,7 @@ export function openDesignModel(item: OpenDesignItem): Model {
     reasoning_options: [{ type: "effort", values: efforts(item.id) }],
     temperature: true,
     tool_call: true,
-    cost: { input: 0, output: 0 },
+    cost: COSTS[item.id] ?? { input: 0, output: 0 },
     limit: { context: meta?.context_limit ?? meta?.context_budget ?? 128000, output: meta?.output_budget ?? 0 },
     modalities: { input, output: modalities(item.architecture?.output_modalities) },
   }
