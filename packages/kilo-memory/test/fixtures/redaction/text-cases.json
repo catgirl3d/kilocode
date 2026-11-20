@@ -1,0 +1,328 @@
+{
+  "cases": [
+    {
+      "id": "named-api-key-upper",
+      "group": "named",
+      "input": "MISTRAL_API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "expected": "MISTRAL_API_KEY=\"[redacted]\""
+    },
+    {
+      "id": "named-client-secret-quoted",
+      "group": "named",
+      "input": "client_secret: 'test0123456789abcdef0123456789abc'",
+      "expected": "client_secret: '[redacted]'"
+    },
+    {
+      "id": "named-json",
+      "group": "named",
+      "input": "{\"api_key\":\"test0123456789abcdef0123456789abc\"}",
+      "expected": "{\"api_key\":\"[redacted]\"}"
+    },
+    {
+      "id": "named-camel",
+      "group": "named",
+      "input": "const githubToken = \"test0123456789abcdef0123456789abc\"",
+      "expected": "const githubToken = \"[redacted]\""
+    },
+    {
+      "id": "named-dot-camel-plural",
+      "group": "named",
+      "input": "provider.clientSecretKeys=test0123456789abcdef0123456789abc",
+      "expected": "provider.clientSecretKeys=[redacted]"
+    },
+    {
+      "id": "named-secret-key",
+      "group": "named",
+      "input": "SECRET_KEY=test0123456789abcdef0123456789abc",
+      "expected": "SECRET_KEY=[redacted]"
+    },
+    {
+      "id": "named-keyword-with-space",
+      "group": "named",
+      "input": "api key: \"test0123456789abcdef0123456789abc\"",
+      "expected": "api key: \"[redacted]\""
+    },
+    {
+      "id": "named-dash",
+      "group": "named",
+      "input": "access-key = \"test0123456789abcdef0123456789abc\"",
+      "expected": "access-key = \"[redacted]\""
+    },
+    {
+      "id": "named-plural",
+      "group": "named",
+      "input": "TOKENS = \"test0123456789abcdef0123456789abc\"",
+      "expected": "TOKENS = \"[redacted]\""
+    },
+    {
+      "id": "named-dot",
+      "group": "named",
+      "input": "db.secret=\"test0123456789abcdef0123456789abc\"",
+      "expected": "db.secret=\"[redacted]\""
+    },
+    {
+      "id": "named-apikey",
+      "group": "named",
+      "input": "apikey=test0123456789abcdef0123456789abc",
+      "expected": "apikey=[redacted]"
+    },
+    {
+      "id": "named-secret-key-lower",
+      "group": "named",
+      "input": "secret_key = test0123456789abcdef0123456789abc",
+      "expected": "secret_key = [redacted]"
+    },
+    {
+      "id": "miss-token-type",
+      "group": "near-miss",
+      "input": "token_type: \"Bearer\"",
+      "expected": "token_type: \"Bearer\""
+    },
+    {
+      "id": "miss-secret-name",
+      "group": "near-miss",
+      "input": "secret_name = \"prod-db\"",
+      "expected": "secret_name = \"prod-db\""
+    },
+    {
+      "id": "miss-api-key-env",
+      "group": "near-miss",
+      "input": "api_key_env = \"test0123456789abcdef0123456789abc\"",
+      "expected": "api_key_env = \"test0123456789abcdef0123456789abc\""
+    },
+    {
+      "id": "miss-max-tokens",
+      "group": "near-miss",
+      "input": "{\"max_tokens\": \"4096\"}",
+      "expected": "{\"max_tokens\": \"4096\"}"
+    },
+    {
+      "id": "miss-apikey-text",
+      "group": "near-miss",
+      "input": "\"provider.apiKey\": \"API key\"",
+      "expected": "\"provider.apiKey\": \"API key\""
+    },
+    {
+      "id": "miss-short-token",
+      "group": "near-miss",
+      "input": "{ token: \"abc\" }",
+      "expected": "{ token: \"abc\" }"
+    },
+    {
+      "id": "miss-type-token",
+      "group": "near-miss",
+      "input": "type Token = \"access\" | \"refresh\"",
+      "expected": "type Token = \"access\" | \"refresh\""
+    },
+    {
+      "id": "miss-no-boundary",
+      "group": "near-miss",
+      "input": "githubtoken = \"test0123456789abcdef0123456789abc\"",
+      "expected": "githubtoken = \"test0123456789abcdef0123456789abc\""
+    },
+    {
+      "id": "miss-call",
+      "group": "near-miss",
+      "input": "tokenize(x)",
+      "expected": "tokenize(x)"
+    },
+    {
+      "id": "miss-monkey",
+      "group": "near-miss",
+      "input": "monkey = \"test0123456789abcdef0123456789abc\"",
+      "expected": "monkey = \"test0123456789abcdef0123456789abc\""
+    },
+    {
+      "id": "miss-tokenizer",
+      "group": "near-miss",
+      "input": "my_tokenizer = \"test0123456789abcdef0123456789abc\"",
+      "expected": "my_tokenizer = \"test0123456789abcdef0123456789abc\""
+    },
+    {
+      "id": "miss-password",
+      "group": "near-miss",
+      "input": "PASSWORD=\"test0123456789abcdef0123456789abc\"",
+      "expected": "PASSWORD=\"test0123456789abcdef0123456789abc\""
+    },
+    {
+      "id": "miss-short-value",
+      "group": "value-shape",
+      "input": "API_KEY=\"abc123\"",
+      "expected": "API_KEY=\"abc123\""
+    },
+    {
+      "id": "miss-letters-only",
+      "group": "value-shape",
+      "input": "API_KEY=\"abcdefghijklmnop\"",
+      "expected": "API_KEY=\"abcdefghijklmnop\""
+    },
+    {
+      "id": "miss-digits-only",
+      "group": "value-shape",
+      "input": "API_KEY=\"1234567890123456\"",
+      "expected": "API_KEY=\"1234567890123456\""
+    },
+    {
+      "id": "miss-spaces",
+      "group": "value-shape",
+      "input": "API_KEY=\"abc def 1234567890\"",
+      "expected": "API_KEY=\"abc def 1234567890\""
+    },
+    {
+      "id": "miss-dotted",
+      "group": "value-shape",
+      "input": "API_KEY=\"abcdef1234567890.ts\"",
+      "expected": "API_KEY=\"abcdef1234567890.ts\""
+    },
+    {
+      "id": "miss-template",
+      "group": "value-shape",
+      "input": "token = \"abcdef1234567890${token}\"",
+      "expected": "token = \"abcdef1234567890${token}\""
+    },
+    {
+      "id": "prefix-sk",
+      "group": "prefix",
+      "input": "sk-abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-sk-live",
+      "group": "prefix",
+      "input": "sk_live_abcdefghij123456",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-ghp",
+      "group": "prefix",
+      "input": "ghp_abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-github-pat",
+      "group": "prefix",
+      "input": "github_pat_abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-xoxb",
+      "group": "prefix",
+      "input": "xoxb-abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-akia",
+      "group": "prefix",
+      "input": "AKIAABCDEFGHIJ123456",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-aiza",
+      "group": "prefix",
+      "input": "AIzaabcdefghij1234567890abcdefghij",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-hf",
+      "group": "prefix",
+      "input": "hf_abcdefghij1234567890",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-jwt",
+      "group": "prefix",
+      "input": "eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSMeK",
+      "expected": "[redacted]"
+    },
+    {
+      "id": "prefix-in-text",
+      "group": "prefix",
+      "input": "curl -H 'x-api-key: sk-abcdefghij1234567890' https://example.test",
+      "expected": "curl -H 'x-api-key: [redacted]' https://example.test"
+    },
+    {
+      "id": "miss-hf-underscore",
+      "group": "prefix-near-miss",
+      "input": "hf_abc_defghij1234567890",
+      "expected": "hf_abc_defghij1234567890"
+    },
+    {
+      "id": "miss-sk-short",
+      "group": "prefix-near-miss",
+      "input": "sk-short123",
+      "expected": "sk-short123"
+    },
+    {
+      "id": "miss-akia-lower",
+      "group": "prefix-near-miss",
+      "input": "AKIAabcdefghij123456",
+      "expected": "AKIAabcdefghij123456"
+    },
+    {
+      "id": "miss-prefix-boundary",
+      "group": "prefix-near-miss",
+      "input": "task-sk-abcdefghij1234567890",
+      "expected": "task-sk-abcdefghij1234567890"
+    },
+    {
+      "id": "credential-basic",
+      "group": "credential",
+      "input": "Authorization: Basic dXNlcjpwYXNz",
+      "expected": "Authorization: Basic [redacted]"
+    },
+    {
+      "id": "credential-lowercase-header",
+      "group": "credential",
+      "input": "authorization: basic dXNlcjpwYXNz",
+      "expected": "authorization: basic [redacted]"
+    },
+    {
+      "id": "credential-bearer",
+      "group": "credential",
+      "input": "Authorization: Bearer abcdefghij123456",
+      "expected": "Authorization: Bearer [redacted]"
+    },
+    {
+      "id": "credential-basic-alone",
+      "group": "credential-near-miss",
+      "input": "Basic dXNlcjpwYXNz",
+      "expected": "Basic dXNlcjpwYXNz"
+    },
+    {
+      "id": "credential-bearer-alone",
+      "group": "credential",
+      "input": "Bearer abcdefghij123456",
+      "expected": "Bearer [redacted]"
+    },
+    {
+      "id": "credential-prose",
+      "group": "credential-near-miss",
+      "input": "Basic authentication is required",
+      "expected": "Basic authentication is required"
+    },
+    {
+      "id": "credential-basic-short",
+      "group": "credential-near-miss",
+      "input": "Authorization: Basic short",
+      "expected": "Authorization: Basic short"
+    },
+    {
+      "id": "credential-newline",
+      "group": "credential",
+      "input": "Authorization: Basic dXNlcjpwYXNz\nBasic dXNlcjpwYXNz",
+      "expected": "Authorization: Basic [redacted]\nBasic dXNlcjpwYXNz"
+    },
+    {
+      "id": "credential-crlf",
+      "group": "credential",
+      "input": "Authorization: Basic dXNlcjpwYXNz\r\ntext",
+      "expected": "Authorization: Basic [redacted]\r\ntext"
+    },
+    {
+      "id": "private-key-block",
+      "group": "private-key",
+      "input": "before\n-----BEGIN RSA PRIVATE KEY-----\nMIIEabcdefgh12345678\n-----END RSA PRIVATE KEY-----\nafter",
+      "expected": "before\n[redacted]\nafter"
+    }
+  ]
+}

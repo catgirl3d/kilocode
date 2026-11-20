@@ -1,0 +1,8 @@
+name: example
+replicas: 3
+secret_name: prod-db
+api_key_env: OPENAI_API_KEY
+token_type: bearer
+access_key_id: example-id
+checkout: git clone ssh://git@github.com/example/repo.git
+checksum: 9f2c7a1b4d8e0f3a6b5c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a

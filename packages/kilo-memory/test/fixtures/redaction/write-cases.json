@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "id": "write-named-key-to-marker",
+      "old": "API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "next": "API_KEY=\"[redacted]\"",
+      "expected": true
+    },
+    {
+      "id": "write-json-key-to-marker",
+      "old": "{\"api_key\":\"test0123456789abcdef0123456789abc\"}",
+      "next": "{\"api_key\":\"[redacted]\"}",
+      "expected": true
+    },
+    {
+      "id": "write-basic-to-marker",
+      "old": "Authorization: Basic dXNlcjpwYXNz",
+      "next": "Authorization: Basic [redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-one-of-two-keys-masked",
+      "old": "A_API_KEY=\"test0123456789abcdef0123456789abc\" B_API_KEY=\"test0123456789abcdef0123456789abd\"",
+      "next": "A_API_KEY=\"[redacted]\" B_API_KEY=\"test0123456789abcdef0123456789abd\"",
+      "expected": true
+    },
+    {
+      "id": "write-short-value-to-marker",
+      "old": "API_KEY=\"abc123\"",
+      "next": "API_KEY=\"[redacted]\"",
+      "expected": false
+    },
+    {
+      "id": "write-near-miss-to-marker",
+      "old": "token_type=\"test0123456789abcdef0123456789abc\"",
+      "next": "token_type=\"[redacted]\"",
+      "expected": false
+    },
+    {
+      "id": "write-key-kept",
+      "old": "API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "next": "API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "expected": false
+    },
+    {
+      "id": "write-key-deleted",
+      "old": "API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "next": "OTHER=\"done\"",
+      "expected": false
+    }
+  ]
+}
