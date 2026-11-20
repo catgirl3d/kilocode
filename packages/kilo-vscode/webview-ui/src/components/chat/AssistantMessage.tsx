@@ -44,6 +44,8 @@ import type { TimelineHighlight } from "../../utils/timeline/highlight"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { QuestionDock } from "./QuestionDock"
 import { QuestionRevert, revertible } from "./QuestionRevert" // fork_change
+import { RedactBadge } from "./RedactBadge" // fork_change
+import * as RedactNotice from "../../utils/redact-notice" // fork_change
 import { SuggestBar } from "./SuggestBar"
 import { toolDefaultOpen } from "./tool-default-open"
 
@@ -536,6 +538,7 @@ export const AssistantMessage: Component<AssistantMessageProps> = (props) => {
                   >
                     <QuestionRevert messageID={props.message.id} partID={part.id} />
                   </Show>
+                  <RedactBadge texts={RedactNotice.tool(part)} variant="message" />
                   {/* fork_change end */}
                 </div>
               </div>
