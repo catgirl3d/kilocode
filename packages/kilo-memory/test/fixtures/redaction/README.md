@@ -28,10 +28,21 @@ directory is a real credential or was taken from a real file.
   unquoted type or boolean words (`string`, `boolean`, `false`, ...). A quoted `"$literal"` is masked.
 - `credential` and `credentials` stay on the key shape because they often name an option or an object.
 - An `email:password` pair masks only the password after the colon. A password shorter than six characters,
-  without a digit, or containing a path slash is not treated as a pair, so ports and clone URLs stay intact.
+  without a digit, containing a path slash, or containing whitespace is not treated as a pair, so ports,
+  dates used as prose, and clone URLs stay intact for those shapes.
 - Qualified aliases add `openai key`, `storage account key`, `dd app key`, and `license key`. The exact
   `AccountKey` field is recognized inside a `;`-separated connection string.
-- A near-miss case (`group: "near-miss"` or `"value-shape"`) expects `expected === input`.
+- The scanner also reads CLI flags (`--password value`, `mysql -p...`, `curl -u user:pass`), `.pgpass`
+  and `.netrc` lines, `setx`, YAML block scalars, triple quotes, and `$(...)` substitutions.
+- Query parameters stop at `&`/`#`, bracketed names (`password[]=`) keep the key, and `db.PWD`/`env.PWD`
+  stay readable. Unquoted status words (`enabled`, `required`, `none`, ...) are not treated as passwords.
+- Additional prefixes: Google OAuth `GOCSPX-`, Shopify `shpat_`, Linear `lin_api_`, Replicate `r8_`,
+  Perplexity `pplx-`, Square `sq0csp-`, age `AGE-SECRET-KEY-`, Mailgun `key-`, Notion `secret_`,
+  Discord and Telegram tokens.
+- Signed URL fields (`sig=`, `X-Amz-Signature=`, `X-Amz-Credential=`, `X-Amz-Security-Token=`),
+  AWS SigV4 `Signature=`, Cookie values (`session`, `sessionid`, `connect.sid`, `auth`), and
+  letters-only `X-Api-Key` values of at least 16 characters are masked.
+- A near-miss case (any group containing `near-miss`, or `value-shape`) expects `expected === input`.
 - `clean/` must stay unchanged when the corpus is scanned file by file. Do not "fix" a clean file by
   adding an allowance; a changed clean file is a regression report.
 - `write-cases.json` expects `blocksWrite(old, next)`, i.e. "writing `next` over `old` would hide a key
@@ -51,6 +62,15 @@ follow-up work:
     token), which is indistinguishable from a hash or an ID;
   - a value that is all letters, all digits, or contains dots.
 - Names outside the alias list that end in bare `key` are not recognized.
+- Opaque vendor tokens without a prefix or a recognized name: PayPal, Mistral, Cohere, Together,
+  Fireworks, ElevenLabs, Kaggle, Weights & Biases, WireGuard, PGP private-key blocks.
+- Base64 blobs are not decoded: Kubernetes `data`, Docker `auth`, and short base64 credentials pass.
+- XML `<add key="Password" value="...">`, positional arguments for arbitrary tools, and raw JSON arrays
+  do not propagate the property name, so they stay readable. Recognized flag names such as
+  `--password value` are supported.
+- An `email:password` pair with a letters-only password, fewer than six characters, or a space is not
+  masked. A date-shaped value such as `2024-01-01` is treated as a password when it follows an email
+  address. A `password` status word with unusual spelling may be masked as a literal.
 - `Basic` credentials more than 256 characters after `Authorization`, or on a different line, are not
   associated with the header.
 - A trailing sentence period after `Basic <base64>` enters the candidate and fails the base64 check.
@@ -61,6 +81,22 @@ follow-up work:
   unchanged.
 - Twilio `SK`/`AC` SIDs and Stripe `pk_live_` are identifiers or publishable keys, so they are not
   treated as secrets.
+
+## Accepted limitations
+
+These are deliberate trade-offs after review, not open bugs:
+
+- Ambiguous literals are masked conservatively: `password: Password` (a type), `password: mandatory`
+  (a status word), `pwd: /home/user123456789` (a path), and `deploy@example.com:release123` (which can
+  be an scp target or an email/password pair) are treated as credentials. Global type, status, path,
+  or username exemptions would expose real passwords.
+- Broad standalone shapes can match non-secrets: Discord-like tokens, `key-...`, and `secret_...` do
+  not use an entropy threshold, because entropy would reject real credentials as often as identifiers.
+- Text with a second escape layer, arbitrary shell syntax, binary payloads, and values beyond the
+  scan windows are outside the guarantee. The simple quoted `$()` subset is supported; the filter does
+  not decode JSON or shell.
+- `blocksWrite` protects a recognized value replaced by `[redacted]` in the same slot. It is not a
+  general edit-safety guarantee for arbitrary rewrites or moved credentials.
 
 ## Using it
 

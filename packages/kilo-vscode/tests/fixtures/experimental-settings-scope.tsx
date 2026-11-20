@@ -59,7 +59,7 @@ const { ImageModelsContext } = await import("../../webview-ui/src/context/image-
 const { mergeScopedConfig } = await import("../../webview-ui/src/utils/config-utils")
 const ExperimentalTab = (await import("../../webview-ui/src/components/settings/ExperimentalTab")).default
 
-const REDACT_TITLE = "Redact access keys before sending"
+const REDACT_TITLE = "Redact recognizable secrets before sending"
 const PRUNER_TITLE = "SWE-Pruner"
 
 async function settle() {

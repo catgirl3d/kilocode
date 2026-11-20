@@ -1066,9 +1066,9 @@ export const dict = {
   "settings.experimental.batch.title": "Batch Tool",
   "settings.experimental.batch.description": "Enable batching of multiple tool calls",
   // fork_change start
-  "settings.experimental.redactSecrets.title": "Redact access keys before sending",
+  "settings.experimental.redactSecrets.title": "Redact recognizable secrets before sending",
   "settings.experimental.redactSecrets.description":
-    "Replace access keys and tokens in the text sent to models. Card numbers, passwords, and images or PDFs are not checked. The agent sees markers instead of keys, and file tools will not write a marker over an existing key, but terminal commands are not caught. Turning this off is risky, and previously indexed records are not cleaned.",
+    "Replace recognizable secrets, including access keys, tokens, passwords, and URL or Cookie credentials, in text sent to models. It is not a guarantee that no secret is sent: unlabelled, encoded, and unusual formats can still pass. Existing index records are not cleaned. File tools will not write a marker over an existing key. Turning this off is risky.",
   "settings.experimental.swePruner.title": "SWE-Pruner",
   "settings.experimental.swePruner.description":
     "Prune large read, grep, and bash outputs to task-relevant lines using an explicitly configured model.",

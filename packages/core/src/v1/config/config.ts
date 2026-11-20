@@ -376,8 +376,9 @@ export const Info = Schema.Struct({
       }),
       // [fork] personal, global opt-out for outbound access key redaction
       redact_secrets: Schema.optional(Schema.Boolean).annotate({
-        description: // [fork] describe the global-only redaction setting
-          "Redact access keys and tokens in the text sent to models. Defaults to enabled; only the global config is read, so project configuration cannot override it.", // [fork]
+        // [fork] describe the global-only redaction setting
+        description:
+          "Replace recognizable secrets, including access keys, tokens, and passwords, in text sent to models. It is not a guarantee that no secret is sent: unlabelled, encoded, and unusual formats can still pass. Defaults to enabled; only the global config is read, so project configuration cannot override it.", // [fork]
       }), // [fork]
       code_mode: Schema.optional(Schema.Boolean).annotate({
         description:

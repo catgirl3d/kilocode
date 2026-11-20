@@ -455,9 +455,9 @@ describe("privacy failure", () => {
 
   test("the message offers a way out and names no key", () => {
     const raw = failure()
-    expect(raw.message).toContain("access key")
+    expect(raw.message).toContain("secret")
     expect(raw.message).toContain("Roll back")
-    expect(raw.message).toContain("Redact access keys before sending")
+    expect(raw.message).toContain("Redact recognizable secrets before sending")
     expect(raw.message).toContain("Experimental")
     expect(raw.message).not.toMatch(/Bearer|sk-|ghp_|AIza|gsk_|xai-/)
   })

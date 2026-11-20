@@ -101,6 +101,48 @@
       "old": "test@example.com:123456",
       "next": "test@example.com:654321",
       "expected": false
+    },
+    {
+      "id": "write-header-mask",
+      "old": "X-Api-Key: abcdefghijklmnop",
+      "next": "X-Api-Key: [redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-header-rotate",
+      "old": "X-Api-Key: abcdefghijklmnop",
+      "next": "X-Api-Key: rotated1234567890",
+      "expected": false
+    },
+    {
+      "id": "write-cli-mask",
+      "old": "tool --password Secret123",
+      "next": "tool --password [redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-prefix-mask",
+      "old": "GOCSPX-demoA1b2C3d4E5f6G7h8",
+      "next": "[redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-prefix-unrelated",
+      "old": "GOCSPX-demoA1b2C3d4E5f6G7h8",
+      "next": "OTHER: [redacted]",
+      "expected": false
+    },
+    {
+      "id": "write-sign-mask",
+      "old": "https://example.test/?sig=AzureSecret123456",
+      "next": "https://example.test/?sig=[redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-sign-rotate",
+      "old": "https://example.test/?sig=AzureSecret123456",
+      "next": "https://example.test/?sig=Rotated123456789",
+      "expected": false
     }
   ]
 }

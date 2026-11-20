@@ -87,6 +87,26 @@ function stream(payload: string) {
   )
 }
 
+function userText(body: unknown) {
+  if (typeof body !== "object" || body === null) return
+  const messages = (body as { messages?: unknown }).messages
+  if (!Array.isArray(messages)) return
+  for (const message of [...messages].reverse()) {
+    if (typeof message !== "object" || message === null) continue
+    if ((message as { role?: unknown }).role !== "user") continue
+    const content = (message as { content?: unknown }).content
+    if (typeof content === "string") return content
+    if (!Array.isArray(content)) return
+    return content
+      .map((part) =>
+        typeof part === "object" && part !== null && typeof (part as { text?: unknown }).text === "string"
+          ? (part as { text: string }).text
+          : "",
+      )
+      .join("")
+  }
+}
+
 function createChatStream(text = "Hello") {
   return stream(
     [
@@ -732,4 +752,140 @@ describe("outbound redaction boundary", () => {
       }),
     { config: compatibleConfig },
   )
+
+  const nl = String.fromCharCode(10)
+  const rules: Array<{ id: string; input: string; secret: string; expected?: string }> = [
+    { id: "query-param", input: "https://x.test/?access_token=abc1234567890123&x=1", secret: "abc1234567890123" },
+    { id: "bracket-array", input: "password[]=Secret123", secret: "Secret123" },
+    { id: "bracket-index", input: "password[0]=Secret123", secret: "Secret123" },
+    { id: "cli-password", input: "tool --password Secret123", secret: "Secret123" },
+    { id: "mysql-p", input: "mysql -pSecret123", secret: "Secret123" },
+    { id: "curl-user", input: "curl -u alice:CurlSecret123456 https://example.test", secret: "CurlSecret123456" },
+    { id: "pgpass", input: "db.test:5432:app:alice:PgPassSecret123", secret: "PgPassSecret123" },
+    {
+      id: "netrc",
+      input: "machine db.test login alice password NetrcSecret123",
+      secret: "NetrcSecret123",
+    },
+    { id: "setx", input: "setx PASSWORD WinSecret123", secret: "WinSecret123" },
+    { id: "yaml-block", input: `password: |${nl}  Secret123`, secret: "Secret123", expected: "password: [redacted]" },
+    {
+      id: "triple-quotes",
+      input: 'password = """Secret123"""',
+      secret: "Secret123",
+      expected: "password = [redacted]",
+    },
+    {
+      id: "heredoc",
+      input: `password=$(cat <<EOF${nl}Secret123${nl}EOF)`,
+      secret: "Secret123",
+      expected: "password=[redacted]",
+    },
+    { id: "google-oauth", input: "GOCSPX-demoA1b2C3d4E5f6G7h8", secret: "GOCSPX-demoA1b2C3d4E5f6G7h8" },
+    { id: "shopify", input: "shpat_demoA1b2C3d4E5f6", secret: "shpat_demoA1b2C3d4E5f6" },
+    { id: "linear", input: "lin_api_demoLinearA1b2C3d4", secret: "lin_api_demoLinearA1b2C3d4" },
+    { id: "replicate", input: "r8_demoReplicateA1b2C3d4", secret: "r8_demoReplicateA1b2C3d4" },
+    { id: "perplexity", input: "pplx-demoPerplexityA1b2C3d4", secret: "pplx-demoPerplexityA1b2C3d4" },
+    { id: "square", input: "sq0csp-demoSecretA1b2C3d4", secret: "sq0csp-demoSecretA1b2C3d4" },
+    { id: "age", input: "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQ", secret: "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQ" },
+    { id: "mailgun", input: "key-demoMailgunA1b2C3d4E5f6G7h8", secret: "key-demoMailgunA1b2C3d4E5f6G7h8" },
+    { id: "notion", input: "secret_demoNotionA1b2C3d4", secret: "secret_demoNotionA1b2C3d4" },
+    {
+      id: "discord",
+      input: "MTIzNDU2Nzg5MDEyMzQ1Njc4.A1b2C3.abcdefghijklmnopqrstuvwxyz1",
+      secret: "MTIzNDU2Nzg5MDEyMzQ1Njc4.A1b2C3.abcdefghijklmnopqrstuvwxyz1",
+    },
+    {
+      id: "telegram",
+      input: "123456789:AA_demoToken1234567890abcdefgh",
+      secret: "123456789:AA_demoToken1234567890abcdefgh",
+    },
+    {
+      id: "azure-sas",
+      input: "https://example.test/blob?sv=2026&sig=AzureSecret123456",
+      secret: "AzureSecret123456",
+    },
+    {
+      id: "s3-presign",
+      input: "https://s3.example.test/object?X-Amz-Signature=abcdef0123456789abcdef",
+      secret: "abcdef0123456789abcdef",
+    },
+    {
+      id: "sigv4",
+      input:
+        "Authorization: AWS4-HMAC-SHA256 Credential=AKIA1234567890ABCDEF/20261120/x, Signature=abcdef0123456789abcdef0123456789",
+      secret: "abcdef0123456789abcdef0123456789",
+      expected: "Authorization: AWS4-HMAC-SHA256 Credential=[redacted], Signature=[redacted]",
+    },
+    { id: "cookie-session", input: "Cookie: session=CookieSecret123456; theme=dark", secret: "CookieSecret123456" },
+    { id: "header-api-key", input: "X-Api-Key: abcdefghijklmnop", secret: "abcdefghijklmnop" },
+    {
+      id: "mysql-bracket",
+      input: "mysql -pSecret123] next",
+      secret: "Secret123",
+      expected: "mysql -p[redacted]] next",
+    },
+    {
+      id: "email-amp",
+      input: "user@example.com:Secret123&next=1",
+      secret: "Secret123",
+      expected: "user@example.com:[redacted]&next=1",
+    },
+    {
+      id: "command-quoted",
+      input: 'password=$(printf "x)"; echo Secret123)',
+      secret: "Secret123",
+      expected: "password=[redacted]",
+    },
+    { id: "setx-upper", input: "SETX PASSWORD Secret123", secret: "Secret123", expected: "SETX PASSWORD [redacted]" },
+    {
+      id: "cookie-mixed",
+      input: "cOOkie: session=CookieSecret123456; theme=dark",
+      secret: "CookieSecret123456",
+      expected: "cOOkie: session=[redacted]; theme=dark",
+    },
+    {
+      id: "cli-json-tail",
+      input: '{"cmd":"tool --password Secret123\\"x","keep":1}',
+      secret: "Secret123",
+      expected: '{"cmd":"tool --password [redacted]\\"x","keep":1}',
+    },
+    {
+      id: "escaped-inner",
+      input: '{"input":"password=\\"prefix\\"test0123456789abcdef0123456789abc\\""}',
+      secret: "test0123456789abcdef0123456789abc",
+      expected: '{"input":"password=\\"[redacted]\\""}',
+    },
+  ]
+
+  const cases = rules.map((rule) => ({
+    ...rule,
+    expected: rule.expected ?? rule.input.split(rule.secret).join("[redacted]"),
+  }))
+
+  for (const rule of cases) {
+    it.instance(
+      `sends no unredacted value for ${rule.id}`,
+      () =>
+        Effect.gen(function* () {
+          const request = waitRequest("/chat/completions", createChatStream())
+          const resolved = yield* Provider.use.getModel(ProviderV2.ID.make("acme"), ModelV2.ID.make("test-model"))
+          yield* drainWith(
+            input({
+              model: resolved,
+              session: `ses_rule_${rule.id}`,
+              system: [],
+              messages: [{ role: "user", content: rule.input }],
+            }),
+          )
+          const capture = yield* Effect.promise(() => request)
+          const rendered = JSON.stringify(capture.body)
+          expect(rendered).not.toContain(rule.secret)
+          expect(rendered).toContain("[redacted]")
+          // The exact surrounding bytes must survive, not just the marker.
+          expect(userText(capture.body), rule.id).toBe(rule.expected)
+        }),
+      { config: compatibleConfig },
+    )
+  }
 })

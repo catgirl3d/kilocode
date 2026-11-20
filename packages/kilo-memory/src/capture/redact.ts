@@ -47,7 +47,7 @@ export namespace MemoryRedact {
 
   const MARKER = "[redacted]"
   const FAILURE_MESSAGE =
-    'An access key was found in the outgoing context where it cannot be hidden safely, so the request was not sent. Roll back to a message before the key entered the context, or turn off "Redact access keys before sending" in Experimental.'
+    'A secret was found in the outgoing context where it cannot be hidden safely, so the request was not sent. Roll back to a message before the key entered the context, or turn off "Redact recognizable secrets before sending" in Experimental.'
 
   /** A recognized key that cannot be hidden in a copy that has to keep its shape. Carries no value. */
   export class Failure extends Error {
@@ -130,6 +130,8 @@ export namespace MemoryRedact {
   }
 
   const ATLAS = /[A-Za-z0-9]+\.atlasv1\.[A-Za-z0-9]{16,}/g
+  const BLOCK = new Set(["|", ">", "|-", "|+", ">-", ">+"])
+  const CHALLENGE = /^(?:realm|error|error_description|scope|state|service|client_id)=/i
 
   function prefixEnd(input: string, at: number) {
     if (at > 0 && isKeyChar(input.charCodeAt(at - 1))) return -1
@@ -219,7 +221,11 @@ export namespace MemoryRedact {
     const start = index
     while (index < input.length && credentialChar(input.charCodeAt(index))) index++
     const length = index - start
-    if (kind === "bearer") return length >= 16 ? { start, end: index, replacement: MARKER } : undefined
+    if (kind === "bearer") {
+      if (length < 16) return
+      if (CHALLENGE.test(input.slice(start, index))) return
+      return { start, end: index, replacement: MARKER }
+    }
     if (length < 8 || !BASIC.test(input.slice(start, index))) return
     if (!auth(at)) return
     return { start, end: index, replacement: MARKER }
@@ -320,6 +326,12 @@ export namespace MemoryRedact {
     )
       nameEnd += 2
     let index = nameEnd
+    // `password[]=...` and `password[0]=...` keep the key name, then a bracketed suffix.
+    if (input.charCodeAt(index) === 91) {
+      const close = input.indexOf("]", index)
+      if (close < 0 || close - index > 32) return
+      index = close + 1
+    }
     while (index < input.length && isSpace(input.charCodeAt(index))) index++
     const separator = input.charCodeAt(index)
     if (separator !== 58 && separator !== 61) return
@@ -328,8 +340,52 @@ export namespace MemoryRedact {
     // `token := value` is a Go short variable declaration, not two operators.
     index += separator === 58 && next === 61 ? 2 : 1
     while (index < input.length && isSpace(input.charCodeAt(index))) index++
+    // A query parameter ends at the next separator, not at the end of the URL.
+    const query = nameStart > 0 && "?&#".includes(input.charAt(nameStart - 1))
     const quote = input.charCodeAt(index)
+    if (input.startsWith('"""', index) || input.startsWith("'''", index)) {
+      const mark = input.slice(index, index + 3)
+      const close = input.indexOf(mark, index + 3)
+      if (close < 0) return
+      return { name, start: index, end: close + 3, quote: "" }
+    }
+    // A command substitution can carry a heredoc or an inline secret; redact the whole substitution.
+    if (input.startsWith("$(", index)) {
+      let depth = 0
+      let quote = 0
+      let escape = false
+      const limit = Math.min(input.length, index + 4_096)
+      for (let cursor = index + 2; cursor < limit; cursor++) {
+        const code = input.charCodeAt(cursor)
+        if (escape) {
+          escape = false
+          continue
+        }
+        if (code === 92 /* \ */) {
+          escape = true
+          continue
+        }
+        if (quote !== 0) {
+          if (code === quote) quote = 0
+          continue
+        }
+        if (code === 34 || code === 39 || code === 96) {
+          quote = code
+          continue
+        }
+        if (code === 40) depth++
+        if (code !== 41) continue
+        if (depth === 0) return { name, start: index, end: cursor + 1, quote: "" }
+        depth--
+      }
+      return
+    }
     if (quote === 34 || quote === 39) {
+      // In JSON, `name=",` is an empty value whose closing quote is followed by a delimiter.
+      if (",}]\n\r".includes(input.charAt(index + 1))) {
+        const after = input.charAt(index + 2)
+        if (input.charAt(index + 1) !== "," || after === "" || "\n\r}]".includes(after)) return
+      }
       let cursor = index + 1
       let closed = -1
       while (cursor < input.length) {
@@ -353,7 +409,19 @@ export namespace MemoryRedact {
       if (escaped === '"' || escaped === "'") {
         const close = `\\${escaped}`
         const start = index + close.length
-        const end = input.indexOf(close, start)
+        let from = start
+        let end = -1
+        while (from <= input.length) {
+          const hit = input.indexOf(close, from)
+          if (hit < 0) break
+          const after = input.charAt(hit + close.length)
+          // The closing quote of an escaped assignment is followed by JSON punctuation.
+          if (after === "" || '"\' ,}]\n\r'.includes(after)) {
+            end = hit
+            break
+          }
+          from = hit + close.length
+        }
         if (end < 0) return
         return { name, start: index, end: end + close.length, quote: close }
       }
@@ -363,6 +431,7 @@ export namespace MemoryRedact {
       const code = input.charCodeAt(end)
       if (
         isSpace(code) ||
+        (query && (code === 38 || code === 35)) ||
         code === 34 ||
         code === 39 ||
         code === 44 ||
@@ -375,6 +444,24 @@ export namespace MemoryRedact {
         break
       end++
     }
+    // A YAML block scalar keeps its value on the following indented lines.
+    if (BLOCK.has(input.slice(index, end))) {
+      let cursor = end
+      let last = -1
+      while (cursor < input.length) {
+        while (input.charCodeAt(cursor) === 13 || input.charCodeAt(cursor) === 10) cursor++
+        const lineStart = cursor
+        let lineEnd = cursor
+        while (lineEnd < input.length && input.charCodeAt(lineEnd) !== 10 && input.charCodeAt(lineEnd) !== 13)
+          lineEnd++
+        const line = input.slice(lineStart, lineEnd)
+        if (!/^[ \t]+\S/.test(line)) break
+        last = lineEnd
+        cursor = lineEnd
+      }
+      if (last < 0) return
+      end = last
+    }
     return { name, start: index, end, quote: "" }
   }
 
@@ -383,12 +470,23 @@ export namespace MemoryRedact {
     if (!found) return
     const size = found.quote.length
     const value = found.quote ? input.slice(found.start + size, found.end - size) : input.slice(found.start, found.end)
-    if (!(weak(found.name) ? explicit(value, found.quote !== "") : keyValue(value))) return
+    if (!(weak(found.name) ? explicit(value, found.quote !== "") : keyValue(value) || headerKey(found.name, value)))
+      return
     return { start: found.start, end: found.end, replacement: `${found.quote}${MARKER}${found.quote}` }
   }
 
   // `authorized` is set when the string is the value of an Authorization-named field, which supplies
   // the context a bare `Basic <credential>` string cannot carry on its own.
+  const PREFIX = new Set([115, 114, 103, 120, 104, 101, 65, 83, 78, 110, 112, 100, 99])
+  const KEY_START = new Set([97, 99, 108, 111, 112, 115, 116, 65, 67, 76, 79, 80, 83, 84])
+
+  // A keyword may start a word, follow a separator, or open a camelCase segment.
+  function boundary(input: string, at: number) {
+    const prev = input.charCodeAt(at - 1)
+    if (at === 0 || !isNameChar(prev) || prev === 95 || prev === 45 || prev === 46) return true
+    return prev >= 97 && prev <= 122 && input.charCodeAt(at) >= 65 && input.charCodeAt(at) <= 90
+  }
+
   function valuesText(input: string, authorized = false) {
     const chunks: string[] = []
     const auth = authorized ? () => true : authorization(input)
@@ -405,8 +503,8 @@ export namespace MemoryRedact {
           continue
         }
       }
-      if (isKeyChar(code)) {
-        const end = prefixEnd(input, index)
+      if (PREFIX.has(code)) {
+        const end = boundary(input, index) ? prefixEnd(input, index) : -1
         if (end > 0) {
           chunks.push(input.slice(last, index), MARKER)
           index = end
@@ -423,7 +521,7 @@ export namespace MemoryRedact {
           continue
         }
       }
-      if (isAlnum(code)) {
+      if (KEY_START.has(code) && boundary(input, index)) {
         const span = assignmentSpan(input, index)
         if (span) {
           chunks.push(input.slice(last, span.start), span.replacement)
@@ -437,7 +535,8 @@ export namespace MemoryRedact {
     if (chunks.length > 0) chunks.push(input.slice(last))
     const joined = chunks.length > 0 ? chunks.join("") : input
     const atlas = joined.includes("atlasv1") ? joined.replace(ATLAS, MARKER) : joined
-    const mail = mailMask(atlas)
+    const extra = extras(atlas)
+    const mail = mailMask(extra)
     // Connection strings carry a password without a key-shaped name; reuse the parser-primary rule.
     return mail.includes("://") ? redactUri(mail) : mail
   }
@@ -547,21 +646,116 @@ export namespace MemoryRedact {
     return bareKey(value) && !value.includes("${")
   }
 
+  // Header values may be letters-only; an API key name is enough context to mask a long token.
+  function headerKey(name: string, value: string) {
+    if (name.charAt(0).toLowerCase() !== "x") return false
+    const tail = name.slice(-12).replaceAll(/[_\s.-]/g, "").toLowerCase()
+    if (!tail.endsWith("apikey") && !tail.endsWith("authtoken")) return false
+    return value.length >= 16 && /[A-Za-z]/.test(value) && !/\s/.test(value) && /^[A-Za-z0-9_=+-]+$/.test(value)
+  }
+
+  const EXTRA: Array<[string, RegExp]> = [
+    ["GOCSPX-", /\bGOCSPX-[A-Za-z0-9_-]{20,}/g],
+    ["shpat_", /\bshpat_[A-Za-z0-9]{16,}/g],
+    ["lin_api_", /\blin_api_[A-Za-z0-9]{16,}/g],
+    ["r8_", /\br8_[A-Za-z0-9]{20,}/g],
+    ["pplx-", /\bpplx-[A-Za-z0-9]{20,}/g],
+    ["sq0csp-", /\bsq0csp-[A-Za-z0-9_-]{16,}/g],
+    ["AGE-SECRET-KEY-", /\bAGE-SECRET-KEY-1[A-Z0-9]{20,}/g],
+    ["key-", /\bkey-[A-Za-z0-9]{24,}/g],
+    ["secret_", /\bsecret_[A-Za-z0-9]{16,}/g],
+    [".", /\b[A-Za-z0-9_-]{24,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}/g],
+    [":", /\b\d{8,10}:[A-Za-z0-9_-]{30,}/g],
+  ]
+  const CLI = /(^|[\s"'])(--?(?:password|passwd|pwd|token|secret))(\s+)((?:[^\s"'`\\]|\\(?!["']))+)/gi
+  const MYSQL = /(\b(?:mysql|mariadb)\b[^\n]{0,256}?\s-p)([^\s"'`\]\\&,;)}]{4,})/gi
+  const CURL = /(\s(?:-u|--user)\s+)([^\s:]+):((?:[^\s"'`\\]|\\(?!["']))+)/g
+  const PGPASS = /(^|\n|["'])([^\s:]{1,255}:\d+:[^:\n]*:[^:\n]*:)((?:[^"\n\\]|\\(?!["']))+)/g
+  const NETRC = /(\b(?:machine|login)\b[^\n]{0,512}?\bpassword\s+)((?:[^\s"'\\]|\\(?!["']))+)/gi
+  const SETX = /(\bsetx\s+)(\w+)(\s+)("[^"]*"|(?:[^\s"'\\]|\\(?!["']))+)/gi
+  const SIGN = /(^|[?&\s,;])(sig|X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|Signature)=((?:[^\\&\s#"']|\\(?!["']))+)/gi
+  const COOKIE = /(^|\n|["'])(\s*cookie\s*:[^\n]*)/gi
+
+  function extras(input: string) {
+    let out = input
+    for (const [needle, pattern] of EXTRA) {
+      if (!out.includes(needle)) continue
+      out = out.replace(pattern, (token) => (token.includes(MARKER) ? token : MARKER))
+    }
+    if (out.includes("--"))
+      out = out.replace(CLI, (match, lead, flag, gap, value) =>
+        value.startsWith("-") || value.startsWith("[redacted") ? match : `${lead}${flag}${gap}${MARKER}`,
+      )
+    if (/mysql|mariadb/i.test(out))
+      out = out.replace(MYSQL, (match, head, value) => `${head}${value.startsWith("[redacted") ? value : MARKER}`)
+    if (out.includes("-u"))
+      out = out.replace(CURL, (match, head, user, pass) =>
+        pass.startsWith("[redacted") ? match : `${head}${user}:${MARKER}`,
+      )
+    if (out.includes(":"))
+      out = out.replace(PGPASS, (match, lead, head, pass) => {
+        const host = head.split(":")[0]
+        if (!host.includes(".") && host !== "localhost") return match
+        return `${lead}${head}${pass.startsWith("[redacted") ? pass : MARKER}`
+      })
+    if (/password/i.test(out) && /machine|login/i.test(out))
+      out = out.replace(NETRC, (match, head, value) => (value.startsWith("[redacted") ? match : `${head}${MARKER}`))
+    if (/setx/i.test(out))
+      out = out.replace(SETX, (match, head, name, gap, value) => {
+        if (!weak(name)) return match
+        const inner = value.startsWith('"') ? `"${MARKER}"` : MARKER
+        return `${head}${name}${gap}${inner}`
+      })
+    if (/sig=|x-amz-|signature=/i.test(out))
+      out = out.replace(SIGN, (match, sep, name, value) =>
+        value.startsWith("[redacted") ? match : `${sep}${name}=${MARKER}`,
+      )
+    if (/cookie\s*:/i.test(out))
+      out = out.replace(COOKIE, (match, lead, line) =>
+        `${lead}${line.replace(/\b(session|sessionid|connect\.sid|auth)=([^;\\\s"']+)/gi, (part: string, key: string, value: string) =>
+          value.startsWith("[redacted") ? part : `${key}=${MARKER}`,
+        )}`,
+      )
+    return out
+  }
+
   // Password-shaped names carry short or all-letter secrets that the key shape rejects.
   const WEAK = new Set(["password", "passwd", "pwd"])
-  const TYPES = new Set(["string", "boolean", "number", "any", "unknown", "null", "undefined", "true", "false"])
+  const TYPES = new Set([
+    "string",
+    "boolean",
+    "number",
+    "any",
+    "unknown",
+    "null",
+    "undefined",
+    "true",
+    "false",
+    "enabled",
+    "disabled",
+    "required",
+    "optional",
+    "default",
+    "none",
+    "include",
+    "exclude",
+    "inherit",
+    "prompt",
+    "ask",
+  ])
   const REFERENCE = /^(?:process\.env|os\.environ|env|config|settings|ctx|this|secrets?|vars|options)\./i
   // Leaked credential dumps use `email:password`; a clone URL has a path and a port has five digits.
-  const MAIL_PAIR = /[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}:[^\s@/\\;,"'()[\]{}<>:]+/g
+  const MAIL_PAIR = /(?<![\w.])[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,3}\.[A-Za-z]{2,24}:(?:[^\s@/\\;,"'()[\]{}<>:&#]|\\(?!["']))+/g
 
   function weak(name: string) {
-    // `PWD` is the shell working directory, not a password.
-    if (name === "PWD") return false
-    const plain = name.replaceAll(/[_\s.-]/g, "").toLowerCase()
-    return [...WEAK].some((word) => plain.endsWith(word) || plain.endsWith(`${word}s`))
+    const tail = name.slice(-16).toLowerCase()
+    // `PWD` and `env.PWD` are the shell working directory, not a password.
+    if (name === "PWD" || name.endsWith(".PWD")) return false
+    return ["password", "passwords", "passwd", "passwds", "pwd", "pwds"].some((word) => tail.endsWith(word))
   }
 
   function mailPass(token: string) {
+    if (token.slice(0, token.indexOf("@")).toLowerCase() === "git") return
     const pass = token.slice(token.lastIndexOf(":") + 1)
     if (pass.length < 6 || pass.length > 64 || !/[0-9]/.test(pass)) return
     if (pass.includes("${") || pass === MARKER) return
@@ -605,6 +799,62 @@ export namespace MemoryRedact {
     return items.filter((item) => valueKey(item, name) || valuesText(item.value) !== item.value).length
   }
 
+  const HEADER = /(?:^|\n)\s*[Xx]-[A-Za-z0-9-]*(?:api-key|auth-token)\s*:\s*([^\s"']+)/gi
+  const SESSION = /\b(session|sessionid|connect\.sid|auth)=((?:[^;\\\s"']|\\(?!["']))+)/gi
+
+  function spans(input: string, pattern: RegExp, group: number) {
+    pattern.lastIndex = 0
+    const out: Array<{ start: number; end: number }> = []
+    let hit: RegExpExecArray | null
+    while ((hit = pattern.exec(input)) !== null) {
+      const value = hit[group]
+      if (value) {
+        const at = hit.index + hit[0].indexOf(value)
+        out.push({ start: at, end: at + value.length })
+      }
+      if (hit[0] === "") pattern.lastIndex++
+    }
+    return out
+  }
+
+  function cookieSpans(input: string) {
+    const out: Array<{ start: number; end: number }> = []
+    for (const line of spans(input, COOKIE, 2)) {
+      const text = input.slice(line.start, line.end)
+      for (const item of spans(text, SESSION, 2))
+        out.push({ start: line.start + item.start, end: line.start + item.end })
+    }
+    return out
+  }
+
+  function extraSpans(input: string) {
+    const out = spans(input, HEADER, 1)
+    out.push(...cookieSpans(input))
+    for (const [, pattern] of EXTRA) out.push(...spans(input, pattern, 0))
+    out.push(...spans(input, CLI, 4))
+    out.push(...spans(input, MYSQL, 2))
+    out.push(...spans(input, CURL, 3))
+    out.push(...spans(input, PGPASS, 3))
+    out.push(...spans(input, NETRC, 2))
+    out.push(...spans(input, SETX, 4))
+    out.push(...spans(input, SIGN, 3))
+    return out
+  }
+
+  // A write guard may only block when the marker lands in the same slot as the old value.
+  function slotLost(old: string, next: string) {
+    for (const span of extraSpans(old)) {
+      const left = old.slice(Math.max(0, span.start - 40), span.start)
+      const right = old.slice(span.end, span.end + 40)
+      if (!left && !right) {
+        if (next.trim() === MARKER) return true
+        continue
+      }
+      if (next.includes(`${left}${MARKER}${right}`)) return true
+    }
+    return false
+  }
+
   /**
    * True when writing `next` over `old` would replace a recognized access key with `[redacted]`.
    * New files, plain key deletion, and edits that keep every key are allowed.
@@ -629,7 +879,7 @@ export namespace MemoryRedact {
         uriKeys(next) < uriKeys(old) ||
         mailKeys(next) < mailKeys(old)) &&
       markerCount(next) > markerCount(old)
-    )
+    ) || slotLost(old, next)
   }
   // fork_change end
 
