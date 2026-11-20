@@ -35,12 +35,27 @@ function efforts(id: string) {
   return skip === undefined ? EFFORTS : EFFORTS.filter((effort) => effort !== skip)
 }
 
-// The gateway reports only a low/medium/high cost category, so price the models from the public Kilo catalog
-// entries they map to. Values are USD per million tokens: input, output, cache read, cache write. DeepSeek
-// V4 Flash uses the 0731 build price, matching the gateway's medium category, and Eco reuses the V4.1 Flash
-// price because it has no separate entry.
+// The gateway reports only a low/medium/high cost category, so price the models from the public catalog entries
+// they map to. Values are USD per million tokens: input, output, cache read, cache write. Context tiers cover
+// the models priced by input size: Claude Haiku 5.5 above 100K and GPT-6 Luna above 272K. DeepSeek V4 Flash
+// uses the 0731 build price, matching the gateway's medium category, and Eco reuses the V4.1 Flash price
+// because it has no separate entry.
 const COSTS: Record<string, Model["cost"]> = {
-  "claude-haiku-5.5": { input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0.125 },
+  "claude-haiku-5.5": {
+    input: 0.1,
+    output: 0.5,
+    cache_read: 0.01,
+    cache_write: 0.125,
+    tiers: [
+      {
+        input: 0.5,
+        output: 2.5,
+        cache_read: 0.05,
+        cache_write: 0.625,
+        tier: { type: "context", size: 100000 },
+      },
+    ],
+  },
   "deepseek-v4-flash": { input: 0.44, output: 1.32, cache_read: 0.028 },
   "deepseek-v4-flash-vision-exp": { input: 0.44, output: 1.32, cache_read: 0.014 },
   "deepseek-v4-pro": { input: 1.6, output: 3.2, cache_read: 0.135 },
@@ -48,7 +63,21 @@ const COSTS: Record<string, Model["cost"]> = {
   "deepseek-v4.1-flash-eco": { input: 0.3, output: 1.2, cache_read: 0.006 },
   "glm-5.3-flash": { input: 0.15, output: 0.5, cache_read: 0.03 },
   "glm-5.3-flashx": { input: 0.37, output: 1.25, cache_read: 0.075 },
-  "gpt-6-luna": { input: 0.1, output: 0.5, cache_read: 0.01, cache_write: 0.125 },
+  "gpt-6-luna": {
+    input: 0.1,
+    output: 0.5,
+    cache_read: 0.01,
+    cache_write: 0.125,
+    tiers: [
+      {
+        input: 0.2,
+        output: 0.75,
+        cache_read: 0.02,
+        cache_write: 0.25,
+        tier: { type: "context", size: 272000 },
+      },
+    ],
+  },
   "hy4-preview": { input: 0.834, output: 2.501, cache_read: 0.042 },
   "kimi-k2.7-code": { input: 0.6, output: 3, cache_read: 0.12 },
   "mimo-v2.6-flash": { input: 0.1, output: 0.28, cache_read: 0.0028 },
