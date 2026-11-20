@@ -414,3 +414,23 @@ export function isPathMention(text: string): boolean {
 export function memoryRest(cmd: ParsedMemoryCommand): string {
   return "rest" in cmd ? (cmd.rest ?? "") : ""
 }
+
+// fork_change start
+/** A `/btw` line: a side question to ask, or a bare `/btw` that opens the history. */
+export function parseBtwCommand(text: string): { kind: "ask"; question: string } | { kind: "history" } | undefined {
+  const match = /^\/btw(?:\s+([\s\S]*))?$/.exec(text.trim())
+  if (!match) return undefined
+  const question = (match[1] ?? "").trim()
+  if (!question) return { kind: "history" }
+  return { kind: "ask", question }
+}
+
+/** The side question and answer as a blockquote, ready to paste into the prompt. */
+export function quoteBtw(item: { question: string; answer: string }) {
+  const question = item.question
+    .split("\n")
+    .map((line, index) => (index === 0 ? `> **Side question:** ${line}` : `> ${line}`))
+  const body = item.answer.split("\n").map((line) => `> ${line}`)
+  return `${[...question, ">", ...body].join("\n")}\n\n`
+}
+// fork_change end

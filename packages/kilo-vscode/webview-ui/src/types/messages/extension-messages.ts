@@ -340,6 +340,46 @@ export interface SessionToolClearFailedMessage {
   code: ReasoningClearErrorCode
   error: string
 }
+
+export interface BtwItem {
+  id: string
+  sessionID: string
+  threadID: string
+  status: "running" | "done" | "error" | "cancelled" | "interrupted"
+  question: string
+  answer: string
+  error?: string
+  providerID: string
+  modelID: string
+  cost: number
+  time: { created: number; completed?: number }
+}
+
+export interface BtwStartedMessage {
+  type: "btwStarted"
+  sessionID: string
+  requestID: string
+  item: BtwItem
+}
+
+export interface BtwFailedMessage {
+  type: "btwFailed"
+  sessionID: string
+  requestID?: string
+  error: string
+}
+
+export interface BtwUpdatedMessage {
+  type: "btwUpdated"
+  sessionID: string
+  item: BtwItem
+}
+
+export interface BtwHistoryLoadedMessage {
+  type: "btwHistoryLoaded"
+  sessionID: string
+  items: BtwItem[]
+}
 // fork_change end
 export interface SessionDeletedMessage {
   type: "sessionDeleted"
@@ -2029,6 +2069,12 @@ export type ExtensionMessage =
   | SessionToolClearPreviewedMessage
   | SessionToolClearedMessage
   | SessionToolClearFailedMessage
+  // fork_change end
+  // fork_change start - btw messages
+  | BtwStartedMessage
+  | BtwFailedMessage
+  | BtwUpdatedMessage
+  | BtwHistoryLoadedMessage
   // fork_change end
   | SessionDeletedMessage
   | MessageRemovedMessage

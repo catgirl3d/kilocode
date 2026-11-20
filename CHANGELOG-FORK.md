@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Ask a quick side question with `/btw <question>` in VS Code chat and the TUI while the agent keeps working: the answer streams into a card above the prompt (VS Code) or a dialog (TUI) and never enters the session history. It replays the session's last model request as a cache-warm prefix (tools stay attached for the cache but are never executed), falls back to a plain-text transcript in sessions that have not run in this process yet, supports follow-up questions, history (`/btw` with no question), cancel (Esc), and inserting the Q/A into your next message. Side-question spend is added to the session cost. Records live in a new `kilo_btw` table created by an additive migration that upstream builds ignore safely.
 - Show the short hash of the commit the extension was built from in the Kilo Code sidebar title (`Kilo Code: #abc1234`), so an installed build can be matched to its source.
 - Keep model choices per workspace with a new Workspace models switch in Settings → Models: it copies the current default, small, subagent, advisor, compaction and mode models into the workspace's `.kilo/kilo.jsonc` and saves later edits there; turning it off returns the workspace to the global models.
 - Hold the Send button in chat until its ring completes to defer a prompt until the current turn finishes instead of interrupting the agent; the prompt is queued as soon as the ring closes, appears above the input, can be cancelled, and returns to the composer when you press Stop.
@@ -68,6 +69,7 @@
 ### Fixes & Enhancements
 
 - Keep `kilo.jsonc` valid when removing the last remaining key of an object that ends with a trailing comma: deleting a provider, agent, or setting no longer fails with `ValueExpected`, agent removal and unset propagation can no longer write a broken config file, and config parse errors show only the failing line instead of the whole file.
+- Make `bun run migration` (generate and `--check`) in `packages/core` work on Windows: the script now reads generated migration folders with `path.dirname` instead of splitting on `/`, which broke on Bun's backslash glob paths.
 - Give every fork VSIX build its own version (`<upstream version>-fork.<run number>`) and its own GitHub Release instead of replacing the previous release and tag, and list only the changes since the previous release in the release notes.
 - Keep internal compaction reasoning out of chats and session history: the summarizer's thinking no longer appears as a Reasoning block.
 - Show reasoning from Merge Gateway models: the selected reasoning effort (for example `max`) is now sent to the gateway, so models such as DeepSeek V4.1 Flash stream thinking into reasoning blocks instead of mixing it into the answer text.

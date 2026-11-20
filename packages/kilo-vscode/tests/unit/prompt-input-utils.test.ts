@@ -29,6 +29,8 @@ import {
   type PasteRange,
   commandAction,
   resolvePrompt,
+  parseBtwCommand,
+  quoteBtw,
 } from "../../webview-ui/src/components/chat/prompt-input-utils"
 import { parseMemoryCommand } from "../../webview-ui/src/utils/memory-command"
 
@@ -772,4 +774,25 @@ describe("undoKey", () => {
     expect(undoKey(chord("Y", { code: 89, ctrl: true, shift: true }))).toBeUndefined()
     expect(undoKey(chord("c", { code: 67, meta: true }))).toBeUndefined()
   })
+})
+
+describe("parseBtwCommand", () => {
+  it("parses a question", () =>
+    expect(parseBtwCommand("/btw why is it slow?")).toEqual({ kind: "ask", question: "why is it slow?" }))
+  it("keeps multi-line questions", () =>
+    expect(parseBtwCommand("/btw a\nb")).toEqual({ kind: "ask", question: "a\nb" }))
+  it("opens history without a question", () => expect(parseBtwCommand("  /btw  ")).toEqual({ kind: "history" }))
+  it("ignores other commands", () => {
+    expect(parseBtwCommand("/btwx q")).toBeUndefined()
+    expect(parseBtwCommand("btw q")).toBeUndefined()
+  })
+})
+
+describe("quoteBtw", () => {
+  it("quotes question and answer", () =>
+    expect(quoteBtw({ question: "q", answer: "line1\nline2" })).toBe("> **Side question:** q\n>\n> line1\n> line2\n\n"))
+  it("quotes every line of a multi-line question", () =>
+    expect(quoteBtw({ question: "why\nis it\nslow?", answer: "a" })).toBe(
+      "> **Side question:** why\n> is it\n> slow?\n>\n> a\n\n",
+    ))
 })

@@ -24,6 +24,7 @@ import type {
   EventSessionTurnClose,
   EventSessionError,
   EventSandboxStatusChanged,
+  EventSessionBtwUpdated,
   EventPermissionAsked,
   EventPermissionReplied,
   EventTodoUpdated,
@@ -484,6 +485,33 @@ describe("mapSSEEventToWebviewMessage", () => {
       available: true,
       reason: undefined,
       version: 3,
+    })
+  })
+
+  it("maps side question updates to the webview by session", () => {
+    const item: EventSessionBtwUpdated["properties"]["item"] = {
+      id: "btw_1",
+      sessionID: "sess-1",
+      threadID: "btw_1",
+      status: "done",
+      question: "why?",
+      answer: "because",
+      providerID: "kilo",
+      modelID: "test",
+      cost: 0,
+      tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: 1, completed: 2 },
+    }
+    const event: EventSessionBtwUpdated = {
+      id: "evt-btw",
+      type: "session.btw.updated",
+      properties: { sessionID: "sess-1", item },
+    }
+
+    expect(mapSSEEventToWebviewMessage(event, "sess-1")).toEqual({
+      type: "btwUpdated",
+      sessionID: "sess-1",
+      item,
     })
   })
 

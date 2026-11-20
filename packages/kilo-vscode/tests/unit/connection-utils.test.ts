@@ -176,6 +176,31 @@ describe("resolveEventSessionId", () => {
     expect(resolveEventSessionId(event, noLookup)).toBe("s11")
   })
 
+  it("routes side question updates by their session", () => {
+    const event = {
+      id: "e12b",
+      type: "session.btw.updated",
+      properties: {
+        sessionID: "s12",
+        item: {
+          id: "btw_1",
+          sessionID: "s12",
+          threadID: "btw_1",
+          status: "done",
+          question: "why?",
+          answer: "because",
+          providerID: "kilo",
+          modelID: "test",
+          cost: 0,
+          tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: 1, completed: 2 },
+        },
+      },
+    } satisfies Payload
+
+    expect(resolveEventSessionId(event, noLookup)).toBe("s12")
+  })
+
   it("returns undefined for global events", () => {
     const event = { id: "e12", type: "server.connected", properties: {} } satisfies Payload
 

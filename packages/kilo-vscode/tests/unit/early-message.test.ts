@@ -434,3 +434,33 @@ describe("routeEarlyMessage background jobs", () => {
     expect(calls).toEqual([["ses_child_a", "ses_parent"]])
   })
 })
+
+describe("routeEarlyMessage btw", () => {
+  it("forwards side question requests to the btw host before prompt routing", async () => {
+    const calls: unknown[] = []
+    const ctx = {
+      btw: async (message: unknown) => {
+        calls.push(message)
+      },
+    } as Ctx
+    const message = { type: "btwAsk", sessionID: "ses_1", requestID: "r", question: "q" }
+
+    expect(await routeEarlyMessage(message, ctx)).toBe(true)
+    expect(calls).toEqual([message])
+  })
+
+  it("forwards side question cancel and history requests to the btw host", async () => {
+    const calls: unknown[] = []
+    const ctx = {
+      btw: async (message: unknown) => {
+        calls.push(message)
+      },
+    } as Ctx
+    const cancel = { type: "btwCancel", sessionID: "ses_1", btwID: "btw_1" }
+    const history = { type: "btwHistory", sessionID: "ses_1" }
+
+    expect(await routeEarlyMessage(cancel, ctx)).toBe(true)
+    expect(await routeEarlyMessage(history, ctx)).toBe(true)
+    expect(calls).toEqual([cancel, history])
+  })
+})

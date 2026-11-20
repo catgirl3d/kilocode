@@ -83,6 +83,7 @@ const sessionScopedTransientEvents = new Set<string>([
   "session.network.replied",
   "session.network.rejected",
   "session.network.restored",
+  "session.btw.updated", // fork_change
 ])
 
 function resolveTransientSessionId(event: TransientPayload): string | undefined {

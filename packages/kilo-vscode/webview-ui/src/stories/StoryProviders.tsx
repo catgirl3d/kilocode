@@ -14,6 +14,7 @@ import { createSignal, createMemo, onCleanup, onMount, type Component, type Pare
 import { getVSCodeAPI, VSCodeProvider } from "../context/vscode"
 import { SessionTagsProvider } from "../context/session-tags"
 import { SessionFavoritesProvider } from "../context/session-favorites" // fork_change
+import { createSessionBtw } from "../context/session-btw" // fork_change
 import { post } from "../utils/webview-message"
 import { ServerProvider } from "../context/server"
 import { FeedbackProvider } from "../context/feedback"
@@ -373,6 +374,7 @@ export function mockSessionValue(overrides?: {
     toolState: () => ({ keepTurns: 10, previewing: false, applying: false }),
     toolClearing: () => false,
     // fork_change end
+    btw: createSessionBtw({ post: noop, usage: noop }), // fork_change
     respondToPermission: noop,
     replyToQuestion: noop,
     rejectQuestion: noop,
