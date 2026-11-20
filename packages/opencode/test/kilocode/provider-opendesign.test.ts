@@ -172,6 +172,21 @@ describe("OpenDesign model list", () => {
     expect(models["bare"]?.attachment).toBe(false)
   })
 
+  test("prices models from the public catalog in dollars per million tokens", () => {
+    expect(models["deepseek-v4-flash"]?.cost).toEqual({ input: 0.44, output: 1.32, cache_read: 0.028 })
+    expect(models["claude-haiku-5.5"]?.cost).toEqual({
+      input: 0.1,
+      output: 0.5,
+      cache_read: 0.01,
+      cache_write: 0.125,
+    })
+    expect(models["minimax-m3.1-flash"]?.cost).toEqual({ input: 0.15, output: 0.6, cache_read: 0.015 })
+  })
+
+  test("keeps unknown models free instead of guessing a price", () => {
+    expect(models["bare"]?.cost).toEqual({ input: 0, output: 0 })
+  })
+
   test("maps gateway modalities and enables attachments for non-text input", () => {
     expect(models["deepseek-v4-flash"]?.modalities?.input).toEqual(["text"])
     expect(models["deepseek-v4-flash"]?.attachment).toBe(false)
