@@ -214,6 +214,50 @@ describe("OpenDesign model list", () => {
     expect(models["bare"]?.cost).toEqual({ input: 0, output: 0 })
   })
 
+  test("uses a numeric cost reported by the gateway", () => {
+    const model = openDesignModel({
+      id: "deepseek-v4.1-flash",
+      cost: {
+        input: 9,
+        output: 10,
+        cache_read: 1,
+        cache_write: 2,
+        tiers: [
+          {
+            input: 20,
+            output: 30,
+            cache_read: 3,
+            cache_write: 4,
+            tier: { type: "context", size: 100000 },
+          },
+        ],
+      },
+    })
+    expect(model.cost).toEqual({
+      input: 9,
+      output: 10,
+      cache_read: 1,
+      cache_write: 2,
+      tiers: [
+        {
+          input: 20,
+          output: 30,
+          cache_read: 3,
+          cache_write: 4,
+          tier: { type: "context", size: 100000 },
+        },
+      ],
+    })
+  })
+
+  test("falls back to the table when the gateway cost is partial", () => {
+    expect(openDesignModel({ id: "deepseek-v4.1-flash", cost: { input: 9 } }).cost).toEqual({
+      input: 0.3,
+      output: 1.2,
+      cache_read: 0.006,
+    })
+  })
+
   test("maps gateway modalities and enables attachments for non-text input", () => {
     expect(models["deepseek-v4-flash"]?.modalities?.input).toEqual(["text"])
     expect(models["deepseek-v4-flash"]?.attachment).toBe(false)
