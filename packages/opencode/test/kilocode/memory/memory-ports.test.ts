@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
-import type { LanguageModelV3 } from "@ai-sdk/provider"
+import type { LanguageModelV3, LanguageModelV3StreamPart } from "@ai-sdk/provider"
 import { APICallError } from "ai"
 import { Effect } from "effect"
 import { ModelNotFoundError, type Provider } from "../../../src/provider/provider"
@@ -70,6 +70,27 @@ function lang(outputs: (string | Error)[] = ["{}"], calls?: unknown[], hang?: bo
         request: {},
         response: {},
       }
+    },
+    doStream: async (...args: Parameters<LanguageModelV3["doStream"]>) => {
+      calls?.push(args[0])
+      const text = next()
+      const stream = new ReadableStream<LanguageModelV3StreamPart>({
+        start(controller) {
+          controller.enqueue({ type: "text-start", id: "text" })
+          controller.enqueue({ type: "text-delta", id: "text", delta: text })
+          controller.enqueue({
+            type: "finish",
+            finishReason: { unified: "stop", raw: undefined },
+            usage: {
+              inputTokens: { total: 12, noCache: undefined, cacheRead: undefined, cacheWrite: undefined },
+              outputTokens: { total: 8, text: undefined, reasoning: undefined },
+              raw: {},
+            },
+          })
+          controller.close()
+        },
+      })
+      return { stream }
     },
   } as unknown as LanguageModelV3
 }
@@ -507,6 +528,101 @@ describe("memory ports", () => {
     ).rejects.toMatchObject({ name: "TimeoutError", message: "memory model timed out" })
   })
 
+  // fork tests - outbound access key redaction
+  const KEY = "gsk_test_abcdefghijklmnopqrstuvwxyz"
+
+  test("model port scrubs the system and prompt when redaction is enabled", async () => {
+    const calls: unknown[] = []
+    const port = MemoryModel.port({ provider: provider({ calls }), redact: true })
+    const resolved = await Effect.runPromise(port.resolve({ session: ref }))
+
+    const result = await port.run({
+      handle: resolved.handle,
+      sessionID: "ses_test",
+      system: `Summarize; helper key ${KEY}`,
+      prompt: `User: please keep ${KEY} working\n\nAssistant: noted`,
+      timeoutMs: 30_000,
+    })
+
+    const payload = JSON.stringify(calls[0])
+    expect(payload).not.toContain(KEY)
+    expect(payload).toContain("[redacted]")
+    expect(result.text).toBe("{}")
+  })
+
+  test("model port sends the original text when redaction is disabled", async () => {
+    const calls: unknown[] = []
+    const port = MemoryModel.port({ provider: provider({ calls }), redact: false })
+    const resolved = await Effect.runPromise(port.resolve({ session: ref }))
+
+    await port.run({
+      handle: resolved.handle,
+      sessionID: "ses_test",
+      system: `Summarize; helper key ${KEY}`,
+      prompt: `User: keep ${KEY} working`,
+      timeoutMs: 30_000,
+    })
+
+    expect(JSON.stringify(calls[0])).toContain(KEY)
+  })
+
+  test("model port scrubs OpenAI instructions and prompt when redaction is enabled", async () => {
+    const calls: unknown[] = []
+    const openai = ProviderV2.ID.make("openai")
+    const port = MemoryModel.port({
+      provider: provider({ providerID: openai, npm: "@ai-sdk/openai", calls }),
+      redact: true,
+    })
+    const resolved = await Effect.runPromise(
+      port.resolve({ session: { providerID: "openai", modelID: "fake-memory-model" } }),
+    )
+
+    const result = await port.run({
+      handle: resolved.handle,
+      sessionID: "ses_test",
+      system: `Summarize; helper key ${KEY}`,
+      prompt: `User: keep ${KEY} working`,
+      timeoutMs: 30_000,
+    })
+
+    const opts = calls[0] as {
+      prompt?: unknown
+      providerOptions?: Record<string, { instructions?: string }>
+    }
+    expect(opts.providerOptions?.openai?.instructions).toContain("[redacted]")
+    expect(opts.providerOptions?.openai?.instructions).not.toContain(KEY)
+    expect(JSON.stringify(opts.prompt)).toContain("[redacted]")
+    expect(JSON.stringify(opts.prompt)).not.toContain(KEY)
+    expect(result.text).toBe("{}")
+  })
+
+  test("model port keeps OpenAI instructions and prompt when redaction is disabled", async () => {
+    const calls: unknown[] = []
+    const openai = ProviderV2.ID.make("openai")
+    const port = MemoryModel.port({
+      provider: provider({ providerID: openai, npm: "@ai-sdk/openai", calls }),
+      redact: false,
+    })
+    const resolved = await Effect.runPromise(
+      port.resolve({ session: { providerID: "openai", modelID: "fake-memory-model" } }),
+    )
+
+    await port.run({
+      handle: resolved.handle,
+      sessionID: "ses_test",
+      system: `Summarize; helper key ${KEY}`,
+      prompt: `User: keep ${KEY} working`,
+      timeoutMs: 30_000,
+    })
+
+    const opts = calls[0] as {
+      prompt?: unknown
+      providerOptions?: Record<string, { instructions?: string }>
+    }
+    expect(opts.providerOptions?.openai?.instructions).toContain(KEY)
+    expect(JSON.stringify(opts.prompt)).toContain(KEY)
+  })
+
   test("model port clears its timeout after successful output", async () => {
     const set = globalThis.setTimeout
     const clear = globalThis.clearTimeout
@@ -549,17 +665,24 @@ describe("memory ports", () => {
 })
 
 describe("memory turn", () => {
-  function config(model?: string | null) {
-    return { get: () => Effect.succeed({ memory_model: model }) }
+  function config(model?: string | null, redact?: boolean) {
+    return {
+      get: () => Effect.succeed({ memory_model: model }),
+      getGlobal: () => Effect.succeed({ experimental: { redact_secrets: redact } }),
+    }
   }
 
-  async function close(model?: string | null, broken?: Effect.Effect<never, ModelNotFoundError>) {
+  async function close(
+    model?: string | null,
+    broken?: Effect.Effect<never, ModelNotFoundError>,
+    options: { calls?: unknown[]; body?: string; redact?: boolean } = {},
+  ) {
     await using tmp = await tmpdir({ git: true })
     const sessionID = SessionID.make("ses_memory_turn")
     const uid = MessageID.make("msg_turn_user")
     const final = MessageID.make("msg_turn_final")
     const messages = [
-      user({ sessionID, id: uid, body: "Which command runs the CLI memory tests?" }),
+      user({ sessionID, id: uid, body: options.body ?? "Which command runs the CLI memory tests?" }),
       assistant({
         sessionID,
         id: final,
@@ -586,11 +709,12 @@ describe("memory turn", () => {
               provider: provider({
                 seen,
                 broken,
+                calls: options.calls,
                 outputs: [
                   '{"topic":"memory","summary":"Found the CLI memory test command.","operations":[],"skipped":[]}',
                 ],
               }),
-              config: config(model),
+              config: config(model, options.redact),
             }).pipe(
               Effect.provideService(InstanceRef, ctx),
               Effect.provideService(MemoryService.Service, MemoryService.make()),

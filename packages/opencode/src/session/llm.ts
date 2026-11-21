@@ -35,7 +35,6 @@ import { SessionExport } from "@/kilocode/session-export"
 import { getActiveOrg } from "@/kilocode/session-export/eligibility"
 import { normalizeUsageForExport, observeFullStreamForExport } from "@/kilocode/session-export/llm"
 import { KiloCustomRouter } from "@/kilocode/auto-routing/router"
-import { openaiMessages, openaiTools } from "@/kilocode/auto-routing/messages"
 import { organization, token } from "@/kilocode/provider/catalog"
 import { KiloRoutedModel } from "@/kilocode/session/routed-model"
 import { Identity } from "@kilocode/kilo-telemetry"
@@ -112,11 +111,13 @@ const live: Layer.Layer<
       const info = yield* auth.get(input.model.providerID)
       const providers = yield* provider.list()
       const machineId = yield* Effect.promise(() => Identity.getMachineId().catch(() => undefined))
+      const redact = KiloLLM.enabled(yield* config.getGlobal()) // [fork] read the global policy before building copies sent to /v1/decide
       const pick = yield* Effect.promise(async () =>
         KiloCustomRouter.resolve({
           modelID: input.model.id,
-          messages: openaiMessages(input.messages),
-          tools: await openaiTools(input.tools),
+          messages: input.messages, // [fork]
+          tools: input.tools, // [fork]
+          redact, // [fork]
           sessionID: input.sessionID,
           requestID: input.user.id,
           mode: input.agent.name,
@@ -164,18 +165,26 @@ const live: Layer.Layer<
       })
 
       // kilocode_change start - compact at the configured threshold before contacting the provider
-      const tools = yield* Effect.promise(() => KiloToolSchema.sanitize(base.tools))
+      // [fork] the personal policy is read once and every later dispatch uses the cleaned copy
+      const redact = KiloLLM.enabled(yield* config.getGlobal())
+      const tools = yield* Effect.promise(() => KiloToolSchema.sanitize(base.tools, redact)) // [fork]
+      const cleaned = KiloLLM.final({ messages: base.messages, providerOptions: base.params.options, redact }) // [fork]
+      const messages = cleaned.messages // [fork]
+      const options = cleaned.providerOptions ?? base.params.options // [fork]
+      const system = KiloLLM.system(base.system, redact) // [fork]
+      const transformed = KiloLLM.final({ messages: [], providerOptions: base.messageTransformOptions, redact }) // [fork]
+      const messageTransformOptions = transformed.providerOptions ?? base.messageTransformOptions // [fork]
       const isOpenaiOauth = item.id === "openai" && info?.type === "oauth"
       const estimated: ModelMessage[] =
         isOpenaiOauth || isWorkflow
           ? [
               {
                 role: "system",
-                content: isOpenaiOauth ? String(base.params.options.instructions ?? "") : base.system.join("\n"),
+                content: isOpenaiOauth ? String(options.instructions ?? "") : system.join("\n"), // [fork]
               },
-              ...base.messages,
+              ...messages, // [fork]
             ]
-          : base.messages
+          : messages // [fork]
       const preflight = input.preflight === true && KiloSessionOverflow.enabled({ cfg, model: input.model })
       const cap = KiloLLM.needsEstimate({ model: input.model, configured: base.params.maxOutputTokens })
       const usage =
@@ -206,7 +215,15 @@ const live: Layer.Layer<
       ) {
         return yield* Effect.fail(new KiloSessionOverflow.PreflightError())
       }
-      const prepared = { ...base, tools, params: { ...base.params, maxOutputTokens } }
+      // [fork] assemble the redaction-aware dispatch input
+      const prepared = {
+        ...base, // [fork]
+        messages, // [fork]
+        system, // [fork]
+        tools, // [fork]
+        messageTransformOptions, // [fork]
+        params: { ...base.params, options, maxOutputTokens }, // [fork]
+      } // [fork]
       // kilocode_change end
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
@@ -366,6 +383,7 @@ const live: Layer.Layer<
           // kilocode_change end
           providerOptions: prepared.params.options,
           messageTransformOptions: prepared.messageTransformOptions, // kilocode_change
+          redact, // kilocode_change - [fork] final outbound check in the native adapter
           headers: prepared.headers,
           abort: input.abort,
         })
@@ -467,6 +485,17 @@ const live: Layer.Layer<
                     input.model,
                     prepared.messageTransformOptions,
                   )
+                  // kilocode_change start - [fork] final check after the transform; a failure
+                  // throws here so the SDK never issues the request
+                  const cleaned = KiloLLM.final({
+                    messages: args.params.prompt as ModelMessage[],
+                    providerOptions: args.params.providerOptions as Record<string, unknown> | undefined,
+                    redact,
+                  })
+                  args.params.prompt = cleaned.messages as unknown as typeof args.params.prompt
+                  if (cleaned.providerOptions)
+                    args.params.providerOptions = cleaned.providerOptions as unknown as typeof args.params.providerOptions
+                  // kilocode_change end
                 }
                 return args.params
               },

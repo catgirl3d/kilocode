@@ -348,6 +348,7 @@
         "@aws-sdk/client-bedrock-runtime": "3.1005.0",
         "@aws-sdk/credential-provider-ini": "3.972.31",
         "@kilocode/kilo-gateway": "workspace:*",
+        "@kilocode/kilo-memory": "workspace:*",
         "@kilocode/plugin": "workspace:*",
         "@lancedb/lancedb": "0.26.2",
         "@parcel/watcher": "2.5.1",

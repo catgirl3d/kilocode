@@ -13,7 +13,9 @@ import {
 import { Log } from "@opencode-ai/core/util/log"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
+import type { ModelMessage, Tool } from "ai" // fork_change
 import type { Provider } from "@/provider/provider"
+import { openaiMessages, openaiTools } from "./messages" // fork_change
 
 const log = Log.create({ service: "kilo.auto-router" })
 const LIST_TTL_MS = 30_000
@@ -26,8 +28,11 @@ export type Resolution =
 
 type ResolveInput = {
   modelID: string
-  messages: unknown[]
-  tools?: unknown[]
+  // fork_change start - scrub the copies sent to /v1/decide; absent keeps the previous behavior
+  messages: ReadonlyArray<ModelMessage>
+  tools?: Record<string, Tool>
+  redact?: boolean
+  // fork_change end
   sessionID: string
   requestID?: string
   mode?: string
@@ -119,6 +124,10 @@ export namespace KiloCustomRouter {
     const reference = parseCustomRouterModelId(input.modelID)
     if (!reference) return undefined
     if (!input.token) throw new Error(errorMessage("unauthorized"))
+    // fork_change start - clean the copies before any decide POST; a contract key throws
+    const messages = openaiMessages(input.messages, { redact: input.redact })
+    const tools = input.tools ? await openaiTools(input.tools, { redact: input.redact }) : undefined
+    // fork_change end
 
     const list = await routers(input).catch((error) => {
       throw failure(error, input.modelID)
@@ -135,8 +144,10 @@ export namespace KiloCustomRouter {
       fetch: input.fetch,
       body: {
         model: input.modelID,
-        messages: input.messages,
-        ...(input.tools && input.tools.length > 0 ? { tools: input.tools } : {}),
+        // fork_change start - Send the scrubbed copies built above.
+        messages,
+        ...(tools && tools.length > 0 ? { tools } : {}),
+        // fork_change end
         sessionId: input.sessionID,
         machineId: input.machineId ?? null,
         clientRequestId: input.requestID ?? null,

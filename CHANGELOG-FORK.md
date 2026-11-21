@@ -4,6 +4,7 @@
 
 ### Features & Improvements
 
+- Replace recognizable secrets, including access keys, tokens, passwords, and URL or Cookie credentials, in text sent to models. It is not a guarantee that no secret is sent: unlabelled, encoded, and unusual formats can still pass. It is on by default for chat, subagents, prompt enhancement, memory, autocomplete, model checks, and new code copies sent for indexing, while your files and saved chat history stay unchanged. File tools will not replace a key with a `[redacted]` marker, existing Qdrant records are not cleaned, and Settings → Experimental or the CLI can turn the protection off globally. The chat marks messages and tool results with hidden secrets, and the prompt box warns before you send a secret.
 - Show the short hash of the commit the extension was built from in the Kilo Code sidebar title (`Kilo Code: #abc1234`), so an installed build can be matched to its source.
 - Keep model choices per workspace with a new Workspace models switch in Settings → Models: it copies the current default, small, subagent, advisor, compaction and mode models into the workspace's `.kilo/kilo.jsonc` and saves later edits there; turning it off returns the workspace to the global models.
 - Hold the Send button in chat until its ring completes to defer a prompt until the current turn finishes instead of interrupting the agent; the prompt is queued as soon as the ring closes, appears above the input, can be cancelled, and returns to the composer when you press Stop.

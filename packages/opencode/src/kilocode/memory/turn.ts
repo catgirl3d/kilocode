@@ -14,6 +14,7 @@ import type { SessionID } from "@/session/schema"
 import type { SessionSummary } from "@/session/summary"
 import { KiloSession } from "@/kilocode/session"
 import { KiloSessionPrompt } from "@/kilocode/session/prompt"
+import { KiloLLM } from "@/kilocode/session/llm" // fork_change
 import { MemoryModel, MemorySession } from "./ports"
 
 const log = Log.create({ service: "memory.lifecycle" })
@@ -38,17 +39,18 @@ export namespace MemoryTurn {
     sessions: Session.Interface
     summary: SessionSummary.Interface
     provider: Provider.Interface
-    config: Pick<Config.Interface, "get">
+    config: Pick<Config.Interface, "get" | "getGlobal"> // fork_change - personal global policy for outbound redaction
   }) {
     const ctx = yield* InstanceState.context
     const root = MemoryPaths.root({ ctx })
     const cfg = yield* input.config.get()
+    const global = yield* input.config.getGlobal() // fork_change
     return yield* TurnCore.close({
       root,
       sessionID: input.sessionID,
       reason: input.reason,
       session: MemorySession.port({ sessions: input.sessions, summary: input.summary }),
-      model: MemoryModel.port({ provider: input.provider }),
+      model: MemoryModel.port({ provider: input.provider, redact: KiloLLM.enabled(global) }), // fork_change
       memoryModel: cfg.memory_model ?? undefined,
     })
   })
@@ -62,7 +64,7 @@ export namespace MemoryLifecycle {
     sessions: Session.Interface
     summary: SessionSummary.Interface
     provider: Provider.Interface
-    config: Pick<Config.Interface, "get">
+    config: Pick<Config.Interface, "get" | "getGlobal"> // fork_change - personal global policy for outbound redaction
     memory: MemoryService.Interface
   }) {
     const bridge = yield* EffectBridge.make()

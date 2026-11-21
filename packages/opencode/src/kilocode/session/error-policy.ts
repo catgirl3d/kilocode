@@ -1,4 +1,5 @@
 // fork_change - new file
+import { MemoryRedact } from "@kilocode/kilo-memory/redact"
 import { isKiloError } from "@/kilocode/kilo-errors"
 import { KiloSessionOverflow } from "@/kilocode/session/overflow"
 import { MessageV2 } from "@/session/message-v2"
@@ -207,6 +208,16 @@ export namespace KiloErrorPolicy {
   const PROGRAMMER = [TypeError, ReferenceError, RangeError, SyntaxError]
 
   /**
+   * A recognized access key that could not be hidden in the outgoing copy. The saved history still
+   * holds it, so resending — retry, resume or compaction — would send it again. `parseError`
+   * serializes it as an unknown error with `ref: "privacy"`, so both forms are recognized here.
+   */
+  export function privacy(error: Err, raw?: unknown) {
+    if (raw instanceof MemoryRedact.Failure) return true
+    return isRecord(error.data) && error.data.ref === "privacy"
+  }
+
+  /**
    * Errors that waiting cannot fix: they need the operator (sign in, key, model, request) or a
    * code change. They skip the wait and end the run as a red error. Only errors `retryable`
    * already rejected get here, so recognised network and rate-limit errors are never matched.
@@ -250,6 +261,11 @@ export namespace KiloErrorPolicy {
       id: "programmer-error",
       why: "A TypeError, ReferenceError, RangeError or SyntaxError that is not a network failure is a bug; retrying only loops it.",
       match: (_, raw) => PROGRAMMER.some((kind) => raw instanceof kind) && !SessionNetwork.disconnected(raw),
+    },
+    {
+      id: "privacy-secret",
+      why: "An access key cannot be hidden in the outgoing copy and the saved history still holds it; every retry would resend it.",
+      match: (error, raw) => privacy(error, raw),
     },
   ]
 
