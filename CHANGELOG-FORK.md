@@ -69,6 +69,7 @@
 ### Fixes & Enhancements
 
 - Show the full context window reported by OpenDesign for each model instead of the gateway's smaller working budget, so models such as DeepSeek V4.1 Flash use their 1M-token window rather than 328K.
+- Estimate OpenDesign session cost from the public list prices of the underlying models instead of always showing zero, since the gateway reports only a low/medium/high cost category.
 - Keep `kilo.jsonc` valid when removing the last remaining key of an object that ends with a trailing comma: deleting a provider, agent, or setting no longer fails with `ValueExpected`, agent removal and unset propagation can no longer write a broken config file, and config parse errors show only the failing line instead of the whole file.
 - Give every fork VSIX build its own version (`<upstream version>-fork.<run number>`) and its own GitHub Release instead of replacing the previous release and tag, and list only the changes since the previous release in the release notes.
 - Keep internal compaction reasoning out of chats and session history: the summarizer's thinking no longer appears as a Reasoning block.

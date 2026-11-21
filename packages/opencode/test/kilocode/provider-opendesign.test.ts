@@ -172,6 +172,92 @@ describe("OpenDesign model list", () => {
     expect(models["bare"]?.attachment).toBe(false)
   })
 
+  test("prices models from the public catalog in dollars per million tokens", () => {
+    expect(models["deepseek-v4-flash"]?.cost).toEqual({ input: 0.44, output: 1.32, cache_read: 0.028 })
+    expect(models["minimax-m3.1-flash"]?.cost).toEqual({ input: 0.15, output: 0.6, cache_read: 0.015 })
+  })
+
+  test("applies context tiers for models priced by input size", () => {
+    expect(models["claude-haiku-5.5"]?.cost).toEqual({
+      input: 0.1,
+      output: 0.5,
+      cache_read: 0.01,
+      cache_write: 0.125,
+      tiers: [
+        {
+          input: 0.5,
+          output: 2.5,
+          cache_read: 0.05,
+          cache_write: 0.625,
+          tier: { type: "context", size: 100000 },
+        },
+      ],
+    })
+    expect(openDesignModel({ id: "gpt-6-luna" }).cost).toEqual({
+      input: 0.1,
+      output: 0.5,
+      cache_read: 0.01,
+      cache_write: 0.125,
+      tiers: [
+        {
+          input: 0.2,
+          output: 0.75,
+          cache_read: 0.02,
+          cache_write: 0.25,
+          tier: { type: "context", size: 272000 },
+        },
+      ],
+    })
+  })
+
+  test("keeps unknown models free instead of guessing a price", () => {
+    expect(models["bare"]?.cost).toEqual({ input: 0, output: 0 })
+  })
+
+  test("uses a numeric cost reported by the gateway", () => {
+    const model = openDesignModel({
+      id: "deepseek-v4.1-flash",
+      cost: {
+        input: 9,
+        output: 10,
+        cache_read: 1,
+        cache_write: 2,
+        tiers: [
+          {
+            input: 20,
+            output: 30,
+            cache_read: 3,
+            cache_write: 4,
+            tier: { type: "context", size: 100000 },
+          },
+        ],
+      },
+    })
+    expect(model.cost).toEqual({
+      input: 9,
+      output: 10,
+      cache_read: 1,
+      cache_write: 2,
+      tiers: [
+        {
+          input: 20,
+          output: 30,
+          cache_read: 3,
+          cache_write: 4,
+          tier: { type: "context", size: 100000 },
+        },
+      ],
+    })
+  })
+
+  test("falls back to the table when the gateway cost is partial", () => {
+    expect(openDesignModel({ id: "deepseek-v4.1-flash", cost: { input: 9 } }).cost).toEqual({
+      input: 0.3,
+      output: 1.2,
+      cache_read: 0.006,
+    })
+  })
+
   test("maps gateway modalities and enables attachments for non-text input", () => {
     expect(models["deepseek-v4-flash"]?.modalities?.input).toEqual(["text"])
     expect(models["deepseek-v4-flash"]?.attachment).toBe(false)

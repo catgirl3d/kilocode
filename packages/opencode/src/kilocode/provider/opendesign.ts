@@ -35,6 +35,72 @@ function efforts(id: string) {
   return skip === undefined ? EFFORTS : EFFORTS.filter((effort) => effort !== skip)
 }
 
+// The gateway reports only a low/medium/high cost category, so price the models from the public catalog entries
+// they map to. Values are USD per million tokens: input, output, cache read, cache write. Context tiers cover
+// the models priced by input size: Claude Haiku 5.5 above 100K and GPT-6 Luna above 272K. DeepSeek V4 Flash
+// uses the 0731 build price, matching the gateway's medium category, and Eco reuses the V4.1 Flash price
+// because it has no separate entry.
+const COSTS: Record<string, Model["cost"]> = {
+  "claude-haiku-5.5": {
+    input: 0.1,
+    output: 0.5,
+    cache_read: 0.01,
+    cache_write: 0.125,
+    tiers: [
+      {
+        input: 0.5,
+        output: 2.5,
+        cache_read: 0.05,
+        cache_write: 0.625,
+        tier: { type: "context", size: 100000 },
+      },
+    ],
+  },
+  "deepseek-v4-flash": { input: 0.44, output: 1.32, cache_read: 0.028 },
+  "deepseek-v4-flash-vision-exp": { input: 0.44, output: 1.32, cache_read: 0.014 },
+  "deepseek-v4-pro": { input: 1.6, output: 3.2, cache_read: 0.135 },
+  "deepseek-v4.1-flash": { input: 0.3, output: 1.2, cache_read: 0.006 },
+  "deepseek-v4.1-flash-eco": { input: 0.3, output: 1.2, cache_read: 0.006 },
+  "glm-5.3-flash": { input: 0.15, output: 0.5, cache_read: 0.03 },
+  "glm-5.3-flashx": { input: 0.37, output: 1.25, cache_read: 0.075 },
+  "gpt-6-luna": {
+    input: 0.1,
+    output: 0.5,
+    cache_read: 0.01,
+    cache_write: 0.125,
+    tiers: [
+      {
+        input: 0.2,
+        output: 0.75,
+        cache_read: 0.02,
+        cache_write: 0.25,
+        tier: { type: "context", size: 272000 },
+      },
+    ],
+  },
+  "hy4-preview": { input: 0.834, output: 2.501, cache_read: 0.042 },
+  "kimi-k2.7-code": { input: 0.6, output: 3, cache_read: 0.12 },
+  "mimo-v2.6-flash": { input: 0.1, output: 0.28, cache_read: 0.0028 },
+  "mimo-v2.6-pro": { input: 0.435, output: 0.87, cache_read: 0.004 },
+  "minimax-m3.1-flash": { input: 0.15, output: 0.6, cache_read: 0.015 },
+}
+
+const OpenDesignCostTier = Schema.Struct({
+  input: Schema.optional(Schema.NullOr(Schema.Finite)),
+  output: Schema.optional(Schema.NullOr(Schema.Finite)),
+  cache_read: Schema.optional(Schema.NullOr(Schema.Finite)),
+  cache_write: Schema.optional(Schema.NullOr(Schema.Finite)),
+  tier: Schema.Struct({ type: Schema.String, size: Schema.Finite }),
+})
+
+const OpenDesignCost = Schema.Struct({
+  input: Schema.optional(Schema.NullOr(Schema.Finite)),
+  output: Schema.optional(Schema.NullOr(Schema.Finite)),
+  cache_read: Schema.optional(Schema.NullOr(Schema.Finite)),
+  cache_write: Schema.optional(Schema.NullOr(Schema.Finite)),
+  tiers: Schema.optional(Schema.NullOr(Schema.Array(OpenDesignCostTier))),
+})
+
 // Optional fields also accept null, so one sparse entry cannot fail the whole model list.
 export const OpenDesignItem = Schema.Struct({
   id: Schema.String,
@@ -56,6 +122,7 @@ export const OpenDesignItem = Schema.Struct({
       }),
     ),
   ),
+  cost: Schema.optional(Schema.NullOr(OpenDesignCost)),
 })
 export type OpenDesignItem = Schema.Schema.Type<typeof OpenDesignItem>
 
@@ -66,6 +133,36 @@ function modalities(list: readonly string[] | null | undefined): Modality[] {
   const mapped = (list ?? []).map((item) => (item === "file" ? "pdf" : item))
   const found = known.filter((item) => mapped.includes(item))
   return found.length > 0 ? found : ["text"]
+}
+
+// A numeric cost from the gateway wins over the published catalog table. When it reports both input and output,
+// its rates are used and missing cache rates are filled from the table; otherwise the whole table entry is used.
+// Tiers come only from the gateway when it reports a cost, so a flat gateway price stays flat.
+function priced(item: OpenDesignItem): Model["cost"] {
+  const fallback = COSTS[item.id] ?? { input: 0, output: 0 }
+  const cost = item.cost
+  if (cost?.input == null || cost.output == null) return fallback
+  const cacheRead = cost.cache_read ?? fallback.cache_read
+  const cacheWrite = cost.cache_write ?? fallback.cache_write
+  const tiers = cost.tiers?.flatMap((tier) => {
+    if (tier.tier.type !== "context" || tier.input == null || tier.output == null) return []
+    return [
+      {
+        input: tier.input,
+        output: tier.output,
+        ...(tier.cache_read == null ? {} : { cache_read: tier.cache_read }),
+        ...(tier.cache_write == null ? {} : { cache_write: tier.cache_write }),
+        tier: { type: "context" as const, size: tier.tier.size },
+      },
+    ]
+  })
+  return {
+    input: cost.input,
+    output: cost.output,
+    ...(cacheRead == null ? {} : { cache_read: cacheRead }),
+    ...(cacheWrite == null ? {} : { cache_write: cacheWrite }),
+    ...(tiers && tiers.length > 0 ? { tiers } : {}),
+  }
 }
 
 // Limits come from the gateway's model metadata. context_limit is the model's full context window, while the
@@ -85,7 +182,7 @@ export function openDesignModel(item: OpenDesignItem): Model {
     reasoning_options: [{ type: "effort", values: efforts(item.id) }],
     temperature: true,
     tool_call: true,
-    cost: { input: 0, output: 0 },
+    cost: priced(item),
     limit: { context: meta?.context_limit ?? meta?.context_budget ?? 128000, output: meta?.output_budget ?? 0 },
     modalities: { input, output: modalities(item.architecture?.output_modalities) },
   }
