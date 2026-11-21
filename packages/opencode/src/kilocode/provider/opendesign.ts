@@ -85,6 +85,22 @@ const COSTS: Record<string, Model["cost"]> = {
   "minimax-m3.1-flash": { input: 0.15, output: 0.6, cache_read: 0.015 },
 }
 
+const OpenDesignCostTier = Schema.Struct({
+  input: Schema.optional(Schema.NullOr(Schema.Finite)),
+  output: Schema.optional(Schema.NullOr(Schema.Finite)),
+  cache_read: Schema.optional(Schema.NullOr(Schema.Finite)),
+  cache_write: Schema.optional(Schema.NullOr(Schema.Finite)),
+  tier: Schema.Struct({ type: Schema.String, size: Schema.Finite }),
+})
+
+const OpenDesignCost = Schema.Struct({
+  input: Schema.optional(Schema.NullOr(Schema.Finite)),
+  output: Schema.optional(Schema.NullOr(Schema.Finite)),
+  cache_read: Schema.optional(Schema.NullOr(Schema.Finite)),
+  cache_write: Schema.optional(Schema.NullOr(Schema.Finite)),
+  tiers: Schema.optional(Schema.NullOr(Schema.Array(OpenDesignCostTier))),
+})
+
 // Optional fields also accept null, so one sparse entry cannot fail the whole model list.
 export const OpenDesignItem = Schema.Struct({
   id: Schema.String,
@@ -106,6 +122,7 @@ export const OpenDesignItem = Schema.Struct({
       }),
     ),
   ),
+  cost: Schema.optional(Schema.NullOr(OpenDesignCost)),
 })
 export type OpenDesignItem = Schema.Schema.Type<typeof OpenDesignItem>
 
@@ -116,6 +133,36 @@ function modalities(list: readonly string[] | null | undefined): Modality[] {
   const mapped = (list ?? []).map((item) => (item === "file" ? "pdf" : item))
   const found = known.filter((item) => mapped.includes(item))
   return found.length > 0 ? found : ["text"]
+}
+
+// A numeric cost from the gateway wins over the published catalog table. When it reports both input and output,
+// its rates are used and missing cache rates are filled from the table; otherwise the whole table entry is used.
+// Tiers come only from the gateway when it reports a cost, so a flat gateway price stays flat.
+function priced(item: OpenDesignItem): Model["cost"] {
+  const fallback = COSTS[item.id] ?? { input: 0, output: 0 }
+  const cost = item.cost
+  if (cost?.input == null || cost.output == null) return fallback
+  const cacheRead = cost.cache_read ?? fallback.cache_read
+  const cacheWrite = cost.cache_write ?? fallback.cache_write
+  const tiers = cost.tiers?.flatMap((tier) => {
+    if (tier.tier.type !== "context" || tier.input == null || tier.output == null) return []
+    return [
+      {
+        input: tier.input,
+        output: tier.output,
+        ...(tier.cache_read == null ? {} : { cache_read: tier.cache_read }),
+        ...(tier.cache_write == null ? {} : { cache_write: tier.cache_write }),
+        tier: { type: "context" as const, size: tier.tier.size },
+      },
+    ]
+  })
+  return {
+    input: cost.input,
+    output: cost.output,
+    ...(cacheRead == null ? {} : { cache_read: cacheRead }),
+    ...(cacheWrite == null ? {} : { cache_write: cacheWrite }),
+    ...(tiers && tiers.length > 0 ? { tiers } : {}),
+  }
 }
 
 // Limits come from the gateway's model metadata. context_limit is the model's full context window, while the
@@ -135,7 +182,7 @@ export function openDesignModel(item: OpenDesignItem): Model {
     reasoning_options: [{ type: "effort", values: efforts(item.id) }],
     temperature: true,
     tool_call: true,
-    cost: COSTS[item.id] ?? { input: 0, output: 0 },
+    cost: priced(item),
     limit: { context: meta?.context_limit ?? meta?.context_budget ?? 128000, output: meta?.output_budget ?? 0 },
     modalities: { input, output: modalities(item.architecture?.output_modalities) },
   }
