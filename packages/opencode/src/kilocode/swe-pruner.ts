@@ -6,9 +6,11 @@ import { Cause, Effect } from "effect"
 import { mergeDeep } from "remeda"
 import { Config } from "@/config/config"
 import { opencodeSessionHeaders } from "@/kilocode/provider/opencode-session-headers"
+import { KiloLLM } from "@/kilocode/session/llm" // fork_change
 import { Provider } from "@/provider/provider"
 import { ProviderTransform } from "@/provider/transform"
 import type { Tool } from "@/tool/tool"
+import { MemoryRedact } from "@kilocode/kilo-memory/redact" // fork_change
 
 const log = Log.create({ service: "swe-pruner" })
 
@@ -296,6 +298,17 @@ export const sweep = Effect.fn("SwePruner.sweep")(function* (input: {
   const lines = part.body.split("\n")
   if (lines.length < MIN_LINES || part.body.length < MIN_CHARS || input.result.output.length > MAX_CHARS)
     return input.result
+  // fork_change start - skip pruning when the payload holds a key; the main chat filter scrubs it.
+  // A recognized key skips the separate pruning call: the main chat filter scrubs the result later.
+  const config = yield* Config.Service
+  const policy = yield* config.getGlobal()
+  if (
+    KiloLLM.enabled(policy) &&
+    (MemoryRedact.has(part.body, { values: true }) || MemoryRedact.has(focus, { values: true }))
+  ) {
+    return input.result
+  }
+  // fork_change end
   const pruned = yield* skim({
     question: focus,
     output: part.body,

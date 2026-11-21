@@ -17,6 +17,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionID } from "@/session/schema"
 import { opencodeSessionHeaders } from "@/kilocode/provider/opencode-session-headers"
+import { KiloLLM } from "@/kilocode/session/llm" // fork_change
 
 const log = Log.create({ service: "memory.ports" })
 
@@ -176,18 +177,23 @@ async function memoryText(input: {
   prompt: string
   timeoutMs: number
   sessionID: string
+  redact: boolean // fork_change
   topP?: number
   topK?: number
   signal?: AbortSignal
 }) {
   const ctl = new AbortController()
   const ms = Math.max(1, input.timeoutMs)
-  const params = consolidationPrompt({ model: input.source, options: input.options, system: input.system })
+  // fork_change start - scrub the system and user prompt copies before the consolidation call.
+  const system = KiloLLM.system([input.system], input.redact)[0]
+  const scrubbed = KiloLLM.messages([{ role: "user" as const, content: input.prompt }], input.redact)[0]
+  // fork_change end
+  const params = consolidationPrompt({ model: input.source, options: input.options, system }) // fork_change
   const openai = input.source.providerID === "openai" && input.source.api.npm === "@ai-sdk/openai"
   const common = {
     model: input.language,
     ...(params.system ? { system: params.system } : {}),
-    prompt: input.prompt,
+    prompt: typeof scrubbed.content === "string" ? scrubbed.content : input.prompt, // fork_change
     providerOptions: params.providerOptions,
     abortSignal: input.signal ? AbortSignal.any([ctl.signal, input.signal]) : ctl.signal,
     topP: input.topP,
@@ -285,7 +291,9 @@ export namespace MemorySession {
 /** Host ModelPort: resolves the consolidation model through opencode's provider and runs it via the
  * `ai` SDK, exposing the resolved model to the package as an opaque handle. */
 export namespace MemoryModel {
-  export function port(input: { provider: Provider.Interface }): MemoryPorts.ModelPort {
+  // fork_change start - Pass the outbound redaction policy to memory model calls.
+  export function port(input: { provider: Provider.Interface; redact?: boolean }): MemoryPorts.ModelPort {
+    // fork_change end
     return {
       resolve: ({ configured, session }) =>
         Effect.gen(function* () {
@@ -325,6 +333,7 @@ export namespace MemoryModel {
           prompt,
           timeoutMs,
           sessionID,
+          redact: input.redact !== false, // fork_change - Absent means enabled: only an explicit false disables protection.
           topP: resolved.topP,
           topK: resolved.topK,
           signal,

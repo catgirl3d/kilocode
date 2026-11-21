@@ -94,6 +94,7 @@ const [settings, setSettings] = createSignal<{
 const config = {
   config: settings,
   globalConfig: () => ({}),
+  globalEffectiveConfig: () => ({}),
   globalDraft: () => ({}),
   projectConfig: () => ({}),
   collections: () => ({}),

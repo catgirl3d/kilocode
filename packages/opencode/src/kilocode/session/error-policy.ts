@@ -1,6 +1,8 @@
 // fork_change - new file
+import { MemoryRedact } from "@kilocode/kilo-memory/redact"
 import { isKiloError } from "@/kilocode/kilo-errors"
 import { KiloSessionOverflow } from "@/kilocode/session/overflow"
+import { KiloErrorCore } from "@/kilocode/session/error-core"
 import { MessageV2 } from "@/session/message-v2"
 import { AuthError } from "@/session/message-error"
 import { SessionNetwork } from "@/session/network"
@@ -44,44 +46,13 @@ import { isRecord } from "@/util/record"
  *   a TERMINAL symbol was renamed or moved TERMINAL registry            error-policy.test.ts
  */
 export namespace KiloErrorPolicy {
-  export const INCOMPLETE_RESPONSE_RETRIES = 2
-  export const INCOMPLETE_RESPONSE_MESSAGE =
-    "The provider repeatedly ended the response before returning usable output."
-
-  /** A stream that ended without usable output; KiloSessionProcessor.recover owns its bounded retries. */
-  export class IncompleteResponseError extends Error {
-    constructor(readonly vercelID?: string) {
-      super(INCOMPLETE_RESPONSE_MESSAGE)
-      this.name = "IncompleteResponseError"
-    }
-  }
-
-  /** True when an unknown finish carries nothing worth keeping, so the attempt is replayed. */
-  export function replayable(input: {
-    finish?: string
-    text: boolean
-    reasoning: boolean
-    tool: boolean
-    usage: boolean
-  }) {
-    if (input.finish !== undefined && input.finish !== "unknown") return false
-    if (input.text || input.tool) return false
-    // Reasoning without text or tools has no actionable output. Retry it through
-    // the existing bounded recovery budget instead of silently settling unknown.
-    // Keeping this decision here avoids the unbounded loop caused by continuing
-    // every unknown finish at the prompt-loop boundary.
-    if (input.reasoning) return true
-    return !input.usage
-  }
-
-  /**
-   * - `retry`: wait and request again; text and reasoning of the failed attempt are rewound first.
-   * - `resume`: a tool already ran, so close the step as a tool turn and let the loop continue.
-   * - `compact`: the conversation is too large; compaction handles it.
-   * - `incomplete`: an empty response; the bounded recovery loop handles it.
-   * - `stop`: nothing waits for it: the operator interrupted, or fallback() declines it.
-   */
-  export type Action = "retry" | "resume" | "compact" | "incomplete" | "stop"
+  // The runtime-free parts live in error-core.ts; these keep the KiloErrorPolicy API.
+  export const INCOMPLETE_RESPONSE_RETRIES = KiloErrorCore.INCOMPLETE_RESPONSE_RETRIES
+  export const INCOMPLETE_RESPONSE_MESSAGE = KiloErrorCore.INCOMPLETE_RESPONSE_MESSAGE
+  export const IncompleteResponseError = KiloErrorCore.IncompleteResponseError
+  export type IncompleteResponseError = KiloErrorCore.IncompleteResponseError
+  export const replayable = KiloErrorCore.replayable
+  export type Action = KiloErrorCore.Action
 
   export type Facts = {
     raw: unknown
@@ -89,11 +60,7 @@ export namespace KiloErrorPolicy {
     attempt: { tool: boolean }
   }
 
-  export type Verdict = {
-    rule: string
-    action: Action
-    message?: string
-  }
+  export type Verdict = KiloErrorCore.Verdict
 
   type Rule = {
     id: string
@@ -207,6 +174,16 @@ export namespace KiloErrorPolicy {
   const PROGRAMMER = [TypeError, ReferenceError, RangeError, SyntaxError]
 
   /**
+   * A recognized access key that could not be hidden in the outgoing copy. The saved history still
+   * holds it, so resending — retry, resume or compaction — would send it again. `parseError`
+   * serializes it as an unknown error with `ref: "privacy"`, so both forms are recognized here.
+   */
+  export function privacy(error: Err, raw?: unknown) {
+    if (raw instanceof MemoryRedact.Failure) return true
+    return isRecord(error.data) && error.data.ref === "privacy"
+  }
+
+  /**
    * Errors that waiting cannot fix: they need the operator (sign in, key, model, request) or a
    * code change. They skip the wait and end the run as a red error. Only errors `retryable`
    * already rejected get here, so recognised network and rate-limit errors are never matched.
@@ -250,6 +227,11 @@ export namespace KiloErrorPolicy {
       id: "programmer-error",
       why: "A TypeError, ReferenceError, RangeError or SyntaxError that is not a network failure is a bug; retrying only loops it.",
       match: (_, raw) => PROGRAMMER.some((kind) => raw instanceof kind) && !SessionNetwork.disconnected(raw),
+    },
+    {
+      id: "privacy-secret",
+      why: "An access key cannot be hidden in the outgoing copy and the saved history still holds it; every retry would resend it.",
+      match: (error, raw) => privacy(error, raw),
     },
   ]
 

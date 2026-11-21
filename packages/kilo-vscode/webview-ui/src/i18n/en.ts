@@ -1069,6 +1069,9 @@ export const dict = {
   "settings.experimental.batch.title": "Batch Tool",
   "settings.experimental.batch.description": "Enable batching of multiple tool calls",
   // fork_change start
+  "settings.experimental.redactSecrets.title": "Redact recognizable secrets before sending",
+  "settings.experimental.redactSecrets.description":
+    "Replace recognizable secrets, including access keys, tokens, passwords, and URL or Cookie credentials, in text sent to models. It is not a guarantee that no secret is sent: unlabelled, encoded, and unusual formats can still pass. Existing index records are not cleaned. File tools will not write a marker over an existing key. Turning this off is risky.",
   "settings.experimental.swePruner.title": "SWE-Pruner",
   "settings.experimental.swePruner.description":
     "Prune large read, grep, and bash outputs to task-relevant lines using an explicitly configured model.",
@@ -1085,10 +1088,8 @@ export const dict = {
   "settings.experimental.imageGenerationModel.description": "Image Generation Model",
   "settings.experimental.imageGenerationModel.placeholder": "Default (Auto Router)",
 
-  // fork_change start
   "settings.models.speechToText.disabledDescription":
-    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.",
-  // fork_change end
+    "Enable the selected provider and configure its credentials to use Speech to Text. Groq requires an API key.", // fork_change
   "settings.models.speechToText.remoteDescription":
     "Voice input is unavailable in remote windows. Open Kilo in a local window to use the microphone.",
   "settings.models.speechToTextModel.title": "Speech to Text Model",
@@ -1456,6 +1457,10 @@ export const dict = {
   "chat.memory.activity.saved.item": "saved: {{item}}",
   "chat.memory.badge.recalled": "Memory recalled",
   "chat.memory.badge.items": "{{count}} items",
+  "chat.redact.hidden": "Secrets hidden from the model: {{count}}",
+  "chat.redact.sent": "Secrets sent to the model: {{count}}. Protection is off",
+  "prompt.redact.hidden": "This message contains a recognizable secret. The model will see [redacted] instead",
+  "prompt.redact.sent": "This message contains a recognizable secret. Protection is off, so the model will see it",
   "chat.memory.kind.fact": "Fact",
   "chat.memory.kind.decision": "Decision",
   "chat.memory.kind.constraint": "Constraint",
@@ -1736,9 +1741,7 @@ export const dict = {
   "plan.exit.ready": "Plan is ready:",
   "chat.search.placeholder": "Search chat…",
   "chat.search.toggle": "Search chat",
-  // fork_change start - [fork] manual CLI disconnect action
-  "chat.action.disconnectCli": "Disconnect from CLI",
-  // fork_change end
+  "chat.action.disconnectCli": "Disconnect from CLI", // fork_change - [fork] manual CLI disconnect action
   "chat.search.matchCase": "Match Case",
   "chat.search.matchWholeWord": "Match Whole Word",
   "chat.search.useRegex": "Use Regular Expression",

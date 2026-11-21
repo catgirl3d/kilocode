@@ -58,4 +58,11 @@ describe("splitConfigByScope", () => {
     expect(split.global).toEqual({ shell: "bash" })
     expect(split.project).toEqual({})
   })
+
+  it("writes the redaction setting to global config only", () => {
+    const split = splitConfigByScope({ experimental: { redact_secrets: false } })
+
+    expect(split.global).toEqual({ experimental: { redact_secrets: false } })
+    expect(split.project).toEqual({})
+  })
 })
