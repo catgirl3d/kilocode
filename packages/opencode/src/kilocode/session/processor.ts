@@ -15,6 +15,8 @@ import { SessionRetry } from "@/session/retry"
 import { KiloErrorPolicy } from "@/kilocode/session/error-policy"
 import { computeMetrics as computeMetricsHelper, type TokenRates } from "@/kilocode/session/metrics"
 import { InvalidArgumentsError } from "@/tool/tool"
+import { NamedError } from "@opencode-ai/core/util/error"
+import { MemoryRedact } from "@kilocode/kilo-memory/redact"
 
 export type ReviewTelemetry = {
   mode: "review"
@@ -462,6 +464,8 @@ export namespace KiloSessionProcessor {
 
   export function parseError(error: unknown, input: { providerID: ProviderV2.ID; aborted: boolean }) {
     if (MessageV2.APIError.isInstance(error)) return error
+    if (error instanceof MemoryRedact.Failure)
+      return new NamedError.Unknown({ message: error.message, ref: "privacy" }).toObject()
     if (!(error instanceof KiloErrorPolicy.IncompleteResponseError)) return MessageV2.fromError(error, input)
     return new MessageV2.APIError({
       message: error.message,

@@ -15,6 +15,8 @@ import { ErrorDisplay, type ErrorDisplayProps } from "./ErrorDisplay"
 import { VscodeUserMessage } from "./VscodeUserMessage"
 import { SnapshotBadge } from "./SnapshotBadge" // fork_change
 import { CompactionDivider } from "./CompactionDivider" // fork_change
+import { RedactBadge } from "./RedactBadge" // fork_change
+import * as RedactNotice from "../../utils/redact-notice" // fork_change
 
 interface TranscriptRowViewProps {
   row: TranscriptRow
@@ -98,6 +100,9 @@ export const TranscriptRowView: Component<TranscriptRowViewProps> = (props) => {
                   : undefined
               }
             />
+            {/* fork_change start */}
+            <RedactBadge texts={RedactNotice.user(row().parts)} variant="message" align="end" />
+            {/* fork_change end */}
           </div>
         )}
       </Show>

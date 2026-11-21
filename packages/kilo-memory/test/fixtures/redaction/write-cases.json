@@ -1,0 +1,148 @@
+{
+  "cases": [
+    {
+      "id": "write-named-key-to-marker",
+      "old": "API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "next": "API_KEY=\"[redacted]\"",
+      "expected": true
+    },
+    {
+      "id": "write-json-key-to-marker",
+      "old": "{\"api_key\":\"test0123456789abcdef0123456789abc\"}",
+      "next": "{\"api_key\":\"[redacted]\"}",
+      "expected": true
+    },
+    {
+      "id": "write-basic-to-marker",
+      "old": "Authorization: Basic dXNlcjpwYXNz",
+      "next": "Authorization: Basic [redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-one-of-two-keys-masked",
+      "old": "A_API_KEY=\"test0123456789abcdef0123456789abc\" B_API_KEY=\"test0123456789abcdef0123456789abd\"",
+      "next": "A_API_KEY=\"[redacted]\" B_API_KEY=\"test0123456789abcdef0123456789abd\"",
+      "expected": true
+    },
+    {
+      "id": "write-short-value-to-marker",
+      "old": "API_KEY=\"abc123\"",
+      "next": "API_KEY=\"[redacted]\"",
+      "expected": false
+    },
+    {
+      "id": "write-near-miss-to-marker",
+      "old": "token_type=\"test0123456789abcdef0123456789abc\"",
+      "next": "token_type=\"[redacted]\"",
+      "expected": false
+    },
+    {
+      "id": "write-key-kept",
+      "old": "API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "next": "API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "expected": false
+    },
+    {
+      "id": "write-key-deleted",
+      "old": "API_KEY=\"test0123456789abcdef0123456789abc\"",
+      "next": "OTHER=\"done\"",
+      "expected": false
+    },
+    {
+      "id": "write-url-mask",
+      "old": "DATABASE_URL=\"postgres://app:DbPass1234567890@db.example.test/app\"",
+      "next": "DATABASE_URL=\"postgres://[redacted]@db.example.test/app\"",
+      "expected": true
+    },
+    {
+      "id": "write-url-deleted",
+      "old": "DATABASE_URL=\"postgres://app:DbPass1234567890@db.example.test/app\"",
+      "next": "OTHER=\"done\"",
+      "expected": false
+    },
+    {
+      "id": "write-go-short-mask",
+      "old": "token := \"Lambda1234567890x\"",
+      "next": "token := \"[redacted]\"",
+      "expected": true
+    },
+    {
+      "id": "write-go-short-deleted",
+      "old": "token := \"Lambda1234567890x\"",
+      "next": "OTHER := \"done\"",
+      "expected": false
+    },
+    {
+      "id": "write-password-mask",
+      "old": "password=hunter2",
+      "next": "password=[redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-password-change",
+      "old": "password=hunter2",
+      "next": "password=changed",
+      "expected": false
+    },
+    {
+      "id": "write-password-default",
+      "old": "password=changeme",
+      "next": "password=[redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-email-pair-mask",
+      "old": "test@example.com:123456",
+      "next": "test@example.com:[redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-email-pair-change",
+      "old": "test@example.com:123456",
+      "next": "test@example.com:654321",
+      "expected": false
+    },
+    {
+      "id": "write-header-mask",
+      "old": "X-Api-Key: abcdefghijklmnop",
+      "next": "X-Api-Key: [redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-header-rotate",
+      "old": "X-Api-Key: abcdefghijklmnop",
+      "next": "X-Api-Key: rotated1234567890",
+      "expected": false
+    },
+    {
+      "id": "write-cli-mask",
+      "old": "tool --password Secret123",
+      "next": "tool --password [redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-prefix-mask",
+      "old": "GOCSPX-demoA1b2C3d4E5f6G7h8",
+      "next": "[redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-prefix-unrelated",
+      "old": "GOCSPX-demoA1b2C3d4E5f6G7h8",
+      "next": "OTHER: [redacted]",
+      "expected": false
+    },
+    {
+      "id": "write-sign-mask",
+      "old": "https://example.test/?sig=AzureSecret123456",
+      "next": "https://example.test/?sig=[redacted]",
+      "expected": true
+    },
+    {
+      "id": "write-sign-rotate",
+      "old": "https://example.test/?sig=AzureSecret123456",
+      "next": "https://example.test/?sig=Rotated123456789",
+      "expected": false
+    }
+  ]
+}

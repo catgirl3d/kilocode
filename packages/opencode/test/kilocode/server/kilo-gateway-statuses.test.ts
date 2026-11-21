@@ -26,14 +26,18 @@ import {
 import { testEffect } from "../../lib/effect"
 
 const TestHttpApi = HttpApi.make("opencode-instance").addHttpApi(KiloGatewayApi)
-const state: { info: Auth.Info | undefined; config: Config.Info } = {
+const state: { info: Auth.Info | undefined; config: Config.Info; global: Config.Info } = {
   info: new Auth.Api({ type: "api", key: "test-token" }),
   config: {},
+  global: {},
 }
 const auth = Layer.mock(Auth.Service)({
   get: () => Effect.sync(() => state.info),
 })
-const config = TestConfig.layer({ get: () => Effect.sync(() => state.config) })
+const config = TestConfig.layer({
+  get: () => Effect.sync(() => state.config),
+  getGlobal: () => Effect.sync(() => state.global),
+})
 const store = Layer.mock(InstanceStore.Service)({})
 const cache = Layer.mock(ModelCache.Service)({})
 const session = Layer.mock(Session.Service)({})
@@ -74,7 +78,7 @@ const layer = HttpRouter.serve(
 ).pipe(Layer.provideMerge(NodeHttpServer.layerTest))
 const it = testEffect(layer)
 
-function stub(run: (url: string) => Response | Promise<Response>) {
+function stub(run: (url: string, init?: RequestInit) => Response | Promise<Response>) {
   // These tests run sequentially; scope the process-global override and delegate in-process server traffic.
   const original = globalThis.fetch
   const fetch: typeof globalThis.fetch = Object.assign(
@@ -84,7 +88,7 @@ function stub(run: (url: string) => Response | Promise<Response>) {
       if (url.startsWith("http://127.0.0.1:") && headers.get("authorization") !== "Bearer test-token") {
         return original(input, init)
       }
-      return run(url)
+      return run(url, init)
     },
     { preconnect: original.preconnect },
   )
@@ -346,6 +350,108 @@ describe("Kilo gateway HttpApi statuses", () => {
 
       expect(response.status).toBe(500)
       expect(yield* response.json).toEqual({ error: "Internal error" })
+    }),
+  )
+
+  // fork tests - outbound access key redaction on FIM
+  const KEY = "gsk_test_abcdefghijklmnopqrstuvwxyz"
+  const stream = () =>
+    new Response('data: {"choices":[{"text":"ok"}]}\n\n', {
+      headers: { "content-type": "text/event-stream" },
+    })
+
+  function policy(value: boolean | undefined) {
+    return Effect.acquireRelease(
+      Effect.sync(() => {
+        const previous = state.global
+        state.global = value === undefined ? {} : { experimental: { redact_secrets: value } }
+        return previous
+      }),
+      (previous) =>
+        Effect.sync(() => {
+          state.global = previous
+        }),
+    )
+  }
+
+  function fetchSpy() {
+    const calls: { url: string; init?: RequestInit }[] = []
+    const effect = stub((url, init) => {
+      calls.push({ url, init })
+      return stream()
+    })
+    return { calls, effect }
+  }
+
+  for (const [name, body] of [
+    [
+      "prefix",
+      {
+        prefix: `const helper = "${KEY}"\nconst value = `,
+        suffix: "\n",
+      },
+    ],
+    [
+      "suffix",
+      {
+        prefix: "const value = ",
+        suffix: `\n// ${KEY}`,
+      },
+    ],
+    [
+      "mistral prefix without fallback",
+      {
+        prefix: `const helper = "${KEY}"\nconst value = `,
+        suffix: "\n",
+        provider: "mistral",
+        model: "codestral-2508",
+      },
+    ],
+  ] as const) {
+    it.live(`fim returns an empty stream and never fetches when redaction is on: ${name}`, () =>
+      Effect.gen(function* () {
+        yield* policy(true)
+        const spy = fetchSpy()
+        yield* spy.effect
+
+        const response = yield* post(KiloGatewayPaths.fim, body)
+
+        expect(response.status).toBe(200)
+        expect(response.headers["content-type"]).toContain("text/event-stream")
+        expect(yield* response.text).toBe("")
+        expect(spy.calls).toHaveLength(0)
+      }),
+    )
+  }
+
+  it.live("fim still requests the provider for a clean prefix", () =>
+    Effect.gen(function* () {
+      yield* policy(true)
+      const spy = fetchSpy()
+      yield* spy.effect
+
+      const response = yield* post(KiloGatewayPaths.fim, { prefix: "const value = ", suffix: "\n" })
+      expect(response.status).toBe(200)
+      expect(spy.calls).toHaveLength(1)
+    }),
+  )
+
+  it.live("fim sends the original text when redaction is disabled", () =>
+    Effect.gen(function* () {
+      yield* policy(false)
+      const spy = fetchSpy()
+      yield* spy.effect
+
+      const response = yield* post(KiloGatewayPaths.fim, {
+        prefix: `const helper = "${KEY}"\nconst value = `,
+        suffix: "\n",
+      })
+
+      expect(response.status).toBe(200)
+      expect(spy.calls).toHaveLength(1)
+      const sent = JSON.parse(String(spy.calls[0]?.init?.body)) as { prompt: string }
+      expect(sent.prompt).toContain(KEY)
+      expect(sent.prompt).not.toContain("[redacted]")
     }),
   )
 })

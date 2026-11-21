@@ -89,6 +89,7 @@ function exponential(attempt: number, random: number) {
 
 // kilocode_change - Kilo does not emit OpenCode Go actions
 export function retryable(error: Err, _provider?: string): Retryable | undefined {
+  if (KiloErrorPolicy.privacy(error)) return undefined // kilocode_change - [fork] a privacy failure is terminal even when its wording looks retryable
   // context overflow errors should not be retried
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {

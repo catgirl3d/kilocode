@@ -35,6 +35,8 @@ import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import * as Log from "@opencode-ai/core/util/log"
 import { Database } from "@opencode-ai/core/database/database"
 import { ClaudeMigration } from "@/kilocode/config/claude-migration"
+import { KiloLLM } from "@/kilocode/session/llm" // fork_change
+import { MemoryRedact } from "@kilocode/kilo-memory/redact" // fork_change
 import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import { organization as catalogOrganization } from "@/kilocode/provider/catalog"
@@ -118,6 +120,24 @@ export const kiloGatewayHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo",
     })
 
     const fim = Effect.fn("KiloGatewayHttpApi.fim")(function* (ctx: { payload: typeof FimBody.Type }) {
+      // fork_change start - reject the FIM request before auth or any provider fetch when the prefix or suffix holds a key.
+      // The check runs on the original prefix/suffix before auth or any provider fetch,
+      // so neither the gateway nor the Mistral fallback ever receives the key.
+      const global = yield* config.getGlobal()
+      if (
+        KiloLLM.enabled(global) &&
+        (MemoryRedact.has(ctx.payload.prefix, { values: true }) || MemoryRedact.has(ctx.payload.suffix, { values: true }))
+      ) {
+        return HttpServerResponse.raw(null, {
+          status: 200,
+          headers: {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache",
+            connection: "keep-alive",
+          },
+        })
+      }
+      // fork_change end
       const target = resolveFimTarget(ctx.payload.provider, ctx.payload.model)
       const info = target.provider === "kilo" ? yield* proxyAuth() : undefined
       const token = yield* Effect.gen(function* () {

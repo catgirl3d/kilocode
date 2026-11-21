@@ -1,6 +1,8 @@
 import type { Argv } from "yargs"
+import type { LanguageModelV3 } from "@ai-sdk/provider" // fork_change
 import type { Provider } from "../../../provider/provider"
 import type { generateText } from "ai"
+import type { Config } from "../../../config/config" // fork_change
 import { ProviderTransform } from "../../../provider/transform"
 import { cmd } from "../../../cli/cmd/cmd"
 import { UI } from "../../../cli/ui"
@@ -19,12 +21,18 @@ function loadDeps() {
     import("../../../effect/runtime-flags"),
     import("ai"),
     import("../../provider/opencode-session-headers"),
-  ]).then(([runtime, provider, flags, ai, headers]) => ({
+    import("../../../config/config"), // fork_change
+    import("../../session/llm"), // fork_change
+  ]).then(([runtime, provider, flags, ai, headers, config, llm]) => ({ // fork_change
     AppRuntime: runtime.AppRuntime,
     Provider: provider.Provider,
     RuntimeFlags: flags.RuntimeFlags,
     generateText: ai.generateText,
     opencodeSessionHeaders: headers.opencodeSessionHeaders,
+    // fork_change start - Expose the config service and redacting LLM helper to call().
+    Config: config.Config,
+    KiloLLM: llm.KiloLLM,
+    // fork_change end
   }))
 }
 function deps() {
@@ -305,15 +313,20 @@ export async function handle(args: ArgumentsCamelCase) {
   })
 }
 
-async function call(
+export async function call( // fork_change
   model: Provider.Model,
   prompt: string,
   timeout: number,
   start: number,
+  override?: { language?: LanguageModelV3; policy?: Config.Info }, // fork_change
 ): Promise<Omit<Result, "model">> {
   try {
-    const { AppRuntime, RuntimeFlags, generateText, opencodeSessionHeaders } = await deps()
-    const language = await lang(model)
+    // fork_change start - Honour an injected model/policy and resolve the redaction flag.
+    const { AppRuntime, RuntimeFlags, generateText, opencodeSessionHeaders, Config, KiloLLM } = await deps()
+    const language = override?.language ?? (await lang(model))
+    const policy =
+      override?.policy ?? (await AppRuntime.runPromise(Config.Service.use((svc) => svc.getGlobal())))
+    // fork_change end
     const sessionID = randomUUID()
     const options = ProviderTransform.options({ model, sessionID })
     const providerOptions = ProviderTransform.providerOptions(model, options)
@@ -324,9 +337,10 @@ async function call(
     const topK = ProviderTransform.topK(model)
     const messages: Parameters<typeof generateText>[0]["messages"] = [{ role: "user", content: prompt }]
     const transformed = ProviderTransform.message(messages, model, options)
+    const outbound = KiloLLM.messages(transformed, KiloLLM.enabled(policy)) // fork_change - Only the outgoing copy is scrubbed; the caller's prompt stays untouched.
     const result = await generateText({
       model: language,
-      messages: transformed,
+      messages: outbound, // fork_change
       abortSignal: AbortSignal.timeout(timeout),
       maxOutputTokens,
       topP,
