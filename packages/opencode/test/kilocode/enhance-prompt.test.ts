@@ -165,5 +165,58 @@ describe("enhance-prompt", () => {
       expect(calls.generate.at(0)?.providerOptions?.test?.instructions).toBeUndefined()
       expect(result).toBe("generated rewrite")
     })
+
+    // fork tests - outbound access key redaction
+    const KEY = "sk-test-1234567890abcdefghijklmnop"
+
+    it("sends a redacted copy of the draft when redaction is on", async () => {
+      const calls = { generate: [], stream: [] } as {
+        generate: LanguageModelV3CallOptions[]
+        stream: LanguageModelV3CallOptions[]
+      }
+      await enhanceWith({
+        model: mdl("test", "test-provider"),
+        language: lang({ output: ["rewritten"], ...calls }),
+        text: `make this clearer and keep ${KEY} working`,
+        redact: true,
+      })
+
+      const payload = JSON.stringify(calls.generate.at(0)?.prompt)
+      expect(payload).not.toContain(KEY)
+      expect(payload).toContain("[redacted]")
+    })
+
+    it("sends the redacted draft through the OpenAI stream branch", async () => {
+      const calls = { generate: [], stream: [] } as {
+        generate: LanguageModelV3CallOptions[]
+        stream: LanguageModelV3CallOptions[]
+      }
+      await enhanceWith({
+        model: mdl("openai", "@ai-sdk/openai"),
+        language: lang({ output: ["rewritten"], ...calls }),
+        text: `make this clearer and keep ${KEY} working`,
+        redact: true,
+      })
+
+      const payload = JSON.stringify(calls.stream.at(0)?.prompt)
+      expect(payload).not.toContain(KEY)
+      expect(payload).toContain("[redacted]")
+      expect(calls.stream.at(0)?.providerOptions?.openai?.instructions).toBe(INSTRUCTION)
+    })
+
+    it("sends the original draft when redaction is off", async () => {
+      const calls = { generate: [], stream: [] } as {
+        generate: LanguageModelV3CallOptions[]
+        stream: LanguageModelV3CallOptions[]
+      }
+      await enhanceWith({
+        model: mdl("test", "test-provider"),
+        language: lang({ output: ["rewritten"], ...calls }),
+        text: `make this clearer and keep ${KEY} working`,
+        redact: false,
+      })
+
+      expect(JSON.stringify(calls.generate.at(0)?.prompt)).toContain(KEY)
+    })
   })
 })

@@ -1,13 +1,25 @@
 import { asSchema, type ModelMessage, type Tool } from "ai"
 import { isRecord } from "@/util/record"
+// fork_change start - outbound access key redaction before the decide call
+import { MemoryRedact } from "@kilocode/kilo-memory/redact"
+import { KiloLLM } from "@/kilocode/session/llm"
+import { redact as redactSchema } from "@/kilocode/session/tool-schema"
+// fork_change end
+
+type Options = { redact?: boolean } // fork_change
 
 // ADR 0005: the routing worker classifies the request exactly as the gateway
 // does, so client decisions and gateway decisions share one normalization. The
 // worker receives OpenAI-format messages and tools, built here from the
 // AI SDK message list the session already assembled.
-export function openaiMessages(messages: ReadonlyArray<ModelMessage>): unknown[] {
+// fork_change start - accept the optional redaction policy
+export function openaiMessages(messages: ReadonlyArray<ModelMessage>, options?: Options): unknown[] {
+  // fork_change end
+  const redact = options?.redact === true // fork_change
   const out: unknown[] = []
-  for (const message of messages) {
+  // fork_change start - Apply the redaction policy before message conversion.
+  for (const message of redact ? KiloLLM.messages(messages, true) : messages) {
+    // fork_change end
     if (message.role === "system") {
       out.push({ role: "system", content: text(message.content) })
       continue
@@ -32,18 +44,37 @@ export function openaiMessages(messages: ReadonlyArray<ModelMessage>): unknown[]
   return out
 }
 
-export async function openaiTools(tools: Record<string, Tool>): Promise<unknown[]> {
+// fork_change start - accept the optional redaction policy
+export async function openaiTools(tools: Record<string, Tool>, options?: Options): Promise<unknown[]> {
+  // fork_change end
+  const redact = options?.redact === true // fork_change
   return Promise.all(
-    Object.entries(tools).map(async ([name, tool]) => ({
-      type: "function",
-      function: {
-        name,
-        description: tool.description ?? "",
-        parameters: await asSchema(tool.inputSchema).jsonSchema,
-      },
-    })),
+    // fork_change start - Convert each tool to its OpenAI shape with scrubbed text.
+    Object.entries(tools).map(async ([name, tool]) => {
+      const parameters = await asSchema(tool.inputSchema).jsonSchema
+      const description = tool.description ?? ""
+      return {
+        type: "function",
+        function: {
+          name: redact ? contract(name) : name,
+          description: redact ? MemoryRedact.text(description, VALUES) : description,
+          parameters: redact ? redactSchema(parameters) : parameters,
+        },
+      }
+    }),
+    // fork_change end
   )
 }
+
+// fork_change start - Share values-mode redaction options and reject key-like tool names in the tool contract.
+const VALUES = { values: true } as const
+
+// A tool name is part of the wire contract, so a recognized key there cannot be rewritten.
+function contract(input: string) {
+  if (MemoryRedact.has(input, VALUES)) throw new MemoryRedact.Failure()
+  return input
+}
+// fork_change end
 
 function text(content: unknown): string {
   if (typeof content === "string") return content

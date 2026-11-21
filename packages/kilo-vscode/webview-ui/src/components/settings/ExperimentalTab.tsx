@@ -7,7 +7,7 @@ import { useConfig } from "../../context/config"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
 import { useImageModels } from "../../context/image-models"
-import type { ExtensionMessage } from "../../types/messages"
+import type { Config, ExtensionMessage } from "../../types/messages" // fork_change - Config for the global redact_secrets write
 // fork_change start
 import { useProvider } from "../../context/provider"
 import { parseModelString } from "../../../../src/shared/provider-model"
@@ -34,7 +34,7 @@ const LINK_OPTIONS: ShareOption[] = [
 ]
 
 const ExperimentalTab: Component = () => {
-  const { config, settings, updateConfig, applySetting } = useConfig()
+  const { config, globalConfig, settings, updateConfig, updateGlobalConfig, applySetting } = useConfig() // fork_change - globalConfig
   const language = useLanguage()
   const imageModels = useImageModels()
   const provider = useProvider() // fork_change
@@ -54,6 +54,7 @@ const ExperimentalTab: Component = () => {
   })
 
   const experimental = createMemo(() => config().experimental ?? {})
+  const globalExperimental = createMemo(() => globalConfig().experimental ?? {}) // fork_change - redact_secrets only comes from the personal (global) config
   // fork_change start
   const pruningModels = createMemo(() => {
     const connected = new Set(provider.connected())
@@ -67,8 +68,13 @@ const ExperimentalTab: Component = () => {
   // fork_change end
 
   const updateExperimental = (key: string, value: unknown) => {
+    // fork_change start - project-scoped redact_secrets must not be promoted into the personal config
+    const base: NonNullable<Config["experimental"]> = { ...experimental() }
+    delete base.redact_secrets
+    const global = globalConfig().experimental?.redact_secrets
+    // fork_change end
     updateConfig({
-      experimental: { ...experimental(), [key]: value },
+      experimental: { ...base, [key]: value, ...(global === undefined ? {} : { redact_secrets: global }) }, // fork_change
     })
   }
 
@@ -166,6 +172,25 @@ const ExperimentalTab: Component = () => {
             {language.t("settings.experimental.batch.title")}
           </Switch>
         </SettingsRow>
+
+        {/* fork_change start - outbound access key redaction is personal and global */}
+        <SettingsRow
+          title={language.t("settings.experimental.redactSecrets.title")}
+          description={language.t("settings.experimental.redactSecrets.description")}
+        >
+          <Switch
+            checked={globalExperimental().redact_secrets !== false}
+            onChange={(checked) => {
+              updateGlobalConfig({
+                experimental: { ...globalExperimental(), redact_secrets: checked },
+              })
+            }}
+            hideLabel
+          >
+            {language.t("settings.experimental.redactSecrets.title")}
+          </Switch>
+        </SettingsRow>
+        {/* fork_change end */}
 
         {/* fork_change start */}
         <SettingsRow
