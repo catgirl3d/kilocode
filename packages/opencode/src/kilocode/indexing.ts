@@ -313,6 +313,7 @@ export namespace KiloIndexing {
       log.warn("indexing model resolution failed", { err })
       return track(hit, await inert(() => failed(err)))
     }
+    cfgInput = { ...cfgInput, redact: globalConfig.experimental?.redact_secrets !== false } // fork_change - personal global setting only; project config cannot override it
     const workspaces = new Set<WorkspaceV2.ID | undefined>([WorkspaceContext.workspaceID])
     const box = { status: pending() }
     const warnings = new Map<string, IndexingWarning>()

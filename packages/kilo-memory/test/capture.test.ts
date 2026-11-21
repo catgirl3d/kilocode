@@ -819,7 +819,10 @@ describe("memory capture parsing", () => {
     ]
     for (const item of secrets) {
       expect(MemoryRedact.has(item), item).toBe(true)
-      expect(MemoryRedact.text(item), item).toContain("[redacted]")
+      const out = MemoryRedact.text(item)
+      expect(out, item).toContain("[redacted]")
+      // The marker must replace the value, not sit next to it.
+      expect(out, item).not.toContain(item.slice(item.search(/[:=]/) + 1).trim())
     }
   })
 
@@ -855,5 +858,753 @@ describe("memory capture parsing", () => {
     expect(
       MemoryOperations.reject({ text: "Run tests from packages/opencode per the rule in .claude/claude.md." }),
     ).toBeUndefined()
+  })
+})
+
+describe("memory redact values mode", () => {
+  const values = { values: true }
+  const marker = "[redacted]"
+
+  test("redacts every prefix key format", () => {
+    const keys = [
+      "sk-proj-abcdefghijklmnopqrstuvwxyz012345",
+      "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+      "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz",
+      "AIzaSyA1234567890abcdefghijklmnopqrstu",
+      "xo" + "xb-123456789012-abcdefghijklmnop",
+      "AKIAIOSFODNN7EXAMPLE",
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+      "gsk_abcdefghijklmnopqrstuvwxyz012345",
+      "xai-abcdefghijklmnopqrstuvwxyz012345",
+      "hf_abcdefghijklmnopqrstuvwxyz012345",
+      "sk_" + "live_abcdefghijklmnopqrstuvwx",
+      "rk_" + "live_abcdefghijklmnopqrstuvwx",
+    ]
+    for (const key of keys) {
+      const input = `key ${key} here`
+      expect(MemoryRedact.has(input, values), key).toBe(true)
+      const redacted = MemoryRedact.text(input, values)
+      expect(redacted, key).not.toContain(key)
+      expect(redacted, key).toContain(marker)
+    }
+    // A publishable Stripe key is not a secret.
+    expect(MemoryRedact.has("pk_live_abcdefghijklmnopqrstuvwxyz012345", values)).toBe(false)
+  })
+
+  test("redacts named assignment values, keeping names, separators and quotes", () => {
+    const key = "test0123456789abcdef0123456789abc"
+    const cases = [
+      [`MISTRAL_API_KEY="${key}"`, 'MISTRAL_API_KEY="[redacted]"'],
+      [`client_secret: "${key}"`, 'client_secret: "[redacted]"'],
+      [`SECRET_KEY=${key}`, "SECRET_KEY=[redacted]"],
+      [`const githubToken = "${key}"`, 'const githubToken = "[redacted]"'],
+      [`"api_key": "${key}"`, '"api_key": "[redacted]"'],
+      [`provider.clientSecretKeys=${key}`, "provider.clientSecretKeys=[redacted]"],
+      ['API_KEY = "abcdef1234567890xyz"', 'API_KEY = "[redacted]"'],
+      ["OPENAI_API_KEY='abcdef1234567890xyz'", "OPENAI_API_KEY='[redacted]'"],
+      ['{"client_secret": "abcdef1234567890xyz"}', '{"client_secret": "[redacted]"}'],
+      ["token: abcdef1234567890xyz", "token: [redacted]"],
+      ["refresh_token: refreshabcdef1234567890", "refresh_token: [redacted]"],
+      ["apiKey: abcdef1234567890xyz", "apiKey: [redacted]"],
+      ["access_key = abcdef1234567890xyz", "access_key = [redacted]"],
+      ["API_KEY: abcdef1234567890xyz", "API_KEY: [redacted]"],
+    ] as const
+    for (const [input, expected] of cases) {
+      expect(MemoryRedact.has(input, values), input).toBe(true)
+      expect(MemoryRedact.text(input, values), input).toBe(expected)
+    }
+  })
+
+  test("redacts quoted and bare Authorization credentials, keeping the scheme", () => {
+    expect(MemoryRedact.text('Authorization="Bearer abcdef1234567890xyz"', values)).toBe(
+      'Authorization="Bearer [redacted]"',
+    )
+    expect(MemoryRedact.text("Authorization: Basic dXNlcjpwYXNzd29yZA==", values)).toBe(
+      "Authorization: Basic [redacted]",
+    )
+    // A short base64 user:pass with no digit or padding is still a credential under an Authorization
+    // header, while prose that merely names the scheme stays intact.
+    expect(MemoryRedact.has("Authorization: Basic dXNlcjpwYXNz", values)).toBe(true)
+    expect(MemoryRedact.text("Authorization: Basic dXNlcjpwYXNz", values)).toBe("Authorization: Basic [redacted]")
+    expect(MemoryRedact.has("Basic authentication is required", values)).toBe(false)
+    expect(MemoryRedact.text("Basic authentication is required", values)).toBe("Basic authentication is required")
+    expect(MemoryRedact.text(`Authorization: Bearer abcdefghijklmnop123456`, values)).toBe(
+      "Authorization: Bearer [redacted]",
+    )
+  })
+
+  test("hides a private key block whole", () => {
+    const block = ["-----BEGIN RSA PRIVATE KEY-----", "MIIEabcdefgh12345678", "-----END RSA PRIVATE KEY-----"].join("\n")
+    expect(MemoryRedact.text(`before\n${block}\nafter`, values)).toBe("before\n[redacted]\nafter")
+  })
+
+  test("handles escaped quotes and line continuation across the whole value", () => {
+    expect(MemoryRedact.text(`API_KEY="abc\\"def1234567890\\"ghi"`, values)).toBe(`API_KEY="[redacted]"`)
+    const continued = 'API_KEY="abc\\\n1234567890abcdef"'
+    expect(MemoryRedact.text(continued, values)).toBe(continued)
+  })
+
+  test("redacts a named key inside a JSON-escaped string", () => {
+    const key = "test0123456789abcdef0123456789abc"
+    expect(MemoryRedact.text(`"input": "API_KEY=\\"${key}\\""`, values)).toBe(`"input": "API_KEY=\\"[redacted]\\""`)
+    expect(MemoryRedact.text(`\\"api_key\\":\\"${key}\\"`, values)).toBe(`\\"api_key\\":\\"[redacted]\\"`)
+    expect(MemoryRedact.text(`\\"api_key\\":${key}\\"`, values)).toBe(`\\"api_key\\":[redacted]\\"`)
+    expect(MemoryRedact.blocksWrite(`\\"api_key\\":\\"${key}\\"`, `\\"api_key\\":\\"[redacted]\\"`)).toBe(true)
+    expect(MemoryRedact.text(`API_KEY=\\"abc123\\"`, values)).toBe(`API_KEY=\\"abc123\\"`)
+    expect(MemoryRedact.text(`token_type=\\"${key}\\"`, values)).toBe(`token_type=\\"${key}\\"`)
+  })
+
+  test("redacts corpus strings to their declared expectations", async () => {
+    const file = Bun.file(new URL("./fixtures/redaction/text-cases.json", import.meta.url))
+    const raw = await file.text()
+    const cleaned = JSON.parse(MemoryRedact.text(raw, values)) as {
+      cases: Array<{ id: string; input: string; expected: string }>
+    }
+    const original = (await file.json()) as { cases: Array<{ id: string; input: string; expected: string }> }
+    // These shapes need a second decode layer or a shell parser; the dedicated tests cover them.
+    // Any new row with one of these shapes must be added here deliberately.
+    const skip = new Set([
+      "credential-newline",
+      "credential-crlf",
+      "private-key-block",
+      "prefix-after-newline",
+      "named-yaml-block",
+      "named-triple-quotes",
+      "named-command-substitution",
+      "miss-yaml-empty-block",
+      "boundary-escaped-inner-quote",
+      "boundary-cli-json-tail",
+      "boundary-command-quoted",
+      "named-escaped-inner-short",
+      "named-triple-short",
+      "miss-certificate-block",
+      "named-json-short",
+    ])
+    const skipped: string[] = []
+    original.cases.forEach((item, index) => {
+      if (skip.has(item.id)) {
+        skipped.push(item.id)
+        return
+      }
+      expect(cleaned.cases[index]?.input, item.id).toBe(item.expected)
+      expect(cleaned.cases[index]?.expected, item.id).toBe(item.expected)
+    })
+    expect(skipped.sort()).toEqual([...skip].sort())
+  })
+
+  test("preserves surrounding delimiters and suffixes", () => {
+    const key = "test0123456789abcdef0123456789abc"
+    const cases = [
+      [`{"input":"password=\\"prefix\\"${key}\\""}`, `{"input":"password=\\"[redacted]\\""}`],
+      [`{"cmd":"tool --password Secret123\\"x","keep":1}`, `{"cmd":"tool --password [redacted]\\"x","keep":1}`],
+      ["mysql -pSecret123] next", "mysql -p[redacted]] next"],
+      ["user@example.com:Secret123&next=1", "user@example.com:[redacted]&next=1"],
+      ['password=$(printf "x)"; echo Secret123)', "password=[redacted]"],
+      ['password=$(printf "x)"; echo Secret123) after', "password=[redacted] after"],
+      ["tool --password Secret123 --next 1", "tool --password [redacted] --next 1"],
+      ["SETX PASSWORD Secret123", "SETX PASSWORD [redacted]"],
+      ["SeTx PaSsWoRd Secret123", "SeTx PaSsWoRd [redacted]"],
+      ["cOOkie: session=CookieSecret123456; theme=dark", "cOOkie: session=[redacted]; theme=dark"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+  })
+
+  test("blocks writing a marker over every identifiable outbound value", () => {
+    const blocked = [
+      ["X-Api-Key: abcdefghijklmnop", "X-Api-Key: [redacted]"],
+      ["tool --password Secret123", "tool --password [redacted]"],
+      ["GOCSPX-demoA1b2C3d4E5f6G7h8", "[redacted]"],
+      ["https://example.test/?sig=AzureSecret123456", "https://example.test/?sig=[redacted]"],
+    ] as const
+    for (const [old, next] of blocked) expect(MemoryRedact.blocksWrite(old, next), old).toBe(true)
+
+    expect(MemoryRedact.blocksWrite("X-Api-Key: abcdefghijklmnop", "X-Api-Key: rotated1234567890")).toBe(false)
+    expect(MemoryRedact.blocksWrite("X-Api-Key: abcdefghijklmnop", "")).toBe(false)
+    expect(MemoryRedact.blocksWrite("X-Api-Key: [redacted]", "OTHER: [redacted]")).toBe(false)
+    expect(MemoryRedact.blocksWrite("GOCSPX-demoA1b2C3d4E5f6G7h8", "OTHER: [redacted]")).toBe(false)
+    expect(MemoryRedact.blocksWrite("oc_sk_" + "0123456789ab_" + "a".repeat(39), "[redacted]")).toBe(true)
+    expect(MemoryRedact.blocksWrite("Authorization: Token " + "a".repeat(32), "Authorization: Token [redacted]")).toBe(
+      true,
+    )
+    expect(MemoryRedact.blocksWrite("tool --api-key " + "a".repeat(20), "tool --api-key [redacted]")).toBe(true)
+    expect(
+      MemoryRedact.blocksWrite('KILO_AUTH_CONTENT={"azure":{"key":"abc123"}}', "KILO_AUTH_CONTENT=[redacted]"),
+    ).toBe(true)
+    expect(
+      MemoryRedact.blocksWrite("X-Api-Key: abcdefghijklmnop\nnext=1", "X-Api-Key: [redacted]\nnext=1"),
+    ).toBe(true)
+    expect(
+      MemoryRedact.blocksWrite("Cookie: session=CookieSecret123456; theme=dark", "Cookie: session=[redacted]; theme=dark"),
+    ).toBe(true)
+    expect(
+      MemoryRedact.blocksWrite("Cookie: session=CookieSecret123456; theme=dark", "Cookie: session=rotated123456789; theme=dark"),
+    ).toBe(false)
+  })
+
+  test("stays roughly linear on command-heavy inputs", () => {
+    const measure = (input: string) => {
+      MemoryRedact.text(input, values)
+      return [0, 1, 2]
+        .map(() => {
+          const start = performance.now()
+          MemoryRedact.text(input, values)
+          return performance.now() - start
+        })
+        .sort((a, b) => a - b)[0]
+    }
+    const families = [
+      (size: number) => "mysql ".repeat(size),
+      (size: number) => `${"machine ".repeat(size)}passwordX`,
+      (size: number) => `${"a".repeat(size * 2)}@example.com`,
+    ]
+    for (const make of families) {
+      const small = measure(make(2_000))
+      const big = measure(make(8_000))
+      // Linear work grows 4x; 10x leaves room for noise while still catching quadratic scans.
+      expect(big).toBeLessThan(small * 10 + 20)
+      expect(big).toBeLessThan(2_000)
+    }
+  })
+
+  test("strong names accept letter-only values but keep placeholders and public keys", () => {
+    const cases = [
+      ["API_KEY=abcdefghijklmnop", "API_KEY=[redacted]"],
+      ['API_KEY="ABCDEFGHIJKLMNOP"', 'API_KEY="[redacted]"'],
+      ["CLIENT_SECRET=abcdefghijklmnop", "CLIENT_SECRET=[redacted]"],
+      ["SECRET_KEY=abcdefghijklmnop", "SECRET_KEY=[redacted]"],
+      ["SIGNING_KEY=abcdefghijklmnop", "SIGNING_KEY=[redacted]"],
+      ["ENCRYPTION_KEY=abcdefghijklmnop", "ENCRYPTION_KEY=[redacted]"],
+      ["AUTH_TOKEN=abcdefghijklmnop", "AUTH_TOKEN=[redacted]"],
+      ["AWS_SECRET_ACCESS_KEY=abcdefghijklmnop", "AWS_SECRET_ACCESS_KEY=[redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      "API_KEY=abc123",
+      "API_KEY=1234567890123456",
+      "PUBLIC_KEY=abcdefghijklmnop",
+      "CACHE_KEY=abcdefghijklmnop",
+      "API_KEY=string",
+      "API_KEY=${API_KEY}",
+      "API_KEY=",
+    ]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+
+    expect(MemoryRedact.blocksWrite("API_KEY=abcdefghijklmnop", "API_KEY=[redacted]")).toBe(true)
+  })
+
+  test("catches additional token families and context carriers", () => {
+    const make = (prefix: string, body: string) => prefix + body
+    const rep = (char: string, size: number) => char.repeat(size)
+    const cases = [
+      [make("oc_sk_", `0123456789ab_${rep("a", 39)}`), "[redacted]"],
+      [make("A3T", rep("A", 17)), "[redacted]"],
+      [make("ABIA", rep("A", 16)), "[redacted]"],
+      [make("ACCA", rep("A", 16)), "[redacted]"],
+      [make("ABSK", rep("A", 100)), "[redacted]"],
+      [make("doo_v1_", rep("a", 64)), "[redacted]"],
+      [make("dor_v1_", rep("a", 64)), "[redacted]"],
+      [make("dp.pt.", rep("a", 32)), "[redacted]"],
+      [make("dapi", rep("a", 32)), "[redacted]"],
+      [make("sk_test_", rep("a", 20)), "[redacted]"],
+      [make("sk_prod_", rep("a", 20)), "[redacted]"],
+      [make("rk_test_", rep("a", 20)), "[redacted]"],
+      [make("rk_prod_", rep("a", 20)), "[redacted]"],
+      [make("glpat-", `${rep("a", 20)}.ab.${rep("c", 9)}`), "[redacted]"],
+      [make("whsec_", rep("a", 32)), "[redacted]"],
+      [make("sb_secret_", `${rep("a", 20)}_${rep("b", 20)}`), "[redacted]"],
+      [make("ntn_", rep("a", 40)), "[redacted]"],
+      [make("sntryu_", rep("a", 40)), "[redacted]"],
+      [make("sntrys_", rep("a", 40)), "[redacted]"],
+      [make("vck_", rep("a", 20)), "[redacted]"],
+      [make("cfoat_", rep("a", 30)), "[redacted]"],
+      [make("rpa_", rep("a", 20)), "[redacted]"],
+      [make("fw_", rep("a", 20)), "[redacted]"],
+      [make("api_org_", rep("a", 34)), "[redacted]"],
+      [`https://hooks.slack.com/services/T000/B000/XXXX`, "[redacted]"],
+      [`${rep("a", 20)}.atlasv1.${rep("b", 20)}-tail`, "[redacted]"],
+      [`KILO_AUTH_CONTENT={"azure":{"key":"abc123"}}`, "KILO_AUTH_CONTENT=[redacted]"],
+      [`SUPABASE_SERVICE_ROLE_KEY=${rep("a", 32)}`, "SUPABASE_SERVICE_ROLE_KEY=[redacted]"],
+      [`Authorization: Token ${rep("a", 32)}`, "Authorization: Token [redacted]"],
+      [`tool --api-key ${rep("a", 20)}`, "tool --api-key [redacted]"],
+      [`tool --auth-token ${rep("a", 20)}`, "tool --auth-token [redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      make("oc_sk_", `${rep("A", 12)}_${rep("a", 39)}`),
+      make("oc_sk_", `0123456789ab_${rep("a", 19)}`),
+      `document_${make("oc_sk_", `0123456789ab_${rep("a", 39)}`)}`,
+      make("A3T", rep("A", 15)),
+      make("sk_test_", rep("a", 8)),
+      make("whsec_", rep("a", 8)),
+      make("sntrys_", rep("a", 8)),
+      make("api_org_", rep("a", 8)),
+      `KILO_CONFIG_CONTENT={"experimental":{}}`,
+      "SUPABASE_SERVICE_ROLE=public",
+      "Authorization: Token short",
+      "Token is required",
+      "tool --api-key",
+      "https://hooks.slack.com/",
+    ] as const
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+  })
+
+  test("reads CLI flags and credential files", () => {
+    const cases = [
+      ["tool --password Secret123", "tool --password [redacted]"],
+      ["mysql -pSecret123", "mysql -p[redacted]"],
+      ["curl -u alice:CurlSecret123456 https://example.test", "curl -u alice:[redacted] https://example.test"],
+      ["db.test:5432:app:alice:PgPassSecret123", "db.test:5432:app:alice:[redacted]"],
+      ["machine db.test login alice password NetrcSecret123", "machine db.test login alice password [redacted]"],
+      ["setx PASSWORD WinSecret123", "setx PASSWORD [redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      "tool --password",
+      "mysql -p",
+      "curl -u alice",
+      "setx PATH /usr/bin",
+      "db:5432:app:alice:Secret123",
+    ]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+  })
+
+  test("masks YAML blocks, triple quotes and command substitutions", () => {
+    const nl = String.fromCharCode(10)
+    expect(MemoryRedact.text(`password: |${nl}  Secret123`, values)).toBe("password: [redacted]")
+    expect(MemoryRedact.text('password = """Secret123"""', values)).toBe("password = [redacted]")
+    expect(MemoryRedact.text(`password=$(cat <<EOF${nl}Secret123${nl}EOF)`, values)).toBe("password=[redacted]")
+    expect(MemoryRedact.text(`password: |${nl}next = 1`, values)).toBe(`password: |${nl}next = 1`)
+  })
+
+  test("catches additional provider prefixes", () => {
+    const cases = [
+      "GOCSPX-demoA1b2C3d4E5f6G7h8",
+      "shpat_demoA1b2C3d4E5f6",
+      "lin_api_demoLinearA1b2C3d4",
+      "r8_demoReplicateA1b2C3d4",
+      "pplx-demoPerplexityA1b2C3d4",
+      "sq0csp-demoSecretA1b2C3d4",
+      "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQ",
+      "key-demoMailgunA1b2C3d4E5f6G7h8",
+      "secret_demoNotionA1b2C3d4",
+      "MTIzNDU2Nzg5MDEyMzQ1Njc4.A1b2C3.abcdefghijklmnopqrstuvwxyz1",
+      "123456789:AA_demoToken1234567890abcdefgh",
+    ]
+    for (const item of cases) expect(MemoryRedact.text(item, values), item).toBe("[redacted]")
+    for (const item of ["GOCSPX-short", "shpat_short", "key-value", "secret_name", "1.2.3"]) {
+      expect(MemoryRedact.text(item, values), item).toBe(item)
+    }
+  })
+
+  test("masks signed URLs, Cookie sessions and header API keys", () => {
+    const cases = [
+      [
+        "https://example.test/blob?sv=2026&sig=AzureSecret123456",
+        "https://example.test/blob?sv=2026&sig=[redacted]",
+      ],
+      [
+        "https://s3.example.test/object?X-Amz-Signature=abcdef0123456789abcdef",
+        "https://s3.example.test/object?X-Amz-Signature=[redacted]",
+      ],
+      [
+        "Authorization: AWS4-HMAC-SHA256 Credential=AKIA1234567890ABCDEF/20261120/x, Signature=abcdef0123456789abcdef0123456789",
+        "Authorization: AWS4-HMAC-SHA256 Credential=[redacted], Signature=[redacted]",
+      ],
+      ["Cookie: session=CookieSecret123456; theme=dark", "Cookie: session=[redacted]; theme=dark"],
+      ["X-Api-Key: abcdefghijklmnop", "X-Api-Key: [redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+    expect(MemoryRedact.text("https://x.test/?page=2&x=1", values)).toBe("https://x.test/?page=2&x=1")
+    expect(MemoryRedact.text("https://example.test/?X-Amz-Credential=AKIA1234567890ABCDEF", values)).toBe(
+      "https://example.test/?X-Amz-Credential=[redacted]",
+    )
+    expect(MemoryRedact.text("https://example.test/?X-Amz-Security-Token=Token1234567890", values)).toBe(
+      "https://example.test/?X-Amz-Security-Token=[redacted]",
+    )
+    expect(MemoryRedact.text("X-Auth-Token: abcdefghijklmnop", values)).toBe("X-Auth-Token: [redacted]")
+    expect(MemoryRedact.text("Cookie: sessionid=Session123456; connect.sid=Connect123456; auth=Auth123456", values)).toBe(
+      "Cookie: sessionid=[redacted]; connect.sid=[redacted]; auth=[redacted]",
+    )
+  })
+
+  test("fixes existing boundaries: query, brackets, PWD, status words and pairs", () => {
+    expect(MemoryRedact.text("https://x.test/?access_token=abc1234567890123&x=1", values)).toBe(
+      "https://x.test/?access_token=[redacted]&x=1",
+    )
+    expect(MemoryRedact.text("password[]=Secret123", values)).toBe("password[]=[redacted]")
+    expect(MemoryRedact.text("password[0]=Secret123", values)).toBe("password[0]=[redacted]")
+    expect(MemoryRedact.text("db.PWD=/home/user", values)).toBe("db.PWD=/home/user")
+    for (const word of ["enabled", "required", "none", "default", "optional", "disabled", "include"]) {
+      expect(MemoryRedact.text(`password: ${word}`, values), word).toBe(`password: ${word}`)
+    }
+    expect(MemoryRedact.text("passwords: include", values)).toBe("passwords: include")
+    expect(MemoryRedact.text("git@github.com:123456", values)).toBe("git@github.com:123456")
+    expect(MemoryRedact.text("user@example.com:2024-01-01", values)).toBe("user@example.com:[redacted]")
+    expect(MemoryRedact.text("WWW-Authenticate: Bearer realm=example.com", values)).toBe(
+      "WWW-Authenticate: Bearer realm=example.com",
+    )
+  })
+
+  test("redacts explicit password values and skips references and type annotations", () => {
+    const cases = [
+      ["password=hunter2", "password=[redacted]"],
+      ["DB_PASSWORD=Tr0ub4dor&3", "DB_PASSWORD=[redacted]"],
+      ['password: "MyP@ssw0rd"', 'password: "[redacted]"'],
+      ["passwd=123456", "passwd=[redacted]"],
+      ["dbPassword=short", "dbPassword=[redacted]"],
+      ['password="hunter2."', 'password="[redacted]"'],
+      ['password="$ecret123"', 'password="[redacted]"'],
+      ['password="false"', 'password="[redacted]"'],
+      ["password=changeme", "password=[redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      "password=${DB_PASSWORD}",
+      "password=<your-password>",
+      "password=process.env.DB_PASSWORD",
+      "password: string",
+      "password: boolean",
+      "password: false",
+      "password=",
+      "password=[redacted]",
+      "password_hash=hunter2",
+      "private_key=abc",
+    ]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+
+    expect(MemoryRedact.blocksWrite("password=hunter2", "password=[redacted]")).toBe(true)
+    expect(MemoryRedact.blocksWrite("password=hunter2", "password=changed")).toBe(false)
+    expect(MemoryRedact.blocksWrite("password=changeme", "password=[redacted]")).toBe(true)
+  })
+
+  test("treats pwd as a password name but keeps the shell PWD variable", () => {
+    expect(MemoryRedact.text("pwd=hunter2", values)).toBe("pwd=[redacted]")
+    expect(MemoryRedact.text("DB_PWD=123456", values)).toBe("DB_PWD=[redacted]")
+    expect(MemoryRedact.text("dbPwd=short", values)).toBe("dbPwd=[redacted]")
+    expect(MemoryRedact.text("PWD=/home/user", values)).toBe("PWD=/home/user")
+    expect(MemoryRedact.text("pwd=${PWD}", values)).toBe("pwd=${PWD}")
+  })
+
+  test("masks the password in an email-password pair and leaves scp URLs alone", () => {
+    const cases = [
+      ["test@example.com:123456", "test@example.com:[redacted]"],
+      ["test@example.com:123123", "test@example.com:[redacted]"],
+      ["user.name+tag@sub.example.co.uk:Hunter2!", "user.name+tag@sub.example.co.uk:[redacted]"],
+      ["creds test@example.com:123456, next", "creds test@example.com:[redacted], next"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      "git@github.com:acme/repo.git",
+      "user@example.com:8080",
+      "support@example.com:welcome",
+      "git@github.com:main",
+      "contact@example.com:12345",
+    ]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+
+    expect(MemoryRedact.blocksWrite("test@example.com:123456", "test@example.com:[redacted]")).toBe(true)
+    expect(MemoryRedact.blocksWrite("test@example.com:123456", "test@example.com:654321")).toBe(false)
+  })
+
+  test("recognizes qualified key aliases and connection-string fields", () => {
+    const key = "7c1e9a4d2f8b6a0e3d5c7f9b1a4e6d8c"
+    const b64 = "Zm9vYmFyMTIzNDU2Nzg5MGFiY2RlZmdoaWprbG1ub3A="
+    const cases = [
+      [`AZURE_OPENAI_KEY=${key}`, "AZURE_OPENAI_KEY=[redacted]"],
+      [`AZURE_STORAGE_ACCOUNT_KEY=${key}`, "AZURE_STORAGE_ACCOUNT_KEY=[redacted]"],
+      [`storageAccountKey=${key}`, "storageAccountKey=[redacted]"],
+      [`DD_APP_KEY=${key}`, "DD_APP_KEY=[redacted]"],
+      [`LICENSE_KEY=${key}`, "LICENSE_KEY=[redacted]"],
+      [
+        `AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=demo;AccountKey=${b64};EndpointSuffix=core.windows.net`,
+        "AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=demo;AccountKey=[redacted];EndpointSuffix=core.windows.net",
+      ],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      `DD_APP_KEY_ENV=${key}`,
+      `LOCAL_STORAGE_KEY=${key}`,
+      `PUBLIC_KEY=${key}`,
+      `cache_key=${key}`,
+      `ssh_key=${key}`,
+    ]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+  })
+
+  test("keeps credential and credentials on the key shape", () => {
+    const clean = ['credentials="user:pass"', 'credentials: "required"', 'credentials: "include"', "credential=pass123"]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+    expect(MemoryRedact.text('credential="Abcdefghijklmn1234"', values)).toBe('credential="[redacted]"')
+  })
+
+  test("recognizes credential, auth, password and private key names", () => {
+    const secret = "Abcdefghijklmn1234"
+    const cases = [
+      [`credential=${secret}`, "credential=[redacted]"],
+      [`credentials = "${secret}"`, 'credentials = "[redacted]"'],
+      [`auth=${secret}`, "auth=[redacted]"],
+      [`password: ${secret}`, "password: [redacted]"],
+      [`private_key=${secret}`, "private_key=[redacted]"],
+      [`privateKey = "${secret}"`, 'privateKey = "[redacted]"'],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      `oauth_client=${secret}`,
+      `auth_mode=${secret}`,
+      `password_hash=${secret}`,
+      `credential_id=${secret}`,
+      `private_key_file=${secret}`,
+    ]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+  })
+
+  test("redacts dotted provider tokens and the added standalone prefixes", () => {
+    const cases = [
+      ["SG.a1B2c3D4e5F6g7H8i9J0k1.m3N4p5Q6r7S8t9U0v1W2x3Y4z5", "[redacted]"],
+      ["hvs.A1b2C3d4E5f6G7h8J9k0L1m2N3p4Q5r6", "[redacted]"],
+      ["A7b8C9d0E1f2G3h4.atlasv1.J5k6L7m8N9p0Q1r2S3t4U5v6", "[redacted]"],
+      ['SENDGRID_API_KEY="SG.a1B2c3D4e5F6g7H8i9J0k1.m3N4p5Q6r7S8t9U0v1W2x3Y4z5"', 'SENDGRID_API_KEY="[redacted]"'],
+      ["VAULT_TOKEN=hvs.A1b2C3d4E5f6G7h8J9k0L1m2N3p4Q5r6", "VAULT_TOKEN=[redacted]"],
+      [
+        "TF_TOKEN_app_terraform_io=A7b8C9d0E1f2G3h4.atlasv1.J5k6L7m8N9p0Q1r2S3t4U5v6",
+        "TF_TOKEN_app_terraform_io=[redacted]",
+      ],
+      ["ASIAH4K8P2D6M9R3T7W5", "[redacted]"],
+      ["glpat-a1B2c3D4e5F6g7H8i9J0", "[redacted]"],
+      ["npm_a1B2c3D4e5F6g7H8i9J0k1L2m3N4p5Q6r7S8", "[redacted]"],
+      ["pypi-AgEIcHlwaS5vcmc7aBcD9eFgH1jKlM3nOpQ5rStU7vWxY9zA", "[redacted]"],
+      ["dop_v1_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2", "[redacted]"],
+      ["cfut_a1B2c3D4e5F6g7H8i9J0k1L2m3N4p5Q6r7S8t9U0", "[redacted]"],
+      ["NRAK-a1b2c3d4e5f6a7b8c9d0e1f2", "[redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = ["npm_package_scripts_test=value", "pypi-short", "SG.short", "A7b8.atlasv1.short"]
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+  })
+
+  test("leaves ordinary code, passwords, plain URLs, cards and templates alone", () => {
+    const clean = [
+      "token: string",
+      "token?: string",
+      "apiKey: ApiKey",
+      "login(token: string)",
+      "if (token === x) {}",
+      "token == null",
+      "const secret = process.env.SECRET",
+      "headers.authorization = build(token)",
+      "api_key: config.key",
+      "max_tokens: 4096",
+      "Bearer ${token}",
+      "sk-learn",
+      "const course = 'sk-learn-more'",
+      "password=${DB_PASSWORD}",
+      "https://example.test/path",
+      "git clone ssh://git@github.com/acme/repo.git",
+      "git@github.com:acme/repo.git",
+      "4111 1111 1111 1111",
+      'token = "${token}"',
+      "secret: enabled",
+      "author: Jane",
+      "tokenize(x)",
+      'type Token = "access" | "refresh"',
+      'token_type: "Bearer"',
+      'secret_name = "prod-db"',
+      '{"max_tokens": "4096"}',
+      '"provider.apiKey": "API key"',
+      '{ token: "abc" }',
+      'token_type: "abcdef1234567890xyz"',
+      'secret_name = "abcdef1234567890xyz"',
+      'api_key_env = "abcdef1234567890xyz"',
+      'githubtoken = "abcdef1234567890xyz"',
+      'token = "abcdef1234567890${token}"',
+    ]
+    for (const item of clean) {
+      expect(MemoryRedact.has(item, values), item).toBe(false)
+      expect(MemoryRedact.text(item, values), item).toBe(item)
+    }
+  })
+
+  test("does not treat Hugging Face identifiers as keys", () => {
+    for (const input of ["hf_hub_download_with_retries(repo)", "hf_abcdefghijklmnopqrstuvwxyz_012345"]) {
+      expect(MemoryRedact.text(input, values)).toBe(input)
+    }
+  })
+
+  test("is idempotent and does not treat a marker-only value as a key", () => {
+    const key = 'API_KEY = "abcdef1234567890xyz"'
+    const once = MemoryRedact.text(key, values)
+    expect(once).toBe(`API_KEY = "${marker}"`)
+    expect(MemoryRedact.has(once, values)).toBe(false)
+    expect(MemoryRedact.text(once, values)).toBe(once)
+
+    const only = `API_KEY = "${marker}"`
+    expect(MemoryRedact.has(only, values)).toBe(false)
+    expect(MemoryRedact.text(only, values)).toBe(only)
+
+    // A marker as part of a real value does not make the value safe.
+    expect(MemoryRedact.has(`API_KEY = "${marker}suffix123"`, values)).toBe(true)
+    expect(MemoryRedact.text(`API_KEY = "${marker}suffix123"`, values)).toBe(`API_KEY = "${marker}"`)
+    expect(MemoryRedact.text(`API_KEY = "prefix123${marker}"`, values)).toBe(`API_KEY = "${marker}"`)
+  })
+
+  test("value() redacts only recognized key strings under sensitive names", () => {
+    expect(MemoryRedact.value({ api_key: "sk-abcdefghijklmnopqrstuvwxyz012345" }, undefined, values)).toEqual({
+      api_key: "[redacted]",
+    })
+    expect(MemoryRedact.value({ token: "abcdef1234567890xyz" }, undefined, values)).toEqual({ token: "[redacted]" })
+    expect(MemoryRedact.value({ token: "short" }, undefined, values)).toEqual({ token: "short" })
+    expect(MemoryRedact.value({ token: 4096 }, undefined, values)).toEqual({ token: 4096 })
+    expect(MemoryRedact.value({ token: true }, undefined, values)).toEqual({ token: true })
+    expect(MemoryRedact.value({ token: null }, undefined, values)).toEqual({ token: null })
+    expect(MemoryRedact.value({ note: 'API_KEY = "abcdef1234567890xyz"' }, undefined, values)).toEqual({
+      note: 'API_KEY = "[redacted]"',
+    })
+    // A structured credential keeps its name and scheme; only the credential is scrubbed.
+    expect(MemoryRedact.value({ Authorization: "Bearer abcdef1234567890xyz" }, undefined, values)).toEqual({
+      Authorization: "Bearer [redacted]",
+    })
+    expect(MemoryRedact.value({ Authorization: "Basic dXNlcjpwYXNzd29yZA==" }, undefined, values)).toEqual({
+      Authorization: "Basic [redacted]",
+    })
+    // The legacy contract is unchanged without opts.
+    expect(MemoryRedact.value({ token: 4096 })).toEqual({ token: "[redacted]" })
+  })
+
+  test("value() applies a sensitive name to array elements and weak secrets", () => {
+    // An array element inherits the enclosing property name; the scalar form is already caught.
+    expect(MemoryRedact.value({ token: ["abcdef1234567890xyz"] }, undefined, values)).toEqual({
+      token: ["[redacted]"],
+    })
+    expect(MemoryRedact.value({ token: [["abcdef1234567890xyz"]] }, undefined, values)).toEqual({
+      token: [["[redacted]"]],
+    })
+    // Weak names redact any explicit value, scalar or array-wrapped.
+    expect(MemoryRedact.value({ password: "hunter2" }, undefined, values)).toEqual({ password: "[redacted]" })
+    expect(MemoryRedact.value({ password: ["hunter2", "Tr0ub4dor&3"] }, undefined, values)).toEqual({
+      password: ["[redacted]", "[redacted]"],
+    })
+    // References and templates under a weak name stay readable; a literal default is a secret.
+    const readable = ["${DB_PASSWORD}", "process.env.DB_PASSWORD", "<your-password>"]
+    expect(MemoryRedact.value({ password: readable }, undefined, values)).toEqual({ password: readable })
+    expect(MemoryRedact.value({ password: ["changeme"] }, undefined, values)).toEqual({ password: ["[redacted]"] })
+    // An authorization array keeps the scheme and scrubs only the credential.
+    expect(MemoryRedact.value({ Authorization: ["Bearer abcdef1234567890xyz"] }, undefined, values)).toEqual({
+      Authorization: ["Bearer [redacted]"],
+    })
+    // Non-sensitive arrays and short values are left alone.
+    expect(MemoryRedact.value({ notes: ["abcdef1234567890xyz"] }, undefined, values)).toEqual({
+      notes: ["abcdef1234567890xyz"],
+    })
+    expect(MemoryRedact.value({ token: ["short"] }, undefined, values)).toEqual({ token: ["short"] })
+  })
+
+  test("stays linear on large inputs", () => {
+    const solid = "a1._-".repeat(200_000)
+    const code = "const token = process.env.TOKEN\nif (apiKey === null) login(token)\n".repeat(20_000)
+    for (const [name, item] of [
+      ["solid", solid],
+      ["code", code],
+    ] as const) {
+      // The first full pass compiles the scan loop; the budget covers steady-state cost, not JIT tiers.
+      expect(MemoryRedact.text(item, values)).toBe(item)
+      const runs = [0, 1, 2].map(() => {
+        const start = performance.now()
+        expect(MemoryRedact.text(item, values)).toBe(item)
+        return performance.now() - start
+      })
+      // The minimum ignores a single GC pause; a real slowdown moves every run.
+      expect(Math.min(...runs), name).toBeLessThan(100)
+    }
+  })
+
+  test("checks Basic candidates in a 1 MiB line within the values-mode budget", () => {
+    for (const word of ["basic x ", "basic abcd1234 "]) {
+      const input = word.repeat(Math.ceil(1024 ** 2 / word.length)).slice(0, 1024 ** 2)
+      // The first full pass compiles the scan loop; the budget covers steady-state cost, not JIT tiers.
+      expect(MemoryRedact.text(input, values)).toBe(input)
+      const runs = [0, 1, 2].map(() => {
+        const start = performance.now()
+        expect(MemoryRedact.text(input, values)).toBe(input)
+        return performance.now() - start
+      })
+      // The minimum ignores a single GC pause; a real slowdown moves every run.
+      expect(Math.min(...runs)).toBeLessThan(100)
+    }
+  })
+
+  test("Failure is an Error without the value and names the way out", () => {
+    const failure = new MemoryRedact.Failure()
+    expect(failure).toBeInstanceOf(Error)
+    expect(failure.name).toBe("MemoryRedactFailure")
+    expect(failure.cause).toBeUndefined()
+    expect(failure.message).toContain("secret")
+    expect(failure.message).toContain("Roll back")
+    expect(failure.message).toContain("Redact recognizable secrets before sending")
+    expect(failure.message).toContain("Experimental")
+    expect(failure.message).not.toMatch(/try again|timeout|network|unsupported|overloaded/i)
+  })
+})
+
+describe("memory redact file write guard", () => {
+  const key = "sk-proj-abcdefghijklmnopqrstuvwxyz012345"
+  const marker = "[redacted]"
+
+  test("blocks replacing a named key with the marker", () => {
+    expect(MemoryRedact.blocksWrite('API_KEY = "abcdef1234567890xyz"', 'API_KEY = "[redacted]"')).toBe(true)
+    expect(MemoryRedact.blocksWrite(`API_KEY="prefix123${marker}suffix"`, `API_KEY="${marker}"`)).toBe(true)
+    expect(MemoryRedact.blocksWrite("API_KEY=abcdef1234567890xyz", "API_KEY=[redacted]")).toBe(true)
+  })
+
+  test("blocks replacing a standalone prefixed key with the marker", () => {
+    expect(MemoryRedact.blocksWrite(`const key = "${key}"`, `const key = "${marker}"`)).toBe(true)
+    expect(MemoryRedact.blocksWrite(`Authorization: Bearer ${key}`, `Authorization: Bearer ${marker}`)).toBe(true)
+  })
+
+  test("does not count a named assignment value as a standalone key", () => {
+    // Exact marker replacement is still blocked through the named comparison.
+    expect(MemoryRedact.blocksWrite(`API_KEY=${key}`, `API_KEY=${marker}`)).toBe(true)
+    expect(MemoryRedact.blocksWrite(`API_KEY="${key}"`, `API_KEY="${marker}"`)).toBe(true)
+    // A marker with a suffix leaves a key-shaped value, so the named rule allows the edit and the
+    // prefixed key inside the assignment value must not block it on its own.
+    expect(MemoryRedact.blocksWrite(`API_KEY=${key}`, `API_KEY=${marker}suffix`)).toBe(false)
+    expect(MemoryRedact.blocksWrite(`API_KEY="${key}"`, `API_KEY="${marker}suffix"`)).toBe(false)
+    // A prefixed key that is not a named assignment value still blocks when replaced.
+    expect(MemoryRedact.blocksWrite(`payload = "${key}"`, `payload = "${marker}"`)).toBe(true)
+  })
+
+  test("does not block masking values that the named rule leaves unchanged", () => {
+    expect(MemoryRedact.blocksWrite('MISTRAL_API_KEY="abc123"', `MISTRAL_API_KEY="${marker}"`)).toBe(false)
+    expect(MemoryRedact.blocksWrite('config.api_key = "abc123"', `config.api_key = "${marker}"`)).toBe(false)
+    expect(MemoryRedact.blocksWrite('{ "api_key": "abc123" }', `{ "api_key": "${marker}" }`)).toBe(false)
+    expect(MemoryRedact.blocksWrite('token_type="abcdef1234567890xyz"', `token_type="${marker}"`)).toBe(false)
+    // An exact marker is not a key, and an interpolated template is not redacted in the first place.
+    expect(MemoryRedact.blocksWrite(`MISTRAL_API_KEY="${marker}"`, `MISTRAL_API_KEY="${marker}"`)).toBe(false)
+    expect(MemoryRedact.blocksWrite('MISTRAL_API_KEY="${value}"', `MISTRAL_API_KEY="${marker}"`)).toBe(false)
+    // A short bare value is neither redacted by text() nor counted as a key.
+    expect(MemoryRedact.text("API_KEY=abc123", { values: true })).toBe("API_KEY=abc123")
+    expect(MemoryRedact.blocksWrite("API_KEY=abc123", `API_KEY=${marker}`)).toBe(false)
+  })
+
+  test("allows new files, key deletion and edits that keep every key", () => {
+    // A new file has nothing to lose.
+    expect(MemoryRedact.blocksWrite("", `API_KEY="${key}"`)).toBe(false)
+    // Deleting the key line without adding a marker is a normal edit.
+    expect(MemoryRedact.blocksWrite(`A=1\nAPI_KEY="${key}"\nB=2`, "A=1\nB=2")).toBe(false)
+    // An unrelated marker elsewhere does not block deleting a key.
+    expect(MemoryRedact.blocksWrite(`NOTE="${marker}"\nAPI_KEY="${key}"`, `NOTE="${marker}"`)).toBe(false)
+    // Adding marker expectations while the key stays in place passes.
+    expect(MemoryRedact.blocksWrite(`API_KEY="${key}"`, `API_KEY="${key}"\nEXPECTED = "${marker}"`)).toBe(false)
+    // No keys at all.
+    expect(MemoryRedact.blocksWrite("const x = 1", "const x = 2")).toBe(false)
+    // A value already equal to the marker is not a key.
+    expect(MemoryRedact.blocksWrite(`API_KEY="${marker}"`, `API_KEY="${marker}"`)).toBe(false)
   })
 })

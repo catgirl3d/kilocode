@@ -1,4 +1,7 @@
 import { asSchema, jsonSchema, type JSONSchema7, type Tool } from "ai"
+import { MemoryRedact } from "@kilocode/kilo-memory/redact" // fork_change
+
+const VALUES = { values: true } as const // fork_change
 
 const MAPS = ["$defs", "definitions", "dependencies", "dependentSchemas", "patternProperties", "properties"]
 const DANGERS = ["contains", "if", "not", "oneOf"]
@@ -123,25 +126,58 @@ function walk(input: unknown): { value: unknown; changed: boolean; dynamic: bool
   return { value: dangers.changed ? next : input, ...dangers }
 }
 
-export async function sanitize(input: Record<string, Tool>): Promise<Record<string, Tool>> {
+// fork_change start - Values mode scrubs free-text descriptions and rejects keys in the tool contract.
+/**
+ * Scrub free-text descriptions in a copy of a JSON schema. Every other string is part of the
+ * tool contract (property name, enum, default, pattern, ...), so a recognized key there throws
+ * instead of being rewritten.
+ */
+export function redact(input: unknown): unknown {
+  if (typeof input === "string") {
+    if (MemoryRedact.has(input, VALUES)) throw new MemoryRedact.Failure()
+    return input
+  }
+  if (Array.isArray(input)) return input.map(redact)
+  if (!record(input)) return input
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input)) {
+    if (MemoryRedact.has(key, VALUES)) throw new MemoryRedact.Failure()
+    next[key] = key === "description" && typeof value === "string" ? MemoryRedact.text(value, VALUES) : redact(value)
+  }
+  return next
+}
+// fork_change end
+
+// fork_change start - Accept the schema-redaction flag from the caller.
+export async function sanitize(input: Record<string, Tool>, redactKeys = false): Promise<Record<string, Tool>> {
+  // fork_change end
   const items = await Promise.all(
     Object.entries(input).map(async ([name, item]) => {
-      if (item.type === "provider") return { name, tool: item, changed: false }
+      // fork_change start - Check tool names and scrub descriptions only when enabled.
+      if (redactKeys && MemoryRedact.has(name, VALUES)) throw new MemoryRedact.Failure()
+      const desc = redactKeys
+        ? {
+            description:
+              typeof item.description === "string" ? MemoryRedact.text(item.description, VALUES) : item.description,
+          }
+        : {}
+      if (item.type === "provider") return { name, tool: redactKeys ? { ...item, ...desc } : item, changed: redactKeys }
+      // fork_change end
       const source = asSchema(item.inputSchema)
       const original = await source.jsonSchema
-      const result = walk(original)
-      if (!result.changed) return { name, tool: item, changed: false }
+      const result = walk(redactKeys ? redact(original) : original) // fork_change
+      if (!redactKeys && !result.changed) return { name, tool: item, changed: false } // fork_change
       // Tool inputs are object-root schemas. Complex widening falls back to accepting any object.
-      const fallback = result.dynamic || result.hazard || reference(original)
+      const fallback = result.changed && (result.dynamic || result.hazard || reference(original)) // fork_change
       const schema = fallback ? { type: "object" as const, additionalProperties: true } : result.value
       return {
         name,
-        tool: { ...item, inputSchema: jsonSchema(schema as JSONSchema7, { validate: source.validate }) },
+        tool: { ...item, ...desc, inputSchema: jsonSchema(schema as JSONSchema7, { validate: source.validate }) }, // fork_change
         changed: true,
       }
     }),
   )
-  if (!items.some((item) => item.changed)) return input
+  if (!redactKeys && !items.some((item) => item.changed)) return input // fork_change
   return Object.fromEntries(items.map((item) => [item.name, item.tool]))
 }
 

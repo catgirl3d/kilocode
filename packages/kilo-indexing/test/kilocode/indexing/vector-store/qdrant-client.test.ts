@@ -1,5 +1,6 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test"
 import { createHash } from "crypto"
+import { MemoryRedact } from "@kilocode/kilo-memory/redact"
 
 import { DEFAULT_MAX_SEARCH_RESULTS, DEFAULT_SEARCH_MIN_SCORE } from "../../../../src/indexing/constants"
 
@@ -1229,6 +1230,124 @@ describe("QdrantVectorStore", () => {
       expect(mockUpsert).toHaveBeenCalledWith(expectedCollectionName, {
         points: [],
         wait: true,
+      })
+    })
+
+    describe("redaction", () => {
+      const KEY = "sk-a1b2c3d4e5f6g7h8i9j0"
+      const redactingStore = () =>
+        new QdrantVectorStore(mockWorkspacePath, mockQdrantUrl, mockVectorSize, mockApiKey, undefined, true)
+
+      test("redacts codeChunk on the outgoing copy while keeping ids, paths, vectors and input intact", async () => {
+        mockUpsert.mockResolvedValue({} as any)
+        const point = {
+          id: "test-id-1",
+          vector: [0.1, 0.2, 0.3],
+          payload: {
+            filePath: "src/config.ts",
+            codeChunk: `const API_KEY = "${KEY}"`,
+            startLine: 1,
+            endLine: 3,
+          },
+        }
+
+        await redactingStore().upsertPoints([point])
+
+        const sent: { points: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> } = mockUpsert.mock.calls[0]?.[1]
+        expect(sent.points[0].id).toBe("test-id-1")
+        expect(sent.points[0].vector).toBe(point.vector)
+        expect(sent.points[0].payload).toEqual({
+          filePath: "src/config.ts",
+          codeChunk: 'const API_KEY = "[redacted]"',
+          startLine: 1,
+          endLine: 3,
+          pathSegments: { "0": "src", "1": "config.ts" },
+        })
+        expect(point.payload.codeChunk).toBe(`const API_KEY = "${KEY}"`)
+      })
+
+      test("redacts codeChunk when the payload has no filePath", async () => {
+        mockUpsert.mockResolvedValue({} as any)
+        const point = {
+          id: "test-id-2",
+          vector: [0.4],
+          payload: {
+            codeChunk: `const token = "${KEY}"`,
+            startLine: 5,
+            endLine: 6,
+          },
+        }
+
+        await redactingStore().upsertPoints([point])
+
+        const sent: { points: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> } = mockUpsert.mock.calls[0]?.[1]
+        expect(sent.points[0].payload).toEqual({
+          codeChunk: 'const token = "[redacted]"',
+          startLine: 5,
+          endLine: 6,
+        })
+        expect(point.payload.codeChunk).toBe(`const token = "${KEY}"`)
+      })
+
+      test("blocks the batch before upsert when a key is in filePath", async () => {
+        const point = {
+          id: "test-id-4",
+          vector: [0.1],
+          payload: { filePath: `src/${KEY}.ts`, codeChunk: "export const ok = 1" },
+        }
+
+        await expect(redactingStore().upsertPoints([point])).rejects.toBeInstanceOf(MemoryRedact.Failure)
+        expect(mockUpsert).not.toHaveBeenCalled()
+      })
+
+      test("blocks the batch when a point without codeChunk has a key in filePath", async () => {
+        const point = {
+          id: "test-id-4b",
+          vector: [0.1],
+          payload: { filePath: `src/${KEY}.ts`, startLine: 1, endLine: 2 },
+        }
+
+        await expect(redactingStore().upsertPoints([point])).rejects.toBeInstanceOf(MemoryRedact.Failure)
+        expect(mockUpsert).not.toHaveBeenCalled()
+      })
+
+      test("leaves codeChunk-free metadata points unchanged", async () => {
+        mockUpsert.mockResolvedValue({} as any)
+        const point = {
+          id: "test-id-6",
+          vector: [0.1],
+          payload: {
+            filePath: "src/config.ts",
+            content: `const API_KEY = "${KEY}"`,
+            startLine: 1,
+            endLine: 3,
+          },
+        }
+
+        await redactingStore().upsertPoints([point])
+
+        const sent: { points: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> } = mockUpsert.mock.calls[0]?.[1]
+        expect(sent.points[0].payload).toEqual({
+          filePath: "src/config.ts",
+          content: `const API_KEY = "${KEY}"`,
+          startLine: 1,
+          endLine: 3,
+          pathSegments: { "0": "src", "1": "config.ts" },
+        })
+      })
+
+      test("does not redact when the store is not configured for it", async () => {
+        mockUpsert.mockResolvedValue({} as any)
+        const point = {
+          id: "test-id-7",
+          vector: [0.1],
+          payload: { filePath: "src/config.ts", codeChunk: `const API_KEY = "${KEY}"` },
+        }
+
+        await vectorStore.upsertPoints([point])
+
+        const sent: { points: Array<{ id: string; vector: number[]; payload: Record<string, unknown> }> } = mockUpsert.mock.calls[0]?.[1]
+        expect(sent.points[0].payload.codeChunk).toBe(`const API_KEY = "${KEY}"`)
       })
     })
 

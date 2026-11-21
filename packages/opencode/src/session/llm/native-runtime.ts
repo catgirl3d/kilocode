@@ -18,6 +18,7 @@ import {
 } from "@opencode-ai/llm"
 import type { LLMClientShape } from "@opencode-ai/llm/route"
 import { LLMNative } from "./native-request"
+import { KiloLLM } from "@/kilocode/session/llm" // kilocode_change - [fork] final outbound redaction pass
 
 export type RuntimeStatus =
   | { readonly type: "supported"; readonly apiKey: string; readonly baseURL?: string }
@@ -40,6 +41,7 @@ type StreamInput = {
   readonly maxOutputTokens?: number
   readonly providerOptions?: Record<string, any>
   readonly messageTransformOptions?: Record<string, any> // kilocode_change - endpoint-override-aware transform context
+  readonly redact?: boolean // kilocode_change - [fork] personal outbound redaction policy snapshot
   readonly headers: Record<string, string>
   readonly abort: AbortSignal
 }
@@ -88,11 +90,23 @@ export function stream(input: StreamInput): StreamResult {
   // — if a field ever needs to differ between the two surfaces, the
   // translation belongs here, not split across both packages.
   const tools = nativeTools(input.tools, input)
+  // kilocode_change start - [fork] check the transformed text and provider options before the request;
+  // a privacy failure propagates instead of becoming an unsupported reason.
+  const cleaned = KiloLLM.final({
+    messages: ProviderTransform.message(
+      input.messages,
+      input.model,
+      input.messageTransformOptions ?? input.providerOptions ?? {},
+    ),
+    providerOptions: ProviderTransform.providerOptions(input.model, input.providerOptions ?? {}),
+    redact: input.redact !== false,
+  })
+  // kilocode_change end
   const request = LLMNative.request({
     model: input.model,
     apiKey: current.apiKey,
     baseURL: current.baseURL,
-    messages: ProviderTransform.message(input.messages, input.model, input.messageTransformOptions ?? input.providerOptions ?? {}), // kilocode_change
+    messages: cleaned.messages, // kilocode_change - [fork] use the final-checked messages in the native request
     toolChoice: input.toolChoice,
     // kilocode_change start - [fork] never send sampling temperature to providers
     // temperature: input.temperature,
@@ -100,7 +114,7 @@ export function stream(input: StreamInput): StreamResult {
     topP: input.topP,
     topK: input.topK,
     maxOutputTokens: input.maxOutputTokens,
-    providerOptions: ProviderTransform.providerOptions(input.model, input.providerOptions ?? {}),
+    providerOptions: cleaned.providerOptions ?? ProviderTransform.providerOptions(input.model, input.providerOptions ?? {}), // kilocode_change - [fork] use final-checked provider options when available
     headers: { ...providerHeaders(input.provider.options.headers), ...input.headers },
   })
   const stream = Stream.scoped(
