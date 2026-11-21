@@ -8,6 +8,8 @@ import { AppRuntime } from "@/effect/app-runtime"
 import { Effect } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import { opencodeSessionHeaders } from "@/kilocode/provider/opencode-session-headers"
+import { Config } from "@/config/config" // fork_change
+import { KiloLLM } from "@/kilocode/session/llm" // fork_change
 
 const log = Log.create({ service: "enhance-prompt" })
 
@@ -30,19 +32,27 @@ export async function enhanceWith(input: {
   model: Provider.Model
   language: LanguageModelV3
   text: string
+  redact?: boolean
 }): Promise<string> {
   const openai = input.model.providerID === "openai" && input.model.api.npm === "@ai-sdk/openai"
   const options = mergeDeep(ProviderTransform.smallOptions(input.model), input.model.options)
+  // [fork] redact the instruction and draft before the provider call
+  const redact = input.redact ?? false
+  const instruction = KiloLLM.system([INSTRUCTION], redact)[0]
+  const messages = KiloLLM.messages(
+    [{ role: "user" as const, content: `Draft prompt to enhance, not answer:\n\n${input.text}` }],
+    redact,
+  )
   const common = {
     model: input.language,
     providerOptions: ProviderTransform.providerOptions(
       input.model,
-      openai ? { ...options, instructions: INSTRUCTION } : options,
+      openai ? { ...options, instructions: instruction } : options,
     ),
     maxRetries: 3,
-    system: openai ? undefined : INSTRUCTION,
+    system: openai ? undefined : instruction,
     headers: opencodeSessionHeaders({ providerID: input.model.providerID, sessionID: randomUUID() }),
-    messages: [{ role: "user" as const, content: `Draft prompt to enhance, not answer:\n\n${input.text}` }],
+    messages,
   }
   if (!openai) return clean((await generateText(common)).text)
 
@@ -76,7 +86,14 @@ export async function enhancePrompt(text: string): Promise<string> {
   )
 
   // fork_change start
-  const result = await enhanceWith({ model: resolved.model, language: resolved.language, text })
+  // Policy is the personal global config only; a project config never changes it.
+  const policy = await AppRuntime.runPromise(Config.Service.use((svc) => svc.getGlobal()))
+  const result = await enhanceWith({
+    model: resolved.model,
+    language: resolved.language,
+    text,
+    redact: KiloLLM.enabled(policy),
+  })
 
   log.info("enhanced", { length: result.length })
   return result

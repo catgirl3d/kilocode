@@ -35,6 +35,7 @@ import * as KiloReference from "@/kilocode/reference"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
+import { KiloLLM } from "@/kilocode/session/llm" // kilocode_change - [fork] outbound access key redaction
 // kilocode_change
 
 export const Info = Schema.Struct({
@@ -515,6 +516,7 @@ const layer = Layer.effect(
       yield* InstanceState.invalidate(state)
       return yield* select(yield* InstanceState.get(state))
     })
+    // kilocode_change end
 
     return Service.of({
       // kilocode_change start
@@ -536,6 +538,9 @@ const layer = Layer.effect(
         model?: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
       }) {
         const cfg = yield* config.get()
+        // kilocode_change start - [fork] personal global policy; failure precedes any model call
+        const redact = KiloLLM.enabled(yield* config.getGlobal())
+        // kilocode_change end
         const model = input.model ?? (yield* provider.defaultModel())
         const resolved = yield* provider.getModel(model.providerID, model.modelID)
         const language = yield* provider.getLanguage(resolved)
@@ -548,14 +553,9 @@ const layer = Layer.effect(
         const authInfo = yield* auth.get(model.providerID).pipe(Effect.orDie)
         const isOpenaiOauth = model.providerID === "openai" && authInfo?.type === "oauth"
 
-        const params = {
-          // kilocode_change start - enable telemetry with custom PostHog tracer
-          experimental_telemetry: KiloAgent.telemetryOptions(cfg),
-          // kilocode_change end
-          // kilocode_change start - [fork] never send sampling temperature to providers
-          // temperature: 0.3,
-          // kilocode_change end
-          messages: [
+        // kilocode_change start - [fork] scrub the outgoing description and existing agent names
+        const messages = KiloLLM.messages(
+          [
             ...(isOpenaiOauth
               ? []
               : system.map(
@@ -569,6 +569,15 @@ const layer = Layer.effect(
               content: `Create an agent configuration based on this request: "${input.description}".\n\nIMPORTANT: The following identifiers already exist and must NOT be used: ${existing.map((i) => i.name).join(", ")}\n  Return ONLY the JSON object, no other text, do not wrap in backticks`,
             },
           ],
+          redact,
+        )
+        // kilocode_change end
+
+        const params = {
+          // kilocode_change start - enable telemetry with custom PostHog tracer
+          experimental_telemetry: KiloAgent.telemetryOptions(cfg),
+          // kilocode_change end
+          messages, // kilocode_change - [fork] pass redacted messages; drop upstream temperature 0.3
           model: language,
           schema: Object.assign(
             Schema.toStandardSchemaV1(GeneratedAgent),
@@ -581,7 +590,7 @@ const layer = Layer.effect(
             const result = streamObject({
               ...params,
               providerOptions: ProviderTransform.providerOptions(resolved, {
-                instructions: system.join("\n"),
+                instructions: KiloLLM.system(system, redact).join("\n"), // kilocode_change - [fork] pass redacted system instructions
                 store: false,
               }),
               onError: () => {},

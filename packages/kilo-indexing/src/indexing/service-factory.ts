@@ -1,5 +1,7 @@
 import path from "path"
 
+import { MemoryRedact } from "@kilocode/kilo-memory/redact" // fork_change
+
 import { getDefaultModelId } from "./model-registry"
 import { resolveEmbeddingProfile } from "./embedding-profile"
 
@@ -221,7 +223,16 @@ export class CodeIndexServiceFactory {
       model: profile.modelId,
       vectorSize: profile.dimension,
     })
-    return new QdrantVectorStore(workspacePath, config.qdrantUrl, profile.dimension, config.qdrantApiKey, profile)
+    // fork_change start - Pass the redaction flag to the Qdrant store.
+    return new QdrantVectorStore(
+      workspacePath,
+      config.qdrantUrl,
+      profile.dimension,
+      config.qdrantApiKey,
+      profile,
+      config.redact,
+    )
+    // fork_change end
   }
 
   public createDirectoryScanner(
@@ -270,6 +281,29 @@ export class CodeIndexServiceFactory {
     )
   }
 
+  // fork_change start - Wraps outgoing embedding batches so access keys are redacted.
+  /**
+   * Wraps the shared embedder so every outgoing batch is redacted in values mode. The wrapper keeps
+   * the batch size and order and never mutates the caller's array.
+   */
+  private createRedactingEmbedder(embedder: IEmbedder, redact: boolean): IEmbedder {
+    if (!redact) return embedder
+
+    return {
+      async createEmbeddings(texts: string[], model?: string) {
+        const redacted = texts.map((text) => MemoryRedact.text(text, { values: true }))
+        return embedder.createEmbeddings(redacted, model)
+      },
+      validateConfiguration() {
+        return embedder.validateConfiguration()
+      },
+      get embedderInfo() {
+        return embedder.embedderInfo
+      },
+    }
+  }
+  // fork_change end
+
   public createServices(
     cacheManager: CacheManager,
     ignoreInstance: IgnoreMatcher,
@@ -293,7 +327,7 @@ export class CodeIndexServiceFactory {
       configured: config.isConfigured,
     })
 
-    const embedder = this.createEmbedder()
+    const embedder = this.createRedactingEmbedder(this.createEmbedder(), config.redact) // fork_change
     const vectorStore = this.createVectorStore()
     const parser = new CodeParser(config.fileExtensions)
     const scanner = this.createDirectoryScanner(embedder, vectorStore, parser, ignoreInstance)

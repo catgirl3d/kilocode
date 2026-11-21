@@ -23,6 +23,7 @@ import { ConfigValidation } from "../kilocode/config-validation" // kilocode_cha
 import * as EncodedIO from "../kilocode/tool/encoded-io" // kilocode_change
 import * as Encoding from "../kilocode/encoding" // kilocode_change
 import { assertMutablePath } from "../kilocode/agent-manager/protection" // kilocode_change
+import { MemoryRedact } from "@kilocode/kilo-memory/redact" // kilocode_change - [fork] use the access-key overwrite guard
 
 const MAX_DIFF_CONTENT = 500_000 // kilocode_change
 
@@ -168,6 +169,12 @@ export const EditTool = Tool.define(
               const next = Bom.split(replace(contentOld, old, replacement, params.replaceAll))
               const desiredBom = source.bom || next.bom
               contentNew = next.text
+              // kilocode_change start - [fork] refuse to overwrite a real key with the marker the model saw
+              if (MemoryRedact.blocksWrite(contentOld, contentNew))
+                throw new Error(
+                  "The file was not written because the new content replaces an access key with the [redacted] marker. The real value is hidden from the model; keep the existing value or ask the user to change it.",
+                )
+              // kilocode_change end
 
               diff = trimDiff(
                 createTwoFilesPatch(
