@@ -26,8 +26,11 @@ function raw(output = sized(60, 3_000), metadata: Record<string, unknown> = {}):
   return { title: "output", output, metadata: { truncated: false, ...metadata } }
 }
 
-function cfg(info: Config.Info): Config.Interface {
-  return { get: () => Effect.succeed(info) } as Config.Interface
+function cfg(info: Config.Info, global: Config.Info = info): Config.Interface {
+  return {
+    get: () => Effect.succeed(info),
+    getGlobal: () => Effect.succeed(global),
+  } as Config.Interface
 }
 
 function mdl(ref: string) {
@@ -147,6 +150,7 @@ function sweep(input: {
   args?: Record<string, unknown>
   tool?: string
   config?: Config.Info
+  configGlobal?: Config.Info
   service?: Provider.Interface
   abort?: AbortSignal
   sessionID?: string
@@ -161,7 +165,10 @@ function sweep(input: {
     result,
     abort: input.abort,
     sessionID: input.sessionID ?? "ses_swe-pruner-test",
-  }).pipe(Effect.provideService(Provider.Service, service), Effect.provideService(Config.Service, cfg(config)))
+  }).pipe(
+    Effect.provideService(Provider.Service, service),
+    Effect.provideService(Config.Service, cfg(config, input.configGlobal ?? {})),
+  )
   return { calls, effect, result }
 }
 
@@ -324,6 +331,32 @@ describe("SwePruner guards and output", () => {
       expect(await Effect.runPromise(state.effect)).toBe(state.result)
       expect(state.calls).toHaveLength(0)
     }
+  })
+
+  // fork tests - outbound access key redaction
+  const KEY = "gsk_test_abcdefghijklmnopqrstuvwxyz"
+
+  test("returns the original output without calling the model when the output holds a key", async () => {
+    const keyed = raw([...sized(60, 3_000).split("\n").slice(0, -1), `${KEY}`].join("\n"))
+    const state = sweep({ result: keyed })
+
+    expect(await Effect.runPromise(state.effect)).toBe(keyed)
+    expect(state.calls).toHaveLength(0)
+  })
+
+  test("returns the original output without calling the model when the focus question holds a key", async () => {
+    const state = sweep({ args: { context_focus_question: `which lines use ${KEY}?` } })
+
+    expect(await Effect.runPromise(state.effect)).toBe(state.result)
+    expect(state.calls).toHaveLength(0)
+  })
+
+  test("prunes keyed output when redaction is disabled", async () => {
+    const keyed = raw([...sized(60, 3_000).split("\n").slice(0, -1), `${KEY}`].join("\n"))
+    const state = sweep({ result: keyed, configGlobal: { experimental: { redact_secrets: false } } })
+
+    await Effect.runPromise(state.effect)
+    expect(state.calls).toHaveLength(1)
   })
 
   test("prunes at exactly 90 percent but returns the exact raw result above 90 percent", async () => {

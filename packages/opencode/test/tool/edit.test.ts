@@ -571,4 +571,72 @@ describe("tool.edit", () => {
       }),
     )
   })
+
+  describe("access key placeholder guard", () => {
+    const key = "sk-proj-abcdefghijklmnopqrstuvwxyz012345"
+
+    const askSpy = () => {
+      const asked: unknown[] = []
+      const spy = {
+        ...ctx,
+        ask: (input: unknown) =>
+          Effect.sync(() => {
+            asked.push(input)
+          }),
+      }
+      return { asked, spy }
+    }
+
+    it.instance("rejects replacing a key with the marker before asking", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, ".env")
+        const original = `API_KEY="${key}"\nDEBUG=true\n`
+        yield* put(filepath, original)
+        const { asked, spy } = askSpy()
+
+        const exit = yield* run(
+          { filePath: filepath, oldString: `API_KEY="${key}"`, newString: `API_KEY="[redacted]"` },
+          spy,
+        ).pipe(Effect.exit)
+
+        expect(Exit.isFailure(exit)).toBe(true)
+        const message = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : ""
+        expect(message).toContain("access key")
+        expect(message).toContain("[redacted]")
+        expect(message).not.toContain(key)
+        expect(asked).toHaveLength(0)
+        expect(yield* load(filepath)).toBe(original)
+      }),
+    )
+
+    it.instance("allows editing the same file while the key stays", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, ".env")
+        yield* put(filepath, `API_KEY="${key}"\nDEBUG=true\n`)
+
+        const result = yield* run({ filePath: filepath, oldString: "DEBUG=true", newString: "DEBUG=false" })
+
+        expect(result.output).toContain("Edit applied successfully")
+        expect(yield* load(filepath)).toBe(`API_KEY="${key}"\nDEBUG=false\n`)
+      }),
+    )
+
+    it.instance("allows adding marker expectations while keeping the key", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, ".env")
+        yield* put(filepath, `API_KEY="${key}"\n`)
+
+        yield* run({
+          filePath: filepath,
+          oldString: `API_KEY="${key}"`,
+          newString: `API_KEY="${key}"\nEXPECTED = "[redacted]"`,
+        })
+
+        expect(yield* load(filepath)).toBe(`API_KEY="${key}"\nEXPECTED = "[redacted]"\n`)
+      }),
+    )
+  })
 })

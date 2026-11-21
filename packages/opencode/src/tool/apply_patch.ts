@@ -18,6 +18,7 @@ import * as EncodedIO from "../kilocode/tool/encoded-io" // kilocode_change
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
 import { assertMutablePath } from "../kilocode/agent-manager/protection" // kilocode_change
+import { MemoryRedact } from "@kilocode/kilo-memory/redact" // kilocode_change - [fork] use the access-key overwrite guard
 
 export const Parameters = Schema.Struct({
   patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
@@ -215,6 +216,24 @@ export const ApplyPatchTool = Tool.define(
           }
         }
       }
+
+      // kilocode_change start - [fork] refuse to overwrite a real key with the marker the model saw
+      for (const change of fileChanges) {
+        if (change.type === "delete") continue
+        const target = change.type === "add" ? change.filePath : change.movePath
+        const blocks = yield* Effect.gen(function* () {
+          if (MemoryRedact.blocksWrite(change.oldContent, change.newContent)) return true
+          if (!target || (change.type === "move" && target === change.filePath)) return false
+          if (!(yield* afs.exists(target))) return false
+          const current = yield* EncodedIO.read(afs, target)
+          return MemoryRedact.blocksWrite(Bom.split(current.text).text, change.newContent)
+        })
+        if (!blocks) continue
+        throw new Error(
+          "The file was not written because the new content replaces an access key with the [redacted] marker. The real value is hidden from the model; keep the existing value or ask the user to change it.",
+        )
+      }
+      // kilocode_change end
 
       // Build per-file metadata for UI rendering (used for both permission and result)
       const files = fileChanges.map((change) => ({

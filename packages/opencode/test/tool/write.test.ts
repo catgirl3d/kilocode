@@ -1,6 +1,6 @@
 import { afterEach, describe, expect } from "bun:test"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Exit, Layer } from "effect"
 import path from "path"
 import fs from "fs/promises"
 import { WriteTool } from "../../src/tool/write"
@@ -273,6 +273,72 @@ describe("tool.write", () => {
 
         const result = yield* run({ filePath: filepath, content: "export const Button = () => {}" })
         expect(result.title).toEndWith(path.join("src", "components", "Button.tsx"))
+      }),
+    )
+  })
+
+  describe("access key placeholder guard", () => {
+    const key = "sk-proj-abcdefghijklmnopqrstuvwxyz012345"
+
+    const askSpy = () => {
+      const asked: unknown[] = []
+      const spy: Tool.Context = {
+        ...ctx,
+        ask: (input) =>
+          Effect.sync(() => {
+            asked.push(input)
+          }),
+      }
+      return { asked, spy }
+    }
+
+    it.instance("rejects replacing a key with the marker before asking", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, ".env")
+        const original = `API_KEY="${key}"\nDEBUG=true\n`
+        yield* Effect.promise(() => fs.writeFile(filepath, original, "utf-8"))
+        const { asked, spy } = askSpy()
+
+        const exit = yield* run({ filePath: filepath, content: `API_KEY="[redacted]"\nDEBUG=true\n` }, spy).pipe(
+          Effect.exit,
+        )
+        expect(Exit.isFailure(exit)).toBe(true)
+        const message = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : ""
+        expect(message).toContain("access key")
+        expect(message).toContain("[redacted]")
+        expect(message).not.toContain(key)
+        expect(asked).toHaveLength(0)
+        expect(yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))).toBe(original)
+      }),
+    )
+
+    it.instance("allows editing the same file while the key stays", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, ".env")
+        yield* Effect.promise(() => fs.writeFile(filepath, `API_KEY="${key}"\nDEBUG=true\n`, "utf-8"))
+
+        const result = yield* run({ filePath: filepath, content: `API_KEY="${key}"\nDEBUG=false\n` })
+
+        expect(result.output).toContain("Wrote file successfully")
+        expect(yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))).toBe(`API_KEY="${key}"\nDEBUG=false\n`)
+      }),
+    )
+
+    it.instance("allows a test file that adds marker expectations while keeping a key", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const filepath = path.join(test.directory, "guard.test.ts")
+
+        yield* run({
+          filePath: filepath,
+          content: `const API_KEY = "${key}"\nexpect(API_KEY).toBe("[redacted]")\n`,
+        })
+
+        expect(yield* Effect.promise(() => fs.readFile(filepath, "utf-8"))).toBe(
+          `const API_KEY = "${key}"\nexpect(API_KEY).toBe("[redacted]")\n`,
+        )
       }),
     )
   })

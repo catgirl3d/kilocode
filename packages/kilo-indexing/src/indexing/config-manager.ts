@@ -39,6 +39,7 @@ export interface IndexingConfigInput {
   openRouterApiKey?: string
   openRouterSpecificProvider?: string
   voyageApiKey?: string
+  redact?: boolean // fork_change
 }
 
 /**
@@ -73,6 +74,7 @@ export class CodeIndexConfigManager {
   private embeddingBatchSize?: number
   private scannerMaxBatchRetries?: number
   private fileExtensions: string[] = resolveFileExtensions(undefined)
+  private redact = true // fork_change
 
   constructor(input: IndexingConfigInput) {
     this.applyInput(input)
@@ -100,6 +102,7 @@ export class CodeIndexConfigManager {
     this.embeddingBatchSize = input.embeddingBatchSize
     this.scannerMaxBatchRetries = input.scannerMaxBatchRetries
     this.fileExtensions = resolveFileExtensions(input.fileExtensions)
+    this.redact = input.redact !== false // fork_change
     this.modelId = input.modelId
 
     // Validate and set model dimension
@@ -158,6 +161,7 @@ export class CodeIndexConfigManager {
       qdrantUrl: this.qdrantUrl ?? "",
       qdrantApiKey: this.qdrantApiKey ?? "",
       fileExtensions: [...this.fileExtensions],
+      redact: this.redact, // fork_change
     }
   }
 
@@ -237,6 +241,8 @@ export class CodeIndexConfigManager {
 
     if (prev.fileExtensions.join("\0") !== this.fileExtensions.join("\0")) return true
 
+    if ((prev.redact ?? true) !== this.redact) return true // fork_change
+
     if (this.hasEmbeddingProfileChanged(prevProvider, prev.modelId, prev.modelDimension)) return true
 
     return false
@@ -284,6 +290,7 @@ export class CodeIndexConfigManager {
       embeddingBatchSize: this.currentEmbeddingBatchSize,
       scannerMaxBatchRetries: this.currentScannerMaxBatchRetries,
       fileExtensions: [...this.fileExtensions],
+      redact: this.redact, // fork_change
     }
   }
 

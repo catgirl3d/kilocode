@@ -82,6 +82,7 @@ export interface ExperimentalConfig {
   // fork_change start
   swe_pruner?: boolean
   swe_pruner_model?: string | null
+  redact_secrets?: boolean
   // fork_change end
   code_mode?: boolean
   native_notebook_tools?: boolean

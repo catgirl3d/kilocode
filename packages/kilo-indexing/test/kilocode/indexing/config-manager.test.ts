@@ -238,5 +238,35 @@ describe("CodeIndexConfigManager", () => {
       expect(cfg.loadConfiguration(createInput({ fileExtensions: [".js", ".PHP", "php"] })).requiresRestart).toBe(false)
       expect(cfg.loadConfiguration(createInput({ fileExtensions: [".css"] })).requiresRestart).toBe(true)
     })
+
+    test("requires restart when the redact flag changes", () => {
+      const cfg = new CodeIndexConfigManager(createInput())
+
+      expect(cfg.getConfig().redact).toBe(true)
+      expect(cfg.loadConfiguration(createInput({ redact: true })).requiresRestart).toBe(false)
+      expect(cfg.loadConfiguration(createInput({ redact: false })).requiresRestart).toBe(true)
+      expect(cfg.getConfig().redact).toBe(false)
+      expect(cfg.loadConfiguration(createInput()).requiresRestart).toBe(true)
+      expect(cfg.getConfig().redact).toBe(true)
+    })
+
+    test("cannot receive the redact flag from project indexing config", () => {
+      expect(() =>
+        IndexingConfig.parse({
+          enabled: true,
+          provider: "openai",
+          openai: { apiKey: "sk-test" },
+          redact: false,
+        }),
+      ).toThrow()
+
+      const input = toIndexingConfigInput(
+        IndexingConfig.parse({ enabled: true, provider: "openai", openai: { apiKey: "sk-test" } }),
+      )
+
+      expect("redact" in input).toBe(false)
+      expect(new CodeIndexConfigManager(input).getConfig().redact).toBe(true)
+      expect(new CodeIndexConfigManager({ ...input, redact: false }).getConfig().redact).toBe(false)
+    })
   })
 })

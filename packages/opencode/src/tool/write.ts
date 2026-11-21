@@ -17,6 +17,7 @@ import { filterDiagnostics } from "./diagnostics" // kilocode_change
 import { ConfigValidation } from "../kilocode/config-validation" // kilocode_change
 import * as EncodedIO from "../kilocode/tool/encoded-io" // kilocode_change
 import { assertMutablePath } from "../kilocode/agent-manager/protection" // kilocode_change
+import { MemoryRedact } from "@kilocode/kilo-memory/redact" // kilocode_change - [fork] use the access-key overwrite guard
 import * as Bom from "@/util/bom"
 
 const MAX_PROJECT_DIAGNOSTICS_FILES = 5
@@ -58,6 +59,12 @@ export const WriteTool = Tool.define(
           const desiredBom = source.bom || next.bom
           const contentOld = source.text
           const contentNew = next.text
+          // kilocode_change start - [fork] refuse to overwrite a real key with the marker the model saw
+          if (MemoryRedact.blocksWrite(contentOld, contentNew))
+            throw new Error(
+              "The file was not written because the new content replaces an access key with the [redacted] marker. The real value is hidden from the model; keep the existing value or ask the user to change it.",
+            )
+          // kilocode_change end
 
           const diff = trimDiff(createTwoFilesPatch(filepath, filepath, contentOld, contentNew))
           const filediff = buildFileDiff(filepath, contentOld, contentNew) // kilocode_change

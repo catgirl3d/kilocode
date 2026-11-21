@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { jsonSchema, type ModelMessage, type Tool } from "ai"
 import { LLMEvent } from "@opencode-ai/llm"
+import { MemoryRedact } from "@kilocode/kilo-memory/redact"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { Provider } from "@/provider/provider"
@@ -134,8 +135,8 @@ function respond(routes: Route[]): { fetch: FetchLike; calls: string[] } {
 function resolveInput(fetch: FetchLike, token: string) {
   return {
     modelID: "kilo-auto/custom/myrouter",
-    messages: [{ role: "user", content: "hi" }],
-    tools: [],
+    messages: [{ role: "user", content: "hi" }] as ModelMessage[],
+    tools: {} as Record<string, Tool>,
     sessionID: "ses_1",
     requestID: "msg_1",
     mode: "code",
@@ -603,5 +604,112 @@ describe("linkChoice", () => {
 
   test("registers without a link when nothing matches", () => {
     expect(linkChoice({ ...base, yes: true, suggestion: null })).toEqual({ kind: "skip" })
+  })
+})
+
+const SECRET = "sk-test-1234567890abcdefghijklmnop"
+
+function captured(fetch: FetchLike) {
+  const bodies: Record<string, unknown>[] = []
+  const stub = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+    if (new URL(url).pathname === "/v1/decide") bodies.push(JSON.parse(String(init?.body ?? "{}")))
+    return fetch(input, init)
+  }
+  return { fetch: stub as FetchLike, bodies }
+}
+
+function decisionResponse() {
+  return new Response(
+    JSON.stringify({
+      decision: {
+        entry: { kind: "client", provider: "ollama", model: "qwen3" },
+        model: "client:ollama/qwen3",
+        variant: null,
+        stale: false,
+        fallback: false,
+        sticky: false,
+        taskType: null,
+        subtaskType: null,
+        tableVersion: null,
+      },
+      decisionId: "decision-redact",
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  )
+}
+
+describe("custom router outbound redaction", () => {
+  test("sends scrubbed messages and tool descriptions to the decide endpoint", async () => {
+    const stub: FetchLike = async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      if (new URL(url).pathname === "/api/auto-routing/custom-routers") {
+        return new Response(JSON.stringify(listResponse([clientListing()])), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      return decisionResponse()
+    }
+    const { fetch, bodies } = captured(stub)
+    const tools: Record<string, Tool> = {
+      bash: {
+        description: `run a command with ${SECRET}`,
+        inputSchema: jsonSchema({
+          type: "object",
+          description: `arguments for ${SECRET}`,
+          properties: { command: { type: "string" } },
+        }),
+      },
+    }
+
+    await KiloCustomRouter.resolve({
+      ...resolveInput(fetch, "token-redact"),
+      redact: true,
+      messages: [
+        { role: "user", content: `use ${SECRET}` },
+        {
+          role: "tool",
+          content: [
+            { type: "tool-result", toolCallId: "call-1", toolName: "bash", output: { type: "text", value: SECRET } },
+          ],
+        },
+      ] as ModelMessage[],
+      tools,
+    })
+
+    expect(bodies.length).toBe(1)
+    const body = bodies[0]!
+    expect(JSON.stringify(body.messages)).not.toContain(SECRET)
+    expect(JSON.stringify(body.tools)).not.toContain(SECRET)
+    expect(JSON.stringify(body.messages)).toContain("[redacted]")
+    const sent = body.tools as Array<{ function: { description: string; parameters: { description?: string } } }>
+    expect(sent[0]!.function.description).toContain("[redacted]")
+    expect(sent[0]!.function.parameters.description).toContain("[redacted]")
+  })
+
+  test("a key in a tool contract value prevents the decide call", async () => {
+    const calls: string[] = []
+    const stub: FetchLike = async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      const path = new URL(url).pathname
+      calls.push(path)
+      if (path === "/api/auto-routing/custom-routers") {
+        return new Response(JSON.stringify(listResponse([clientListing()])), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      return decisionResponse()
+    }
+
+    await expect(
+      KiloCustomRouter.resolve({
+        ...resolveInput(stub, "token-blocked"),
+        redact: true,
+        tools: { pick: { inputSchema: jsonSchema({ type: "string", enum: [SECRET] }) } },
+      }),
+    ).rejects.toBeInstanceOf(MemoryRedact.Failure)
+    expect(calls).not.toContain("/v1/decide")
   })
 })
