@@ -31,6 +31,7 @@ export interface CodeIndexConfig {
   embeddingBatchSize?: number
   scannerMaxBatchRetries?: number
   fileExtensions: string[]
+  redact: boolean // fork_change
 }
 
 export type PreviousConfigSnapshot = {
@@ -59,4 +60,5 @@ export type PreviousConfigSnapshot = {
   qdrantUrl?: string
   qdrantApiKey?: string
   fileExtensions: string[]
+  redact: boolean // fork_change
 }

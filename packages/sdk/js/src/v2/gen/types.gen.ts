@@ -1724,6 +1724,7 @@ export type Config = {
     glob_include_ignored?: Array<string>
     swe_pruner?: boolean
     swe_pruner_model?: string
+    redact_secrets?: boolean
     code_mode?: boolean
     speech_to_text_model?: string
     speech_to_text_base_url?: string

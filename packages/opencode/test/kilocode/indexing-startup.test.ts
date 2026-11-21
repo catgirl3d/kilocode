@@ -121,6 +121,18 @@ async function called(init: ReturnType<typeof spyOn<CodeIndexManager, "initializ
   throw new Error("indexing initialization did not start")
 }
 
+// The global config cache reloads on its own: its stamp covers the files under Global.Path.config.
+async function withGlobalConfig(dir: string, fn: () => Promise<void>) {
+  const paths: { config: string } = Global.Path
+  const previous = paths.config
+  paths.config = dir
+  try {
+    await fn()
+  } finally {
+    paths.config = previous
+  }
+}
+
 beforeEach(() => {
   process.env["KILO_PLATFORM"] = "cli"
   IndexingWorker.override(inline)
@@ -1053,6 +1065,55 @@ describe("indexing startup degradation", () => {
     } finally {
       if (key === undefined) delete process.env.KILO_API_KEY
       else process.env.KILO_API_KEY = key
+      init.mockRestore()
+    }
+  })
+
+  test("passes the global redact flag off to indexing initialization", async () => {
+    const init = spyOn(CodeIndexManager.prototype, "initialize").mockResolvedValue({ requiresRestart: false })
+    await using tmp = await tmpdir({ git: true, config: cfg })
+    await using globalDir = await tmpdir()
+    await Bun.write(
+      path.join(globalDir.path, "kilo.json"),
+      JSON.stringify({ experimental: { redact_secrets: false } }),
+    )
+    process.env["KILO_CONFIG_DIR"] = tmp.path
+
+    try {
+      await withGlobalConfig(globalDir.path, async () => {
+        await provideTestInstance({
+          directory: tmp.path,
+          init: Effect.promise(() => KiloIndexing.init()),
+          fn: async () => {
+            await called(init)
+            expect(init.mock.calls[0]?.[0]).toMatchObject({ redact: false })
+          },
+        })
+      })
+    } finally {
+      init.mockRestore()
+    }
+  })
+
+  test("defaults the redact flag on for indexing initialization", async () => {
+    const init = spyOn(CodeIndexManager.prototype, "initialize").mockResolvedValue({ requiresRestart: false })
+    await using tmp = await tmpdir({ git: true, config: cfg })
+    await using globalDir = await tmpdir()
+    await Bun.write(path.join(globalDir.path, "kilo.json"), JSON.stringify({}))
+    process.env["KILO_CONFIG_DIR"] = tmp.path
+
+    try {
+      await withGlobalConfig(globalDir.path, async () => {
+        await provideTestInstance({
+          directory: tmp.path,
+          init: Effect.promise(() => KiloIndexing.init()),
+          fn: async () => {
+            await called(init)
+            expect(init.mock.calls[0]?.[0]).toMatchObject({ redact: true })
+          },
+        })
+      })
+    } finally {
       init.mockRestore()
     }
   })

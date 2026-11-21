@@ -546,4 +546,100 @@ EOF`
       expect(yield* readText(target)).toBe(`He said "hi"\nsome${emDash}dash\nend\n`)
     }),
   )
+
+  describe("access key placeholder guard", () => {
+    const key = "sk-proj-abcdefghijklmnopqrstuvwxyz012345"
+    const marker = 'API_KEY="[redacted]"'
+
+    for (const [name, hunk] of [
+      ["Add File", `*** Add File: .env\n+${marker}`],
+      ["Move to", `*** Update File: source.txt\n*** Move to: .env\n@@\n-old\n+${marker}`],
+    ]) {
+      it.instance(`rejects ${name} over a key in the destination before asking`, () =>
+        Effect.gen(function* () {
+          const test = yield* TestInstance
+          const { ctx, calls } = makeCtx()
+          const target = path.join(test.directory, ".env")
+          const source = path.join(test.directory, "source.txt")
+          const original = `API_KEY="${key}"\n`
+          yield* writeText(target, original)
+          yield* writeText(source, "old\n")
+
+          const patchText = `*** Begin Patch\n${hunk}\n*** End Patch`
+          const exit = yield* Effect.exit(execute({ patchText }, ctx))
+
+          expect(Exit.isFailure(exit)).toBe(true)
+          const message = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : ""
+          expect(message).toContain("access key")
+          expect(message).not.toContain(key)
+          expect(calls).toHaveLength(0)
+          expect(yield* readText(target)).toBe(original)
+          expect(yield* readText(source)).toBe("old\n")
+        }),
+      )
+    }
+
+    it.instance("allows Add File with a marker when the destination does not exist", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { ctx, calls } = makeCtx()
+        const patchText = `*** Begin Patch\n*** Add File: .env\n+${marker}\n*** End Patch`
+        yield* execute({ patchText }, ctx)
+
+        expect(calls).toHaveLength(1)
+        expect(yield* readText(path.join(test.directory, ".env"))).toBe(`${marker}\n`)
+      }),
+    )
+
+    it.instance("rejects replacing a key with the marker before asking", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { ctx, calls } = makeCtx()
+        const target = path.join(test.directory, ".env")
+        const original = `API_KEY="${key}"\nDEBUG=true\n`
+        yield* writeText(target, original)
+
+        const patchText = `*** Begin Patch\n*** Update File: .env\n@@\n-API_KEY="${key}"\n+API_KEY="[redacted]"\n*** End Patch`
+        const exit = yield* Effect.exit(execute({ patchText }, ctx))
+
+        expect(Exit.isFailure(exit)).toBe(true)
+        const message = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : ""
+        expect(message).toContain("access key")
+        expect(message).toContain("[redacted]")
+        expect(message).not.toContain(key)
+        expect(calls).toHaveLength(0)
+        expect(yield* readText(target)).toBe(original)
+      }),
+    )
+
+    it.instance("allows editing the same file while the key stays", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { ctx, calls } = makeCtx()
+        const target = path.join(test.directory, ".env")
+        yield* writeText(target, `API_KEY="${key}"\nDEBUG=true\n`)
+
+        const patchText = "*** Begin Patch\n*** Update File: .env\n@@\n-DEBUG=true\n+DEBUG=false\n*** End Patch"
+        yield* execute({ patchText }, ctx)
+
+        expect(calls).toHaveLength(1)
+        expect(yield* readText(target)).toBe(`API_KEY="${key}"\nDEBUG=false\n`)
+      }),
+    )
+
+    it.instance("allows adding marker expectations while keeping the key", () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const { ctx, calls } = makeCtx()
+        const target = path.join(test.directory, ".env")
+        yield* writeText(target, `API_KEY="${key}"\n`)
+
+        const patchText = `*** Begin Patch\n*** Update File: .env\n@@\n API_KEY="${key}"\n+EXPECTED = "[redacted]"\n*** End Patch`
+        yield* execute({ patchText }, ctx)
+
+        expect(calls).toHaveLength(1)
+        expect(yield* readText(target)).toBe(`API_KEY="${key}"\nEXPECTED = "[redacted]"\n`)
+      }),
+    )
+  })
 })

@@ -36910,6 +36910,9 @@
               "swe_pruner_model": {
                 "type": "string"
               },
+              "redact_secrets": {
+                "type": "boolean"
+              },
               "code_mode": {
                 "type": "boolean"
               },

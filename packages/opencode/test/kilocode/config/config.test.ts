@@ -578,6 +578,41 @@ describe("kilocode web search config", () => {
   })
 })
 
+describe("redact secrets config scope", () => {
+  test("project config cannot disable redaction; global config can", async () => {
+    await using globalTmp = await tmpdir()
+    await using tmp = await tmpdir({ git: true })
+    const prev = Global.Path.config
+    ;(Global.Path as { config: string }).config = globalTmp.path
+    await clear()
+    await disposeAllInstances()
+
+    try {
+      await writeConfig(tmp.path, { experimental: { redact_secrets: false } })
+
+      await provideTestInstance({
+        directory: tmp.path,
+        fn: async () => {
+          const config = await Effect.runPromise(
+            Config.Service.use((svc) => svc.getGlobal()).pipe(Effect.scoped, Effect.provide(layer)),
+          )
+          expect(config.experimental?.redact_secrets).toBeUndefined()
+        },
+      })
+
+      await saveGlobal(decode({ experimental: { redact_secrets: false } }))
+      const config = await Effect.runPromise(
+        Config.Service.use((svc) => svc.getGlobal()).pipe(Effect.scoped, Effect.provide(layer)),
+      )
+      expect(config.experimental?.redact_secrets).toBe(false)
+    } finally {
+      ;(Global.Path as { config: string }).config = prev
+      await clear()
+      await disposeAllInstances()
+    }
+  })
+})
+
 describe("kilocode indexing config", () => {
   test("ignores retired experimental flags in existing configs", async () => {
     await using tmp = await tmpdir({ git: true })

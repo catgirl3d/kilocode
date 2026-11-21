@@ -97,6 +97,20 @@ You can also enable it in `kilo.jsonc`:
 }
 ```
 
+### Outbound Secret Redaction
+
+Kilo redacts recognized access keys and credentials from text it sends to model providers, including prompts, tool results, and follow-up messages. The filter is on by default and can be disabled in the global `kilo.jsonc`:
+
+```json
+{
+  "experimental": {
+    "redact_secrets": false
+  }
+}
+```
+
+The filter replaces recognizable secrets, including keys, tokens, passwords, and URL or Cookie credentials, in text sent to models. It is not a guarantee that no secret is sent: unlabelled, encoded, and unusual formats can still pass. It does not decode arbitrary encodings or base64, parse every shell or configuration syntax, or reliably distinguish an unlabelled secret from a hash or an identifier. Clear placeholders and template references are left readable, and ambiguous text may be redacted conservatively. Rotate a credential if you suspect it was sent.
+
 ### Compaction Model
 
 Choose the model used for automatic and manual compaction under **Models** > **Compaction Model**. Leave it unset to use the chat model. The Compaction section in **Settings → Context** links to this selector.

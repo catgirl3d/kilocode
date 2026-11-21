@@ -43,6 +43,7 @@ import { useVSCode } from "../../context/vscode"
 import { useConfig } from "../../context/config"
 import { recommend, type ManagerContext } from "../../utils/shortcut-hint"
 import { PromptHint } from "./PromptHint"
+import { RedactBadge } from "./RedactBadge" // fork_change
 import { MentionRowContent } from "./MentionRowContent" // fork_change
 import { useProvider } from "../../context/provider"
 import { ModelSelector, ModelSelectorBase } from "../shared/ModelSelector"
@@ -2511,6 +2512,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           </For>
         </div>
       </Show>
+      {/* fork_change start */}
+      <RedactBadge texts={[paste.plainText(text())]} variant="prompt" />
+      {/* fork_change end */}
       <div class="prompt-input-wrapper">
         <div class="prompt-input-ghost-wrapper">
           <Show when={keycaps()} keyed>

@@ -345,4 +345,75 @@ describe("CodeIndexServiceFactory", () => {
       dimensions: 1024,
     })
   })
+
+  describe("createServices embedder redaction", () => {
+    const KEY = "sk-a1b2c3d4e5f6g7h8i9j0"
+    const ignore = { ignores: () => false }
+    const cache = {} as CacheManager
+
+    function embeddingResponse(count: number) {
+      const testEmbedding = new Float32Array([0.25, 0.5])
+      const base64String = Buffer.from(testEmbedding.buffer).toString("base64")
+      return {
+        data: Array.from({ length: count }, () => ({ embedding: base64String })),
+        usage: { prompt_tokens: 1, total_tokens: 1 },
+      }
+    }
+
+    test("redacts every text in a production embedding batch without changing count or order", async () => {
+      mockEmbeddingsCreate.mockResolvedValue(embeddingResponse(2))
+      const services = createFactory().createServices(cache, ignore)
+
+      const response = await services.embedder.createEmbeddings([
+        "export const Button = () => {}",
+        `const API_KEY = "${KEY}"`,
+      ])
+
+      expect(mockEmbeddingsCreate).toHaveBeenCalledTimes(1)
+      expect(mockEmbeddingsCreate.mock.calls[0]?.[0]).toEqual({
+        input: ["export const Button = () => {}", 'const API_KEY = "[redacted]"'],
+        model: "text-embedding-3-small",
+      })
+      expect(response.embeddings).toHaveLength(2)
+    })
+
+    test("leaves clean batches untouched in production services", async () => {
+      mockEmbeddingsCreate.mockResolvedValue(embeddingResponse(2))
+      const services = createFactory().createServices(cache, ignore)
+
+      await services.embedder.createEmbeddings(["first clean", "second clean"])
+
+      expect(mockEmbeddingsCreate.mock.calls[0]?.[0]).toEqual({
+        input: ["first clean", "second clean"],
+        model: "text-embedding-3-small",
+      })
+    })
+
+    test("passes raw batches when redaction is disabled", async () => {
+      mockEmbeddingsCreate.mockResolvedValue(embeddingResponse(1))
+      const services = createFactory({ redact: false }).createServices(cache, ignore)
+
+      await services.embedder.createEmbeddings([`const API_KEY = "${KEY}"`])
+
+      expect(mockEmbeddingsCreate.mock.calls[0]?.[0]).toEqual({
+        input: [`const API_KEY = "${KEY}"`],
+        model: "text-embedding-3-small",
+      })
+    })
+
+    test("rejects the whole batch before dispatch when an item is not a string", async () => {
+      const services = createFactory().createServices(cache, ignore)
+
+      await expect(services.embedder.createEmbeddings(["clean text", 42 as unknown as string])).rejects.toThrow()
+      expect(mockEmbeddingsCreate).not.toHaveBeenCalled()
+    })
+
+    test("keeps embedder metadata and validation on the underlying embedder", async () => {
+      mockEmbeddingsCreate.mockResolvedValue(embeddingResponse(1))
+      const services = createFactory().createServices(cache, ignore)
+
+      expect(services.embedder.embedderInfo).toEqual({ name: "openai" })
+      await expect(services.embedder.validateConfiguration()).resolves.toEqual({ valid: true })
+    })
+  })
 })
