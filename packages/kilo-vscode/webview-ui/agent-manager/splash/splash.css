@@ -671,12 +671,18 @@
 }
 
 /* The folded bar takes the welcome header's place in the chat host, as the intro layout does. */
-.am-chat-wrapper :has(> [data-slot="message-list"] .am-splash-folded-layout) {
+/* fork_change start - anchor :has() on the list container, not on every chat element */
+.am-chat-wrapper .message-list-container:has(> [data-slot="message-list"] .am-splash-folded-layout) {
+  /* fork_change end */
   display: flex;
   flex-direction: column;
 }
 
-.am-chat-wrapper :has(> [data-slot="message-list"] .am-splash-folded-layout) > [data-slot="welcome-header"] {
+/* fork_change start - anchor :has() on the list container, not on every chat element */
+.am-chat-wrapper
+  .message-list-container:has(> [data-slot="message-list"] .am-splash-folded-layout)
+  > [data-slot="welcome-header"] {
+  /* fork_change end */
   position: static;
   padding: 12px var(--chat-gutter, 16px) 0;
   flex-shrink: 0;
