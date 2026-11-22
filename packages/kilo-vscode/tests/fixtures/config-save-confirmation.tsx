@@ -52,28 +52,6 @@ const { ConfigProvider, useConfig, saveBound } = await import("../../webview-ui/
 const realBound = saveBound.ms
 const { post } = await import("../../webview-ui/src/utils/webview-message")
 
-interface ProbeError {
-  message: string
-  details?: string
-}
-
-/** The same union `SaveError` exports: a host-worded message, or a key to translate. */
-type ProbeSaveError = ProbeError | { key: string; params?: Record<string, string | number>; details?: string }
-
-/** The slice of the config context these assertions drive. */
-interface ConfigProbe {
-  config: () => Record<string, unknown>
-  globalConfig: () => Record<string, unknown>
-  projectConfig: () => Record<string, unknown>
-  isDirty: () => boolean
-  saving: () => boolean
-  saveError: () => ProbeSaveError | null
-  clearSaveError: () => void
-  updateConfig: (partial: Record<string, unknown>) => void
-  saveConfig: () => void
-  discardConfig: () => void
-}
-
 const settle = async () => {
   await Promise.resolve()
   await window.happyDOM.waitUntilComplete()
@@ -95,7 +73,7 @@ const until = async (ready: () => boolean, timeout: number) => {
   return true
 }
 
-const ui: { value?: ConfigProbe } = {}
+const ui: { value?: ReturnType<typeof useConfig> } = {}
 const probe = () => {
   if (!ui.value) throw new Error("the config probe has not rendered")
   return ui.value
@@ -227,21 +205,21 @@ try {
     await settle()
     const id = lastSave().requestId
     assert.equal(probe().saving(), true, "the save is in flight before the answer")
-    probe().updateConfig({ share: "while-pending" })
+    probe().updateConfig({ share: "disabled" })
     await settle()
     assert.equal(probe().isDirty(), true, "the second edit is staged")
     post({ type: "configUpdated", config: { model: "pending-edit" }, features, requestId: id })
     await settle()
     assert.equal(probe().saving(), false, "the answer settles the save")
     assert.equal(probe().config().model, "pending-edit", "the saved value shows the host's config")
-    assert.equal(probe().config().share, "while-pending", "the edit made after the save stays on screen")
+    assert.equal(probe().config().share, "disabled", "the edit made after the save stays on screen")
     assert.equal(probe().isDirty(), true, "the edit made after the save is still unsaved")
     assert.equal(probe().saveError(), null, "the confirmation reports no error")
     const before = saves().length
     probe().saveConfig()
     await settle()
     assert.equal(saves().length, before + 1, "the kept edit is what the next save posts")
-    assert.deepEqual(lastSave().config, { share: "while-pending" }, "the confirmed value is not posted again")
+    assert.deepEqual(lastSave().config, { share: "disabled" }, "the confirmed value is not posted again")
     probe().discardConfig()
     await settle()
     assert.equal(probe().isDirty(), false, "the discarded edit is gone")
@@ -315,20 +293,20 @@ try {
       assert.ok(settled, "the save settled at the bound")
       assert.equal(probe().isDirty(), true, "the unconfirmed draft stays before the answer lands")
       assert.deepEqual(probe().saveError(), { key: "settings.saveBar.unconfirmedSave" })
-      probe().updateConfig({ share: "after-bound" })
+      probe().updateConfig({ share: "manual" })
       await settle()
       post({ type: "configUpdated", config: { model: "late-answer" }, features, requestId: id })
       await settle()
       assert.equal(probe().saving(), false, "the Save button is enabled")
       assert.equal(probe().config().model, "late-answer", "the saved value shows the host's config")
-      assert.equal(probe().config().share, "after-bound", "the edit made after the bound stays on screen")
+      assert.equal(probe().config().share, "manual", "the edit made after the bound stays on screen")
       assert.equal(probe().isDirty(), true, "the edit made after the bound is still unsaved")
       assert.equal(probe().saveError(), null, "the answer resolves the unconfirmed report")
       const posted = saves().length
       probe().saveConfig()
       await settle()
       assert.equal(saves().length, posted + 1, "the kept edit is what the next save posts")
-      assert.deepEqual(lastSave().config, { share: "after-bound" }, "the stored value is not posted again")
+      assert.deepEqual(lastSave().config, { share: "manual" }, "the stored value is not posted again")
     } finally {
       saveBound.ms = realBound
     }

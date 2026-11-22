@@ -79,7 +79,7 @@ const profile = (currentOrgId: string | null, hasPersonalAccount: boolean): Prof
 })
 
 const push = async (message: ExtensionMessage) => {
-  post(message, window)
+  post(message)
   await settle()
 }
 
@@ -126,7 +126,7 @@ function switchPost(index: number): SwitchRequest {
   const posts = switchPosts()
   const found = posts[index]
   assert(found, `expected a switch request at index ${index}, saw ${posts.length}`)
-  assert.equal(typeof found.requestID, "string", "the switch must carry a correlation id")
+  assert(typeof found.requestID === "string", "the switch must carry a correlation id")
   return { type: found.type, organizationId: found.organizationId ?? null, requestID: found.requestID }
 }
 
