@@ -327,8 +327,14 @@
 
 /* The hidden state stays mounted, so the spinner and the label shimmer would
    otherwise animate for the whole idle session. The spinner sets its animation
-   inline, which resets the play state to running, so this has to be important. */
-.session-dock-state:not([data-active]) .working-indicator * {
+   inline, which resets the play state to running, so this has to be important.
+
+   `*` does not reach pseudo-elements. The shimmer's bright copy is animated on
+   `::after`, in lockstep with its window: left running while the window waited,
+   it drifted out of phase and, once the dock opened, the bright copy sat off the
+   glyphs, so the first status of a turn showed no sweep until the label changed. */
+.session-dock-state:not([data-active]) .working-indicator *,
+.session-dock-state:not([data-active]) .working-indicator *::after {
   animation-play-state: paused !important;
 }
 
