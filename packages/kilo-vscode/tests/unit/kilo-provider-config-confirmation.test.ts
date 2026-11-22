@@ -63,8 +63,10 @@ const answer = async () => ({ data: { effective: {}, targets: { global: globalTa
 function makeProvider(overlayUpdate: () => Promise<unknown> = answer) {
   const directory = mkdtempSync(join(tmpdir(), "kilo-save-confirmation-"))
   directories.push(directory)
+  const get = async () => ({ data: {} })
   const client = {
-    config: { overlayUpdate },
+    config: { get, overlay: answer, overlayUpdate },
+    global: { config: { get } },
     experimental: {
       capabilities: { get: async () => ({ data: { backgroundSubagents: false } }) },
     },

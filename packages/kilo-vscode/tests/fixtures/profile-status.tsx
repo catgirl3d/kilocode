@@ -77,7 +77,7 @@ const dispose = render(
 const settle = () => window.happyDOM.waitUntilComplete()
 
 const push = async (message: ExtensionMessage) => {
-  post(message, window)
+  post(message)
   await settle()
 }
 

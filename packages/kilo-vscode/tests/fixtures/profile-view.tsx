@@ -85,7 +85,7 @@ const profile = (currentOrgId: string | null, hasPersonalAccount = false): Profi
 })
 
 const push = async (message: ExtensionMessage) => {
-  post(message, window)
+  post(message)
   await settle()
 }
 
@@ -106,10 +106,20 @@ const option = (name: string) => {
 
 const press = async (node: HTMLElement) => {
   node.dispatchEvent(
-    new window.PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" }),
+    new window.PointerEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      pointerType: "mouse",
+    }) as unknown as Event,
   )
   node.dispatchEvent(
-    new window.PointerEvent("pointerup", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" }),
+    new window.PointerEvent("pointerup", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+      pointerType: "mouse",
+    }) as unknown as Event,
   )
   await settle()
 }
@@ -140,7 +150,7 @@ function switchPost(): SwitchRequest {
   const posts = switchPosts()
   const found = posts.at(-1)
   assert(found, "no switch request was posted")
-  assert.equal(typeof found.requestID, "string", "the switch must carry a correlation id")
+  assert(typeof found.requestID === "string", "the switch must carry a correlation id")
   assert.notEqual(found.requestID, "", "the switch must carry a non-empty correlation id")
   return { type: found.type, organizationId: found.organizationId ?? null, requestID: found.requestID }
 }

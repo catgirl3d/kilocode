@@ -222,7 +222,7 @@ check({ ...base, toolName: `acme_${RAW}lookup`, patterns: [`src/${RAW}gnp.exe`],
 check({ ...base, toolName: "bash", args: { command: "echo hi", rules: [`git log ${RAW} *`] } }, (root) => {
   const header = root.querySelector('[data-slot="permission-rules-header"]')
   assert(header, "Expected the rules header to render")
-  header.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))
+  header.dispatchEvent(new window.MouseEvent("click", { bubbles: true }) as unknown as Event)
   const rule = text(root, '[data-slot="permission-rule"]')
   assert(rule.includes(ESCAPED), `Bash rule label lost the escaped control: ${JSON.stringify(rule)}`)
   assert(!rule.includes(RAW), `Bash rule label showed the raw control: ${JSON.stringify(rule)}`)
@@ -238,7 +238,7 @@ Object.defineProperty(navigator, "clipboard", {
 async function copy(root: Element) {
   const button = root.querySelector('[data-slot="permission-command-copy"]')
   assert(button, "Missing the copy button")
-  button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))
+  button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }) as unknown as Event)
   await Promise.resolve()
   assert.equal(copied.length, 1, "The copy button wrote nothing")
   return copied.pop()!
