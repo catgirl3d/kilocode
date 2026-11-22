@@ -48,7 +48,7 @@
 }
 
 [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
-  color: var(--text-weaker);
+  color: var(--text-shimmer-base-color); /* kilocode_change - [fork] dim copy under the composited sweep */
   opacity: 0;
 }
 
@@ -56,52 +56,98 @@
   opacity: 1;
 }
 
-/* kilocode_change — gate animation on data-active directly (was data-run
-   set by a JS timer-driven effect). No JS timer needed. */
+/* kilocode_change start - [fork] composited sweep: only transforms animate, so the
+   compositor runs it without a main-thread repaint per frame. Gated on data-active
+   (was data-run set by a JS timer-driven effect). The window is wider than the text
+   by the spread on each side, and its ::after bright copy is padded by the same
+   amount, so both percentages refer to the same width and the copy stays on the
+   glyphs. Labels stay structured after their first activation, so the window
+   exists only while active and an idle label adds no clip, mask or transform. */
+[data-component="text-shimmer"] [data-slot="text-shimmer-window"] {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--text-shimmer-spread));
+  right: calc(-1 * var(--text-shimmer-spread));
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-mask-image: linear-gradient(
+    var(--text-shimmer-angle),
+    transparent calc(50% - var(--text-shimmer-spread)),
+    #000 50%,
+    transparent calc(50% + var(--text-shimmer-spread))
+  );
+  mask-image: linear-gradient(
+    var(--text-shimmer-angle),
+    transparent calc(50% - var(--text-shimmer-spread)),
+    #000 50%,
+    transparent calc(50% + var(--text-shimmer-spread))
+  );
+  transform: translateX(-100%);
+}
+
+[data-component="text-shimmer"] [data-slot="text-shimmer-window"]::after {
+  content: attr(data-text);
+  display: block;
+  padding-inline: var(--text-shimmer-spread);
+  white-space: pre;
+  color: var(--text-shimmer-peak-color);
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  transform: translateX(100%);
+}
+
+[data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-base"] {
+  opacity: 0;
+}
+
 [data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-shimmer"] {
-  animation-name: text-shimmer-sweep;
+  position: relative;
+  overflow-x: clip;
+}
+
+[data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-window"] {
+  display: block;
+  animation-name: text-shimmer-window;
   animation-duration: var(--text-shimmer-duration);
   animation-iteration-count: infinite;
   animation-timing-function: linear;
   animation-fill-mode: both;
   animation-delay: calc(var(--text-shimmer-step) * var(--text-shimmer-index) * -1);
-  will-change: background-position;
 }
 
-@keyframes text-shimmer-sweep {
+[data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-window"]::after {
+  animation-name: text-shimmer-peak;
+  animation-duration: var(--text-shimmer-duration);
+  animation-iteration-count: infinite;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-delay: calc(var(--text-shimmer-step) * var(--text-shimmer-index) * -1);
+}
+
+@keyframes text-shimmer-window {
   0% {
-    background-position:
-      100% 0,
-      0 0;
+    transform: translateX(-100%);
   }
 
   100% {
-    background-position:
-      0% 0,
-      0 0;
+    transform: translateX(100%);
   }
 }
 
-@supports ((-webkit-background-clip: text) or (background-clip: text)) {
-  [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
-    color: transparent;
-    -webkit-text-fill-color: transparent;
-    background-image: var(--text-shimmer-sweep), var(--text-shimmer-base);
-    background-size:
-      var(--text-shimmer-size) 100%,
-      100% 100%;
-    background-position:
-      100% 0,
-      0 0;
-    background-repeat: no-repeat;
-    -webkit-background-clip: text;
-    background-clip: text;
+@keyframes text-shimmer-peak {
+  0% {
+    transform: translateX(100%);
   }
 
-  [data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-char-base"] {
-    opacity: 0;
+  100% {
+    transform: translateX(-100%);
   }
 }
+/* kilocode_change end */
 
 @media (prefers-reduced-motion: reduce) {
   [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"],
@@ -109,12 +155,15 @@
     transition-duration: 0ms;
   }
 
+  /* kilocode_change start - [fork] composited sweep */
   [data-component="text-shimmer"] [data-slot="text-shimmer-char-shimmer"] {
-    animation: none !important;
     color: inherit;
-    -webkit-text-fill-color: currentColor;
-    background-image: none;
   }
+
+  [data-component="text-shimmer"][data-active="true"] [data-slot="text-shimmer-window"] {
+    display: none;
+  }
+  /* kilocode_change end */
 
   [data-component="text-shimmer"] [data-slot="text-shimmer-char-base"] {
     opacity: 1 !important;
