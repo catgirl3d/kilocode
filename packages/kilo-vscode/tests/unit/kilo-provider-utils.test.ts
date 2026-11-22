@@ -313,6 +313,21 @@ describe("buildSettingPath", () => {
 })
 
 describe("mapSSEEventToWebviewMessage", () => {
+  it("maps session.queue.changed to a session-scoped queue snapshot", () => {
+    const event = {
+      id: "evt-queue",
+      type: "session.queue.changed",
+      properties: { sessionID: "sess-1", queued: ["m1", "m2"] },
+    } as unknown as Parameters<typeof mapSSEEventToWebviewMessage>[0]
+
+    const msg = mapSSEEventToWebviewMessage(event, "fallback-session")
+    expect(msg?.type).toBe("sessionQueueChanged")
+    if (msg?.type === "sessionQueueChanged") {
+      expect(msg.sessionID).toBe("sess-1")
+      expect(msg.queued).toEqual(["m1", "m2"])
+    }
+  })
+
   it("maps message.part.updated.1 to partUpdated", () => {
     const event: SyncEventMessagePartUpdated = {
       type: "sync",

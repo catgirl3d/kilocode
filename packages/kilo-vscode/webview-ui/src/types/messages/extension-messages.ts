@@ -201,6 +201,14 @@ export interface SessionWakeupMessage {
   pending: number
 }
 
+// fork_change start
+export interface SessionQueueChangedMessage {
+  type: "sessionQueueChanged"
+  sessionID: string
+  queued: string[]
+}
+// fork_change end
+
 export interface SessionTurnClosedMessage {
   type: "sessionTurnClosed"
   sessionID: string
@@ -2076,6 +2084,7 @@ export type ExtensionMessage =
   | PartRemovedMessage
   | SessionStatusMessage
   | SessionWakeupMessage
+  | SessionQueueChangedMessage // fork_change
   | SessionTurnClosedMessage
   | SessionErrorMessage
   | PermissionRequestMessage
