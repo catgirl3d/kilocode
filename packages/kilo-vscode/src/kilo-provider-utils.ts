@@ -534,6 +534,7 @@ export type WebviewMessage =
     }
   | { type: "sessionStatus"; sessionID: string; status: string; attempt?: number; message?: string; next?: number }
   | { type: "sessionWakeup"; sessionID: string; pending: number }
+  | { type: "sessionQueueChanged"; sessionID: string; queued: string[] } // fork_change
   | {
       type: "sessionTurnClosed"
       sessionID: string
@@ -690,6 +691,14 @@ export function mapSSEEventToWebviewMessage(event: StreamEvent, sessionID: strin
         sessionID: event.properties.sessionID,
         pending: event.properties.pending,
       }
+    // fork_change start
+    case "session.queue.changed":
+      return {
+        type: "sessionQueueChanged" as const,
+        sessionID: event.properties.sessionID,
+        queued: event.properties.queued,
+      }
+    // fork_change end
     case "session.turn.close":
       return {
         type: "sessionTurnClosed",

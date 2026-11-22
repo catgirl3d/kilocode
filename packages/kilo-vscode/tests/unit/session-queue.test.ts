@@ -5,6 +5,7 @@ import {
   partitionTurns,
   queuedUserMessageIDs,
   removeQueuedMessage,
+  serverQueue,
   stableMessageTurns,
   visibleMessages,
   visibleParts,
@@ -106,6 +107,19 @@ describe("queuedUserMessageIDs", () => {
     const messages = [assistant("message_2", "message_1", { finish: "tool-calls" }), user("message_3")]
 
     expect(queuedUserMessageIDs(messages, { type: "busy" })).toEqual(["message_3"])
+  })
+
+  it("does not queue settled turns when the active parent is outside the page", () => {
+    // Revert cleanup removed message_3 before its reply; message_1 is settled history.
+    const messages = [
+      user("message_1"),
+      assistant("message_2", "message_1", { finish: "stop" }),
+      assistant("message_4", "message_3", { finish: "tool-calls" }),
+      user("message_5"),
+    ]
+
+    expect(activeUserMessageID(messages, { type: "busy" })).toBe("message_3")
+    expect(queuedUserMessageIDs(messages, { type: "busy" })).toEqual(["message_5"])
   })
 
   it("returns no queued messages while idle without submitting flag", () => {
@@ -630,6 +644,84 @@ describe("activeUserMessageID", () => {
     ]
 
     expect(activeUserMessageID(messages, { type: "busy" })).toBe("message_1")
+  })
+
+  it("ignores a stale unfinished assistant behind later completed turns", () => {
+    // An interrupted run can leave an assistant without finish, error, or completion
+    // deep in history. It must not turn every later prompt into a queued message.
+    const messages = [
+      user("message_1"),
+      assistant("message_2", "message_1"),
+      user("message_3"),
+      assistant("message_4", "message_3", { finish: "stop", time: { created: 1, completed: 2 } }),
+      user("message_5"),
+      assistant("message_6", "message_5", { finish: "stop", time: { created: 3, completed: 4 } }),
+      user("message_7"),
+    ]
+
+    expect(activeUserMessageID(messages, { type: "idle" }, undefined, true)).toBe("message_7")
+    expect(queuedUserMessageIDs(messages, { type: "idle" }, undefined, true)).toEqual([])
+    expectLayout(
+      messages,
+      { type: "busy" },
+      { virtual: ["message_1", "message_3", "message_5"], direct: ["message_7"], queued: [] },
+    )
+  })
+
+  it("keeps history out of the queue while a reverted turn is removed one message at a time", () => {
+    // Revert cleanup removes the reverted user message before its reply, so for a
+    // moment the newest settled reply has no loaded parent.
+    const messages = [
+      user("message_1"),
+      assistant("message_2", "message_1", { finish: "stop", time: { created: 1, completed: 2 } }),
+      user("message_3"),
+      assistant("message_4", "message_3", { finish: "stop", time: { created: 3, completed: 4 } }),
+      assistant("message_6", "message_5", { finish: "stop", time: { created: 5, completed: 6 } }),
+      user("message_7"),
+    ]
+
+    expect(activeUserMessageID(messages, { type: "busy" })).toBe("message_7")
+    expect(queuedUserMessageIDs(messages, { type: "busy" })).toEqual([])
+    expect(queuedUserMessageIDs(messages, { type: "idle" }, undefined, true)).toEqual([])
+  })
+
+  it("does not attribute a reply with a removed parent to an earlier compaction", () => {
+    // The compaction precedes the reverted user, so it cannot own the orphaned reply.
+    const messages = [
+      user("message_1"),
+      assistant("message_2", "message_1", { finish: "stop", time: { created: 1, completed: 2 } }),
+      compact("message_3"),
+      assistant("message_4", "message_3", { summary: true, finish: "stop", time: { created: 3, completed: 4 } }),
+      user("message_5"),
+      assistant("message_6", "message_5", { finish: "stop", time: { created: 5, completed: 6 } }),
+      assistant("message_8", "message_7", { finish: "stop", time: { created: 7, completed: 8 } }),
+      user("message_9"),
+    ]
+
+    expect(activeUserMessageID(messages, { type: "busy" })).toBe("message_9")
+    expect(queuedUserMessageIDs(messages, { type: "busy" })).toEqual([])
+    expect(queuedUserMessageIDs(messages, { type: "idle" }, undefined, true)).toEqual([])
+  })
+
+  it("drops a stale server queue snapshot once the session is idle", () => {
+    // A closed tab stops receiving queue events, so the last snapshot can outlive the queue.
+    const messages = [user("message_1"), assistant("message_2", "message_1"), user("message_3")]
+
+    expect(serverQueue(["message_3"], messages, { type: "idle" })).toEqual([])
+    expect(serverQueue(["message_3"], messages, { type: "busy" })).toEqual(["message_3"])
+    expect(serverQueue(["message_3"], messages, { type: "idle" }, true)).toEqual(["message_3"])
+  })
+
+  it("drops prompts that already have a reply from a server queue snapshot", () => {
+    const messages = [
+      user("message_1"),
+      assistant("message_2", "message_1", { finish: "stop", time: { created: 1, completed: 2 } }),
+      user("message_3"),
+      assistant("message_4", "message_3", { finish: "tool-calls" }),
+      user("message_5"),
+    ]
+
+    expect(serverQueue(["message_3", "message_5"], messages, { type: "busy" })).toEqual(["message_5"])
   })
 
   it("maps resumed post-compaction tool calls to the compaction turn", () => {
