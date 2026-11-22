@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { Schema } from "effect"
+import { Usage } from "@opencode-ai/llm"
 import type * as ModelsDev from "@opencode-ai/core/models-dev"
 import { Provider } from "../../src/provider/provider"
+import { Session as SessionNs } from "../../src/session/session"
 import {
   CatalogProvider,
   OPENDESIGN_ID,
@@ -172,6 +174,136 @@ describe("OpenDesign model list", () => {
     expect(models["bare"]?.attachment).toBe(false)
   })
 
+  test("prices models from the public catalog in dollars per million tokens", () => {
+    expect(models["deepseek-v4-flash"]?.cost).toEqual({ input: 0.44, output: 1.32, cache_read: 0.028 })
+    expect(models["minimax-m3.1-flash"]?.cost).toEqual({ input: 0.15, output: 0.6, cache_read: 0.015 })
+  })
+
+  test("applies context tiers for models priced by input size", () => {
+    expect(models["claude-haiku-5.5"]?.cost).toEqual({
+      input: 0.1,
+      output: 0.5,
+      cache_read: 0.01,
+      cache_write: 0.125,
+      tiers: [
+        {
+          input: 0.5,
+          output: 2.5,
+          cache_read: 0.05,
+          cache_write: 0.625,
+          tier: { type: "context", size: 100000 },
+        },
+      ],
+    })
+    expect(openDesignModel({ id: "gpt-6-luna" }).cost).toEqual({
+      input: 0.1,
+      output: 0.5,
+      cache_read: 0.01,
+      cache_write: 0.125,
+      tiers: [
+        {
+          input: 0.2,
+          output: 0.75,
+          cache_read: 0.02,
+          cache_write: 0.25,
+          tier: { type: "context", size: 272000 },
+        },
+      ],
+    })
+  })
+
+  test("keeps unknown models free instead of guessing a price", () => {
+    expect(models["bare"]?.cost).toEqual({ input: 0, output: 0 })
+  })
+
+  test("uses a numeric cost reported by the gateway", () => {
+    const model = openDesignModel({
+      id: "deepseek-v4.1-flash",
+      cost: {
+        input: 9,
+        output: 10,
+        cache_read: 1,
+        cache_write: 2,
+        tiers: [
+          {
+            input: 20,
+            output: 30,
+            cache_read: 3,
+            cache_write: 4,
+            tier: { type: "context", size: 100000 },
+          },
+        ],
+      },
+    })
+    expect(model.cost).toEqual({
+      input: 9,
+      output: 10,
+      cache_read: 1,
+      cache_write: 2,
+      tiers: [
+        {
+          input: 20,
+          output: 30,
+          cache_read: 3,
+          cache_write: 4,
+          tier: { type: "context", size: 100000 },
+        },
+      ],
+    })
+  })
+
+  test("keeps a flat gateway price flat instead of applying table tiers", () => {
+    expect(openDesignModel({ id: "claude-haiku-5.5", cost: { input: 9, output: 10 } }).cost).toEqual({
+      input: 9,
+      output: 10,
+      cache_read: 0.01,
+      cache_write: 0.125,
+    })
+  })
+
+  test("fills null gateway cache rates from the table", () => {
+    expect(
+      openDesignModel({
+        id: "claude-haiku-5.5",
+        cost: { input: 9, output: 10, cache_read: null, cache_write: null },
+      }).cost,
+    ).toEqual({ input: 9, output: 10, cache_read: 0.01, cache_write: 0.125 })
+    expect(
+      openDesignModel({ id: "deepseek-v4-flash", cost: { input: 9, output: 10, cache_read: null } }).cost,
+    ).toEqual({ input: 9, output: 10, cache_read: 0.028 })
+  })
+
+  test("drops gateway tiers that are not usable context tiers", () => {
+    expect(
+      openDesignModel({
+        id: "deepseek-v4.1-flash",
+        cost: {
+          input: 9,
+          output: 10,
+          tiers: [
+            { input: 20, output: 30, tier: { type: "prompt", size: 1000 } },
+            { input: null, output: 30, tier: { type: "context", size: 2000 } },
+            { output: 30, tier: { type: "context", size: 3000 } },
+            { input: 20, output: 30, cache_read: 1, tier: { type: "context", size: 4000 } },
+          ],
+        },
+      }).cost,
+    ).toEqual({
+      input: 9,
+      output: 10,
+      cache_read: 0.006,
+      tiers: [{ input: 20, output: 30, cache_read: 1, tier: { type: "context", size: 4000 } }],
+    })
+  })
+
+  test("falls back to the table when the gateway cost is partial", () => {
+    expect(openDesignModel({ id: "deepseek-v4.1-flash", cost: { input: 9 } }).cost).toEqual({
+      input: 0.3,
+      output: 1.2,
+      cache_read: 0.006,
+    })
+  })
+
   test("maps gateway modalities and enables attachments for non-text input", () => {
     expect(models["deepseek-v4-flash"]?.modalities?.input).toEqual(["text"])
     expect(models["deepseek-v4-flash"]?.attachment).toBe(false)
@@ -190,6 +322,53 @@ describe("OpenDesign model list", () => {
     expect(models["sparse"]?.family).toBe("")
     expect(models["sparse"]?.limit).toEqual({ context: 500000, output: 0 })
     expect(models["sparse"]?.modalities).toEqual({ input: ["text"], output: ["text"] })
+  })
+})
+
+describe("OpenDesign model cost wiring", () => {
+  const provider = Provider.fromModelsDevProvider({
+    id: OPENDESIGN_ID,
+    name: "OpenDesign",
+    env: [],
+    api: OPENDESIGN_URL,
+    npm: "@ai-sdk/openai-compatible",
+    models: {
+      "deepseek-v4.1-flash": openDesignModel({ id: "deepseek-v4.1-flash" }),
+      "claude-haiku-5.5": openDesignModel({ id: "claude-haiku-5.5" }),
+    },
+  } as unknown as ModelsDev.Provider)
+
+  const get = (id: string, inputTokens: number, outputTokens: number) =>
+    SessionNs.getUsage({
+      model: provider.models[id],
+      provider: { id: OPENDESIGN_ID } as Provider.Info,
+      usage: new Usage({ inputTokens, outputTokens, totalTokens: inputTokens + outputTokens }),
+    })
+
+  test("calculates deepseek cost from the wired provider model", () => {
+    expect(get("deepseek-v4.1-flash", 1_000_000, 100_000).cost).toBeCloseTo(0.42, 10)
+  })
+
+  test("uses the claude context tier when calculating session cost", () => {
+    expect(get("claude-haiku-5.5", 1_000_000, 100_000).cost).toBeCloseTo(0.75, 10)
+  })
+
+  test("uses the claude base rates below the context tier threshold", () => {
+    expect(get("claude-haiku-5.5", 50_000, 10_000).cost).toBeCloseTo(0.01, 10)
+  })
+})
+
+describe("real gateway payload", () => {
+  test("covers every model in the gateway response with catalog pricing", async () => {
+    const raw = await Bun.file(new URL("./fixtures/opendesign-models.json", import.meta.url)).json()
+    const data = Schema.decodeUnknownSync(OpenDesignResponse)(raw).data ?? []
+    const models = Object.fromEntries(data.map((item) => [item.id, openDesignModel(item)]))
+
+    expect(data).toHaveLength(14)
+    expect(models["deepseek-v4.1-flash"]?.cost).toEqual({ input: 0.3, output: 1.2, cache_read: 0.006 })
+    expect(models["claude-haiku-5.5"]?.cost?.tiers).toHaveLength(1)
+    expect(Object.values(models).every((model) => (model.cost?.input ?? 0) !== 0)).toBe(true)
+    expect(models["bare"]).toBeUndefined()
   })
 })
 
