@@ -68,6 +68,7 @@
 
 ### Fixes & Enhancements
 
+- Load the model catalog faster: send only the provider and model fields the UI uses and reuse the loaded catalog instead of requesting and sending it again on every mount.
 - Stop the editor from freezing for minutes in long sessions when sending a prompt or continuing after a revert: an old interrupted reply, or a reply whose prompt is being removed by revert cleanup, no longer marks earlier turns as queued, so they stay in the virtualized history instead of rendering all at once. Agent Manager also recalculates styles faster in long transcripts, because the folded splash layout rule no longer checks every chat element.
 - Show queued prompts from the server's own queue instead of inferring them from the message history, so the transcript's queued badges match what will actually run even while earlier messages are being removed.
 - Show the full context window reported by OpenDesign for each model instead of the gateway's smaller working budget, so models such as DeepSeek V4.1 Flash use their 1M-token window rather than 328K.
