@@ -468,6 +468,31 @@ describe("createAutoScroll non-scrollable layouts", () => {
     ctx.dispose()
   })
 
+  test("does not read scroll geometry for a downward wheel", () => {
+    const ctx = setup({ working: true })
+    overflow(ctx)
+    let reads = 0
+    for (const key of ["scrollHeight", "scrollTop"] as const) {
+      let value = ctx.el[key]
+      Object.defineProperty(ctx.el, key, {
+        configurable: true,
+        get: () => {
+          reads++
+          return value
+        },
+        set: (next: number) => {
+          value = next
+        },
+      })
+    }
+
+    ctx.el.fire("wheel", new FakeWheelEvent(40, ctx.el) as unknown as Event)
+
+    expect(reads).toBe(0)
+    expect(ctx.scroll.userScrolled()).toBe(false)
+    ctx.dispose()
+  })
+
   test("continues following when streaming reflow emits scroll before resize", () => {
     const ctx = setup({ working: true })
     ctx.el.scrollHeight = 1000
