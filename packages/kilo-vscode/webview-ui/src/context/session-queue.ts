@@ -53,7 +53,7 @@ function target(messages: Message[], index: number, id: string, parts?: (msg: Me
   const parent = messages.findIndex((msg) => msg.id === id)
   for (let i = index - 1; i > parent; i -= 1) {
     const msg = messages[i]
-    if (msg && isCompact(msg, parts)) return msg.id
+    if (msg && msg.id > id && isCompact(msg, parts)) return msg.id // fork_change - a compaction older than the parent (revert cleanup removed it) does not own the reply
   }
   return id
 }
@@ -172,9 +172,12 @@ function active(messages: Message[], status: SessionStatusInfo, parts?: (msg: Me
     const resumable = msg.finish === "tool-calls" || msg.finish === "unknown"
     const running = latest && status.type !== "idle" && resumable
     latest = false
-    if (typeof msg.time?.completed === "number" && !running) continue
-    if (msg.error) continue
-    if (msg.finish && !resumable) continue
+    // fork_change start - turns run in order: once the newest assistant has settled, an older
+    // unfinished one (left by an interrupted run) is stale and must not queue every later prompt
+    if (typeof msg.time?.completed === "number" && !running) break
+    if (msg.error) break
+    if (msg.finish && !resumable) break
+    // fork_change end
     if (!msg.parentID) break
     const id = target(messages, i, msg.parentID, parts)
     const parent = messages.find((item) => item.id === id)
@@ -190,20 +193,28 @@ function done(messages: Message[], parts?: (msg: Message) => Message["parts"]) {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const msg = messages[i]
     if (!msg || msg.role !== "assistant" || !msg.parentID) continue
-    if (typeof msg.time?.completed === "number") return target(messages, i, msg.parentID, parts)
-    if (msg.error) return target(messages, i, msg.parentID, parts)
-    if (msg.finish && !["tool-calls", "unknown"].includes(msg.finish)) return target(messages, i, msg.parentID, parts)
+    // fork_change start - also report where the settled reply sits
+    if (typeof msg.time?.completed === "number") return { id: target(messages, i, msg.parentID, parts), index: i }
+    if (msg.error) return { id: target(messages, i, msg.parentID, parts), index: i }
+    if (msg.finish && !["tool-calls", "unknown"].includes(msg.finish))
+      return { id: target(messages, i, msg.parentID, parts), index: i }
+    // fork_change end
   }
   return undefined
 }
 
 function pending(messages: Message[], parts?: (msg: Message) => Message["parts"]) {
   const users = messages.filter((msg) => msg.role === "user")
-  const id = done(messages, parts)
-  if (!id) return users[0]?.id
+  // fork_change start - a settled reply whose user is not loaded (older page, or removed first by
+  // revert cleanup) continues with the next user after that reply, not the first loaded user,
+  // which would mark the whole loaded history as queued
+  const last = done(messages, parts)
+  if (!last) return users[0]?.id
 
-  const idx = users.findIndex((msg) => msg.id === id)
-  return users[idx + 1]?.id
+  const idx = users.findIndex((msg) => msg.id === last.id)
+  if (idx >= 0) return users.at(idx + 1)?.id
+  return messages.slice(last.index + 1).find((msg) => msg.role === "user")?.id
+  // fork_change end
 }
 
 // Find the user message whose turn the server is actively processing.
@@ -220,6 +231,20 @@ export function activeUserMessageID(
   return pending(messages, parts)
 }
 
+// fork_change start - a prompt the server has not started cannot have a reply yet
+function answered(messages: Message[]) {
+  return new Set(messages.flatMap((msg) => (msg.role === "assistant" && msg.parentID ? [msg.parentID] : [])))
+}
+
+// The server's queue snapshot can go stale: a closed tab stops receiving queue events, and the backend
+// clears its last waiting entry without publishing. An idle session or an answered prompt is never queued.
+export function serverQueue(ids: string[], messages: Message[], status: SessionStatusInfo, submitting?: boolean) {
+  if (status.type === "idle" && !submitting) return []
+  const replied = answered(messages)
+  return ids.filter((id) => !replied.has(id))
+}
+// fork_change end
+
 export function queuedUserMessageIDs(
   messages: Message[],
   status: SessionStatusInfo,
@@ -228,16 +253,22 @@ export function queuedUserMessageIDs(
 ) {
   if (status.type === "idle" && !submitting) return []
   const users = messages.filter((msg) => msg.role === "user")
+  // fork_change start - a prompt the server has not started cannot have a reply yet, so a turn
+  // with an assistant reply is never queued; this keeps settled history out of the queue when the
+  // active turn cannot be resolved (revert cleanup, or a parent outside the loaded page)
+  const replied = answered(messages)
+  const waiting = (list: Message[]) => list.map((msg) => msg.id).filter((id) => !replied.has(id))
+  // fork_change end
   const running = active(messages, status, parts)
   if (running) {
     const idx = users.findIndex((msg) => msg.id === running)
-    if (idx < 0) return users.map((msg) => msg.id)
-    return users.slice(idx + 1).map((msg) => msg.id)
+    if (idx < 0) return waiting(users) // fork_change
+    return waiting(users.slice(idx + 1)) // fork_change
   }
   const id = pending(messages, parts)
   const idx = id ? users.findIndex((msg) => msg.id === id) : -1
   if (idx < 0) return []
-  return users.slice(idx + 1).map((msg) => msg.id)
+  return waiting(users.slice(idx + 1)) // fork_change
 }
 
 export function partitionTurns(turns: MessageTurn[], ids: ReadonlySet<string>, queued: ReadonlySet<string>) {
