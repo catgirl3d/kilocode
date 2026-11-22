@@ -250,23 +250,29 @@ export const TaskTimeline: Component = () => {
     onCleanup(() => el.removeEventListener("wheel", onWheel))
   })
 
-  const overlay = (idx: number, pulse = false) => {
-    const item = layout().items[idx]
-    if (!item) return null
+  // fork_change start - keep one bar element per overlay and move it in place:
+  // recreating it on every streaming re-layout restarted the pulse animation.
+  const overlay = (idx: () => number, pulse = false) => {
+    const item = () => layout().items[idx()]
     return (
-      <div
-        class="task-timeline-bar"
-        classList={{ "task-timeline-bar--active": pulse }}
-        aria-hidden="true"
-        style={{
-          left: `${item.x}px`,
-          width: `${item.width}px`,
-          height: `${item.height}px`,
-          "--timeline-color": item.bg,
-        }}
-      />
+      <Show when={item()}>
+        {(current) => (
+          <div
+            class="task-timeline-bar"
+            classList={{ "task-timeline-bar--active": pulse }}
+            aria-hidden="true"
+            style={{
+              left: `${current().x}px`,
+              width: `${current().width}px`,
+              height: `${current().height}px`,
+              "--timeline-color": current().bg,
+            }}
+          />
+        )}
+      </Show>
     )
   }
+  // fork_change end
 
   return (
     <>
@@ -303,8 +309,10 @@ export const TaskTimeline: Component = () => {
             >
               <For each={layout().paths}>{(path) => <path d={path.d} fill={path.bg} />}</For>
             </svg>
-            <Show when={hover() >= 0}>{overlay(hover())}</Show>
-            <Show when={busy() && bars().length > 0}>{overlay(bars().length - 1, true)}</Show>
+            {/* fork_change start */}
+            <Show when={hover() >= 0}>{overlay(hover)}</Show>
+            <Show when={busy() && bars().length > 0}>{overlay(() => bars().length - 1, true)}</Show>
+            {/* fork_change end */}
           </div>
         </div>
       </div>
