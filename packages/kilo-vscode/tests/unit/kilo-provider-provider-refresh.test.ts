@@ -7,13 +7,18 @@ type State = "connecting" | "connected" | "disconnected" | "error"
 
 type Internals = {
   webview: { postMessage: (message: unknown) => Promise<unknown> } | null
+  postMessage: (message: unknown) => void
   providersRetry: boolean
+  cachedProvidersMessage: unknown
+  cachedProvidersDirectory: string | null
   cachedConfigMessage: unknown
   cachedConfigDirectory: string | null
   retryInitialization: () => Promise<void>
   refreshConfig: (type: "configLoaded" | "configUpdated", dir?: string) => Promise<void>
   initializeConnection: () => Promise<void>
   fetchAndSendProviders: () => Promise<void>
+  sendProviders: () => Promise<void>
+  attachToWebview: (webview: never) => void
   fetchAndSendIndexingStatus: (directory?: string, projectId?: string) => void
   flushPendingKiloModel: () => void
   checkConfigWarnings: (reason: string) => Promise<void>
@@ -44,6 +49,7 @@ function connection(online = true, custom?: unknown) {
       return client as never
     },
     onEventFiltered: () => () => undefined,
+    fetchProviders: (_dir: string, load: () => Promise<unknown>) => load(),
     onStateChange: (next: typeof listener) => {
       listener = next
       return () => undefined
@@ -86,6 +92,28 @@ function stub(internal: Internals) {
   internal.seedSessionStatusMap = async () => {}
   internal.sendNotificationSettings = () => {}
   internal.startStatsPolling = () => {}
+}
+
+function kind(message: unknown) {
+  return message && typeof message === "object" && "type" in message ? message.type : undefined
+}
+
+async function attach(internal: Internals) {
+  const messages: unknown[] = []
+  const loaded = Promise.withResolvers<unknown>()
+  const handler = Promise.withResolvers<(message: Record<string, unknown>) => Promise<void>>()
+  internal.attachToWebview({
+    postMessage: async (message: unknown) => {
+      messages.push(message)
+      if (kind(message) === "providersLoaded") loaded.resolve(message)
+      return true
+    },
+    onDidReceiveMessage: (fn: (message: Record<string, unknown>) => Promise<void>) => {
+      handler.resolve(fn)
+      return { dispose: () => {} }
+    },
+  } as never)
+  return { messages, loaded: loaded.promise, send: await handler.promise }
 }
 
 describe("KiloProvider providers on reconnect", () => {
@@ -201,6 +229,132 @@ describe("KiloProvider providers on reconnect", () => {
     expect(providers).toBe(before + 1)
   })
 
+  it("fetches providers before extensionDataReady when the early request had no client", async () => {
+    const service = connection()
+    const internal = provider(service)
+    const events: string[] = []
+    stub(internal)
+    internal.providersRetry = true
+    internal.fetchAndSendProviders = async () => {
+      events.push("providers")
+      internal.providersRetry = false
+    }
+    internal.postMessage = (message) => {
+      if (message && typeof message === "object" && "type" in message && message.type === "extensionDataReady")
+        events.push("ready")
+    }
+
+    await internal.initializeConnection()
+
+    expect(events).toEqual(["providers", "ready"])
+  })
+
+  it("fetches again for a joined request when a client change discards the in-flight run", async () => {
+    const lists: string[] = []
+    const gate = Promise.withResolvers<void>()
+    const backend = (name: string, wait?: Promise<void>) => ({
+      kilo: { authStatus: async () => ({ data: { authenticated: false } }) },
+      provider: {
+        list: async () => {
+          lists.push(name)
+          if (wait) await wait
+          return { data: { all: [], connected: [], default: {} } }
+        },
+      },
+    })
+    const service = connection(true, backend("old", gate.promise))
+    const internal = provider(service)
+    stub(internal)
+    const messages: unknown[] = []
+    internal.webview = { postMessage: async (message) => messages.push(message) }
+
+    const run = internal.fetchAndSendProviders()
+    await Bun.sleep(0)
+    const join = internal.sendProviders()
+    const next = backend("new")
+    service.getClient = () => next as never
+    gate.resolve()
+    await Promise.all([run, join])
+
+    expect(lists).toEqual(["old", "new"])
+    expect(messages.filter((message) => (message as { type?: string }).type === "providersLoaded")).toHaveLength(1)
+  })
+
+  it("reloads providers when the user retries the connection", async () => {
+    const service = { ...connection(), resume: () => {}, onSessionAcknowledged: () => () => undefined }
+    const internal = provider(service)
+    stub(internal)
+    await internal.initializeConnection()
+    const reload = Promise.withResolvers<void>()
+    internal.fetchAndSendProviders = async () => reload.resolve()
+    const view = await attach(internal)
+
+    await view.send({ type: "retryConnection" })
+
+    await reload.promise
+  })
+
+  it("replays cached providers for a webview request", async () => {
+    let calls = 0
+    const service = {
+      ...connection(true, {
+        kilo: { authStatus: async () => ({ data: { authenticated: false } }) },
+        provider: {
+          list: async () => {
+            calls += 1
+            return { data: { all: [], connected: [], default: {} } }
+          },
+        },
+      }),
+      onSessionAcknowledged: () => () => undefined,
+    }
+    const internal = provider(service)
+    stub(internal)
+    internal.cachedProvidersMessage = {
+      type: "providersLoaded",
+      providers: {},
+      connected: [],
+      defaults: {},
+      ready: true,
+    }
+    internal.cachedProvidersDirectory = "/repo"
+    const view = await attach(internal)
+
+    await view.send({ type: "requestProviders" })
+
+    expect(await view.loaded).toBe(internal.cachedProvidersMessage)
+    expect(view.messages.filter((message) => kind(message) === "providersLoaded")).toHaveLength(1)
+    expect(calls).toBe(0)
+  })
+
+  it("fetches providers instead of replaying a cache from another directory", async () => {
+    let calls = 0
+    const internal = provider(
+      connection(true, {
+        kilo: { authStatus: async () => ({ data: { authenticated: false } }) },
+        provider: {
+          list: async () => {
+            calls += 1
+            return { data: { all: [], connected: [], default: {} } }
+          },
+        },
+      }),
+    )
+    stub(internal)
+    const messages: unknown[] = []
+    internal.webview = { postMessage: async (message) => messages.push(message) }
+    const stale = { type: "providersLoaded", providers: {}, connected: [], defaults: {}, ready: true }
+    internal.cachedProvidersMessage = stale
+    internal.cachedProvidersDirectory = "/other"
+
+    await internal.sendProviders()
+
+    const loaded = messages.filter((message) => kind(message) === "providersLoaded")
+    expect(calls).toBe(1)
+    expect(loaded).toHaveLength(1)
+    expect(loaded.at(0)).not.toBe(stale)
+  })
+
   it("does not refetch providers on connect when none are pending", async () => {
     const service = connection()
     const internal = provider(service)
@@ -210,11 +364,11 @@ describe("KiloProvider providers on reconnect", () => {
       providers++
     }
     await internal.initializeConnection()
-    const before = providers
+    expect(providers).toBe(0)
 
     service.emitState("connected")
     await Bun.sleep(0)
 
-    expect(providers).toBe(before)
+    expect(providers).toBe(0)
   })
 })

@@ -50,6 +50,83 @@ function same(a: unknown, b: unknown): boolean {
   return akeys.every((key, index) => key === bkeys[index] && same(a[key], b[key]))
 }
 
+// fork_change start - the webview reads a small subset of the catalog; the full models.dev payload is MBs
+function pick(source: unknown, keys: string[]) {
+  if (!record(source)) return undefined
+  const next: Record<string, unknown> = {}
+  for (const key of keys) if (source[key] !== undefined) next[key] = source[key]
+  return next
+}
+
+function compact(source: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue
+    next[key] = record(value) ? compact(value) : value
+  }
+  return next
+}
+
+function slimModel(source: Record<string, unknown>) {
+  return compact({
+    id: source.id,
+    name: source.name,
+    limit: record(source.limit) ? pick(source.limit, ["context", "output"]) : undefined,
+    cost: record(source.cost)
+      ? {
+          input: source.cost.input,
+          output: source.cost.output,
+          cache: record(source.cost.cache) ? pick(source.cost.cache, ["read", "write"]) : undefined,
+        }
+      : undefined,
+    variants: record(source.variants)
+      ? Object.fromEntries(Object.keys(source.variants).map((key) => [key, {}]))
+      : undefined,
+    capabilities: record(source.capabilities)
+      ? {
+          reasoning: source.capabilities.reasoning,
+          input: record(source.capabilities.input)
+            ? pick(source.capabilities.input, ["text", "image", "audio", "video", "pdf"])
+            : undefined,
+        }
+      : undefined,
+    options:
+      record(source.options) && source.options.description !== undefined
+        ? { description: source.options.description }
+        : undefined,
+    autoRouting: record(source.autoRouting) ? { models: source.autoRouting.models } : undefined,
+    recommendedIndex: source.recommendedIndex,
+    isFree: source.isFree,
+    mayTrainOnYourPrompts: source.mayTrainOnYourPrompts,
+    hasUserByokAvailable: source.hasUserByokAvailable,
+    terminalBench: record(source.terminalBench)
+      ? pick(source.terminalBench, ["overallScore", "avgAttemptCostUsd"])
+      : undefined,
+    releaseDate: typeof source.release_date === "string" ? source.release_date : source.releaseDate,
+  })
+}
+
+/** Keep only the provider and model fields the webview reads. */
+export function slimProviders<T extends { id: string; name: string }>(all: T[]): T[] {
+  return all.map((item) => {
+    const source = item as unknown as Record<string, unknown>
+    const models = record(source.models)
+      ? Object.fromEntries(
+          Object.entries(source.models).map(([id, model]) => [id, record(model) ? slimModel(model) : model]),
+        )
+      : source.models
+    const metadata = pick(source.metadata, ["noteKey", "icon", "priority"])
+    return {
+      id: source.id,
+      name: source.name,
+      ...(source.source !== undefined ? { source: source.source } : {}),
+      ...(metadata ? { metadata } : {}),
+      models,
+    } as unknown as T
+  })
+}
+// fork_change end
+
 /** Fetch provider availability and authentication state without exposing stored credentials. */
 export async function fetchProviderData(client: KiloClient, dir: string) {
   const authRequest =
