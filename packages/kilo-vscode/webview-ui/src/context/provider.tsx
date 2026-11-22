@@ -68,6 +68,8 @@ export const ProviderProvider: ParentComponent = (props) => {
     })
   }
 
+  const [loaded, setLoaded] = createSignal(false) // fork_change
+
   const models = createMemo<EnrichedModel[]>(() => flattenModels(providers()))
 
   function findModel(selection: ModelSelection | null): EnrichedModel | undefined {
@@ -95,6 +97,7 @@ export const ProviderProvider: ParentComponent = (props) => {
         setKiloUnavailable(false)
         setDefaultSelection(KILO_AUTO)
         setLoadFailed(false)
+        setLoaded(false) // fork_change
         // A provider dialog belongs to one project, so it closes with that project's state;
         // an unrelated settings dialog stays open.
         if (dialogs() > 0 && dialog.active) dialog.close()
@@ -123,6 +126,8 @@ export const ProviderProvider: ParentComponent = (props) => {
     }
     if (message.type !== "providersLoaded") return
 
+    setLoaded(message.loadFailed !== true) // fork_change
+
     batch(() => {
       setProviders(message.providers)
       setConnected(message.connected)
@@ -145,7 +150,9 @@ export const ProviderProvider: ParentComponent = (props) => {
   vscode.postMessage({ type: "requestProviders" })
 
   const fallback = setTimeout(() => {
-    if (Object.keys(providers()).length === 0) {
+    // fork_change start
+    if (!loaded()) {
+      // fork_change end
       vscode.postMessage({ type: "requestProviders" })
     }
   }, 3000)
@@ -154,7 +161,9 @@ export const ProviderProvider: ParentComponent = (props) => {
     if (message.type !== "extensionDataReady") return
     unsubReady()
     clearTimeout(fallback)
-    if (Object.keys(providers()).length === 0) {
+    // fork_change start
+    if (!loaded()) {
+      // fork_change end
       vscode.postMessage({ type: "requestProviders" })
     }
   })
