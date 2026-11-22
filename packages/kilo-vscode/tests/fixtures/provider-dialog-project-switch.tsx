@@ -4,7 +4,13 @@ import type { WebviewMessage } from "../../webview-ui/src/types/messages"
 
 const window = new Window({ url: "http://localhost" })
 const errors: unknown[] = []
-window.addEventListener("error", (event) => errors.push(event.error))
+window.addEventListener("error", (event) => {
+  if (event instanceof window.ErrorEvent) {
+    errors.push(event.error)
+    return
+  }
+  errors.push(event)
+})
 Object.defineProperty(window, "origin", { value: window.location.origin })
 const focused = { value: true }
 Object.defineProperty(window.document, "hasFocus", { value: () => focused.value })
