@@ -42,6 +42,7 @@ export const TextShimmer = <T extends ValidComponent = "span">(props: {
           </span>
           <span data-slot="text-shimmer-char-shimmer" aria-hidden="true">
             {text()}
+            <span data-slot="text-shimmer-window" data-text={text()} /* [fork] composited sweep */ />
           </span>
         </span>
       </Show>
