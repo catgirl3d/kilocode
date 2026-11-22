@@ -132,8 +132,13 @@ export const createUserActivity = (options: UserActivityOptions) => {
   }
 
   const wheel = (event: WheelEvent) => {
+    // fork_change start
+    // Check the direction before any geometry: reading scrollHeight or
+    // scrollTop forces a synchronous layout, and a downward wheel never pauses.
+    if (event.deltaY >= 0) return
+    // fork_change end
     if (!scroll || scroll.scrollHeight - scroll.clientHeight <= 1) return
-    if (event.deltaY >= 0 || scroll.scrollTop <= 0) return
+    if (scroll.scrollTop <= 0) return // fork_change
     mark()
     options.onUp()
   }
