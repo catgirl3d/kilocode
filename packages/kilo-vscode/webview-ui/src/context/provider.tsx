@@ -47,6 +47,7 @@ export const ProviderProvider: ParentComponent = (props) => {
   const [authStates, setAuthStates] = createSignal<Record<string, ProviderAuthState>>({})
   const [kiloUnavailable, setKiloUnavailable] = createSignal(false)
   const [failures, setFailures] = createSignal<ProviderFailure[]>([])
+  const [loaded, setLoaded] = createSignal(false) // fork_change
 
   const models = createMemo<EnrichedModel[]>(() => flattenModels(providers()))
 
@@ -82,6 +83,8 @@ export const ProviderProvider: ParentComponent = (props) => {
     }
     if (message.type !== "providersLoaded") return
 
+    setLoaded(true) // fork_change
+
     batch(() => {
       setProviders(message.providers)
       setConnected(message.connected)
@@ -103,7 +106,9 @@ export const ProviderProvider: ParentComponent = (props) => {
   vscode.postMessage({ type: "requestProviders" })
 
   const fallback = setTimeout(() => {
-    if (Object.keys(providers()).length === 0) {
+    // fork_change start
+    if (!loaded()) {
+      // fork_change end
       vscode.postMessage({ type: "requestProviders" })
     }
   }, 3000)
@@ -112,7 +117,9 @@ export const ProviderProvider: ParentComponent = (props) => {
     if (message.type !== "extensionDataReady") return
     unsubReady()
     clearTimeout(fallback)
-    if (Object.keys(providers()).length === 0) {
+    // fork_change start
+    if (!loaded()) {
+      // fork_change end
       vscode.postMessage({ type: "requestProviders" })
     }
   })
