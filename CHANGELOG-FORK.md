@@ -72,6 +72,7 @@
 - Load the model catalog faster: send only the provider and model fields the UI uses and reuse the loaded catalog instead of requesting and sending it again on every mount.
 - Use less CPU while a session is working: the status and tool-title shimmer now animates on the compositor instead of repainting the chat on every frame.
 - Stop the editor from freezing for minutes in long sessions when sending a prompt or continuing after a revert: an old interrupted reply, or a reply whose prompt is being removed by revert cleanup, no longer marks earlier turns as queued, so they stay in the virtualized history instead of rendering all at once. Agent Manager also recalculates styles faster in long transcripts, because the folded splash layout rule no longer checks every chat element.
+- Keep the active task timeline bar pulsing while a reply streams instead of restarting its animation on every streaming update, which also saves a compositing update each time.
 - Show queued prompts from the server's own queue instead of inferring them from the message history, so the transcript's queued badges match what will actually run even while earlier messages are being removed.
 - Show the full context window reported by OpenDesign for each model instead of the gateway's smaller working budget, so models such as DeepSeek V4.1 Flash use their 1M-token window rather than 328K.
 - Estimate OpenDesign session cost from the public list prices of the underlying models instead of always showing zero, since the gateway reports only a low/medium/high cost category.

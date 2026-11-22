@@ -38,6 +38,16 @@ describe("TaskTimeline delegated tooltip contract", () => {
     expect(src).not.toMatch(/data-tip=/)
   })
 
+  it("keeps one bar overlay element while streaming re-layouts the timeline", () => {
+    // Recreating the active bar on every layout restarted its pulse animation
+    // about twenty times a second, so the pulse never showed and every restart
+    // forced a compositing update.
+    expect(src).toMatch(/const overlay = \(idx: \(\) => number, pulse = false\) =>/)
+    expect(src).toMatch(/<Show when=\{item\(\)\}>/)
+    expect(src).toContain("overlay(() => bars().length - 1, true)")
+    expect(src).toMatch(/\{overlay\((hover|\(\) => hover\(\))\)\}/)
+  })
+
   it("only collects parts with matching transcript content", () => {
     expect(src).toMatch(/const revert = session\.revert\(\) \?\? undefined/)
     expect(src).toMatch(/visibleParts\(m\.id, session\.getParts\(m\.id\), revert\)/)
