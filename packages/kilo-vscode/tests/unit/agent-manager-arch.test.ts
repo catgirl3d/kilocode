@@ -143,7 +143,16 @@ describe("Agent Manager CSS Prefix", () => {
     //   in webview-ui/src/styles/diff.css and reused across webviews.
     // - `css` is matched from `@import "./diff.css"` file extension, not a
     //   class selector.
-    const host = new Set(["vscode-high-contrast", "vscode-high-contrast-light", "kilo-diff-theme", "css"])
+    // - `message-list-container` is the shared chat layout class
+    //   (webview-ui/src/styles/chat-layout.css), referenced as a cheap `:has()`
+    //   anchor so the folded splash rule does not target every chat element.
+    const host = new Set([
+      "vscode-high-contrast",
+      "vscode-high-contrast-light",
+      "kilo-diff-theme",
+      "css",
+      "message-list-container",
+    ])
     const invalid = names.filter((n) => !n!.startsWith("am-") && !host.has(n!))
 
     expect(invalid, `Classes missing "am-" prefix: ${invalid.join(", ")}`).toEqual([])

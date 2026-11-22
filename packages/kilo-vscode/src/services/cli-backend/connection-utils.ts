@@ -68,6 +68,7 @@ const sessionScopedTransientEvents = new Set<string>([
   "session.idle",
   "session.error",
   "session.wakeup",
+  "session.queue.changed", // fork_change
   "todo.updated",
   "message.part.delta",
   "session.next.tool.input.delta",

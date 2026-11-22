@@ -124,6 +124,16 @@ describe("resolveEventSessionId", () => {
     expect(resolveEventSessionId(event, noLookup)).toBe("s12")
   })
 
+  it("routes queue snapshots through the session-scoped SSE route", () => {
+    const event = {
+      id: "e6-queue",
+      type: "session.queue.changed",
+      properties: { sessionID: "s13", queued: ["m1"] },
+    } satisfies Payload
+
+    expect(resolveEventSessionId(event, noLookup)).toBe("s13")
+  })
+
   it("routes transient message deltas", () => {
     const event = {
       id: "e7",
