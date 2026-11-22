@@ -48,6 +48,7 @@ import {
   activeUserMessageID as getActiveUserMessageID,
   messageTurns,
   queuedUserMessageIDs,
+  serverQueue, // fork_change
   stableMessageTurns,
   type MessageTurn,
 } from "../../context/session-queue"
@@ -116,6 +117,18 @@ export const MessageList: Component<MessageListProps> = (props) => {
   const server = useServer()
   const vscode = useVSCode()
   const language = useLanguage()
+  // fork_change start - server-authoritative queued prompts; inference is the cold-start fallback
+  const [queued, setQueued] = createSignal<Record<string, string[]>>({})
+  const unsubQueue = vscode.onMessage((message) => {
+    if (message.type !== "sessionQueueChanged") return
+    setQueued((prev) => ({ ...prev, [message.sessionID]: message.queued }))
+  })
+  createEffect(() => {
+    if (server.isConnected()) return
+    setQueued({})
+  })
+  onCleanup(unsubQueue)
+  // fork_change end
 
   const autoScroll = createAutoScroll({
     working: () => session.status() !== "idle",
@@ -173,17 +186,21 @@ export const MessageList: Component<MessageListProps> = (props) => {
       session.submitting(),
     ),
   )
-  const queuedIDs = createMemo(
-    () =>
-      new Set(
-        queuedUserMessageIDs(
-          session.messages(),
-          session.statusInfo(),
-          (msg) => session.getParts(msg.id),
-          session.submitting(),
-        ),
+  // fork_change start - use the server snapshot when it has arrived; inference is the cold-start fallback
+  const queuedIDs = createMemo(() => {
+    const sid = session.currentSessionID()
+    const ids = sid ? queued()[sid] : undefined
+    if (ids) return new Set(serverQueue(ids, session.messages(), session.statusInfo(), session.submitting()))
+    return new Set(
+      queuedUserMessageIDs(
+        session.messages(),
+        session.statusInfo(),
+        (msg) => session.getParts(msg.id),
+        session.submitting(),
       ),
-  )
+    )
+  })
+  // fork_change end
   const rows = createMemo((prev: TranscriptRow[] | undefined) => {
     const active = activeUserID()
     return transcriptRows(
