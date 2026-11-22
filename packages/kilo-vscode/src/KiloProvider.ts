@@ -179,6 +179,7 @@ import {
   disconnectProvider as disconnectProviderAction,
   saveCustomProvider as saveCustomProviderAction,
   resolveStoredKey,
+  slimProviders, // fork_change
 } from "./provider-actions"
 import type { StoredProviderKey } from "./provider-actions"
 import { createCatalogRetry } from "./kilo-provider/catalog-retry"
@@ -517,6 +518,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private providersRefresh: Promise<void> | null = null
   private providersQueued = false
   private providersRetry = false
+  private providersSent = 0 // fork_change - counts providersLoaded posts so a joined request can tell it was dropped
   private providersGeneration = 0
   /** Re-fetch providers while an organization's Kilo catalog is unavailable. */
   private readonly catalogRetry = createCatalogRetry({ refresh: () => void this.fetchAndSendProviders() })
@@ -1678,10 +1680,12 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         case "retryConnection":
           console.log("[Kilo New] KiloProvider: 🔄 Retrying connection...")
           this.connectionService.resume() // fork_change - [fork] an explicit retry releases the manual disconnect hold
-          this.initializeConnection().catch((e) =>
-            console.error("[Kilo New] KiloProvider: ❌ Retry connection failed:", e),
-          )
+          // fork_change start - a retry can reach a restarted backend, so reload its catalog instead of the cache
+          this.initializeConnection()
+            .then(() => this.fetchAndSendProviders())
+            .catch((e) => console.error("[Kilo New] KiloProvider: ❌ Retry connection failed:", e))
           break
+        // fork_change end
         // fork_change start - [fork] manual CLI disconnect from the chat header menu
         case "disconnectCli": {
           const action = vscode.l10n.t("Disconnect")
@@ -1709,8 +1713,11 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
         case "saveImage":
           return saveImage(this.getWorkspaceDirectory(this.currentSession?.id), message)
         case "requestProviders":
-          this.fetchAndSendProviders().catch((e) => console.error("[Kilo New] fetchAndSendProviders failed:", e))
+          // fork_change start - join an in-flight fetch or replay the cache; the webview mounts
+          // its listener before sending this, so it is the reliable delivery point
+          void this.sendProviders().catch((e) => console.error("[Kilo New] sendProviders failed:", e))
           break
+        // fork_change end
         case "connectProvider":
         case "authorizeProviderOAuth":
         case "completeProviderOAuth":
@@ -2446,9 +2453,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       await this.flushPendingSessionRefresh("initializeConnection")
       this.recoverPendingPrompts()
 
-      // Fetch providers, agents, skills, config, notifications, and session statuses in parallel
+      // fork_change start - providers load on the webview request; early requests retry here
+      // Fetch agents, skills, config, notifications, and session statuses in parallel.
+      // Providers are fetched on the webview's requestProviders after its listener is registered;
+      // if that request arrived before the client existed, providersRetry is set and runs now.
+      // fork_change end
       await Promise.all([
-        this.fetchAndSendProviders(),
+        this.providersRetry ? this.fetchAndSendProviders() : undefined, // fork_change - an early request found no client
         this.fetchAndSendAgents(),
         this.fetchAndSendSkills(),
         this.fetchAndSendCommands(),
@@ -3203,6 +3214,26 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.postMessage({ type: "providersReset" })
   }
 
+  // fork_change start - deliver on request, join an in-flight fetch, replay the cache, or fetch
+  /** Deliver the catalog to a requesting webview: join an in-flight fetch, replay the cache, or fetch. */
+  private async sendProviders(): Promise<void> {
+    if (this.providersRefresh) {
+      const sent = this.providersSent
+      await this.providersRefresh
+      // The joined run posted nothing (a client change discarded it, or it failed): fetch for this request.
+      if (this.providersSent === sent) await this.fetchAndSendProviders()
+      return
+    }
+    const retained = this.retainedProviders()
+    if (retained) {
+      this.postMessage(retained)
+      this.providersSent++
+      return
+    }
+    await this.fetchAndSendProviders()
+  }
+  // fork_change end
+
   /** Fetch providers and send to webview. Coalesced: at most one in-flight + one queued. */
   private async fetchAndSendProviders(): Promise<void> {
     const next = ++this.providersGeneration
@@ -3220,16 +3251,24 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           // Keep the provider view on the panel's project: replay only a payload loaded for
           // that project, and mark the fetch to run once a client is available.
           const retained = this.retainedProviders()
-          if (retained && generation === this.providersGeneration) this.postMessage(retained)
-          else this.providersRetry = true
+          // fork_change start
+          if (retained && generation === this.providersGeneration) {
+            this.postMessage(retained)
+            this.providersSent++
+          } else {
+            this.providersRetry = true
+          }
+          // fork_change end
           return
         }
         try {
           // Read the provider view for the same directory that keys the retained payload, so a
           // panel with an explicit project reads that project.
           const dir = this.settingsDirectory()
+          // fork_change start
           const { response, authMethods, authStates, storedKeys, organizationId, ready, unavailable } =
-            await fetchProviderData(client, dir)
+            await this.connectionService.fetchProviders(dir, () => fetchProviderData(client, dir))
+          // fork_change end
           if (generation !== this.providersGeneration || client !== this.client) {
             if (!this.providersQueued) return
             generation = this.providersGeneration
@@ -3239,7 +3278,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           const settings = vscode.workspace.getConfiguration("kilo-code.new.model")
           const message = {
             type: "providersLoaded",
-            providers: indexProvidersById(response.all),
+            providers: indexProvidersById(slimProviders(response.all)), // fork_change
             connected: response.connected,
             defaults: response.default,
             organizationId,
@@ -3258,6 +3297,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           this.cachedProvidersDirectory = dir
           this.providersRetry = false
           this.postMessage(message)
+          this.providersSent++ // fork_change
           this.catalogRetry.update(unavailable)
         } catch (error) {
           if (generation !== this.providersGeneration) {
@@ -3281,6 +3321,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
               authStates: {},
               loadFailed: true,
             })
+            this.providersSent++ // fork_change
           }
           // Keep backing off while the last loaded Kilo catalog was unavailable.
           const last = this.cachedProvidersMessage as { kiloUnavailable?: boolean } | null

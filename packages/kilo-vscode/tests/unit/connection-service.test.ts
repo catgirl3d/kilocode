@@ -63,6 +63,90 @@ describe("KiloConnectionService clients", () => {
   })
 })
 
+describe("KiloConnectionService provider fetch sharing", () => {
+  test("coalesces concurrent provider fetches per directory", async () => {
+    const service = new KiloConnectionService({} as any)
+    let calls = 0
+    const gate = Promise.withResolvers<void>()
+    const load = async () => {
+      calls += 1
+      await gate.promise
+      return {}
+    }
+
+    const first = service.fetchProviders("/repo", load)
+    const second = service.fetchProviders("/repo", load)
+    gate.resolve()
+    const results = await Promise.all([first, second])
+
+    expect(calls).toBe(1)
+    expect(results.at(0)).toBe(results.at(1))
+  })
+
+  test("starts a new provider fetch when the client changes", async () => {
+    const service = new KiloConnectionService({} as any)
+    let calls = 0
+    const gate = Promise.withResolvers<void>()
+    const load = async () => {
+      calls += 1
+      await gate.promise
+      return {}
+    }
+
+    const first = service.fetchProviders("/repo", load)
+    ;(service as any).client = {}
+    const second = service.fetchProviders("/repo", load)
+    gate.resolve()
+    await Promise.all([first, second])
+
+    expect(calls).toBe(2)
+  })
+
+  test.each(["global.disposed", "server.instance.disposed", "global.config.updated", "models-dev.refreshed"])(
+    "starts a new provider fetch after %s",
+    async (type) => {
+      const service = new KiloConnectionService({} as any)
+      let calls = 0
+      const gate = Promise.withResolvers<void>()
+      const first = service.fetchProviders("/repo", async () => {
+        calls += 1
+        await gate.promise
+        return {}
+      })
+
+      ;(service as any).broadcast({ id: `evt-${type}`, type, properties: {} } as SSEPayload)
+      const second = service.fetchProviders("/repo", async () => {
+        calls += 1
+        return {}
+      })
+
+      gate.resolve()
+      await Promise.all([first, second])
+      expect(calls).toBe(2)
+    },
+  )
+
+  test("keeps sharing the provider fetch across unrelated events", async () => {
+    const service = new KiloConnectionService({} as any)
+    let calls = 0
+    const gate = Promise.withResolvers<void>()
+    const load = async () => {
+      calls += 1
+      await gate.promise
+      return {}
+    }
+
+    const first = service.fetchProviders("/repo", load)
+    ;(service as any).broadcast({ id: "evt-session", type: "session.updated", properties: {} } as SSEPayload)
+    const second = service.fetchProviders("/repo", load)
+    gate.resolve()
+    const results = await Promise.all([first, second])
+
+    expect(calls).toBe(1)
+    expect(results.at(0)).toBe(results.at(1))
+  })
+})
+
 describe("KiloConnectionService explicit aborts", () => {
   const close = {
     id: "event-close",
