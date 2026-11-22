@@ -4,6 +4,7 @@ import { createKiloClient, type EventSessionTurnClose, type KiloClient } from "@
 import { SdkSSEAdapter, type SSEPayload } from "./sdk-sse-adapter"
 import type { ServerConfig } from "./types"
 import { createDuplicateEventFilter, resolveEventSessionId as resolveEventSessionIdPure } from "./connection-utils"
+import { createProviderFetch } from "./provider-fetch" // fork_change
 import { SandboxPreference } from "../sandbox-preference"
 import { ExplicitAbortState } from "./explicit-abort"
 import type { PermissionResponseResult } from "../../kilo-provider/handlers/permission-handler"
@@ -96,6 +97,7 @@ export class KiloConnectionService {
   private state: ConnectionState = "disconnected"
   private error: Error | null = null
   private connectPromise: Promise<void> | null = null
+  private readonly providerFetch = createProviderFetch() // fork_change
   private healthPollTimer: ReturnType<typeof setInterval> | null = null
   private suspended = false // fork_change - [fork] manual disconnect holds reconnects until resume()
 
@@ -168,6 +170,13 @@ export class KiloConnectionService {
       this.flushViewed()
     })
   }
+
+  // fork_change start
+  /** Share one provider catalog fetch per client and directory across every webview in this host. */
+  fetchProviders<T>(dir: string, load: () => Promise<T>): Promise<T> {
+    return this.providerFetch.read(this.client, dir, load)
+  }
+  // fork_change end
 
   /**
    * Lazily start server + SSE. Multiple callers share the same promise.
@@ -1110,10 +1119,22 @@ export class KiloConnectionService {
     }
     this.handlePermissionEvent(event, directory)
     this.handleQuestionEvent(event, directory)
+    if (this.resetsProviderCatalog(event)) this.providerFetch.reset() // fork_change - once per event, before listeners refetch providers
     for (const listener of this.eventListeners) listener(event, directory)
     if (!this.explicitAborts.event(event, directory)) return
     this.broadcastFiltered(event, directory)
   }
+
+  // fork_change start
+  private resetsProviderCatalog(event: SSEPayload): boolean {
+    return (
+      event.type === "global.disposed" ||
+      event.type === "server.instance.disposed" ||
+      event.type === "global.config.updated" ||
+      event.type === "models-dev.refreshed"
+    )
+  }
+  // fork_change end
 
   private broadcastFiltered(event: SSEPayload, directory?: string): void {
     for (const entry of this.filteredListeners) {

@@ -29,6 +29,7 @@ type Internals = {
   catalogRetry: ReturnType<typeof createCatalogRetry>
   authCtx: AuthContext
   fetchAndSendProviders(): Promise<void>
+  sendProviders(): Promise<void>
   invalidateProviders(): void
   handleEvent(event: unknown, directory?: string): void
   reloadAfterAuthChange(): Promise<void>
@@ -47,7 +48,11 @@ function setup(list: () => Promise<ReturnType<typeof catalog>>, org: () => strin
   }
   const provider = new KiloProvider(
     {} as never,
-    { getClient: () => client, resolveEventSessionId: () => undefined } as never,
+    {
+      getClient: () => client,
+      resolveEventSessionId: () => undefined,
+      fetchProviders: (_dir: string, load: () => Promise<unknown>) => load(),
+    } as never,
   )
   const internal = provider as unknown as Internals
   Object.assign(internal, {
@@ -85,6 +90,30 @@ describe("KiloProvider catalog refresh", () => {
 
     expect(internal.cachedProvidersMessage).toBeNull()
     expect(messages.at(-1)).toEqual({ type: "providersLoading" })
+  })
+
+  it("joins an in-flight catalog fetch instead of starting another", async () => {
+    const gate = Promise.withResolvers<void>()
+    const started = Promise.withResolvers<void>()
+    let calls = 0
+    const { internal, messages } = setup(
+      async () => {
+        calls += 1
+        started.resolve()
+        await gate.promise
+        return catalog("org")
+      },
+      () => "org",
+    )
+
+    const first = internal.sendProviders()
+    await started.promise
+    const second = internal.sendProviders()
+    gate.resolve()
+    await Promise.all([first, second])
+
+    expect(calls).toBe(1)
+    expect(messages.filter((message) => message.type === "providersLoaded")).toHaveLength(1)
   })
 
   it("publishes only the newest catalog and recommendation after a queued switch", async () => {
