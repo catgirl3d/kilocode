@@ -143,6 +143,30 @@
       "old": "https://example.test/?sig=AzureSecret123456",
       "next": "https://example.test/?sig=Rotated123456789",
       "expected": false
+    },
+    {
+      "id": "write-masked-cookie-kept",
+      "old": "Cookie: session=[redacted]; theme=dark",
+      "next": "Cookie: session=[redacted]; theme=dark\nnext=1",
+      "expected": false
+    },
+    {
+      "id": "write-masked-cli-flag-kept",
+      "old": "tool --password [redacted]",
+      "next": "tool --password [redacted] next=1",
+      "expected": false
+    },
+    {
+      "id": "write-masked-twin-real-masked",
+      "old": "#########################################\nx --password Secret123456\n#########################################\n#########################################\nx --password [redacted]\n#########################################\n",
+      "next": "#########################################\nx --password [redacted]\n#########################################\n#########################################\nx --password [redacted]\n#########################################\n",
+      "expected": true
+    },
+    {
+      "id": "write-masked-twin-unrelated-edit",
+      "old": "#########################################\nx --password Secret123456\n#########################################\n#########################################\nx --password [redacted]\n#########################################\n",
+      "next": "#########################################\nx --password Secret123456\n#########################################\n#########################################\nx --password [redacted]\n#########################################\nnext=1\n",
+      "expected": false
     }
   ]
 }
