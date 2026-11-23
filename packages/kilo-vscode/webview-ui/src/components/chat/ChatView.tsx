@@ -434,7 +434,7 @@ export const ChatView: Component<ChatViewProps> = (props) => {
             <SessionTabStrip />
           </Show>
           {/* fork_change start - a read-only sub-agent viewer converts its session from the header */}
-          <TaskHeader readonly={props.readonly} onConvert={props.onConvert} />
+          <TaskHeader readonly={props.readonly} onConvert={props.onConvert} onFork={props.onForkSession} />
           {/* fork_change end */}
           <div class="chat-messages-wrapper">
             <div class="chat-messages">
