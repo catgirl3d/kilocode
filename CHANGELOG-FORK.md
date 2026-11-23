@@ -69,6 +69,7 @@
 
 ### Fixes & Enhancements
 
+- Recognize `SERVICE_ROLE_KEY` and `SUPABASE_SERVICE_ROLE_KEY` with any prefix and in spellings such as `service-role-key` or `serviceRoleKey`, `SUPABASE_SERVICE_KEY`, and key-shaped values under any name ending in `SERVICE_KEY` when recognizable secrets are hidden before sending, and stop blocking edits to files that already contain `[redacted]` markers.
 - Scroll the chat down with the mouse wheel without forcing a layout on each downward event, so following a streaming reply stays cheap.
 - Load the model catalog faster: send only the provider and model fields the UI uses and reuse the loaded catalog instead of requesting and sending it again on every mount.
 - Use less CPU while a session is working: the status and tool-title shimmer now animates on the compositor instead of repainting the chat on every frame.
