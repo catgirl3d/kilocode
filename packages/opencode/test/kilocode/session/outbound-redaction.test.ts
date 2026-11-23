@@ -922,6 +922,12 @@ describe("outbound redaction boundary", () => {
       secret: "a".repeat(32),
       expected: "SUPABASE_SERVICE_ROLE_KEY=[redacted]",
     },
+    {
+      id: "service-role",
+      input: "SERVICE_ROLE_KEY=" + "a".repeat(32),
+      secret: "a".repeat(32),
+      expected: "SERVICE_ROLE_KEY=[redacted]",
+    },
   ]
 
   const cases = rules.map((rule) => ({

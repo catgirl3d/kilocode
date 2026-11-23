@@ -130,7 +130,7 @@ export namespace MemoryRedact {
   }
 
   const ATLAS = /[A-Za-z0-9_-]+\.atlasv1\.[A-Za-z0-9_=-]{16,}/g
-  const EXACT = new Set(["kiloauthcontent", "supabaseservicerolekey"])
+  const EXACT = new Set(["kiloauthcontent", "servicerolekey", "supabaseservicekey", "supabaseservicerolekey"])
   const STRONG = new Set([
     "apikey",
     "secretkey",
@@ -155,7 +155,10 @@ export namespace MemoryRedact {
   }
 
   function exactName(name: string) {
-    return EXACT.has(plainName(name))
+    // Prose such as "service role key: rotate monthly" is not an assignment.
+    if (/\s/.test(name)) return false
+    const plain = plainName(name)
+    return [...EXACT].some((word) => plain.endsWith(word))
   }
 
   function strongName(name: string) {
@@ -453,8 +456,8 @@ export namespace MemoryRedact {
     if (code === 115 && words(input, at, "service")) {
       const after = at + 7
       const sep = input.charCodeAt(after)
-      const role = sep === 95 || sep === 45 || sep === 46 || sep === 32 ? after + 1 : after
-      if (words(input, role, "role")) end = keyTail(input, role + 4)
+      const part = sep === 95 || sep === 45 || sep === 46 || sep === 32 ? after + 1 : after
+      end = words(input, part, "role") ? keyTail(input, part + 4) : keyTail(input, after)
     }
     if (code === 115 && words(input, at, "session")) {
       const after = at + 7
@@ -1063,13 +1066,18 @@ export namespace MemoryRedact {
   // A write guard may only block when the marker lands in the same slot as the old value.
   function slotLost(old: string, next: string) {
     for (const span of extraSpans(old)) {
+      // A slot that already holds the marker lost nothing; without this, every edit to a file that
+      // stores already-masked examples (test fixtures, docs) would be refused.
+      if (old.slice(span.start, span.end).includes(MARKER)) continue
       const left = old.slice(Math.max(0, span.start - 40), span.start)
       const right = old.slice(span.end, span.end + 40)
       if (!left && !right) {
         if (next.trim() === MARKER) return true
         continue
       }
-      if (next.includes(`${left}${MARKER}${right}`)) return true
+      const slot = `${left}${MARKER}${right}`
+      // Block only when the edit adds a masked slot; a masked twin that was already there is not a loss.
+      if (next.split(slot).length > old.split(slot).length) return true
     }
     return false
   }
