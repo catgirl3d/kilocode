@@ -1039,6 +1039,15 @@ describe("memory redact values mode", () => {
     expect(
       MemoryRedact.blocksWrite("Cookie: session=CookieSecret123456; theme=dark", "Cookie: session=rotated123456789; theme=dark"),
     ).toBe(false)
+    const masked = "Cookie: session=[redacted]; theme=dark"
+    expect(MemoryRedact.blocksWrite(masked, masked)).toBe(false)
+    expect(MemoryRedact.blocksWrite(masked, masked + "\nnext=1")).toBe(false)
+    expect(MemoryRedact.blocksWrite("tool --password [redacted]", "tool --password [redacted] next=1")).toBe(false)
+    // A masked twin with the same surroundings must not hide masking of the real value.
+    const pad = "#".repeat(41) + "\n"
+    const twin = pad + "x --password Secret123456\n" + pad + pad + "x --password [redacted]\n" + pad
+    expect(MemoryRedact.blocksWrite(twin, twin.replace("Secret123456", "[redacted]"))).toBe(true)
+    expect(MemoryRedact.blocksWrite(twin, twin + "next=1\n")).toBe(false)
   })
 
   test("stays roughly linear on command-heavy inputs", () => {
@@ -1147,6 +1156,36 @@ describe("memory redact values mode", () => {
       "tool --api-key",
       "https://hooks.slack.com/",
     ] as const
+    for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
+  })
+
+  test("catches service role key spellings and prefixed names", () => {
+    const cases = [
+      ["SERVICE_ROLE_KEY=abc123", "SERVICE_ROLE_KEY=[redacted]"],
+      ['SERVICE_ROLE_KEY="abc123"', 'SERVICE_ROLE_KEY="[redacted]"'],
+      ["service_role_key: abc123", "service_role_key: [redacted]"],
+      ["SERVICE-ROLE-KEY=abc123", "SERVICE-ROLE-KEY=[redacted]"],
+      ["serviceRoleKey=abc123", "serviceRoleKey=[redacted]"],
+      ["SERVICEROLE_KEY=abc123", "SERVICEROLE_KEY=[redacted]"],
+      ["MY_APP_SERVICE_ROLE_KEY=abc123", "MY_APP_SERVICE_ROLE_KEY=[redacted]"],
+      ["NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY=abc123", "NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY=[redacted]"],
+      ["SUPABASE_SERVICE_KEY=abc123", "SUPABASE_SERVICE_KEY=[redacted]"],
+      [`SERVICE_ROLE_KEY=${"a".repeat(32)}`, "SERVICE_ROLE_KEY=[redacted]"],
+      ["WEB_SERVICE_KEY=Abcdef1234567890xyz", "WEB_SERVICE_KEY=[redacted]"],
+    ] as const
+    for (const [input, expected] of cases) expect(MemoryRedact.text(input, values), input).toBe(expected)
+
+    const clean = [
+      "SERVICE_ROLE=abc123",
+      "SERVICE_KEY=abc123",
+      "SERVICE_ROLE_KEY_SUFFIX=abc123",
+      "NOT_A_SERVICE_ROLE_KEY_HINT=abc123",
+      "SERVICE_ROLE_KEY=",
+      "SERVICE_ROLE_KEY=process.env.SERVICE_ROLE_KEY",
+      "SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}",
+      "The service role key: rotate monthly",
+      "Supabase service role key: rotate monthly",
+    ]
     for (const item of clean) expect(MemoryRedact.text(item, values), item).toBe(item)
   })
 

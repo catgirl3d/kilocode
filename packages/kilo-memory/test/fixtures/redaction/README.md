@@ -50,7 +50,9 @@ directory is a real credential or was taken from a real file.
   GitLab, Stripe `whsec_`, Supabase `sb_secret_`, Notion `ntn_`, Sentry `sntry*`, Vercel `vck_`,
   Cloudflare `cfoat_`, RunPod `rpa_`, Fireworks `fw_`, Hugging Face `api_org_`, and Slack webhook URLs.
 - Context carriers: `Authorization: Token`/`Api-Key`, `--api-key`/`--auth-token`, `KILO_AUTH_CONTENT`,
-  and `SUPABASE_SERVICE_ROLE_KEY` are recognized in addition to the named assignments.
+  `SERVICE_ROLE_KEY`/`SUPABASE_SERVICE_ROLE_KEY` including prefixed spellings, and `SUPABASE_SERVICE_KEY`
+  are recognized in addition to the named assignments. Other names ending in `SERVICE_KEY` mask only
+  key-shaped values, and names written with spaces (`service role key:`) are treated as prose.
 - Signed URL fields (`sig=`, `X-Amz-Signature=`, `X-Amz-Credential=`, `X-Amz-Security-Token=`),
   AWS SigV4 `Signature=`, Cookie values (`session`, `sessionid`, `connect.sid`, `auth`), and
   letters-only `X-Api-Key` values of at least 16 characters are masked.
