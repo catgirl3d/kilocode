@@ -1,13 +1,45 @@
 # kilocode_change - new file
 name: test-cli
 
-# Fork-only manual escape hatch: the upstream `test` workflow is restricted to
-# Kilo-Org/kilocode, so CLI/backend unit tests never run automatically in this
-# fork. Trigger this from the Actions tab (or `gh workflow run test-cli`) after
-# changing packages/opencode to validate the backend the extension spawns.
+# Fork-only replacement for the upstream `test` workflow, which runs only in
+# Kilo-Org/kilocode. Runs the CLI/backend unit tests on Linux for pushes to main
+# and pull requests that touch CLI or shared packages, and on manual dispatch.
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/**"
+      - "!packages/kilo-vscode/**"
+      - "!packages/kilo-docs/**"
+      - "!packages/kilo-jetbrains/**"
+      - "script/**"
+      - "bun.lock"
+      - "package.json"
+      - "turbo.json"
+      - ".github/actions/**"
+      - ".github/workflows/test-cli.yml"
+  pull_request:
+    paths:
+      - "packages/**"
+      - "!packages/kilo-vscode/**"
+      - "!packages/kilo-docs/**"
+      - "!packages/kilo-jetbrains/**"
+      - "script/**"
+      - "bun.lock"
+      - "package.json"
+      - "turbo.json"
+      - ".github/actions/**"
+      - ".github/workflows/test-cli.yml"
   workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   unit:
