@@ -52,6 +52,7 @@ import { ClearToolsDialog } from "./ClearToolsDialog"
 interface TaskHeaderProps {
   readonly?: boolean
   onConvert?: (sessionId: string) => void // fork_change
+  onFork?: (sessionId: string) => void // fork_change
 }
 
 export const TaskHeader: Component<TaskHeaderProps> = (props) => {
@@ -113,6 +114,7 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
     )
   }
   const copyId = () => copy(sid())
+  const canFork = createMemo(() => session.status() === "idle" && !!sid())
   // The dialog keeps the session it was opened for, even if the current session changes meanwhile.
   // Nothing restores focus when the dialog unmounts, so it returns to the prompt once the focus trap lifts.
   const remove = () => {
@@ -176,6 +178,20 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
       label: language.t("chat.search.toggle"),
       run: () => toggleSearch(),
     },
+    ...(props.onFork
+      ? [
+          {
+            key: "fork",
+            icon: "fork",
+            label: language.t("agentManager.tab.forkSession"),
+            disabled: !canFork(),
+            run: () => {
+              const id = sid()
+              if (id) props.onFork?.(id)
+            },
+          } satisfies OverflowItem,
+        ]
+      : []),
     {
       key: "compact",
       icon: "compress",

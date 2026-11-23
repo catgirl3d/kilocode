@@ -47,6 +47,7 @@
 - Include old reasoning from earlier turns in automatic tool-output pruning, sharing its token budget and triggers so long-reasoning models stay within context and the prompt cache is reset once per pass; reasoning in the live turn and provider-signed reasoning are kept.
 - Add a `Copy session ID` button to sub-agent task cards without cluttering their titles with the full ID.
 - Copy the current session ID from the chat header's More actions menu.
+- Fork the current session from the chat header's More actions menu; the action is disabled while the session is running.
 - Show live sub-agent status dots on task cards: green while running, gray when completed, and red on error.
 - Add an on-demand consult_advisor tool with in-progress assistant context and a proposal channel, so agents can request a second opinion from a configured advisor model and reasoning variant during planning, when stuck, or before completing complex tasks.
 - Let consult_advisor analyze caller-supplied materials and permission-checked excerpts from selected file lines.

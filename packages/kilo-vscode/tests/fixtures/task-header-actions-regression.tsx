@@ -135,7 +135,7 @@ const dispose = render(
                           >
                             <Probe />
                             <div data-testid="header">
-                              <TaskHeader />
+                              <TaskHeader onFork={() => {}} />
                             </div>
                             <Toast.Region />
                           </I18nProvider>
@@ -771,12 +771,27 @@ try {
   session.selectSession(id)
   await settle()
 
+  // The Fork row follows the session status while the header and its open menu stay mounted.
+  // The menu re-renders its rows on every change, so the row is looked up again after each status update.
+  const opened = await open()
+  const fork = () => items(opened.menu).find((entry) => label(entry) === "agentManager.tab.forkSession")
+  assert.equal(fork()?.hasAttribute("data-disabled"), false, "an idle session enables the Fork Session row")
+  await emit({ type: "sessionStatus", sessionID: id, status: "busy" })
+  assert.equal(opened.button.getAttribute("aria-expanded"), "true", "a status change keeps the More actions menu open")
+  assert.equal(fork()?.hasAttribute("data-disabled"), true, "a busy session disables the open Fork Session row")
+  await emit({ type: "sessionStatus", sessionID: id, status: "idle" })
+  assert.equal(fork()?.hasAttribute("data-disabled"), false, "an idle session enables the open Fork Session row again")
+  press(opened.button, "pointerdown")
+  await settle()
+  assert.equal(opened.button.getAttribute("aria-expanded"), "false", "the More actions menu closes")
+
   // 1. Menu contract: the delete row is appended after the existing actions, in order.
   const menu = await open()
   assert.deepEqual(
     items(menu.menu).map(label),
     [
       "chat.search.toggle",
+      "agentManager.tab.forkSession",
       "command.session.compact",
       "command.session.toolClear",
       "command.session.reasoningClear",
