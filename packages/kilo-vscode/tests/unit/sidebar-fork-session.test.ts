@@ -44,4 +44,20 @@ describe("sidebar fork session", () => {
     expect(forked).not.toHaveBeenCalled()
     expect(post).toHaveBeenCalledWith({ type: "error", message: "Wait for the session to finish before forking it." })
   })
+
+  it("forks the whole session when no message is given", async () => {
+    const fork = mock(async (_input: unknown, _opts?: unknown) => ({ data: session }))
+    const client = {
+      session: {
+        fork,
+        promptAsync: mock(async () => ({})),
+        status: mock(async () => ({ data: {} })),
+      },
+    }
+
+    await handleForkSession(ctx({ connection: { getClient: () => client } as never }), "source")
+
+    expect(fork).toHaveBeenCalledTimes(1)
+    expect(fork.mock.calls.at(0)?.at(0)).toStrictEqual({ sessionID: "source", directory: "/repo" })
+  })
 })
