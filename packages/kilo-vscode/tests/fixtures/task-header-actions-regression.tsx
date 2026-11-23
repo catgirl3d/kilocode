@@ -135,7 +135,7 @@ const dispose = render(
                           >
                             <Probe />
                             <div data-testid="header">
-                              <TaskHeader />
+                              <TaskHeader onFork={() => {}} />
                             </div>
                             <Toast.Region />
                           </I18nProvider>
@@ -777,6 +777,7 @@ try {
     items(menu.menu).map(label),
     [
       "chat.search.toggle",
+      "agentManager.tab.forkSession",
       "command.session.compact",
       "command.session.toolClear",
       "command.session.reasoningClear",

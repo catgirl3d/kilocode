@@ -446,6 +446,10 @@ const AppContent: Component = () => {
     vscode.postMessage({ type: "forkSession", sessionId, messageId })
   }
 
+  // fork_change start - sidebar chat header forks the current session
+  const handleFork = (sessionId: string) => vscode.postMessage({ type: "forkSession", sessionId })
+  // fork_change end
+
   const emptyState = () => (
     <SidebarEmptyState onSelectSession={handleSelectSession} onShowHistory={() => setCurrentView("history")} />
   )
@@ -482,6 +486,7 @@ const AppContent: Component = () => {
               <ChatView
                 continueInWorktree
                 onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
+                /* fork_change */ onForkSession={handleFork}
                 promptBoxId="sidebar:fallback"
                 emptyState={emptyState}
               />
@@ -492,6 +497,7 @@ const AppContent: Component = () => {
                 onSelectSession={handleSelectSession}
                 onShowHistory={() => setCurrentView("history")}
                 onForkMessage={session.status() === "idle" ? handleForkMessage : undefined}
+                /* fork_change */ onForkSession={handleFork}
                 continueInWorktree
                 promptBoxId="sidebar:new-task"
                 emptyState={emptyState}
