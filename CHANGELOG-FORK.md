@@ -156,3 +156,4 @@
 - Show recalled memory as structured rows in the chat badge tooltip — a muted kind label with the record key and the item text clamped to two lines with an ellipsis — and drop the raw mid-word snippet from the badge line.
 - Keep the remembered reasoning effort when reopening a session, starting a new chat, or reconnecting instead of resetting to Default.
 - Keep the selected reasoning effort when running a workflow slash command instead of switching the session to Default.
+- Run the CLI unit tests (`test-cli` workflow) on Linux automatically for pushes to `main` and pull requests that change CLI or shared packages, since the upstream `test` workflow does not run in this fork.
