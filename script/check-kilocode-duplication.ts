@@ -1,7 +1,7 @@
 import { lstat, mkdtemp, realpath, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { isAbsolute, join, relative, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 
 const scanner = "jscpd@5.0.16"
 const root = resolve(import.meta.dir, "..")
@@ -101,6 +101,11 @@ function path(value: unknown) {
   return file
 }
 
+function href(base: string) {
+  if (base.startsWith("file:")) return base
+  return pathToFileURL(base.startsWith("\\\\?\\") ? base.slice(4) : base).href
+}
+
 function fingerprint(value: unknown) {
   const hash = text(value)
   if (!/^[a-f0-9]{16}$/.test(hash)) throw new Error(`Invalid duplication fingerprint: ${hash}`)
@@ -176,7 +181,7 @@ export async function scan(cwd: string) {
         format: ["typescript", "tsx", "javascript", "jsx", "css"],
         crossFormats: [["typescript", "tsx"]],
         maxSize: "10mb",
-        absolute: true,
+        absolute: false,
         noColors: true,
         noTips: true,
         reporters: ["json", "sarif"],
@@ -213,9 +218,8 @@ export async function scan(cwd: string) {
         const location = object(object(value).physicalLocation)
         const artifact = object(location.artifactLocation)
         const uri = text(artifact.uri)
-        const absolute = isAbsolute(uri)
-          ? uri
-          : fileURLToPath(new URL(uri, text(object(object(run.originalUriBaseIds)[text(artifact.uriBaseId)]).uri)))
+        const base = text(object(object(run.originalUriBaseIds)[text(artifact.uriBaseId)]).uri)
+        const absolute = isAbsolute(uri) ? uri : fileURLToPath(new URL(uri, href(base)))
         const region = object(location.region)
         return {
           file: path(relative(directory, absolute).replaceAll("\\", "/")),
