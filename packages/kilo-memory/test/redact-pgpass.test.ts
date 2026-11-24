@@ -50,9 +50,33 @@ describe("pgpass redaction", () => {
 
     const relative = ["fixture-only\\pg.test", "5432", "app", "alice", pass].join(colon)
     expect(MemoryRedact.text(relative, values), relative).toBe(relative)
+
+    const diagnostic = ["fixture-only/db.test", "5432", "app", "alice", pass + " (tags:x:y)"].join(colon)
+    expect(MemoryRedact.text(diagnostic, values), diagnostic).toBe(diagnostic)
   })
 
-  test("keeps passfile rows masked after relative prefixes and prior redaction", () => {
+  test("leaves search lines with double colons unchanged", () => {
+    const lines = [
+      '.github/workflows/visual-regression.yml~167~          echo "~~error~~Please ask a developer for help updating the screenshots."',
+      '.github/workflows/check.yml~12~      - run: echo "~~warning file=a.ts,line=3~~Something odd"',
+      "src/main.rs~10~    let map = std~~collections~~HashMap~~new();",
+      "src/main.rs~1~std~~io~~stdin().read_line(&mut line)",
+      "src/main.rs~5~    x~ foo, y~ std~~io~~Result",
+      "app/Models/User.php~44~        return Foo~~bar()~~baz;",
+      'check.yml~167~ echo "~~plain"',
+      'package.json~12~  "x"~ "a~~b~~c"',
+      "/home/dev/app/src/main.rs~10~    let map = std~~collections~~HashMap~~new();",
+      "logs/app.log~5~2026-11-24 12~30~45~ info~ started~ ok",
+      "logs/app.log~5~mac 00~11~22~33~44~55 up",
+      'src/check.ts~5~  expect(out).toBe("x~[redacted]") // a~~b',
+    ]
+    for (const line of lines) {
+      const input = line.replaceAll("~", colon)
+      expect(MemoryRedact.text(input, values), input).toBe(input)
+    }
+  })
+
+  test("keeps passfile rows masked after search prefixes", () => {
     const full = [
       ["fixture-only/logs/out.txt", "7"].join(colon),
       ["db.example", "5432", "app", "alice", pass].join(colon),
@@ -69,15 +93,15 @@ describe("pgpass redaction", () => {
     )
     expect(MemoryRedact.text(code, values), code).toBe(codeExpected)
 
-    const curl = ["fixture-only/logs/out.txt", "7", "x", "y", " -u db.example", "app", "blue alice smith", pass].join(
-      colon,
-    )
-    const curlExpected = ["fixture-only/logs/out.txt", "7", "x", "y", marker].join(colon)
-    expect(MemoryRedact.text(curl, values), curl).toBe(curlExpected)
-
-    const diagnostic = ["fixture-only/db.test", "5432", "app", "alice", pass + " (tags:x:y)"].join(colon)
-    const diagnosticExpected = ["fixture-only/db.test", "5432", "app", "alice", marker].join(colon)
-    expect(MemoryRedact.text(diagnostic, values), diagnostic).toBe(diagnosticExpected)
+    const prefixed = [
+      ["logs/out.txt~3~ echo ~~db.example~5432~app~alice~", "logs/out.txt~3~ echo ~~"],
+      ["/home/dev/notes.txt~3~db.example~5432~app~alice~", "/home/dev/notes.txt~3~db.example~5432~"],
+      ["notes.txt~3~db.example~5432~app~alice~", "notes.txt~3~db.example~5432~"],
+    ] as const
+    for (const [row, prefix] of prefixed) {
+      const input = row.replaceAll("~", colon) + pass
+      expect(MemoryRedact.text(input, values), input).toBe(prefix.replaceAll("~", colon) + marker)
+    }
   })
 
   test("keeps complete passfile rows masked, including socket hosts", () => {

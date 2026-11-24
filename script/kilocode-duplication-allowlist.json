@@ -75,6 +75,24 @@
       "reason": "Existing duplication before the ratchet; remove through a focused, behavior-preserving extraction."
     },
     {
+      "files": ["packages/kilo-memory/src/capture/redact.ts", "packages/kilo-memory/src/capture/secret-values.ts"],
+      "fingerprint": "2681c2c7377c160d",
+      "maxMatches": 1,
+      "maxTokens": 101,
+      "kind": "intentional",
+      "owner": "kilo-memory",
+      "reason": "Fork: secret-values.ts copies the URI userinfo and key-name helpers that stay private in upstream redact.ts, so it imports nothing and moves to Kilo v2 unchanged."
+    },
+    {
+      "files": ["packages/kilo-memory/src/capture/redact.ts", "packages/kilo-memory/src/capture/secret-values.ts"],
+      "fingerprint": "8eb697bb67da19ed",
+      "maxMatches": 1,
+      "maxTokens": 182,
+      "kind": "intentional",
+      "owner": "kilo-memory",
+      "reason": "Fork: secret-values.ts copies the URI userinfo and key-name helpers that stay private in upstream redact.ts, so it imports nothing and moves to Kilo v2 unchanged."
+    },
+    {
       "files": ["packages/kilo-memory/src/effect/capture.ts", "packages/kilo-memory/src/effect/capture.ts"],
       "fingerprint": "fc721da29f556180",
       "maxMatches": 1,
