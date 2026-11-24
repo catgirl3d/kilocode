@@ -113,6 +113,8 @@ function mount(initial: Config) {
     loading: () => false,
     isDirty: () => writes.length > 0,
     saving: () => false,
+    applying: () => false,
+    applyConfig: () => {},
     discarded: () => 0,
     blocked: () => false,
     saveError: () => null,
