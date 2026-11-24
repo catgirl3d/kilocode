@@ -43,7 +43,8 @@
   outline-offset: -1px;
 }
 
-.model-selector-quick-open[data-component="button"] {
+.model-selector-quick-open[data-component="button"],
+.subagent-model-selector-quick-open[data-component="button"] {
   width: 20px;
   min-width: 20px;
   height: 25px !important;
@@ -62,7 +63,18 @@
   color: var(--vscode-descriptionForeground);
 }
 
-.model-selector-quick-open[data-component="button"]:hover {
+.model-selector-quick-open[data-component="button"]:hover,
+.subagent-model-selector-quick-open[data-component="button"]:hover {
+  background: var(--surface-base-hover) !important;
+  color: var(--vscode-foreground);
+}
+
+.model-quick-switcher .subagent-model-selector-quick-open[data-component="button"] {
+  background: transparent !important;
+  color: var(--vscode-descriptionForeground);
+}
+
+.model-quick-switcher .subagent-model-selector-quick-open[data-component="button"]:hover {
   background: var(--surface-base-hover) !important;
   color: var(--vscode-foreground);
 }
@@ -86,7 +98,9 @@
   min-width: auto;
 }
 
-.prompt-selectors .prompt-selector[data-part] [data-slot="popover-trigger"]:not(.model-selector-quick-open) {
+.prompt-selectors
+  .prompt-selector[data-part]
+  [data-slot="popover-trigger"]:not(.model-selector-quick-open):not(.subagent-model-selector-quick-open) {
   height: auto !important;
   min-height: 22px;
   padding: 4px 6px !important;
@@ -107,17 +121,27 @@
   color: var(--text-base, var(--vscode-foreground));
 }
 
-.prompt-selectors .prompt-selector [data-slot="popover-trigger"]:not(.model-selector-quick-open)[data-expanded] {
+.prompt-selectors
+  .prompt-selector
+  [data-slot="popover-trigger"]:not(.model-selector-quick-open):not(
+    .subagent-model-selector-quick-open
+  )[data-expanded] {
   background: var(--surface-base-hover) !important;
   background-color: var(--surface-base-hover) !important;
 }
 
-.prompt-selectors .prompt-selector [data-slot="popover-trigger"]:not(.model-selector-quick-open):hover:not(:disabled) {
+.prompt-selectors
+  .prompt-selector
+  [data-slot="popover-trigger"]:not(.model-selector-quick-open):not(.subagent-model-selector-quick-open):hover:not(
+    :disabled
+  ) {
   background: var(--surface-base-hover);
   background-color: var(--surface-base-hover);
 }
 
-.prompt-selectors .prompt-selector [data-slot="popover-trigger"]:not(.model-selector-quick-open):focus-visible {
+.prompt-selectors
+  .prompt-selector
+  [data-slot="popover-trigger"]:not(.model-selector-quick-open):not(.subagent-model-selector-quick-open):focus-visible {
   outline: none;
   box-shadow: 0 0 0 1px var(--border-focus);
 }

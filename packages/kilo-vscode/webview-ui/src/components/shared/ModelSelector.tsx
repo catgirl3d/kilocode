@@ -18,7 +18,7 @@ import {
   useContext,
   untrack,
 } from "solid-js"
-import type { Accessor, Component } from "solid-js"
+import type { Accessor, Component, ComponentProps } from "solid-js" // fork_change
 import { Virtualizer, type VirtualizerHandle } from "virtua/solid"
 import { PopupSelector } from "./PopupSelector"
 import { Button } from "@kilocode/kilo-ui/button"
@@ -152,6 +152,12 @@ export interface ModelSelectorBaseProps {
   // fork_change start
   /** Render an icon-only trigger for compact chat controls. */
   compact?: boolean
+  /** Icon shown in the compact trigger. */
+  icon?: ComponentProps<typeof Icon>["name"]
+  /** Tooltip shown by the compact trigger. */
+  tooltip?: string
+  /** Override the compact trigger class instead of the default quick-open class. */
+  triggerClass?: string
   // fork_change end
 }
 
@@ -854,7 +860,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
       </Show>
       {/* fork_change start */}
       <Tooltip
-        value={props.compact ? controlLabel() : (activeModel()?.id ?? "")}
+        value={props.compact ? (props.tooltip ?? controlLabel()) : (activeModel()?.id ?? "")}
         placement="top"
         openDelay={0}
         inactive={!props.compact && !activeModel()}
@@ -880,7 +886,9 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
           triggerProps={{
             variant: "secondary",
             size: "normal",
-            class: props.compact ? "model-selector-quick-open" : undefined, // fork_change
+            /* fork_change start */
+            class: props.compact ? (props.triggerClass ?? "model-selector-quick-open") : undefined,
+            /* fork_change end */
             get disabled() {
               return props.blocked || !canOpen()
             },
@@ -921,7 +929,7 @@ export const ModelSelectorBase: Component<ModelSelectorBaseProps> = (props) => {
                   </>
                 }
               >
-                <Icon name="models" size="small" />
+                <Icon name={props.icon ?? "models"} size="small" />
               </Show>
               {/* fork_change end */}
             </>

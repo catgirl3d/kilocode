@@ -14,6 +14,7 @@ import { preserveVariant } from "../../context/session-variant-store"
 import AdvisorSettingsSection from "./AdvisorSettingsSection" // fork_change
 import VoiceInputSettingsSection from "./VoiceInputSettingsSection" // fork_change
 import { useModelScope } from "./workspace-models" // fork_change
+import { subagentModelPatch } from "../shared/subagent-model" // fork_change
 const ModelsTab: Component = () => {
   const { config, settings, updateConfig, updateSetting, features } = useConfig()
   const scope = useModelScope() // fork_change
@@ -56,18 +57,10 @@ const ModelsTab: Component = () => {
       scope.update({ subagent_model: null, subagent_variant: null }) // fork_change
       return
     }
-    const value = `${providerID}/${modelID}`
     const list = Object.keys(provider.findModel({ providerID, modelID })?.variants ?? {})
-    const next = preserveVariant(subagentVariant(), list)
     // fork_change start
-    scope.update({
-      // fork_change end
-      subagent_model: value,
-      // fork_change start
-      ...(scope.config().subagent_model === value ? {} : { subagent_variant: null }),
-      ...(next ? { subagent_variant_overrides: { ...scope.config().subagent_variant_overrides, [value]: next } } : {}),
-      // fork_change end
-    })
+    scope.update(subagentModelPatch(scope.config(), providerID, modelID, list))
+    // fork_change end
   }
 
   function updateSubagentVariant(value: string | null) {

@@ -150,6 +150,10 @@ async function run(resumable: boolean, attachment?: AttachmentCase, commits = fa
   try {
     await settle()
     await settle()
+    assert.ok(
+      root.querySelector(".model-quick-switcher .subagent-model-selector-quick-open"),
+      "the prompt shows the subagent model quick selector",
+    )
     const button = root.querySelector<HTMLButtonElement>(".prompt-input-hint-actions button[data-icon='send']")
     assert.ok(button, "send button did not render")
     assert.equal(button.getAttribute("aria-disabled"), "false")

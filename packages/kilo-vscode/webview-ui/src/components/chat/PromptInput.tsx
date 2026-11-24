@@ -47,6 +47,7 @@ import { RedactBadge } from "./RedactBadge" // fork_change
 import { MentionRowContent } from "./MentionRowContent" // fork_change
 import { useProvider } from "../../context/provider"
 import { ModelSelector, ModelSelectorBase } from "../shared/ModelSelector"
+import { SubagentModelSelector } from "./SubagentModelSelector" // fork_change
 import { FavoriteModelSwitcher } from "../shared/FavoriteModelSwitcher" // fork_change
 import { ModeSwitcher } from "../shared/ModeSwitcher"
 import { ThinkingSelector } from "../shared/ThinkingSelector"
@@ -2778,6 +2779,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <div class="model-quick-switcher">
               <FavoriteModelSwitcher sessionID={sid} numbered />
               <ModelSelector sessionID={sid} compact blocked={props.blocked?.() ?? false} />
+              <SubagentModelSelector blocked={props.blocked?.() ?? false} />
               <ProviderUsageIndicator sessionID={sid} />
             </div>
           }
