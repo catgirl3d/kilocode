@@ -1415,6 +1415,42 @@
       "group": "credential-file-near-miss",
       "input": "db:5432:app:alice:Secret123",
       "expected": "db:5432:app:alice:Secret123"
+    },
+    {
+      "id": "miss-pgpass-search-annotation",
+      "group": "credential-file-near-miss",
+      "input": ".github/workflows/check.yml:167:          echo \"::error::Please ask a developer for help updating the screenshots.\"",
+      "expected": ".github/workflows/check.yml:167:          echo \"::error::Please ask a developer for help updating the screenshots.\""
+    },
+    {
+      "id": "miss-pgpass-search-scope",
+      "group": "credential-file-near-miss",
+      "input": "src/main.rs:10:    let map = std::collections::HashMap::new();",
+      "expected": "src/main.rs:10:    let map = std::collections::HashMap::new();"
+    },
+    {
+      "id": "miss-pgpass-search-root-json",
+      "group": "credential-file-near-miss",
+      "input": "package.json:12:  \"x\": \"a::b::c\"",
+      "expected": "package.json:12:  \"x\": \"a::b::c\""
+    },
+    {
+      "id": "named-pgpass-search-prefix",
+      "group": "credential-file",
+      "input": "logs/out.txt:3: echo ::db.example:5432:app:alice:PgPassSecret123",
+      "expected": "logs/out.txt:3: echo ::[redacted]"
+    },
+    {
+      "id": "miss-curl-other-command",
+      "group": "cli-near-miss",
+      "input": "docker run -u 1000:1000 node:20",
+      "expected": "docker run -u 1000:1000 node:20"
+    },
+    {
+      "id": "miss-curl-url-value",
+      "group": "cli-near-miss",
+      "input": "az rest -u https://app.example.test/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798",
+      "expected": "az rest -u https://app.example.test/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798"
     }
   ]
 }
