@@ -1568,6 +1568,12 @@ export const dict = {
   "settings.providers.subagentModel.description":
     "Default model and reasoning effort for task-tool subagents. Leave unset to inherit the calling agent's model.",
   // fork_change start
+  "settings.providers.subagentModel.inherit": "Same as main model",
+  "settings.providers.subagentModel.inheritHint": "Subagents use the main model unless they have their own.",
+  "settings.providers.subagentModel.overrides": "Some subagents have their own model, which overrides this setting.",
+  "settings.providers.subagentModel.agentChoice":
+    "This is a fallback: the main agent can still choose a model for a specific task.",
+  "settings.providers.subagentModel.updateFailed": "Could not update the subagent model.",
   "settings.providers.workspaceModels.title": "Workspace models",
   "settings.providers.workspaceModels.description":
     "Keep the default, small, subagent, advisor, compaction and mode models on this tab in this workspace's .kilo/kilo.jsonc instead of the global config. Editor autocomplete and voice input stay global. Turning it off removes these models from the workspace when you save.",

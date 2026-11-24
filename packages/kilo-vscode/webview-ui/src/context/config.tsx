@@ -206,6 +206,7 @@ interface ConfigContextValue {
   loading: Accessor<boolean>
   isDirty: Accessor<boolean>
   saving: Accessor<boolean>
+  applying: Accessor<boolean> // fork_change
   discarded: Accessor<number> // fork_change
   // fork_change start
   blocked: Accessor<boolean>
@@ -217,6 +218,7 @@ interface ConfigContextValue {
   updateGlobalConfig: (partial: Partial<Config>) => void
   updateProjectConfig: (partial: Partial<Config>) => void
   updateSetting: (key: string, value: unknown) => void
+  applyConfig: (partial: Partial<Config>, scope: "global" | "project", onFailure?: (message?: string) => void) => void // fork_change
   applySetting: (key: string, value: unknown, writeKey?: string, label?: string) => void
   saveConfig: () => void
   discardConfig: () => void
@@ -319,6 +321,21 @@ export const ConfigProvider: ParentComponent = (props) => {
   // `configUpdated` or `configUpdateFailed` that echoes it settles that save; an answer
   // without it came from another writer and must leave the save, and its draft, alone.
   let saveRequest: string | undefined
+  // fork_change start
+  let applyRequest: string | undefined
+  const quickRequests = new Set<string>()
+  let applyTimer: ReturnType<typeof setTimeout> | undefined
+  let applyFailure: ((message?: string) => void) | undefined
+  const [applying, setApplying] = createSignal(false)
+  const settle = (requestId: string | undefined) => {
+    if (applyRequest == null || requestId !== applyRequest) return false
+    applyRequest = undefined
+    clearTimeout(applyTimer)
+    applyTimer = undefined
+    setApplying(false)
+    return true
+  }
+  // fork_change end
   // The "not confirmed" error the most recent save expiry raised, with the id it named. The
   // answer that arrives after the bound adopts the saved config and resolves that error
   // instead of leaving the page reporting a save the host has already stored.
@@ -533,6 +550,9 @@ export const ConfigProvider: ParentComponent = (props) => {
    */
   // fork_change end
   const applyConfigUpdated = (message: Extract<ExtensionMessage, { type: "configUpdated" }>) => {
+    if (message.requestId != null) quickRequests.delete(message.requestId) // fork_change
+    const quick = settle(message.requestId) // fork_change
+    if (quick) applyFailure = undefined // fork_change
     const pending = saveRequest != null && message.requestId === saveRequest
     const late = !pending && saveRequest == null && expiredSave != null && message.requestId === expiredSave.id
     const confirming = pending || late
@@ -658,13 +678,31 @@ export const ConfigProvider: ParentComponent = (props) => {
     }
     vscode.postMessage({ type: "requestConfig" })
   })
-  const unsubscribeFailure = vscode.onMessage((message: ExtensionMessage) => {
-    if (message.type !== "configUpdateFailed") return
-    // fork_change start
+  // fork_change start
+  /**
+   * Whether the Settings save handler must leave a failure alone: the answer to a quick
+   * `applyConfig` write, which goes to that write's caller instead, a late answer to one, or a
+   * failure that does not name the save in flight.
+   */
+  const skipFailure = (message: Extract<ExtensionMessage, { type: "configUpdateFailed" }>) => {
+    const lateQuick = message.requestId != null && quickRequests.has(message.requestId)
+    if (message.requestId != null) quickRequests.delete(message.requestId)
+    const failure = applyFailure
+    const quick = settle(message.requestId)
+    if (quick) {
+      applyFailure = undefined
+      failure?.(message.message)
+      return true
+    }
+    if (lateQuick) return true
     // A failure that does not name our request cannot be the answer to our save: while a save
     // is in flight it must not settle ours, nor report over it.
-    if (saving() && message.requestId !== saveRequest) return
-    // fork_change end
+    return saving() && message.requestId !== saveRequest
+  }
+  // fork_change end
+  const unsubscribeFailure = vscode.onMessage((message: ExtensionMessage) => {
+    if (message.type !== "configUpdateFailed") return
+    if (skipFailure(message)) return // fork_change
     // The host answered the save the bound had reported as unconfirmed, and answered it with
     // a failure: that answer is reported below, so the expiry report no longer stands for it.
     if (expiredSave != null && message.requestId === expiredSave.id) expiredSave = undefined
@@ -794,6 +832,8 @@ export const ConfigProvider: ParentComponent = (props) => {
     pendingWrites.clear()
     saveRequest = undefined
     disarmSave()
+    clearTimeout(applyTimer) // fork_change
+    quickRequests.clear() // fork_change
   })
 
   function mergeSettings(patch: Record<string, unknown>) {
@@ -863,6 +903,43 @@ export const ConfigProvider: ParentComponent = (props) => {
     setSettingsDraft((prev) => ({ ...prev, [key]: value }))
     setSaveError(null)
   }
+
+  // fork_change start
+  function applyConfig(partial: Partial<Config>, scope: "global" | "project", onFailure?: (message?: string) => void) {
+    if (blocked()) return
+    const project = scope === "project"
+    clearTimeout(applyTimer)
+    const requestId = nextSaveId()
+    applyRequest = requestId
+    quickRequests.add(requestId)
+    if (quickRequests.size > 8) {
+      const oldest = quickRequests.values().next().value
+      if (oldest != null) quickRequests.delete(oldest)
+    }
+    applyFailure = onFailure
+    setApplying(true)
+    applyTimer = setTimeout(() => {
+      if (applyRequest !== requestId) return
+      const failure = applyFailure
+      applyRequest = undefined
+      applyTimer = undefined
+      applyFailure = undefined
+      setApplying(false)
+      vscode.postMessage({ type: "requestConfig" })
+      failure?.()
+    }, saveBound.ms)
+    vscode.postMessage({
+      type: "updateConfig",
+      config: project ? {} : (pruneConfigSet(partial) as Partial<Config>),
+      projectConfig: project ? (pruneConfigSet(partial) as Partial<Config>) : undefined,
+      globalUnset: project ? [] : configUnsetPaths(partial),
+      projectUnset: project ? configUnsetPaths(partial) : [],
+      globalBindingId: bindings().global?.id,
+      projectBindingId: bindings().project?.id,
+      requestId,
+    })
+  }
+  // fork_change end
 
   /**
    * Write a VS Code setting immediately, bypassing the save-bar draft.
@@ -1020,6 +1097,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     loading,
     isDirty,
     saving,
+    applying, // fork_change
     discarded, // fork_change
     blocked, // fork_change
     saveError,
@@ -1028,6 +1106,7 @@ export const ConfigProvider: ParentComponent = (props) => {
     updateGlobalConfig,
     updateProjectConfig,
     updateSetting,
+    applyConfig, // fork_change
     applySetting,
     saveConfig,
     discardConfig,

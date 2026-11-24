@@ -498,6 +498,16 @@ const ConfigWrapper: ParentComponent<{
       loading: () => false,
       isDirty: dirty,
       saving: () => false,
+      // fork_change start
+      applying: () => false,
+      applyConfig: (partial: Partial<Config>) => {
+        setCfg((prev) => {
+          const next = merge(prev as Record<string, unknown>, partial as Record<string, unknown>) as Config
+          props.onConfigChange?.(next)
+          return next
+        })
+      },
+      // fork_change end
       discarded: () => 0,
       blocked: () => false, // fork_change
       saveError: () => null,
