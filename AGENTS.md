@@ -245,6 +245,10 @@ This repository is a personal fork of Kilo Code (`upstream/main`).
 - **Fork Changelog & Changesets**:
   - Every custom feature, enhancement, or fix in this fork MUST be documented in `CHANGELOG-FORK.md`.
   - In addition, user-facing changes STILL require a changeset file in `.changeset/<slug>.md` (e.g. `"kilo-code": patch` or `minor`) describing the change from the user's perspective in imperative mood.
+- **Kilo v2 portability**: upstream Kilo is moving onto the OpenCode v2 runtime (branch `upstream/v2`). At cutover the fork ports its features there. Design new fork features so that the port is a re-wire, not a rewrite:
+  - Keep the feature's logic in a fork-owned module (`src/kilocode/`, `packages/kilo-*`). That module must not import v1 runtime internals such as session, `MessageV2`, provider, permission, bus or config services. The v1 wiring is a thin adapter: it converts v1 types to plain data and calls the core.
+  - Do not grow fork logic inside upstream files, including upstream Kilo files such as `packages/kilo-memory/src/capture/redact.ts`. Add a call into a fork module instead.
+  - In the PR description, not in code comments, name the v2 extension point the feature will use. That is a plugin hook from `packages/plugin/src/effect/` on `upstream/v2`, such as `session.hook("context")`, `session.hook("retry")` or a tool `execute.before` hook; a Kilo RPC; or "needs a seam" if no hook fits.
 - **Generated SDK artifacts**:
   - Never commit order-only or reordering-only churn in `packages/sdk/openapi.json` or `packages/sdk/js/src/**/gen/`. After `./script/generate.ts`, inspect the generated diff; if it only reorders members or types, restore those files instead of committing them.
   - Real generated changes belong to the feature commit that owns the source change, never to a separate generated-SDK tail commit.
