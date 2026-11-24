@@ -729,7 +729,7 @@ export namespace MemoryRedact {
     if (chunks.length > 0) chunks.push(input.slice(last))
     const joined = chunks.length > 0 ? chunks.join("") : input
     const atlas = joined.includes("atlasv1") ? joined.replace(ATLAS, MARKER) : joined
-    const extra = extras(atlas, joined)
+    const extra = extras(atlas)
     const mail = mailMask(extra)
     // Connection strings carry a password without a key-shaped name; reuse the parser-primary rule.
     return mail.includes("://") ? redactUri(mail) : mail
@@ -865,14 +865,36 @@ export namespace MemoryRedact {
   const MYSQL = /(\b(?:mysql|mariadb)\b[^\n]{0,256}?\s-p)([^\s"'`\]\\&,;)}]{4,})/gi
   const CURL = /(\s(?:-u|--user)\s+)([^\s:]+):((?:[^\s"'`\\]|\\(?!["']))+)/g
   const PGPASS = /(^|\n|["'])([^\s:]{1,255}:\d+:[^:\n]*:[^:\n]*:)((?:[^"\n\\]|\\(?!["']))+)/g
-  // A plausible port followed by database/user/password separators.
-  const PORT = /:\s*(?:(?:\*|[+-]?\d+)\s*)?:[^:]*:[^:]*:/
+  // A complete passfile row: host, port, database, user, and the start of a password.
+  const ROW = /(?:[^\s:]*\.[^\s:]*|localhost|\*):(?:\d+|\*):(?:\\.|[^\s:\\])+:(?:\\.|[^\s:\\])+:(?:\\.|[^\s:\\])/
   const NETRC = /(\b(?:machine|login)\b[^\n]{0,512}?\bpassword\s+)((?:[^\s"'\\]|\\(?!["']))+)/gi
   const SETX = /(\bsetx\s+)(\w+)(\s+)("[^"]*"|(?:[^\s"'\\]|\\(?!["']))+)/gi
   const SIGN = /(^|[?&\s,;])(sig|X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|Signature)=((?:[^\\&\s#"']|\\(?!["']))+)/gi
   const COOKIE = /(^|\n|["'])(\s*cookie\s*:[^\n]*)/gi
 
-  function extras(input: string, original = input) {
+  // Search output (`file:line:text`) has the shape of a passfile row (`host:port:db:user:password`).
+  // The match counts when the text after the first two fields holds a complete row. A relative file path
+  // is never a host; any other host needs non-empty database and user fields without spaces and a
+  // password before the next colon.
+  function passfile(head: string, pass: string) {
+    const parts = head.split(":")
+    const rest = parts.slice(2).join(":") + pass
+    if (ROW.test(rest)) return true
+    const path = parts[0].replace(/^["']/, "")
+    if (/[\\/]/.test(path) && !/^[\\/@]/.test(path)) return false
+    return /^\S+$/.test(parts[2]) && /^\S+$/.test(parts[3]) && !pass.startsWith(":")
+  }
+
+  // The shell command before `offset`: its line plus earlier lines continued with a backslash, a
+  // PowerShell backtick, or a cmd caret.
+  function command(text: string, offset: number) {
+    let index = text.lastIndexOf("\n", offset)
+    while (index > 0 && /[\\`^]\r?$/.test(text.slice(Math.max(0, index - 2), index)))
+      index = text.lastIndexOf("\n", index - 1)
+    return text.slice(index + 1, offset)
+  }
+
+  function extras(input: string) {
     let out = input
     for (const [needle, pattern] of EXTRA) {
       if (!out.includes(needle)) continue
@@ -884,27 +906,21 @@ export namespace MemoryRedact {
       )
     if (/mysql|mariadb/i.test(out))
       out = out.replace(MYSQL, (match, head, value) => `${head}${value.startsWith("[redacted") ? value : MARKER}`)
+    // `-u user:password` is a credential for curl or a flag line with no command, such as `.curlrc`.
+    // docker, rsync, and az use `-u` for a user and group, an update flag, or a URL, and a
+    // `scheme://` value is a URL even after curl.
     if (out.includes("-u"))
-      out = out.replace(CURL, (match, head, user, pass) =>
-        pass.startsWith("[redacted") ? match : `${head}${user}:${MARKER}`,
-      )
+      out = out.replace(CURL, (match, head, user, pass, offset: number, text: string) => {
+        if (pass.startsWith("[redacted") || pass.startsWith("//")) return match
+        const line = command(text, offset)
+        if (line.trim() && !/curl/i.test(line)) return match
+        return `${head}${user}:${MARKER}`
+      })
     if (out.includes(":"))
       out = out.replace(PGPASS, (match, lead, head, pass) => {
         const host = head.split(":")[0]
         if (!host.includes(".") && host !== "localhost") return match
-        const path = host.replace(/^["']/, "")
-        const relative =
-          /[\\/]/.test(path) &&
-          !path.startsWith("/") &&
-          !path.startsWith("\\") &&
-          !path.startsWith("@")
-        // A relative path with a short tail is a prefixed code line, not a complete passfile row.
-        if (relative && !/:[^:]*:/.test(pass)) return match
-        if (relative && out === original) {
-          const row = head.slice(head.indexOf(":", host.length + 1) + 1) + pass
-          const code = row.slice(0, row.indexOf(":"))
-          if (!row.includes("\\") && /[({]/.test(code) && !PORT.test(row)) return match
-        }
+        if (!passfile(head, pass)) return match
         return `${lead}${head}${pass.startsWith("[redacted") ? pass : MARKER}`
       })
     if (/password/i.test(out) && /machine|login/i.test(out))

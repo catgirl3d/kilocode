@@ -39,6 +39,13 @@ directory is a real credential or was taken from a real file.
   `AccountKey` field is recognized inside a `;`-separated connection string.
 - The scanner also reads CLI flags (`--password value`, `mysql -p...`, `curl -u user:pass`), `.pgpass`
   and `.netrc` lines, `setx`, YAML block scalars, triple quotes, and `$(...)` substitutions.
+- A `.pgpass` row needs a numeric or `*` port and non-empty database and user fields without spaces.
+  Search output (`file:line:text`) never reads a relative file path as the host: only a complete row
+  after the prefix is masked, so code and CI lines with `::` stay readable.
+- `-u user:pass` and `--user user:pass` count after `curl` in the same command, including lines continued
+  with a backslash, backtick, or caret, or on a flag line with no command (`.curlrc`). docker, rsync,
+  and az use `-u` for a user and group, an update flag, or a URL, and a `scheme://` value is never a
+  password.
 - Query parameters stop at `&`/`#`, bracketed names (`password[]=`) keep the key, and `db.PWD`/`env.PWD`
   stay readable. Unquoted status words (`enabled`, `required`, `none`, ...) are not treated as passwords.
 - Additional prefixes: Google OAuth `GOCSPX-`, Shopify `shpat_`, Linear `lin_api_`, Replicate `r8_`,
@@ -111,6 +118,10 @@ These are deliberate trade-offs after review, not open bugs:
   not decode JSON or shell.
 - `blocksWrite` protects a recognized value replaced by `[redacted]` in the same slot. It is not a
   general edit-safety guarantee for arbitrary rewrites or moved credentials.
+- A `.pgpass` row with an empty database or user field, or with a space in either, is not masked.
+  Search output and code lines have the same shape, and masking them hid readable code.
+- `-u user:pass` after a curl wrapper whose name does not contain `curl` is not masked, because other
+  tools use the same flag for user and group names, update flags, and URLs.
 
 ## Using it
 
