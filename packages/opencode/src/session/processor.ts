@@ -36,6 +36,7 @@ import * as Progress from "@/kilocode/session/progress"
 import { Suggestion } from "@/kilocode/suggestion"
 import { KiloSnapshotGate } from "@/kilocode/snapshot/gate"
 // kilocode_change end
+import { BtwCapture } from "@/kilocode/btw/capture" // kilocode_change - [fork] /btw request capture
 import { errorMessage } from "@/util/error"
 import { isRecord } from "@/util/record"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -981,6 +982,7 @@ const layer = Layer.effect(
         )
         if (!exists) return "stop"
         // kilocode_change end
+        BtwCapture.record(streamInput, ctx.assistantMessage) // kilocode_change - [fork] remember the last request prefix for /btw
         ctx.needsCompaction = false
         ctx.compactionError = undefined // kilocode_change
         ctx.shouldBreak = (yield* config.get()).experimental?.continue_loop_on_deny !== true

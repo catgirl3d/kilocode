@@ -14,6 +14,7 @@ import { Session } from "@/session/session"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { SessionProcessor } from "../../src/session/processor"
+import { BtwCapture } from "../../src/kilocode/btw/capture"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
 import { SessionSummary } from "../../src/session/summary"
@@ -332,6 +333,11 @@ it.live("session.processor effect tests capture llm input cleanly", () =>
         expect(value).toBe("continue")
         expect(calls).toBe(1)
         expect(parts.some((part) => part.type === "text" && part.text === "hello")).toBe(true)
+
+        const frame = BtwCapture.get(chat.id)
+        expect(frame?.assistant).toBe(msg.id)
+        expect(frame?.input.sessionID).toBe(chat.id)
+        expect(frame?.input.messages).toEqual(input.messages)
       }),
     { config: (url) => providerCfg(url) },
   ),

@@ -1,0 +1,113 @@
+/* fork_change - new file */
+/* Side question (/btw) card above the prompt input. */
+
+.prompt-btw {
+  margin: 6px 6px 0;
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-input-background));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 6px;
+  min-width: 0;
+}
+
+.prompt-btw-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.prompt-btw-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--kilo-font-size-11);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.prompt-btw-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.prompt-btw-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.prompt-btw-question {
+  font-size: var(--kilo-font-size-11);
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  overflow-wrap: anywhere;
+}
+
+.prompt-btw-answer {
+  font-size: var(--kilo-font-size-11);
+  color: var(--vscode-foreground);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.prompt-btw-running,
+.prompt-btw-pending,
+.prompt-btw-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prompt-btw-status,
+.prompt-btw-hint,
+.prompt-btw-empty {
+  font-size: var(--kilo-font-size-10);
+  color: var(--text-weak, var(--vscode-descriptionForeground));
+}
+
+.prompt-btw-error {
+  font-size: var(--kilo-font-size-11);
+  color: var(--vscode-errorForeground);
+  overflow-wrap: anywhere;
+}
+
+.prompt-btw-history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.prompt-btw-history-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.prompt-btw-history-item .prompt-btw-question {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+.prompt-btw-hint {
+  margin: 6px 6px 0;
+}
