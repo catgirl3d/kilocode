@@ -1,5 +1,5 @@
 import { expect } from "bun:test"
-import { mkdirSync } from "node:fs"
+import { mkdirSync, rmSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -18,6 +18,7 @@ const webview = path.join(root, "webview-ui")
 const source = path.join(webview, "src/components/history/SessionList.tsx")
 const output = path.join(os.tmpdir(), "kilo")
 const happy = pathToFileURL(Bun.resolveSync("happy-dom", webview)).href
+const timeout = 110_000
 
 async function compile(name: string, mutation?: Mutation) {
   const target = mutation?.file
@@ -95,8 +96,16 @@ export async function execute(name: string, mutation?: Mutation) {
   mkdirSync(output, { recursive: true })
   const file = path.join(output, `${name}-${mutation?.id ?? "plain"}-${crypto.randomUUID()}.mjs`)
   await Bun.write(file, bundle)
-  const child = Bun.spawnSync(["bun", file], { cwd: webview, stdout: "pipe", stderr: "pipe" })
-  return { code: child.exitCode ?? 1, output: child.stdout.toString() + child.stderr.toString(), file }
+  try {
+    const child = Bun.spawnSync(["bun", file], { cwd: webview, stdout: "pipe", stderr: "pipe", timeout })
+    const output = [child.stdout.toString(), child.stderr.toString()].filter(Boolean).join("\n")
+    if (child.exitCode == null) {
+      return { code: 1, output: `fixture ${name} timed out after ${timeout}ms\n${output}`, file }
+    }
+    return { code: child.exitCode, output, file }
+  } finally {
+    rmSync(file, { force: true, maxRetries: 5, retryDelay: 100 })
+  }
 }
 
 export async function fixture(name: string) {

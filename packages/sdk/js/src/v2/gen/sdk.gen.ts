@@ -397,6 +397,12 @@ import type {
   SandboxToggleResponses,
   SessionAbortErrors,
   SessionAbortResponses,
+  SessionBtwCancelErrors,
+  SessionBtwCancelResponses,
+  SessionBtwErrors,
+  SessionBtwListErrors,
+  SessionBtwListResponses,
+  SessionBtwResponses,
   SessionChildrenErrors,
   SessionChildrenResponses,
   SessionCommandErrors,
@@ -5610,6 +5616,113 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * List side questions
+   *
+   * List the side questions asked in this session, oldest first.
+   */
+  public btwList<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionBtwListResponses, SessionBtwListErrors, ThrowOnError>({
+      url: "/session/{sessionID}/btw",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Ask a side question
+   *
+   * Answer a quick side question from the session's context without adding it to the session. Progress is published as session.btw.updated events.
+   */
+  public btw<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      question: string
+      threadID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "question" },
+            { in: "body", key: "threadID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionBtwResponses, SessionBtwErrors, ThrowOnError>({
+      url: "/session/{sessionID}/btw",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel a side question
+   *
+   * Cancel the running side question with this id.
+   */
+  public btwCancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      btwID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "btwID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionBtwCancelResponses, SessionBtwCancelErrors, ThrowOnError>({
+      url: "/session/{sessionID}/btw/{btwID}/cancel",
+      ...options,
+      ...params,
     })
   }
 }

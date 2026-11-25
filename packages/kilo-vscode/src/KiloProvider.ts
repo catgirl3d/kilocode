@@ -165,6 +165,7 @@ import { feedbackMetadata, parseFeedback, type BrowserFeedbackData } from "./sha
 import { mergeInjected } from "./shared/injected-prompt"
 import { completesWithoutStatus, goalControl } from "./kilo-provider/command-completion"
 import { KiloProviderMemory } from "./kilo-provider/memory"
+import { KiloProviderBtw } from "./kilo-provider/btw" // fork_change
 import { isFavoriteReorder } from "./shared/model-favorites" // fork_change
 
 import {
@@ -655,6 +656,13 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     dir: (sessionID) => this.getProjectDirectory(sessionID),
     post: (message) => this.postMessage(message),
   })
+  // fork_change start
+  private readonly btw = new KiloProviderBtw({
+    client: () => this.client ?? undefined,
+    dir: (sessionID) => this.getWorkspaceDirectory(sessionID),
+    post: (message) => this.postMessage(message),
+  })
+  // fork_change end
   private unsubscribeEvent: (() => void) | null = null
   private unsubscribeState: (() => void) | null = null
   private unsubscribeMcpAuth: (() => void) | null = null
@@ -1491,6 +1499,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           sessionColors: () => this.postMessage({ type: "sessionColorsLoaded", colors: sessionColors() }),
           setSessionColor: (sessionID, color) => setSessionColor(sessionID, color),
           sessionTagProject: () => this.tagProject(),
+          btw: (message) => this.btw.handle(message),
           // fork_change end
         })
       ) {

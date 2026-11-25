@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { Window } from "happy-dom"
-import type { Message, ModelSelection, Part, WebviewMessage } from "../../webview-ui/src/types/messages"
+import type { BtwItem, Message, ModelSelection, Part, WebviewMessage } from "../../webview-ui/src/types/messages"
 
 const window = new Window({ url: "http://localhost" })
 Object.defineProperty(window, "origin", { value: window.location.origin })
@@ -3106,6 +3106,53 @@ try {
   }
   await emit({ type: "questionResolved", requestID: "release-question" })
   value.setCurrentSessionID("root")
+
+  // A finished side question adds its spend to the open session, so it refreshes that session's model usage.
+  {
+    value.setCurrentSessionID("btw-usage")
+    await settle()
+    const start = sent.length
+    const usage = () => sent.slice(start).filter((message) => message.type === "requestSessionModelUsage")
+    const item: BtwItem = {
+      id: "btw_usage",
+      sessionID: "btw-usage",
+      threadID: "btw_usage",
+      status: "running",
+      question: "why?",
+      answer: "",
+      providerID: "kilo",
+      modelID: "fixture-btw",
+      cost: 0,
+      time: { created: 1 },
+    }
+    await emit({ type: "btwUpdated", sessionID: "btw-usage", item: { ...item, status: "running" } })
+    assert.equal(usage().length, 0, "a running side question does not refresh the session cost")
+    await emit({
+      type: "btwUpdated",
+      sessionID: "btw-usage",
+      item: { ...item, status: "done", answer: "because", time: { created: 1, completed: 2 } },
+    })
+    assert.deepEqual(
+      usage().map((message) => message.sessionID),
+      ["btw-usage"],
+      "a finished side question refreshes the session cost once",
+    )
+    await emit({
+      type: "btwUpdated",
+      sessionID: "btw-other",
+      item: {
+        ...item,
+        id: "btw_other",
+        sessionID: "btw-other",
+        threadID: "btw_other",
+        status: "done",
+        answer: "other",
+        time: { created: 1, completed: 2 },
+      },
+    })
+    assert.equal(usage().length, 1, "a side question of an unrelated session does not refresh the open session cost")
+    value.setCurrentSessionID("root")
+  }
 
   assert.deepEqual(failures, [])
 } finally {

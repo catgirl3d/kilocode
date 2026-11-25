@@ -68,6 +68,7 @@ export namespace ModelUsage {
   // using part_session_idx and forces a full scan of the entire part table
   // (seconds on large histories), which blocks the single-threaded server on
   // every session open. A concrete IN list lets the planner seek the index.
+  // fork_change start - /btw spend in model usage
   const usageSql = (sessionIDs: SessionID[], subtree: SessionID[]) => sql`
     WITH step AS (
       SELECT
@@ -79,7 +80,8 @@ export namespace ModelUsage {
         max(0, cast(coalesce(json_extract(part.data, '$.tokens.output'), 0) AS INTEGER)) AS output,
         max(0, cast(coalesce(json_extract(part.data, '$.tokens.reasoning'), 0) AS INTEGER)) AS reasoning,
         max(0, cast(coalesce(json_extract(part.data, '$.tokens.cache.read'), 0) AS INTEGER)) AS cache_read,
-        max(0, cast(coalesce(json_extract(part.data, '$.tokens.cache.write'), 0) AS INTEGER)) AS cache_write
+        max(0, cast(coalesce(json_extract(part.data, '$.tokens.cache.write'), 0) AS INTEGER)) AS cache_write,
+        1 AS step
       FROM part
       JOIN message ON message.id = part.message_id AND message.session_id = part.session_id
       WHERE part.session_id IN (${sql.join(
@@ -89,11 +91,29 @@ export namespace ModelUsage {
         AND json_valid(part.data)
         AND json_extract(part.data, '$.type') = 'step-finish'
         AND json_extract(message.data, '$.role') = 'assistant'
+      UNION ALL
+      SELECT
+        session_id AS sessionID,
+        provider_id AS providerID,
+        model_id AS modelID,
+        max(0.0, cost) AS cost,
+        tokens_input AS input,
+        tokens_output AS output,
+        tokens_reasoning AS reasoning,
+        tokens_cache_read AS cache_read,
+        tokens_cache_write AS cache_write,
+        0 AS step
+      FROM kilo_btw
+      WHERE session_id IN (${sql.join(
+        sessionIDs.map((id) => sql`${id}`),
+        sql`,`,
+      )})
+        AND status <> 'running'
     )
     SELECT
       providerID,
       modelID,
-      count(*) AS steps,
+      coalesce(sum(step), 0) AS steps,
       coalesce(sum(cost), 0) AS cost,
       coalesce(sum(CASE WHEN sessionID IN (${sql.join(
         subtree.map((id) => sql`${id}`),
@@ -108,6 +128,7 @@ export namespace ModelUsage {
     WHERE providerID IS NOT NULL AND modelID IS NOT NULL
     GROUP BY providerID, modelID
     ORDER BY cost DESC, providerID, modelID`
+  // fork_change end
 
   const empty = () => ({
     steps: 0,
