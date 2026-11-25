@@ -5,26 +5,40 @@ on:
     branches:
       - main
       - dev
-    paths:
-      - "packages/kilo-vscode/**"
-      - "packages/ui/**"
-      - "packages/kilo-ui/**"
-      - ".github/workflows/test-vscode.yml"
-      - "packages/opencode/src/kilocode/skills/display.ts" # kilocode_change
-      - "packages/kilo-jetbrains/frontend/src/main/kotlin/ai/kilocode/client/session/views/permission/PermissionView.kt" # kilocode_change
   pull_request:
-    paths:
-      - "packages/kilo-vscode/**"
-      - "packages/ui/**"
-      - "packages/kilo-ui/**"
-      - ".github/workflows/test-vscode.yml"
-      - "packages/opencode/src/kilocode/skills/display.ts" # kilocode_change
-      - "packages/kilo-jetbrains/frontend/src/main/kotlin/ai/kilocode/client/session/views/permission/PermissionView.kt" # kilocode_change
   workflow_dispatch:
 
 jobs:
+  changes:
+    name: detect VS Code changes
+    runs-on: ubuntu-latest # kilocode_change
+    outputs:
+      vscode: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.vscode }}
+    steps:
+      - name: Checkout repository
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/checkout@v6 # kilocode_change
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect VS Code changes
+        if: github.event_name != 'workflow_dispatch'
+        id: filter
+        uses: Kilo-Org/paths-filter@668c092af3649c4b664c54e4b704aa46782f6f7c # v3
+        with:
+          filters: |
+            vscode:
+              - "packages/kilo-vscode/**"
+              - "packages/ui/**"
+              - "packages/kilo-ui/**"
+              - ".github/workflows/test-vscode.yml"
+              - "packages/opencode/src/kilocode/skills/display.ts" # kilocode_change
+              - "packages/kilo-jetbrains/frontend/src/main/kotlin/ai/kilocode/client/session/views/permission/PermissionView.kt" # kilocode_change
+
   unit:
-    name: unit tests
+    name: unit tests (run)
+    needs: changes
+    if: needs.changes.outputs.vscode == 'true'
     runs-on: ubuntu-latest # kilocode_change
     defaults:
       run:
@@ -57,3 +71,22 @@ jobs:
       - name: Check for kilocode_change markers
         working-directory: packages/kilo-vscode
         run: bun run check-kilocode-change
+
+  required:
+    name: unit tests
+    runs-on: ubuntu-latest # kilocode_change
+    needs:
+      - changes
+      - unit
+    if: always()
+    steps:
+      - name: Verify unit test jobs passed
+        run: |
+          echo "changes=${{ needs.changes.result }}"
+          echo "unit=${{ needs.unit.result }}"
+          test "${{ needs.changes.result }}" = "success"
+          if [ "${{ needs.changes.outputs.vscode }}" = "true" ]; then
+            test "${{ needs.unit.result }}" = "success"
+          else
+            test "${{ needs.unit.result }}" = "skipped"
+          fi
