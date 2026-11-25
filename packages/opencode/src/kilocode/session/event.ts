@@ -1,4 +1,5 @@
 import { BusEvent } from "@/bus/bus-event"
+import { BtwItem } from "@/kilocode/btw/schema" // fork_change
 import { MessageID, SessionID } from "@/session/schema"
 import { Schema } from "effect"
 
@@ -32,6 +33,17 @@ export const KiloSessionEvent = {
       queued: Schema.Array(MessageID),
     }),
   ),
+  // fork_change start
+  // Side question (/btw) record snapshot: published on start, throttled while
+  // streaming, and on completion. Clients upsert by item.id. Never persisted.
+  BtwUpdated: BusEvent.define(
+    "session.btw.updated",
+    Schema.Struct({
+      sessionID: SessionID,
+      item: BtwItem,
+    }),
+  ),
+  // fork_change end
 }
 
 export type KiloSessionCloseReason = Schema.Schema.Type<typeof CloseReason>

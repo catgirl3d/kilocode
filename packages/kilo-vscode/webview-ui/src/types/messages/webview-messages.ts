@@ -325,6 +325,25 @@ export interface SessionToolClearRequest {
   keepTurns: number
   token: string
 }
+
+export interface BtwAskRequest {
+  type: "btwAsk"
+  sessionID: string
+  requestID: string
+  question: string
+  threadID?: string
+}
+
+export interface BtwCancelRequest {
+  type: "btwCancel"
+  sessionID: string
+  btwID: string
+}
+
+export interface BtwHistoryRequest {
+  type: "btwHistory"
+  sessionID: string
+}
 // fork_change end
 export interface OpenSettingsPanelRequest {
   type: "openSettingsPanel"
@@ -2009,6 +2028,9 @@ export type WebviewMessage =
   | SessionReasoningClearRequest // fork_change
   | SessionToolClearPreviewRequest // fork_change
   | SessionToolClearRequest // fork_change
+  | BtwAskRequest // fork_change
+  | BtwCancelRequest // fork_change
+  | BtwHistoryRequest // fork_change
   | RequestAgentsMessage
   | RequestSkillsMessage
   | RequestCommandsMessage

@@ -282,7 +282,10 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
   const money = createMemo(() => new Intl.NumberFormat(language.locale(), { style: "currency", currency: "USD" }))
   const fmt = (n: number) => money().format(n)
 
-  const breakdown = () => session.costBreakdown()
+  // fork_change start - the reported total includes /btw spend, so the breakdown lists it too
+  const breakdown = () =>
+    session.btw.breakdown(session.currentSessionID(), session.costBreakdown(), language.t("prompt.btw.cost"))
+  // fork_change end
   const total = createMemo(() => sessionCost(breakdown(), session.currentSession(), session.modelUsage()))
 
   const cost = createMemo(() => {

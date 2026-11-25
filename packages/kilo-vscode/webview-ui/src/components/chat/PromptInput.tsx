@@ -82,6 +82,7 @@ import { SessionMentionPicker } from "./SessionMentionPicker"
 import { formatRelativeDate } from "../../utils/date"
 import { WorktreeMentionPicker } from "./WorktreeMentionPicker"
 import { CommitMentionPicker } from "./CommitMentionPicker" // fork_change
+import { BtwCard } from "./BtwCard" // fork_change
 import { usePromptHistory } from "../../hooks/usePromptHistory"
 import { cycleVariant } from "../../context/session-variant-store"
 import {
@@ -99,6 +100,7 @@ import {
   type SandboxState,
   undoKey,
 } from "./prompt-input-utils"
+import { parseBtwCommand } from "@opencode-ai/core/kilocode/btw/client" // fork_change
 import { sandboxMessages } from "./prompt-sandbox-messages"
 import type { ExtensionMessage, ReviewCommentEntry, SendMessageFailedMessage, TextPart } from "../../types/messages"
 // fork_change start
@@ -545,6 +547,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         hints: ["caffenate", "keep-awake"],
         action: () => vscode.postMessage({ type: "toggleCaffeination" }),
       },
+      // fork_change start
+      {
+        name: "btw",
+        description: language.t("prompt.btw.slash"),
+        hints: [],
+      },
+      // fork_change end
     ],
   )
   const clearSandboxRequest = (sessionID: string | undefined, requestID: string) => {
@@ -1475,12 +1484,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const escape = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return false
     if (hasPopup()) return true
-    if (!ghost.text() && !goal.active() && !isBusy()) return false
+    // fork_change start - an open side-question card closes first (which cancels its answer), then the session is aborted
+    const btwOpen = session.btw.state(sid()).open
+    if (!ghost.text() && !goal.active() && !isBusy() && !btwOpen) return false
+    // fork_change end
     e.preventDefault()
     e.stopPropagation()
+    // fork_change start
     if (ghost.text()) ghost.dismiss()
     else if (goal.active()) goal.cancel()
-    else session.abort()
+    else if (btwOpen) session.btw.close(sid()!)
+    else if (isBusy()) session.abort()
+    // fork_change end
     return true
   }
 
@@ -1865,6 +1880,104 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
   }
 
+  // fork_change start - /btw card and side-question send
+  const [btwHint, setBtwHint] = createSignal<"session" | "blocked" | "disconnected">()
+  // Replaces the draft the way a restored draft does, rebasing the paste chips onto the new text.
+  // The pickers belonged to the old text, so they close too.
+  const btwDraft = (value: string, texts: readonly string[], caret = value.length) => {
+    setText(value)
+    paste.load(value, texts)
+    slash.close()
+    mention.closeMention()
+    if (!textareaRef) return
+    textareaRef.value = value
+    textareaRef.setSelectionRange(caret, caret)
+    adjustHeight()
+    textareaRef.focus()
+  }
+  const insertBtw = (quote: string) =>
+    btwDraft(
+      quote + text(),
+      paste.pastes().map((item) => item.text),
+      quote.length,
+    )
+  // A follow-up keeps the draft: an empty one becomes the prefix, a /btw line is only focused, anything else gets the prefix.
+  const followBtw = () => {
+    const prefix = "/btw "
+    const current = text()
+    if (!current.trim()) {
+      btwDraft(prefix, [])
+      return
+    }
+    if (parseBtwCommand(current)) {
+      textareaRef?.focus()
+      return
+    }
+    btwDraft(
+      prefix + current,
+      paste.pastes().map((item) => item.text),
+      prefix.length,
+    )
+  }
+  // The reset a consumed memory command leaves behind. It lives outside send(), so the /btw branch added there
+  // keeps send() within its complexity cap (eslint.config.mjs: refactor instead of raising caps).
+  const consumeDraft = () => {
+    clearReviewComments()
+    clear()
+    clearContexts()
+    imageAttach.clear()
+    mention.closeMention()
+    slash.close()
+    drafts.delete(draftKey())
+    reviewDrafts.delete(draftKey())
+    contextDrafts.delete(draftKey())
+    imageDrafts.delete(draftKey())
+    mentionDrafts.delete(draftKey())
+    scrollDrafts.delete(draftKey())
+    pasteDrafts.delete(draftKey())
+    if (textareaRef) textareaRef.style.height = "auto"
+  }
+  // Consumes a /btw line without touching the session. False leaves the draft to the normal send path.
+  // Only the typed text is consumed: attachments, review comments and contexts stay with the draft.
+  const sideQuestion = (draft: string, objective: boolean) => {
+    const btw = objective ? undefined : parseBtwCommand(draft)
+    if (!btw) return false
+    const id = session.currentSessionID()
+    if (!id) {
+      setBtwHint("session")
+      return true
+    }
+    if (!server.isConnected()) {
+      setBtwHint("disconnected")
+      return true
+    }
+    if (isDisabled() || props.blocked?.()) {
+      setBtwHint("blocked")
+      return true
+    }
+    setBtwHint(undefined)
+    if (btw.kind === "ask") session.btw.ask(id, btw.question)
+    if (btw.kind === "history") session.btw.history(id)
+    history.append(draft)
+    btwDraft("", [])
+    drafts.delete(draftKey())
+    pasteDrafts.delete(draftKey())
+    if (textareaRef) textareaRef.style.height = "auto"
+    return true
+  }
+  // Follow mode ends once the draft is no longer a /btw line, and a stale hint goes with it.
+  createEffect(() => {
+    if (parseBtwCommand(text())) return
+    setBtwHint(undefined)
+    const id = sid()
+    if (id && session.btw.state(id).follow) session.btw.unfollow(id)
+  })
+  // The no-session hint only explains a refused send, so it goes once a session exists.
+  createEffect(() => {
+    if (session.currentSessionID()) setBtwHint(undefined)
+  })
+  // fork_change end
+
   const command = (draft: string) => {
     const match = draft.match(/^\/(\S+)/)
     const word = match?.[1]
@@ -1945,22 +2058,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (!runMemory(memory)) return
       history.append(draft)
       setMemoryText(memory)
-      clearReviewComments()
-      clear()
-      clearContexts()
-      imageAttach.clear()
-      mention.closeMention()
-      slash.close()
-      drafts.delete(draftKey())
-      reviewDrafts.delete(draftKey())
-      contextDrafts.delete(draftKey())
-      imageDrafts.delete(draftKey())
-      mentionDrafts.delete(draftKey())
-      scrollDrafts.delete(draftKey())
-      pasteDrafts.delete(draftKey())
-      if (textareaRef) textareaRef.style.height = "auto"
+      // fork_change start - the shared reset that ends a consumed draft
+      consumeDraft()
+      // fork_change end
       return
     }
+
+    // fork_change start - /btw side question never goes through the session send path
+    if (sideQuestion(draft, objective)) return
+    // fork_change end
 
     // Detect slash command (hoisted for both client and server command checks).
     // Prioritize exact name matches over hint/alias matches so that a server
@@ -2262,6 +2368,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           }}
         />
       </Show>
+      {/* fork_change start */}
+      <Show when={sid()}>{(id) => <BtwCard sessionID={id()} onInsert={insertBtw} onFollow={followBtw} />}</Show>
+      <Show when={btwHint()}>
+        {(reason) => (
+          <div class="prompt-btw-hint">
+            {language.t(
+              reason() === "disconnected"
+                ? "prompt.btw.disconnected"
+                : reason() === "blocked"
+                  ? "prompt.btw.blocked"
+                  : "prompt.btw.noSession",
+            )}
+          </div>
+        )}
+      </Show>
+      {/* fork_change end */}
       {/* fork_change start */}
       <Show when={session.deferredMessages(sid()).length > 0}>
         <div class="prompt-deferred">

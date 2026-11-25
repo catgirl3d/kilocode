@@ -3,6 +3,8 @@ import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { ModelUsage } from "@/kilocode/session/model-usage"
+import { BtwStore } from "@/kilocode/btw/store"
+import type { BtwItem } from "@/kilocode/btw/schema"
 import { ProjectTable } from "@opencode-ai/core/project/sql"
 import { ProjectV2 } from "@opencode-ai/core/project"
 import { MessageV2 } from "@/session/message-v2"
@@ -67,6 +69,39 @@ const step = Effect.fn("ModelUsageTest.step")(function* (input: {
     model: input.model,
     cost: input.cost,
     tokens: input.tokens,
+  })
+})
+
+const btw = Effect.fn("ModelUsageTest.btw")(function* (input: {
+  sessionID: SessionID
+  id: string
+  providerID: string
+  modelID: string
+  cost: number
+  tokens: MessageV2.StepFinishPart["tokens"]
+  status?: BtwItem["status"]
+}) {
+  const item = {
+    id: input.id,
+    sessionID: input.sessionID,
+    threadID: input.id,
+    status: "running",
+    question: `question ${input.id}`,
+    answer: "",
+    providerID: input.providerID,
+    modelID: input.modelID,
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 1 },
+  } satisfies BtwItem
+  yield* BtwStore.insert(item)
+  yield* BtwStore.finish({
+    ...item,
+    status: input.status ?? "done",
+    answer: "Answer.",
+    cost: input.cost,
+    tokens: input.tokens,
+    time: { created: item.time.created, completed: 2 },
   })
 })
 
@@ -261,6 +296,132 @@ describe("session model usage", () => {
       expect((yield* ModelUsage.get(root.id))?.totals).toEqual(totals)
       yield* sessions.removePart({ sessionID: root.id, messageID: message.id, partID: part.id })
       expect(yield* ModelUsage.get(root.id)).toEqual(empty)
+    }),
+  )
+
+  it.instance("attributes finished btw spend to its own model entry across a session family", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const root = yield* sessions.create({ title: "btw root" })
+      const child = yield* sessions.create({ title: "btw child", parentID: root.id })
+      const sibling = yield* sessions.create({ title: "btw sibling", parentID: root.id })
+      const used = ref("test", "used")
+      const side = ref("kilo", "side")
+
+      const message = yield* seed(root.id, used)
+      yield* step({
+        sessionID: root.id,
+        messageID: message.id,
+        cost: 1,
+        tokens: { input: 100, output: 20, reasoning: 5, cache: { read: 200, write: 10 } },
+      })
+      yield* btw({
+        sessionID: child.id,
+        id: "btw_child",
+        providerID: "kilo",
+        modelID: "side",
+        cost: 0.5,
+        tokens: { input: 10, output: 4, reasoning: 2, cache: { read: 6, write: 1 } },
+      })
+      yield* btw({
+        sessionID: sibling.id,
+        id: "btw_sibling",
+        providerID: "kilo",
+        modelID: "side",
+        cost: 0.25,
+        tokens: { input: 5, output: 2, reasoning: 1, cache: { read: 3, write: 0 } },
+      })
+
+      expect(yield* ModelUsage.get(child.id)).toEqual({
+        sessionIDs: [root.id, sibling.id, child.id].sort(),
+        sessionCost: 0.5,
+        totals: {
+          steps: 1,
+          cost: 1.75,
+          tokens: { input: 115, output: 26, reasoning: 8, cache: { read: 209, write: 11 } },
+        },
+        models: [
+          {
+            ...used,
+            steps: 1,
+            cost: 1,
+            tokens: { input: 100, output: 20, reasoning: 5, cache: { read: 200, write: 10 } },
+          },
+          {
+            ...side,
+            steps: 0,
+            cost: 0.75,
+            tokens: { input: 15, output: 6, reasoning: 3, cache: { read: 9, write: 1 } },
+          },
+        ],
+      })
+      // Ancestor and sibling spend stays out of the requested session's scoped cost but remains in the family totals.
+      expect((yield* ModelUsage.get(root.id))?.sessionCost).toBe(1.75)
+      expect((yield* ModelUsage.get(sibling.id))?.sessionCost).toBe(0.25)
+    }),
+  )
+
+  it.instance("includes cancelled btw spend and excludes a running row from model usage", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { db } = yield* Database.Service
+      const root = yield* sessions.create({ title: "btw running" })
+      const side = ref("kilo", "side")
+      const cancel = ref("kilo", "cancel")
+      const hidden = ref("hidden", "rolled-up")
+
+      // A running row is not spend yet, even when it already carries cost and tokens.
+      yield* db.run(sql`
+        INSERT INTO kilo_btw (
+          id, session_id, thread_id, status, question, answer, provider_id, model_id, cost,
+          tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_created
+        ) VALUES (
+          'btw_unfinished', ${root.id}, 'btw_unfinished', 'running', 'still going', '',
+          ${hidden.providerID}, ${hidden.modelID}, 0.5, 9000, 9000, 9000, 9000, 9000, 1
+        )
+      `)
+      // Any terminal status spends the recorded cost; a `status = 'done'` filter would drop this row.
+      yield* btw({
+        sessionID: root.id,
+        id: "btw_cancelled",
+        providerID: "kilo",
+        modelID: "cancel",
+        cost: 0.5,
+        tokens: { input: 20, output: 8, reasoning: 4, cache: { read: 12, write: 2 } },
+        status: "cancelled",
+      })
+      yield* btw({
+        sessionID: root.id,
+        id: "btw_done",
+        providerID: "kilo",
+        modelID: "side",
+        cost: 0.25,
+        tokens: { input: 10, output: 4, reasoning: 2, cache: { read: 6, write: 1 } },
+      })
+
+      expect(yield* ModelUsage.get(root.id)).toEqual({
+        sessionIDs: [root.id],
+        sessionCost: 0.75,
+        totals: {
+          steps: 0,
+          cost: 0.75,
+          tokens: { input: 30, output: 12, reasoning: 6, cache: { read: 18, write: 3 } },
+        },
+        models: [
+          {
+            ...cancel,
+            steps: 0,
+            cost: 0.5,
+            tokens: { input: 20, output: 8, reasoning: 4, cache: { read: 12, write: 2 } },
+          },
+          {
+            ...side,
+            steps: 0,
+            cost: 0.25,
+            tokens: { input: 10, output: 4, reasoning: 2, cache: { read: 6, write: 1 } },
+          },
+        ],
+      })
     }),
   )
 })
