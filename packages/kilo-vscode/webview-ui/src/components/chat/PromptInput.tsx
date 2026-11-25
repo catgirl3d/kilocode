@@ -1773,26 +1773,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
   // fork_change end
 
-  // fork_change start - Stop returns held prompts to the composer instead of dropping them
-  const restoreCancelled = (event: Event) => {
-    const detail = (event as CustomEvent<{ sessionID?: string; items?: DeferredSend[] }>).detail
-    if (!detail?.items?.length || detail.sessionID !== sid()) return
-    const raw = detail.items.reduce((current, item) => append(current, item.draft), "")
-    const comments = detail.items.reduce<ReviewCommentEntry[]>(
+  // fork_change start - Stop and cancel return held prompts to the composer instead of dropping them
+  const restoreDeferred = (sessionID: string, items: DeferredSend[]) => {
+    if (items.length === 0 || sessionID !== sid()) return
+    const raw = items.reduce((current, item) => append(current, item.draft), "")
+    const comments = items.reduce<ReviewCommentEntry[]>(
       (current, item) => mergeReviewComments(current, item.review?.comments ?? []),
       [],
     )
-    const refs = detail.items.reduce<BrowserReference[]>(
+    const refs = items.reduce<BrowserReference[]>(
       (current, item) => (item.browserFeedback?.references ?? []).reduce(mergeBrowserReferences, current),
       [],
     )
-    const ctxs = detail.items.reduce<CodeContext[]>(
-      (current, item) => mergeCodeContexts(current, item.contexts ?? []),
-      [],
-    )
-    const images = detail.items.flatMap((item) => imageAttachments(item.files))
+    const ctxs = items.reduce<CodeContext[]>((current, item) => mergeCodeContexts(current, item.contexts ?? []), [])
+    const images = items.flatMap((item) => imageAttachments(item.files))
     if (readonly()) {
-      const key = scopeDraftKey(boxKey(), sessionDraftKey(detail.sessionID))
+      const key = scopeDraftKey(boxKey(), sessionDraftKey(sessionID))
       const combined = [...(imageDrafts.get(key) ?? []), ...images]
       savePromptDraft(
         key,
@@ -1819,6 +1815,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       adjustHeight()
       textareaRef.focus()
     }
+  }
+  const restoreCancelled = (event: Event) => {
+    const detail = (event as CustomEvent<{ sessionID?: string; items?: DeferredSend[] }>).detail
+    if (!detail?.items?.length || !detail.sessionID) return
+    restoreDeferred(detail.sessionID, detail.items)
   }
   window.addEventListener("kilo:deferred-cancelled", restoreCancelled)
   onCleanup(() => window.removeEventListener("kilo:deferred-cancelled", restoreCancelled))
@@ -2409,7 +2410,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   variant="ghost"
                   size="small"
                   aria-label={language.t("prompt.deferred.cancel")}
-                  onClick={() => session.cancelDeferred(item.sessionID, item.id)}
+                  onClick={() => {
+                    session.cancelDeferred(item.sessionID, item.id)
+                    restoreDeferred(item.sessionID, [item])
+                  }}
                 />
               </div>
             )}
