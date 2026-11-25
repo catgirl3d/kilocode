@@ -1738,6 +1738,52 @@ try {
     await settle()
     assert.equal(requests().length, stoppedWithNewText, "A stopped prompt with new text is never auto-sent")
 
+    const cancelComment = {
+      id: "cancel-review",
+      file: "cancel.ts",
+      line: 3,
+      side: "additions",
+      comment: "Cancel keeps this",
+    }
+    const cancelBrowser = { id: "cancel-browser", sessionId: "composer", selector: "button.cancel" }
+    const cancelled = await hold("Cancel returns this prompt", async () => {
+      await emit({
+        type: "setChatBoxMessage",
+        text: "Cancel returns this prompt",
+        review: [cancelComment],
+        browser: [cancelBrowser],
+      })
+    })
+    assert.equal(requests().length, cancelled)
+    const cancelButton = host.querySelector<HTMLButtonElement>(
+      '.prompt-deferred-row [aria-label="prompt.deferred.cancel"]',
+    )
+    assert(cancelButton, "The deferred row exposes a cancel button")
+    cancelButton.click()
+    await settle()
+    assert.equal(requests().length, cancelled, "Cancelling a deferred prompt never sends it")
+    assert.equal(input().value, "Cancel returns this prompt", "Cancel restores the deferred raw text")
+    assert(host.querySelector('img[src="data:image/png;base64,cGl4ZWw="]'), "Cancel restores deferred images")
+    assert.equal(
+      host.querySelectorAll(".prompt-review-row").length,
+      2,
+      "Cancel restores review and browser attachments",
+    )
+    assert.equal(value.deferredMessages("composer").length, 0, "Cancel removes the deferred item")
+    assert.equal(host.querySelector(".prompt-deferred"), null, "The deferred chip disappears after cancel")
+
+    const cancelledWithNewText = await hold("Cancel appends this prompt")
+    input().value = "Keep my new draft"
+    input().dispatchEvent(new window.Event("input", { bubbles: true }) as unknown as Event)
+    await settle()
+    host.querySelector<HTMLButtonElement>('.prompt-deferred-row [aria-label="prompt.deferred.cancel"]')!.click()
+    await settle()
+    assert.equal(input().value, "Keep my new draft\n\nCancel appends this prompt", "Cancel appends below a new draft")
+    await emit({ type: "sessionTurnClosed", sessionID: "composer", reason: "interrupted" })
+    await emit({ type: "sessionStatus", sessionID: "composer", status: "idle" })
+    await settle()
+    assert.equal(requests().length, cancelledWithNewText, "A prompt restored by cancel is never sent")
+
     await seed("Short press sends now")
     await emit({ type: "sessionStatus", sessionID: "composer", status: "busy" })
     const short = host.querySelector<HTMLButtonElement>('[aria-label="prompt.action.send"]')
