@@ -1,8 +1,12 @@
-/* Quick Model Switcher */
+/* Quick Model Switcher: the numbered favorite slots, the model and subagent
+   model pickers, and the usage ring as one boxed group in the prompt
+   selector's model part. Generic rules also match its buttons: the button
+   state rules (0-4-0) and, for the two pickers, the trigger rules in
+   prompt-input.css (up to 0-5-0). The button rules below start with the full
+   model part path, so at 0-6-0 they win without !important. */
 .model-quick-switcher {
   display: flex;
   align-items: center;
-  min-height: 22px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
@@ -14,69 +18,83 @@
   align-items: center;
 }
 
-.model-quick-switcher .favorite-model-switcher-slot--numbered[data-component="button"] {
+.prompt-selectors
+  .prompt-selector[data-part="model"]
+  .model-quick-switcher
+  .favorite-model-switcher-slot[data-component="button"] {
   width: 20px;
   min-width: 20px;
-  height: 26px !important;
+  height: 26px;
   min-height: 26px;
-  padding: 0 !important;
-  border: 0 !important;
+  padding: 0;
+  border: 0;
   border-radius: 0;
-  background: transparent !important;
+  background: transparent;
+  box-shadow: none;
   color: var(--vscode-descriptionForeground);
   font-size: var(--kilo-font-size-13);
-  box-shadow: none !important;
 }
 
-.model-quick-switcher .favorite-model-switcher-slot--numbered[data-component="button"]:hover {
-  background: var(--surface-base-hover) !important;
-  color: var(--vscode-foreground);
-}
-
-.model-quick-switcher .favorite-model-switcher-slot--selected[data-component="button"] {
-  background: var(--vscode-button-background, var(--border-focus)) !important;
+.prompt-selectors
+  .prompt-selector[data-part="model"]
+  .model-quick-switcher
+  .favorite-model-switcher-slot--selected[data-component="button"] {
+  background: var(--vscode-button-background, var(--border-focus));
   color: var(--vscode-button-foreground, var(--vscode-foreground));
 }
 
-.model-quick-switcher .favorite-model-switcher-slot[data-component="button"]:focus-visible {
+.prompt-selectors
+  .prompt-selector[data-part="model"]
+  .model-quick-switcher
+  .favorite-model-switcher-slot[data-component="button"]:hover {
+  background: var(--surface-base-hover);
+  color: var(--vscode-foreground);
+}
+
+.prompt-selectors
+  .prompt-selector[data-part="model"]
+  .model-quick-switcher
+  .favorite-model-switcher-slot[data-component="button"]:focus-visible {
   outline: 1px solid var(--border-focus, var(--vscode-focusBorder));
   outline-offset: -1px;
 }
 
-.model-selector-quick-open[data-component="button"],
-.subagent-model-selector-quick-open[data-component="button"] {
+/* The pickers keep the secondary button icon color, so they set no color. */
+.prompt-selectors
+  .prompt-selector[data-part="model"]
+  .model-quick-switcher
+  :is(.model-selector-quick-open, .subagent-model-selector-quick-open)[data-component="button"] {
   width: 20px;
   min-width: 20px;
-  height: 25px !important;
-  min-height: 25px;
-  padding: 0 !important;
-  border: 0 !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 0 !important;
-  background: var(--vscode-button-background, var(--border-focus)) !important;
-  color: var(--vscode-button-foreground, var(--vscode-foreground));
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  background: transparent;
 }
 
-.model-quick-switcher:has(.favorite-model-switcher-slot[aria-pressed="true"])
+/* The model picker is filled while the current model has no quick slot. */
+.prompt-selectors
+  .prompt-selector[data-part="model"]
+  .model-quick-switcher
   .model-selector-quick-open[data-component="button"] {
-  background: transparent !important;
-  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-button-background, var(--border-focus));
 }
 
-.model-selector-quick-open[data-component="button"]:hover,
-.subagent-model-selector-quick-open[data-component="button"]:hover {
-  background: var(--surface-base-hover) !important;
-  color: var(--vscode-foreground);
+.prompt-selectors
+  .prompt-selector[data-part="model"]
+  .model-quick-switcher
+  :is(.model-selector-quick-open, .subagent-model-selector-quick-open)[data-component="button"]:hover {
+  background: var(--surface-base-hover);
 }
 
-.model-quick-switcher .subagent-model-selector-quick-open[data-component="button"] {
-  background: transparent !important;
-  color: var(--vscode-descriptionForeground);
-}
-
-.model-quick-switcher .subagent-model-selector-quick-open[data-component="button"]:hover {
-  background: var(--surface-base-hover) !important;
-  color: var(--vscode-foreground);
+.prompt-selectors
+  .prompt-selector[data-part="model"]
+  .model-quick-switcher:has(.favorite-model-switcher-slot[aria-pressed="true"])
+  .model-selector-quick-open[data-component="button"] {
+  background: transparent;
 }
 
 .model-quick-switcher-tooltip[data-component="tooltip"] {
