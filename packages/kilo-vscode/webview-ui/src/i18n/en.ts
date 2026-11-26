@@ -111,11 +111,12 @@ export const dict = {
   "command.session.reasoningClear.invalid": "Enter a whole number from 1 to 100",
   "command.session.reasoningClear.turns": "Turns to clear",
   "command.session.reasoningClear.blocks": "Reasoning blocks",
-  "command.session.reasoningClear.tokens": "Estimated tokens",
+  "command.session.reasoningClear.tokens": "Estimated text tokens",
   "command.session.reasoningClear.carriers.label": "Also clear provider reasoning carriers",
   "command.session.reasoningClear.carriers.description":
     "Removes encrypted or signed provider reasoning from old turns. Recent turns stay untouched; reasoning quality may drop for older turns.",
-  "command.session.reasoningClear.carriers.included": "{{count}} provider reasoning carrier(s) will be cleared.",
+  "command.session.reasoningClear.carriers.included":
+    "{{count}} provider reasoning carrier(s) will be cleared. Their metadata is not counted in the estimated text tokens.",
   "command.session.reasoningClear.carriers.preserved":
     "{{count}} provider reasoning carrier(s) are preserved. Turn on the option above to clear them.",
   "command.session.reasoningClear.preserved":
@@ -131,7 +132,7 @@ export const dict = {
   "command.session.reasoningClear.error.unknown": "Could not clear reasoning.",
   "command.session.reasoningClear.button": "Clear reasoning",
   "command.session.reasoningClear.success":
-    "Cleared {{parts}} reasoning blocks across {{turns}} turns ({{tokens}} tokens).",
+    "Cleared {{parts}} reasoning blocks across {{turns}} turns ({{tokens}} text tokens).",
   "command.session.toolClear": "Clear old tool output",
   "command.session.toolClear.title": "Clear old tool output",
   "command.session.toolClear.description":

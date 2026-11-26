@@ -6,6 +6,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import * as Clear from "@/kilocode/session/reasoning-clear"
 import * as Marker from "@/kilocode/session/reasoning-marker"
+import { Token } from "@/util/token"
 import { ReasoningClearPayload, ReasoningClearPreviewPayload } from "@/kilocode/server/httpapi/groups/session"
 
 const sessionID = SessionID.make("ses_reasoning_clear")
@@ -379,7 +380,7 @@ test("clears provider carriers only when includeCarriers is enabled", async () =
     Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
   )
   expect(next).toMatchObject({ parts: 1, unsupported: 0, carriers: 1, carrierCandidates: 1 })
-  expect(next.tokens).toBeGreaterThan(preview.tokens)
+  expect(next.tokens).toBe(Token.estimate("summary"))
   const cleared = await Effect.runPromise(
     Clear.apply({
       sessionID,
@@ -416,7 +417,30 @@ test("includes empty-text provider carriers when includeCarriers is enabled", as
   )
 
   expect(preview).toMatchObject({ parts: 1, carriers: 1, carrierCandidates: 1, unsupported: 0 })
-  expect(preview.tokens).toBeGreaterThan(0)
+  expect(preview.tokens).toBe(0)
+})
+
+test("counts only reasoning text in the token estimate", async () => {
+  const old = user("560")
+  const carrier = reasoning(
+    "carrier-large",
+    "hello",
+    { openai: { itemId: "rs_large", reasoningEncryptedContent: "x".repeat(4000) } },
+    2,
+  )
+  carrier.messageID = MessageID.make("msg_560")
+  const reply = assistantWithParts("561", old.info.id, [carrier])
+  const current = user("570")
+  const currentReply = assistant("571", current.info.id, "current")
+  const stored = sessions([old, reply, current, currentReply])
+
+  const preview = await Effect.runPromise(
+    Clear.preview({ sessionID, keepTurns: 1, includeCarriers: true, sessions: stored.service }),
+  )
+
+  expect(preview).toMatchObject({ parts: 1, carriers: 1, carrierCandidates: 1, unsupported: 0 })
+  expect(preview.tokens).toBe(Token.estimate("hello"))
+  expect(preview.tokens).toBeLessThan(Token.estimate("x".repeat(4000)))
 })
 
 test("keeps provider carriers in kept turns when includeCarriers is enabled", async () => {
