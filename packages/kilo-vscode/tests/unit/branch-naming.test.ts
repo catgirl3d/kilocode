@@ -82,7 +82,7 @@ describe("BranchNamingController", () => {
   it("skips the first prompt and names on the second", async () => {
     const wt = armed(state)
     const { naming, renamed, prompts, requests } = makeNaming(state, {
-      generate: async () => ({ data: { branch: "fix-final-task" } }),
+      generate: async () => ({ data: { branch: "fix/final-task" } }),
     })
 
     naming.prompt({ sessionID: "session-1", text: "hi" })
@@ -95,14 +95,14 @@ describe("BranchNamingController", () => {
 
     expect(requests.value).toBe(1)
     expect(prompts).toEqual(["Fix the task"])
-    expect(renamed).toEqual(["fix-final-task"])
+    expect(renamed).toEqual(["fix/final-task"])
     expect(state.getWorktree(wt.id)?.autoNameSessionId).toBeUndefined()
   })
 
   it("names on the first prompt once the worktree has work, via idle", async () => {
     const wt = armed(state)
     const { naming, renamed, requests } = makeNaming(state, {
-      generate: async () => ({ data: { branch: "fix-token-refresh-race" } }),
+      generate: async () => ({ data: { branch: "fix/token-refresh-race" } }),
       hasWork: async () => true,
     })
 
@@ -113,8 +113,53 @@ describe("BranchNamingController", () => {
     await settle()
 
     expect(requests.value).toBe(1)
-    expect(renamed).toEqual(["fix-token-refresh-race"])
+    expect(renamed).toEqual(["fix/token-refresh-race"])
     expect(state.getWorktree(wt.id)?.autoNameSessionId).toBeUndefined()
+  })
+
+  it("names a link-only worktree from the issue reference", async () => {
+    const wt = armed(state)
+    const { naming, renamed } = makeNaming(state, {
+      generate: async () => ({ data: { branch: "chore/issue-120" } }),
+    })
+
+    naming.prompt({ sessionID: "session-1", text: "hi" })
+    naming.prompt({ sessionID: "session-1", text: "https://github.com/catgirl3d/SayIt/issues/120" })
+    await settle()
+
+    expect(renamed).toEqual(["chore/issue-120"])
+    expect(state.getWorktree(wt.id)?.branch).toBe("chore/issue-120")
+  })
+
+  it("does not rename from a pasted link", async () => {
+    const wt = armed(state)
+    const { naming, renamed } = makeNaming(state, {
+      generate: async () => ({ data: { branch: "https://github.com/catgirl3d/SayIt/issues/120" } }),
+    })
+
+    naming.prompt({ sessionID: "session-1", text: "hi" })
+    naming.prompt({ sessionID: "session-1", text: "fix it" })
+    await settle()
+
+    expect(renamed).toEqual([])
+    expect(state.getWorktree(wt.id)).toMatchObject({
+      branch: "quiet-river",
+      autoNameSessionId: "session-1",
+    })
+  })
+
+  it("does not rename to a lone type", async () => {
+    const wt = armed(state)
+    const { naming, renamed } = makeNaming(state, {
+      generate: async () => ({ data: { branch: "fix/" } }),
+    })
+
+    naming.prompt({ sessionID: "session-1", text: "hi" })
+    naming.prompt({ sessionID: "session-1", text: "fix it" })
+    await settle()
+
+    expect(renamed).toEqual([])
+    expect(state.getWorktree(wt.id)?.branch).toBe("quiet-river")
   })
 
   it("applies the user prefix", async () => {
@@ -127,7 +172,7 @@ describe("BranchNamingController", () => {
         branchName: {
           generate: async (input) => {
             prompts.push(input.prompt)
-            return { data: { branch: "fix-token-refresh-race" } }
+            return { data: { branch: "fix/token-refresh-race" } }
           },
         },
       }),
@@ -142,7 +187,7 @@ describe("BranchNamingController", () => {
 
     expect(prompts).toEqual([""])
     expect(state.getWorktree(wt.id)).toMatchObject({
-      branch: "marius/features/fix-token-refresh-race",
+      branch: "marius/features/token-refresh-race",
       autoNameSessionId: undefined,
     })
   })
