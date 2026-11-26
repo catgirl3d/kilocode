@@ -41,8 +41,14 @@ type Ctx = {
     includeCarriers: boolean,
     token: string,
   ) => Promise<void>
-  toolPreview: (sessionID: string, requestID: string, keepTurns: number) => Promise<void>
-  toolClear: (sessionID: string, requestID: string, keepTurns: number, token: string) => Promise<void>
+  toolPreview: (sessionID: string, requestID: string, keepTurns: number, includeHistory: boolean) => Promise<void>
+  toolClear: (
+    sessionID: string,
+    requestID: string,
+    keepTurns: number,
+    includeHistory: boolean,
+    token: string,
+  ) => Promise<void>
   sessionColors: () => void
   setSessionColor: (sessionID: string, color: string | null) => Promise<void>
   sessionTagProject: () => string | undefined
@@ -108,6 +114,7 @@ type ClearMessage = {
   requestID?: unknown
   keepTurns?: unknown
   includeCarriers?: unknown
+  includeHistory?: unknown
   token?: unknown
 }
 
@@ -123,10 +130,19 @@ async function routeClearMessage(message: ClearMessage, ctx: Ctx): Promise<boole
   const keepTurns = message.keepTurns
   const token = message.token
   const includeCarriers = message.includeCarriers === true
+  const includeHistory = message.includeHistory === true
   const validTurns = typeof keepTurns === "number"
   const validToken = operation === "preview" || (typeof token === "string" && token.length > 0)
   const validCarriers = message.includeCarriers === undefined || typeof message.includeCarriers === "boolean"
-  if (typeof sessionID !== "string" || typeof requestID !== "string" || !validTurns || !validToken || !validCarriers) {
+  const validHistory = message.includeHistory === undefined || typeof message.includeHistory === "boolean"
+  if (
+    typeof sessionID !== "string" ||
+    typeof requestID !== "string" ||
+    !validTurns ||
+    !validToken ||
+    !validCarriers ||
+    !validHistory
+  ) {
     if (typeof sessionID === "string" && typeof requestID === "string") {
       ctx.post({
         type: spec.kind === "reasoning" ? "sessionReasoningClearFailed" : "sessionToolClearFailed",
@@ -144,8 +160,8 @@ async function routeClearMessage(message: ClearMessage, ctx: Ctx): Promise<boole
     else await ctx.reasoningClear(sessionID, requestID, keepTurns, includeCarriers, token as string)
     return true
   }
-  if (operation === "preview") await ctx.toolPreview(sessionID, requestID, keepTurns)
-  else await ctx.toolClear(sessionID, requestID, keepTurns, token as string)
+  if (operation === "preview") await ctx.toolPreview(sessionID, requestID, keepTurns, includeHistory)
+  else await ctx.toolClear(sessionID, requestID, keepTurns, includeHistory, token as string)
   return true
 }
 

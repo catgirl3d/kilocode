@@ -18,6 +18,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { SessionID } from "@/session/schema"
 import { opencodeSessionHeaders } from "@/kilocode/provider/opencode-session-headers"
 import { KiloLLM } from "@/kilocode/session/llm" // fork_change
+import * as KiloToolHistory from "@/kilocode/session/tool-history" // fork_change
 
 const log = Log.create({ service: "memory.ports" })
 
@@ -62,6 +63,7 @@ function exit(input: Record<string, unknown> | undefined) {
 }
 
 function toolSummary(part: MessageV2.ToolPart) {
+  if (KiloToolHistory.cleared(part)) return KiloToolHistory.placeholder(part.tool) // fork_change
   const state = part.state
   const pieces = [`Tool ${part.tool} ${state.status}`]
   const command = field(state.input, "command")

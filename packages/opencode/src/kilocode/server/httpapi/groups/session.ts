@@ -44,10 +44,12 @@ export const ReasoningClearPayload = Schema.Struct({
 
 export const ToolClearPreviewPayload = Schema.Struct({
   keepTurns: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  includeHistory: Schema.optional(Schema.Boolean), // fork_change
 })
 
 export const ToolClearPayload = Schema.Struct({
   keepTurns: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 })),
+  includeHistory: Schema.optional(Schema.Boolean), // fork_change
   token: Schema.String,
 })
 

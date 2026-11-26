@@ -331,6 +331,7 @@ export interface SessionToolClearPreviewedMessage {
   parts: number
   tokens: number
   token: string
+  includeHistory?: boolean
 }
 
 export interface SessionToolClearedMessage {
@@ -340,6 +341,7 @@ export interface SessionToolClearedMessage {
   parts: number
   turns: number
   tokens: number
+  includeHistory?: boolean
 }
 
 export interface SessionToolClearFailedMessage {
