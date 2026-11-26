@@ -10,7 +10,9 @@ export function taskSessionStatus(
   status: SessionStatusInfo | undefined,
   parent: string | undefined,
   close: SessionCloseReason | undefined,
+  interrupted?: boolean,
 ) {
+  if (interrupted) return "cancelled" as const
   if (close === "error") return "error" as const
   if (status?.type === "retry") return "retry" as const
   if (status?.type === "busy") return "running" as const

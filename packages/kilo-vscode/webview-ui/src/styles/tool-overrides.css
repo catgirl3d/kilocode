@@ -157,6 +157,22 @@
   &[data-status="error"] {
     background: var(--icon-critical-base);
   }
+
+  &[data-status="cancelled"] {
+    background-color: var(--vscode-descriptionForeground, #999);
+  }
+}
+
+[data-slot="task-agent-cancelled"] {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: var(--text-muted, var(--vscode-descriptionForeground));
+  background-color: var(--surface-base-hover, rgba(128, 128, 128, 0.16));
+  font-size: var(--font-size-x-small, 11px);
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 /* ============================================
