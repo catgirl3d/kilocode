@@ -153,6 +153,7 @@ function tool(input: {
   name: string
   command?: string
   meta?: Record<string, unknown>
+  cleared?: boolean
 }): MessageV2.ToolPart {
   return {
     id: PartID.make(`prt_${input.messageID}_tool`),
@@ -166,7 +167,10 @@ function tool(input: {
       input: input.command ? { command: input.command } : {},
       output: "",
       title: input.name,
-      metadata: input.meta ?? {},
+      metadata: {
+        ...(input.meta ?? {}),
+        ...(input.cleared ? { "kilocode.toolHistory": { cleared: 1 } } : {}),
+      },
       time: { start: 1, end: 2 },
     },
   }
@@ -315,6 +319,34 @@ describe("memory ports", () => {
     expect(view?.recent).not.toContain("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890")
     expect(view?.user).not.toContain("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890")
     expect(seen).toEqual([uid, recall, shell, final])
+  })
+
+  test("session port replaces cleared tool arguments with a placeholder", async () => {
+    const sessionID = SessionID.make("ses_memory_cleared")
+    const uid = MessageID.make("msg_user_cleared")
+    const shell = MessageID.make("msg_shell_cleared")
+    const messages = [
+      user({ sessionID, id: uid, body: "run the secret command" }),
+      assistant({
+        sessionID,
+        id: shell,
+        parentID: uid,
+        time: 2,
+        parts: [tool({ sessionID, messageID: shell, name: "bash", command: "SECRET_COMMAND", cleared: true })],
+      }),
+    ]
+
+    const view = await Effect.runPromise(
+      MemorySession.port({ sessions: sessions(messages), summary: summary({ seen: [], diffs: [] }) }).readTurn({
+        sessionID,
+        window: 24,
+      }),
+    )
+
+    expect(view?.assistant).toBe("[Old bash call and result cleared]")
+    expect(view?.recent).toContain("[Old bash call and result cleared]")
+    expect(view?.recent).not.toContain("SECRET_COMMAND")
+    expect(view?.assistant).not.toContain("SECRET_COMMAND")
   })
 
   test("model port resolves configured models and falls back to the session model", async () => {
@@ -484,13 +516,7 @@ describe("memory ports", () => {
     const port = MemoryModel.port({ provider: provider({ model: "gemini-3-flash", calls }) })
     const resolved = await Effect.runPromise(port.resolve({ configured: "test/gemini-3-flash", session: ref }))
 
-    await port.run({
-      handle: resolved.handle,
-      sessionID: "ses_test",
-      system: "system",
-      prompt: "prompt",
-      timeoutMs: 30_000,
-    })
+    await port.run({ handle: resolved.handle, sessionID: "ses_test", system: "system", prompt: "prompt", timeoutMs: 30_000 })
 
     const opts = calls[0] as { temperature?: number; topP?: number; topK?: number }
     expect(opts.temperature).toBeUndefined()

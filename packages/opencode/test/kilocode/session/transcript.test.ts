@@ -199,4 +199,82 @@ describe("SessionTranscript.format", () => {
       }),
     ),
   )
+
+  it.live(
+    "hides cleared tool titles and arguments",
+    provideTmpdirInstance((dir) =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const session = yield* sessions.create({})
+        const user = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: session.id,
+          role: "user",
+          agent: "default",
+          model: { providerID, modelID },
+          time: { created: Date.now() },
+        })
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: user.id,
+          sessionID: session.id,
+          type: "text",
+          text: "inspect the secret pattern",
+        })
+        const assistant = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: session.id,
+          role: "assistant",
+          parentID: user.id,
+          mode: "default",
+          agent: "default",
+          path: { cwd: dir, root: dir },
+          cost: 0,
+          tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID,
+          providerID,
+          time: { created: Date.now(), completed: Date.now() },
+          finish: "tool-calls",
+        })
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: assistant.id,
+          sessionID: session.id,
+          type: "tool",
+          callID: "call_cleared",
+          tool: "grep",
+          state: {
+            status: "completed",
+            input: { pattern: "SECRET_PATTERN" },
+            output: "SECRET_OUTPUT",
+            title: "SECRET_PATTERN",
+            metadata: { "kilocode.toolHistory": { cleared: 1 } },
+            time: { start: 1, end: 2 },
+          },
+        })
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: assistant.id,
+          sessionID: session.id,
+          type: "tool",
+          callID: "call_visible",
+          tool: "bash",
+          state: {
+            status: "completed",
+            input: { command: "echo visible" },
+            output: "visible output",
+            title: "visible title",
+            metadata: {},
+            time: { start: 1, end: 2 },
+          },
+        })
+        const messages = yield* sessions.messages({ sessionID: session.id })
+        const text = SessionTranscript.format(session, messages)
+        expect(text).toContain("[Old grep call and result cleared]")
+        expect(text).toContain("[Tool: bash] visible title")
+        expect(text).not.toContain("SECRET_PATTERN")
+        expect(text).not.toContain("SECRET_OUTPUT")
+      }),
+    ),
+  )
 })

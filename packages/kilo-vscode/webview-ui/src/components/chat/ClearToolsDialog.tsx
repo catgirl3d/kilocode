@@ -1,6 +1,7 @@
 // fork_change - new file
 import { Component, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
+import { Checkbox } from "@kilocode/kilo-ui/checkbox"
 import { Dialog } from "@kilocode/kilo-ui/dialog"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
@@ -9,8 +10,8 @@ import { useDialog } from "@kilocode/kilo-ui/context/dialog"
 import { useLanguage } from "../../context/language"
 import { useSession } from "../../context/session"
 import { useVSCode } from "../../context/vscode"
-import { previewStale, shouldCloseReasoningDialog } from "../../context/session-reasoning"
-import type { ToolPreview } from "../../context/session-tools"
+import { shouldCloseReasoningDialog } from "../../context/session-reasoning"
+import { toolPreviewStale, type ToolPreview } from "../../context/session-tools"
 import { recallKeepTurns, rememberKeepTurns } from "../../utils/keep-turns"
 
 interface Props {
@@ -31,6 +32,7 @@ export const ClearToolsDialog: Component<Props> = (props) => {
   const vscode = useVSCode()
   const start = recallKeepTurns(vscode, "tools")
   const [value, setValue] = createSignal(String(start))
+  const [includeHistory, setIncludeHistory] = createSignal(false)
   const [submitted, setSubmitted] = createSignal(false)
 
   const current = () => session.toolState(props.sessionID)
@@ -38,10 +40,16 @@ export const ClearToolsDialog: Component<Props> = (props) => {
   const invalid = () => count() === undefined
   const preview = () => current().preview
   const busy = () => current().previewing || current().applying
-  const pending = () => previewStale(preview(), count())
+  const pending = () => toolPreviewStale(preview(), count(), includeHistory())
   // Display-only: keeps the last numbers on screen while a refreshed preview loads, so the card neither blinks nor resizes.
   // Apply guards still read the real preview().
-  const shown = createMemo<ToolPreview | undefined>((last) => preview() ?? (current().previewing ? last : undefined))
+  const shown = createMemo<ToolPreview | undefined>((last) => {
+    const item = preview()
+    if (item?.includeHistory === includeHistory()) return item
+    if (!current().previewing) return undefined
+    if (last && last.includeHistory !== includeHistory()) return undefined
+    return last
+  })
   const stale = () => current().previewing || pending()
   const empty = () => {
     const item = shown()
@@ -57,7 +65,8 @@ export const ClearToolsDialog: Component<Props> = (props) => {
       (raw) => {
         if (current().applying) return
         const next = turns(raw)
-        if (next !== undefined) session.toolPreview(props.sessionID, next, { delay: 300 })
+        if (next !== undefined)
+          session.toolPreview(props.sessionID, next, { delay: 300, includeHistory: includeHistory() })
       },
       { defer: true },
     ),
@@ -72,12 +81,19 @@ export const ClearToolsDialog: Component<Props> = (props) => {
     }
   })
 
+  const toggleHistory = (checked: boolean) => {
+    setIncludeHistory(checked)
+    const next = count()
+    if (next !== undefined && !current().applying)
+      session.toolPreview(props.sessionID, next, { includeHistory: checked })
+  }
+
   const apply = () => {
     const next = count()
     const item = preview()
     if (next === undefined || !item || pending() || empty() || busy()) return
     setSubmitted(true)
-    session.toolClear(props.sessionID, next, item.token)
+    session.toolClear(props.sessionID, next, item.token, includeHistory())
   }
 
   return (
@@ -121,6 +137,14 @@ export const ClearToolsDialog: Component<Props> = (props) => {
             </div>
           )}
         </Show>
+        <Checkbox
+          checked={includeHistory()}
+          disabled={current().applying}
+          onChange={toggleHistory}
+          description={language.t("command.session.toolClear.history.description")}
+        >
+          {language.t("command.session.toolClear.history.label")}
+        </Checkbox>
         <Show when={shown() || current().previewing}>
           <div data-slot="reasoning-clear-preview" data-stale={stale() ? "" : undefined}>
             <div>
@@ -128,7 +152,11 @@ export const ClearToolsDialog: Component<Props> = (props) => {
               <strong>{shown()?.turns ?? "—"}</strong>
             </div>
             <div>
-              <span>{language.t("command.session.toolClear.blocks")}</span>
+              <span>
+                {language.t(
+                  includeHistory() ? "command.session.toolClear.history.blocks" : "command.session.toolClear.blocks",
+                )}
+              </span>
               <strong>{shown()?.parts ?? "—"}</strong>
             </div>
             <div>
@@ -146,7 +174,9 @@ export const ClearToolsDialog: Component<Props> = (props) => {
           </Show>
           <Show when={empty()}>
             <div data-slot="reasoning-clear-status" role="status">
-              {language.t("command.session.toolClear.empty")}
+              {language.t(
+                includeHistory() ? "command.session.toolClear.history.empty" : "command.session.toolClear.empty",
+              )}
             </div>
           </Show>
         </div>
@@ -163,7 +193,9 @@ export const ClearToolsDialog: Component<Props> = (props) => {
             <Show when={current().applying}>
               <Spinner />
             </Show>
-            {language.t("command.session.toolClear.button")}
+            {language.t(
+              includeHistory() ? "command.session.toolClear.history.button" : "command.session.toolClear.button",
+            )}
           </Button>
         </div>
       </div>

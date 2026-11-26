@@ -26,6 +26,7 @@ import { SessionExport } from "@/kilocode/session-export"
 import { KiloSession } from "@/kilocode/session"
 import * as KiloReasoningMarker from "@/kilocode/session/reasoning-marker" // [fork]
 import * as KiloReasoningClear from "@/kilocode/session/reasoning-clear" // [fork]
+import * as KiloToolHistory from "@/kilocode/session/tool-history" // [fork]
 // kilocode_change end
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -87,6 +88,7 @@ const serialize = (message: SessionV1.WithParts) => {
       }
       // kilocode_change end
       if (part.type !== "tool") return []
+      if (KiloToolHistory.cleared(part)) return [KiloToolHistory.placeholder(part.tool)] // kilocode_change - [fork]
       const call = `[Assistant tool call]: ${part.tool}(${JSON.stringify(part.state.input)})`
       if (part.state.status === "completed") {
         const attachments = (part.state.attachments ?? []).map(

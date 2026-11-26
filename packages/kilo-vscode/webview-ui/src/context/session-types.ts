@@ -240,9 +240,9 @@ export interface SessionContextValue {
   reasoningClear: (sessionID: string, keepTurns: number, token: string, includeCarriers?: boolean) => void
   reasoningState: (sessionID: string) => ReasoningState
   reasoningClearing: (sessionID: string) => boolean
-  toolPreview: (sessionID: string, keepTurns: number, opts?: { delay?: number }) => void
+  toolPreview: (sessionID: string, keepTurns: number, opts?: { delay?: number; includeHistory?: boolean }) => void
   toolCancel: (sessionID: string) => void
-  toolClear: (sessionID: string, keepTurns: number, token: string) => void
+  toolClear: (sessionID: string, keepTurns: number, token: string, includeHistory?: boolean) => void
   toolState: (sessionID: string) => ToolState
   toolClearing: (sessionID: string) => boolean
   // fork_change end

@@ -1493,9 +1493,10 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
             this.handleReasoningClear(sessionID, requestID, keepTurns, includeCarriers),
           reasoningClear: (sessionID, requestID, keepTurns, includeCarriers, token) =>
             this.handleReasoningClear(sessionID, requestID, keepTurns, includeCarriers, token),
-          toolPreview: (sessionID, requestID, keepTurns) => this.handleToolClear(sessionID, requestID, keepTurns),
-          toolClear: (sessionID, requestID, keepTurns, token) =>
-            this.handleToolClear(sessionID, requestID, keepTurns, token),
+          toolPreview: (sessionID, requestID, keepTurns, includeHistory) =>
+            this.handleToolClear(sessionID, requestID, keepTurns, includeHistory),
+          toolClear: (sessionID, requestID, keepTurns, includeHistory, token) =>
+            this.handleToolClear(sessionID, requestID, keepTurns, includeHistory, token),
           sessionColors: () => this.postMessage({ type: "sessionColorsLoaded", colors: sessionColors() }),
           setSessionColor: (sessionID, color) => setSessionColor(sessionID, color),
           sessionTagProject: () => this.tagProject(),
@@ -5732,6 +5733,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     sessionID: string,
     requestID: string,
     keepTurns: number,
+    includeHistory: boolean,
     token?: string,
   ): Promise<void> {
     const operation = token === undefined ? "preview" : "apply"
@@ -5745,17 +5747,29 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       const directory = this.getWorkspaceDirectory(sessionID)
       if (token === undefined) {
         const result = await this.client.session.toolClearPreview(
-          { sessionID, directory, keepTurns },
+          { sessionID, directory, keepTurns, ...(includeHistory ? { includeHistory: true } : {}) },
           { throwOnError: true },
         )
-        this.postMessage({ type: "sessionToolClearPreviewed", sessionID, requestID, ...result.data })
+        this.postMessage({
+          type: "sessionToolClearPreviewed",
+          sessionID,
+          requestID,
+          ...result.data,
+          ...(includeHistory ? { includeHistory: true } : {}),
+        })
         return
       }
       const result = await this.client.session.toolClear(
-        { sessionID, directory, keepTurns, token },
+        { sessionID, directory, keepTurns, token, ...(includeHistory ? { includeHistory: true } : {}) },
         { throwOnError: true },
       )
-      this.postMessage({ type: "sessionToolCleared", sessionID, requestID, ...result.data })
+      this.postMessage({
+        type: "sessionToolCleared",
+        sessionID,
+        requestID,
+        ...result.data,
+        ...(includeHistory ? { includeHistory: true } : {}),
+      })
     } catch (error) {
       console.error(`[Kilo New] KiloProvider: Failed to ${operation} tool clear:`, error)
       fail(clearErrorCode(error), getErrorMessage(error) || "Failed to clear tool output")

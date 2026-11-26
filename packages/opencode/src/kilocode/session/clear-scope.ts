@@ -6,6 +6,7 @@ import { KiloSessionPrompt } from "./prompt"
 
 export type Scoped = {
   turn: MessageID
+  message: MessageID
   part: SessionV1.Part
 }
 
@@ -48,7 +49,7 @@ export function old(messages: SessionV1.WithParts[], keep: number) {
   for (const message of projected) {
     const turn = owner(message)
     if (!turn || !stale.has(turn)) continue
-    for (const part of message.parts) parts.push({ turn, part })
+    for (const part of message.parts) parts.push({ turn, message: message.info.id, part })
   }
-  return { projected: projected.length, parts }
+  return { visible: projected, projected: projected.length, parts }
 }

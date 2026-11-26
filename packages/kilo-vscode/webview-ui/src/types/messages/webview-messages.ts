@@ -316,6 +316,7 @@ export interface SessionToolClearPreviewRequest {
   sessionID: string
   requestID: string
   keepTurns: number
+  includeHistory?: boolean
 }
 
 export interface SessionToolClearRequest {
@@ -324,6 +325,7 @@ export interface SessionToolClearRequest {
   requestID: string
   keepTurns: number
   token: string
+  includeHistory?: boolean
 }
 
 export interface BtwAskRequest {

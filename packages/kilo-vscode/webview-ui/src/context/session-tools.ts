@@ -3,7 +3,6 @@ import { showToast } from "@kilocode/kilo-ui/toast"
 import type { useLanguage } from "./language"
 import type { useVSCode } from "./vscode"
 import { createClearStore, id } from "./session-clear-store"
-import { previewStale } from "./session-reasoning"
 import type {
   ExtensionMessage,
   ReasoningClearErrorCode,
@@ -17,6 +16,7 @@ type Post = (message: SessionToolClearPreviewRequest | SessionToolClearRequest) 
 
 export interface ToolPreview {
   keepTurns: number
+  includeHistory: boolean
   turns: number
   parts: number
   tokens: number
@@ -25,6 +25,7 @@ export interface ToolPreview {
 
 export interface ToolState {
   keepTurns: number
+  includeHistory: boolean
   requestID?: string
   preview?: ToolPreview
   applied?: SessionToolClearedMessage
@@ -42,6 +43,7 @@ interface Deps {
 
 const DEFAULT: ToolState = {
   keepTurns: 10,
+  includeHistory: false,
   previewing: false,
   applying: false,
 }
@@ -56,14 +58,28 @@ const ERROR_KEYS: Record<ReasoningClearErrorCode, string> = {
   unknown: "command.session.toolClear.error.unknown",
 }
 
+export function toolPreviewStale(
+  preview: { keepTurns: number; includeHistory?: boolean } | undefined,
+  keepTurns: number | undefined,
+  includeHistory = false,
+): boolean {
+  if (preview === undefined) return false
+  return preview.keepTurns !== keepTurns || (preview.includeHistory ?? false) !== includeHistory
+}
+
 export function toolClearToast(message: SessionToolClearedMessage, language: Language) {
   return {
     variant: "success" as const,
-    title: language.t("command.session.toolClear.success", {
-      parts: String(message.parts),
-      turns: String(message.turns),
-      tokens: message.tokens.toLocaleString(language.locale()),
-    }),
+    title: language.t(
+      message.includeHistory === true
+        ? "command.session.toolClear.history.success"
+        : "command.session.toolClear.success",
+      {
+        parts: String(message.parts),
+        turns: String(message.turns),
+        tokens: message.tokens.toLocaleString(language.locale()),
+      },
+    ),
   }
 }
 
@@ -76,7 +92,12 @@ export function createSessionTools(deps: Deps) {
   const setStore = base.setStore
   const schedule = base.schedule
 
-  function request(sessionID: string, keepTurns: number, notice?: { code: ReasoningClearErrorCode; message: string }) {
+  function request(
+    sessionID: string,
+    keepTurns: number,
+    includeHistory: boolean,
+    notice?: { code: ReasoningClearErrorCode; message: string },
+  ) {
     cancel(sessionID)
     const current = state(sessionID)
     if (current.applying) return
@@ -88,6 +109,7 @@ export function createSessionTools(deps: Deps) {
     setStore(sessionID, {
       ...current,
       keepTurns,
+      includeHistory,
       requestID,
       preview: undefined,
       previewing: true,
@@ -95,24 +117,36 @@ export function createSessionTools(deps: Deps) {
       applied: undefined,
       error: notice,
     })
-    deps.post({ type: "sessionToolClearPreview", sessionID, requestID, keepTurns })
+    deps.post({
+      type: "sessionToolClearPreview",
+      sessionID,
+      requestID,
+      keepTurns,
+      ...(includeHistory ? { includeHistory: true } : {}),
+    })
   }
 
-  function preview(sessionID: string, keepTurns: number, opts?: { delay?: number }) {
+  function preview(sessionID: string, keepTurns: number, opts?: { delay?: number; includeHistory?: boolean }) {
     cancel(sessionID)
+    const includeHistory = opts?.includeHistory ?? false
     const delay = opts?.delay ?? 0
     schedule(sessionID, delay, () => {
       if (delay > 0) {
         const current = state(sessionID)
-        if (current.keepTurns === keepTurns && (current.previewing || current.preview !== undefined)) return
+        if (
+          current.keepTurns === keepTurns &&
+          current.includeHistory === includeHistory &&
+          (current.previewing || current.preview !== undefined)
+        )
+          return
       }
-      request(sessionID, keepTurns)
+      request(sessionID, keepTurns, includeHistory)
     })
   }
 
-  function apply(sessionID: string, keepTurns: number, token: string) {
+  function apply(sessionID: string, keepTurns: number, token: string, includeHistory = false) {
     cancel(sessionID)
-    if (previewStale(state(sessionID).preview, keepTurns)) {
+    if (toolPreviewStale(state(sessionID).preview, keepTurns, includeHistory)) {
       fail(sessionID, "stale")
       return
     }
@@ -124,13 +158,21 @@ export function createSessionTools(deps: Deps) {
     setStore(sessionID, {
       ...state(sessionID),
       keepTurns,
+      includeHistory,
       requestID,
       applying: true,
       previewing: false,
       applied: undefined,
       error: undefined,
     })
-    deps.post({ type: "sessionToolClear", sessionID, requestID, keepTurns, token })
+    deps.post({
+      type: "sessionToolClear",
+      sessionID,
+      requestID,
+      keepTurns,
+      token,
+      ...(includeHistory ? { includeHistory: true } : {}),
+    })
   }
 
   function handleMessage(message: ExtensionMessage): boolean {
@@ -156,6 +198,7 @@ export function createSessionTools(deps: Deps) {
         error: current.error?.code === "stale" ? current.error : undefined,
         preview: {
           keepTurns: current.keepTurns,
+          includeHistory: message.includeHistory === true,
           turns: message.turns,
           parts: message.parts,
           tokens: message.tokens,
@@ -184,7 +227,7 @@ export function createSessionTools(deps: Deps) {
     fail(message.sessionID, message.code, message.error)
     const notice = state(message.sessionID).error
     if (message.operation === "apply" && message.code === "stale") {
-      if (notice) request(message.sessionID, current.keepTurns, notice)
+      if (notice) request(message.sessionID, current.keepTurns, current.includeHistory, notice)
       return true
     }
     // The dialog may already be closed, so an apply failure also surfaces as a toast.

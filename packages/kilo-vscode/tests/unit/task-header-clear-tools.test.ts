@@ -23,7 +23,7 @@ function setup(opts: { connected?: boolean; current?: string } = {}) {
 function previewed(
   requestID: string,
   token: string,
-  extra: Partial<{ turns: number; parts: number; tokens: number }> = {},
+  extra: Partial<{ turns: number; parts: number; tokens: number; includeHistory: boolean }> = {},
 ) {
   return {
     type: "sessionToolClearPreviewed" as const,
@@ -33,6 +33,7 @@ function previewed(
     parts: extra.parts ?? 2,
     tokens: extra.tokens ?? 40,
     token,
+    ...(extra.includeHistory ? { includeHistory: true } : {}),
   }
 }
 
@@ -46,6 +47,23 @@ describe("session tool clear state", () => {
     ).toEqual({ variant: "success", title: "command.session.toolClear.success" })
   })
 
+  it("uses the history success text for history clears", () => {
+    expect(
+      toolClearToast(
+        {
+          type: "sessionToolCleared",
+          sessionID: "ses-1",
+          requestID: "apply-history",
+          parts: 3,
+          turns: 1,
+          tokens: 50,
+          includeHistory: true,
+        },
+        language(),
+      ),
+    ).toEqual({ variant: "success", title: "command.session.toolClear.history.success" })
+  })
+
   it("requests a preview and stores the response for the matching request only", () => {
     const { posted, actions } = setup()
 
@@ -53,6 +71,7 @@ describe("session tool clear state", () => {
     actions.preview("ses-1", 5)
     expect(posted).toHaveLength(2)
     expect(posted[1]).toMatchObject({ type: "sessionToolClearPreview", sessionID: "ses-1", keepTurns: 5 })
+    expect(posted[1]).not.toHaveProperty("includeHistory")
     const first = posted[0]!.requestID as string
     const second = posted[1]!.requestID as string
 
@@ -85,6 +104,19 @@ describe("session tool clear state", () => {
     expect(posted[1]).toMatchObject({ keepTurns: 5 })
   })
 
+  it("does not dedupe a delayed preview in a different mode", async () => {
+    const { posted, actions } = setup()
+
+    actions.preview("ses-1", 10)
+    actions.handleMessage(previewed(posted[0]!.requestID as string, "token-1"))
+
+    actions.preview("ses-1", 10, { delay: 20, includeHistory: true })
+    await Bun.sleep(50)
+
+    expect(posted).toHaveLength(2)
+    expect(posted[1]).toMatchObject({ keepTurns: 10, includeHistory: true })
+  })
+
   it("cancels a pending delayed preview", async () => {
     const { posted, actions } = setup()
 
@@ -103,6 +135,7 @@ describe("session tool clear state", () => {
     actions.apply("ses-1", 5, "token-5")
 
     expect(posted[1]).toMatchObject({ type: "sessionToolClear", sessionID: "ses-1", keepTurns: 5, token: "token-5" })
+    expect(posted[1]).not.toHaveProperty("includeHistory")
     expect(actions.state("ses-1")).toMatchObject({ applying: true, previewing: false })
     expect(actions.clearing("ses-1")).toBe(true)
 
@@ -125,6 +158,55 @@ describe("session tool clear state", () => {
     actions.preview("ses-1", 5)
     actions.handleMessage(previewed(posted[0]!.requestID as string, "token-5"))
     actions.apply("ses-1", 6, "token-5")
+
+    expect(posted).toHaveLength(1)
+    expect(actions.state("ses-1").error).toEqual({ code: "stale", message: "command.session.toolClear.stale" })
+  })
+
+  it("previews, stores, and applies the history mode when opted in", () => {
+    const { posted, actions } = setup()
+
+    actions.preview("ses-1", 5, { includeHistory: true })
+    expect(posted[0]).toMatchObject({
+      type: "sessionToolClearPreview",
+      sessionID: "ses-1",
+      keepTurns: 5,
+      includeHistory: true,
+    })
+
+    actions.handleMessage(previewed(posted[0]!.requestID as string, "token-history", { includeHistory: true }))
+    expect(actions.state("ses-1")).toMatchObject({
+      includeHistory: true,
+      preview: { keepTurns: 5, includeHistory: true, token: "token-history" },
+    })
+
+    actions.apply("ses-1", 5, "token-history", true)
+    expect(posted[1]).toMatchObject({
+      type: "sessionToolClear",
+      sessionID: "ses-1",
+      keepTurns: 5,
+      token: "token-history",
+      includeHistory: true,
+    })
+  })
+
+  it("refuses to apply a preview made for a different clear mode", () => {
+    const { posted, actions } = setup()
+
+    actions.preview("ses-1", 5)
+    actions.handleMessage(previewed(posted[0]!.requestID as string, "token-5"))
+    actions.apply("ses-1", 5, "token-5", true)
+
+    expect(posted).toHaveLength(1)
+    expect(actions.state("ses-1").error).toEqual({ code: "stale", message: "command.session.toolClear.stale" })
+  })
+
+  it("refuses to apply a history preview as output-only", () => {
+    const { posted, actions } = setup()
+
+    actions.preview("ses-1", 5, { includeHistory: true })
+    actions.handleMessage(previewed(posted[0]!.requestID as string, "token-history", { includeHistory: true }))
+    actions.apply("ses-1", 5, "token-history")
 
     expect(posted).toHaveLength(1)
     expect(actions.state("ses-1").error).toEqual({ code: "stale", message: "command.session.toolClear.stale" })

@@ -1496,6 +1496,93 @@ describe("session.message-v2.toModelMessage", () => {
   })
 })
 
+test("replaces a history-cleared tool call and result with assistant text", async () => {
+  const userID = "m-user-history-cleared"
+  const assistantID = "m-assistant-history-cleared"
+  const marked = await MessageV2.toModelMessages(
+    [
+      {
+        info: userInfo(userID),
+        parts: [{ ...basePart(userID, "u-history-cleared"), type: "text", text: "run tool" }] as SessionV1.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a-history-cleared"),
+            type: "tool",
+            callID: "call-history-cleared",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: { command: "history-cleared-input" },
+              output: "history-cleared-output",
+              title: "Bash",
+              metadata: { "kilocode.toolHistory": { cleared: 1 } },
+              time: { start: 0, end: 1 },
+              attachments: [
+                {
+                  ...basePart(assistantID, "history-cleared-media"),
+                  type: "file",
+                  mime: "image/png",
+                  filename: "history-cleared.png",
+                  url: "data:image/png;base64,aGlzdG9yeQ==",
+                },
+              ],
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ],
+    { ...model, api: { ...model.api, npm: "@ai-sdk/google", id: "gemini-2.0" } },
+  )
+
+  expect(marked).toEqual([
+    { role: "user", content: [{ type: "text", text: "run tool" }] },
+    { role: "assistant", content: [{ type: "text", text: "[Old bash call and result cleared]" }] },
+  ])
+  expect(JSON.stringify(marked)).not.toContain("history-cleared-input")
+  expect(JSON.stringify(marked)).not.toContain("history-cleared-output")
+  expect(JSON.stringify(marked)).not.toContain("call-history-cleared")
+  expect(JSON.stringify(marked)).not.toContain("history-cleared.png")
+  expect(JSON.stringify(marked)).not.toContain("aGlzdG9yeQ==")
+
+  const normal = await MessageV2.toModelMessages(
+    [
+      {
+        info: userInfo("m-user-history-normal"),
+        parts: [
+          { ...basePart("m-user-history-normal", "u-history-normal"), type: "text", text: "run tool" },
+        ] as SessionV1.Part[],
+      },
+      {
+        info: assistantInfo("m-assistant-history-normal", "m-user-history-normal"),
+        parts: [
+          {
+            ...basePart("m-assistant-history-normal", "a-history-normal"),
+            type: "tool",
+            callID: "call-history-normal",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: { command: "history-normal-input" },
+              output: "history-normal-output",
+              title: "Bash",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ],
+    model,
+  )
+
+  expect(JSON.stringify(normal)).toContain("history-normal-input")
+  expect(JSON.stringify(normal)).toContain("history-normal-output")
+  expect(JSON.stringify(normal)).toContain("call-history-normal")
+})
+
 describe("session.message-v2.fromError", () => {
   test("serializes context_length_exceeded as ContextOverflowError", () => {
     const input = {

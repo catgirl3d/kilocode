@@ -269,9 +269,40 @@ describe("routeEarlyMessage tool clear", () => {
         ctx,
       ),
     ).toBe(true)
-    expect(previews).toEqual([["ses_1", "preview-1", 7]])
-    expect(clears).toEqual([["ses_1", "clear-1", 7, "tool-token"]])
+    expect(previews).toEqual([["ses_1", "preview-1", 7, false]])
+    expect(clears).toEqual([["ses_1", "clear-1", 7, false, "tool-token"]])
     expect(reasoning).toEqual([])
+  })
+
+  it("forwards includeHistory for tool clear requests", async () => {
+    const previews: unknown[] = []
+    const clears: unknown[] = []
+    const ctx = toolContext([], previews, clears, [])
+
+    await routeEarlyMessage(
+      {
+        type: "sessionToolClearPreview",
+        sessionID: "ses_1",
+        requestID: "preview-history",
+        keepTurns: 7,
+        includeHistory: true,
+      },
+      ctx,
+    )
+    await routeEarlyMessage(
+      {
+        type: "sessionToolClear",
+        sessionID: "ses_1",
+        requestID: "clear-history",
+        keepTurns: 7,
+        token: "tool-token",
+        includeHistory: true,
+      },
+      ctx,
+    )
+
+    expect(previews).toEqual([["ses_1", "preview-history", 7, true]])
+    expect(clears).toEqual([["ses_1", "clear-history", 7, true, "tool-token"]])
   })
 
   it("rejects invalid tool requests with a tool failure and never calls the host", async () => {
@@ -286,6 +317,16 @@ describe("routeEarlyMessage tool clear", () => {
     )
     await routeEarlyMessage(
       { type: "sessionToolClear", sessionID: "ses_1", requestID: "clear-2", keepTurns: 7, token: "" },
+      ctx,
+    )
+    await routeEarlyMessage(
+      {
+        type: "sessionToolClearPreview",
+        sessionID: "ses_1",
+        requestID: "preview-3",
+        keepTurns: 7,
+        includeHistory: "yes",
+      },
       ctx,
     )
 
@@ -303,6 +344,12 @@ describe("routeEarlyMessage tool clear", () => {
         type: "sessionToolClearFailed",
         operation: "apply",
         requestID: "clear-2",
+        code: "invalid",
+      }),
+      expect.objectContaining({
+        type: "sessionToolClearFailed",
+        operation: "preview",
+        requestID: "preview-3",
         code: "invalid",
       }),
     ])

@@ -5546,6 +5546,7 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       keepTurns: number
+      includeHistory?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5558,6 +5559,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "keepTurns" },
+            { in: "body", key: "includeHistory" },
           ],
         },
       ],
@@ -5589,6 +5591,7 @@ export class Session2 extends HeyApiClient {
       directory?: string
       workspace?: string
       keepTurns: number
+      includeHistory?: boolean
       token: string
     },
     options?: Options<never, ThrowOnError>,
@@ -5602,6 +5605,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "keepTurns" },
+            { in: "body", key: "includeHistory" },
             { in: "body", key: "token" },
           ],
         },
