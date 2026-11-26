@@ -54,20 +54,54 @@ describe("generateBranchName", () => {
 // ---------------------------------------------------------------------------
 
 describe("semanticBranchName", () => {
-  it("creates a branch slug from a generated session title", () => {
+  it("preserves the generated type prefix", () => {
+    expect(semanticBranchName("fix/token-refresh-race")).toBe("fix/token-refresh-race")
+    expect(semanticBranchName("feat/billing-alerts")).toBe("feat/billing-alerts")
+  })
+
+  it("creates a flat branch slug from a generated session title", () => {
     expect(semanticBranchName("Fix token refresh race")).toBe("fix-token-refresh-race")
   })
 
-  it("normalizes a user prefix and keeps branch separators", () => {
+  it("replaces the generated type with a user prefix", () => {
+    expect(semanticBranchName("fix/token-refresh-race", "marius/features/")).toBe("marius/features/token-refresh-race")
+  })
+
+  it("normalizes a user prefix and keeps flat titles", () => {
     expect(semanticBranchName("Add billing alerts", "marius/features/")).toBe("marius/features/add-billing-alerts")
+  })
+
+  it("trims a long name on a word boundary", () => {
+    expect(semanticBranchName("fix/overlay-ai-indicator-ignoring-resolved-ai-route")).toBe(
+      "fix/overlay-ai-indicator-ignoring-resolved-ai",
+    )
+  })
+
+  it("preserves a link reference name", () => {
+    expect(semanticBranchName("chore/issue-120")).toBe("chore/issue-120")
+  })
+
+  it("rejects a pasted link echoed instead of a branch name", () => {
+    expect(semanticBranchName("https://github.com/catgirl3d/SayIt/issues/120")).toBe("")
+    expect(semanticBranchName("https-github-com-catgirl3d-sayit-issues-120")).toBe("")
+    expect(semanticBranchName("github.com/catgirl3d/SayIt/issues/120")).toBe("")
+  })
+
+  it("returns empty when the prefix leaves no room", () => {
+    expect(semanticBranchName("fix/foo", "marius/features/", 10)).toBe("")
   })
 
   it("reserves the length limit for the prefix", () => {
     expect(semanticBranchName("a".repeat(100), "team/").length).toBeLessThanOrEqual(50)
+    expect(semanticBranchName("fix/" + "a".repeat(100), "team/").length).toBeLessThanOrEqual(50)
   })
 
   it("returns empty when the title has no usable characters", () => {
     expect(semanticBranchName("修复登录")).toBe("")
+  })
+
+  it("returns empty when only a type is left", () => {
+    expect(semanticBranchName("fix/")).toBe("")
   })
 })
 

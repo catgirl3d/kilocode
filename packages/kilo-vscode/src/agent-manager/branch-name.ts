@@ -6,14 +6,34 @@ export { sanitizeBranchName }
 const MAX_ATTEMPTS = 10
 const FALLBACK_MAX_SUFFIX = 100
 
+// fork_change start - trim generated names on a word boundary
+function trim(value: string, limit: number) {
+  if (value.length <= limit) return value
+  const cut = value.slice(0, Math.max(0, limit))
+  const at = cut.lastIndexOf("-")
+  return (at > 0 ? cut.slice(0, at) : cut).replace(/-+$/g, "")
+}
+// fork_change end
+
 export function semanticBranchName(title: string, prefix = "", maxLength = 50): string {
+  // fork_change start - reject a pasted link
+  if (title.includes("://") || /^(?:https?|ftp)[-:]/.test(title) || /^[a-z0-9-]+(?:\.[a-z0-9-]+)+\//i.test(title))
+    return ""
+  // fork_change end
   const parts = prefix
     .split("/")
     .map((part) => sanitizeBranchName(part))
     .filter(Boolean)
   const head = parts.length > 0 ? `${parts.join("/")}/` : ""
-  const slug = sanitizeBranchName(title, Math.max(0, maxLength - head.length))
-  return slug ? `${head}${slug}` : ""
+  // fork_change start - keep the generated type and let a configured prefix replace it
+  const at = title.indexOf("/")
+  const typed = at > 0 && at === title.lastIndexOf("/")
+  const type = typed ? sanitizeBranchName(title.slice(0, at)) : ""
+  const body = typed ? title.slice(at + 1) : title
+  const lead = head || (type ? `${type}/` : "")
+  const slug = trim(sanitizeBranchName(body, body.length), Math.max(0, maxLength - lead.length))
+  return slug ? `${lead}${slug}` : ""
+  // fork_change end
 }
 
 /**
