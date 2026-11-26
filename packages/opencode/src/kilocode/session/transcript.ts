@@ -7,6 +7,7 @@ import { MessageID, SessionID } from "@/session/schema"
 import { Filesystem } from "@/util/filesystem"
 import { Locale } from "@/util/locale"
 import { RecallSearch } from "./recall-search"
+import * as KiloToolHistory from "./tool-history" // fork_change
 
 export namespace SessionTranscript {
   /**
@@ -60,7 +61,13 @@ export namespace SessionTranscript {
         for (const part of msg.parts) {
           if (part.type === "text") lines.push(part.text)
           if (part.type === "tool" && part.state.status === "completed") {
-            lines.push(`[Tool: ${part.tool}] ${part.state.title}`)
+            // fork_change start
+            lines.push(
+              KiloToolHistory.cleared(part)
+                ? KiloToolHistory.placeholder(part.tool)
+                : `[Tool: ${part.tool}] ${part.state.title}`,
+            )
+            // fork_change end
           }
         }
         lines.push("")

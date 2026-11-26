@@ -151,6 +151,14 @@ export const dict = {
   "command.session.toolClear.error.invalid": "The tool output clear request is invalid.",
   "command.session.toolClear.error.unknown": "Could not clear tool output.",
   "command.session.toolClear.button": "Clear tool output",
+  "command.session.toolClear.history.label": "Clear old tool calls and results",
+  "command.session.toolClear.history.description":
+    "Removes old call arguments and results from the model context instead of only tool outputs. Provider-signed calls are left untouched. The chat still shows them.",
+  "command.session.toolClear.history.blocks": "Tool calls",
+  "command.session.toolClear.history.empty": "No old tool calls can be cleared.",
+  "command.session.toolClear.history.button": "Clear tool calls",
+  "command.session.toolClear.history.success":
+    "Cleared {{parts}} tool calls across {{turns}} turns ({{tokens}} tokens).",
   "command.session.toolClear.success": "Cleared {{parts}} tool outputs across {{turns}} turns ({{tokens}} tokens).",
   // fork_change end
   // fork_change start - undo compaction

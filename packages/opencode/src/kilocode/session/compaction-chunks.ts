@@ -13,6 +13,7 @@ import { Token } from "@/util/token"
 import * as Log from "@opencode-ai/core/util/log"
 import { Database } from "@opencode-ai/core/database/database"
 import * as KiloReasoningMarker from "./reasoning-marker" // fork_change
+import * as KiloToolHistory from "./tool-history" // fork_change
 
 type Update = <T extends MessageV2.Part>(part: T) => Effect.Effect<T>
 type UpdateMessage = <T extends MessageV2.Info>(msg: T) => Effect.Effect<T>
@@ -245,6 +246,7 @@ export namespace KiloCompactionChunks {
     if (part.type === "subtask")
       return `[Subtask ${part.agent}]: ${part.description}\n${clip({ text: part.prompt, chars: TRANSCRIPT_MAX_CHARS, label: "Subtask prompt" })}`
     if (part.type === "tool") {
+      if (KiloToolHistory.cleared(part)) return KiloToolHistory.placeholder(part.tool) // fork_change
       const head = `[Tool ${part.tool} ${part.state.status}]`
       if (part.state.status === "completed") {
         return [

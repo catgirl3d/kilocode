@@ -16953,6 +16953,7 @@ export type SessionReasoningClearResponse = SessionReasoningClearResponses[keyof
 export type SessionToolClearPreviewData = {
   body?: {
     keepTurns: number
+    includeHistory?: boolean
   }
   path: {
     sessionID: string
@@ -16998,6 +16999,7 @@ export type SessionToolClearPreviewResponse = SessionToolClearPreviewResponses[k
 export type SessionToolClearData = {
   body?: {
     keepTurns: number
+    includeHistory?: boolean
     token: string
   }
   path: {

@@ -42,6 +42,7 @@ import { KiloSessionMessageOrder } from "@/kilocode/session/message-order" // ki
 import { KiloPartLifecycle } from "@/kilocode/session/part-lifecycle" // kilocode_change
 import { KiloCompactionInternal } from "@/kilocode/session/compaction-internal" // kilocode_change - [fork]
 import * as KiloReasoningMarker from "@/kilocode/session/reasoning-marker" // kilocode_change - [fork]
+import * as KiloToolHistory from "@/kilocode/session/tool-history" // kilocode_change - [fork] hide manually cleared tool history
 import * as TextStream from "@/kilocode/text-stream" // kilocode_change
 import { BoardNotice } from "@/kilocode/board/notice" // kilocode_change
 import { Effect, Schema } from "effect"
@@ -430,6 +431,15 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           assistantMessage.parts.push({
             type: "step-start",
           })
+        // kilocode_change start - [fork] hide a cleared call, result, and its media from the model
+        if (part.type === "tool" && KiloToolHistory.cleared(part)) {
+          assistantMessage.parts.push({
+            type: "text",
+            text: KiloToolHistory.placeholder(part.tool),
+          })
+          continue
+        }
+        // kilocode_change end
         if (part.type === "tool") {
           toolNames.add(part.tool)
           if (part.state.status === "completed") {

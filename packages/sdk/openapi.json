@@ -18947,6 +18947,9 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 100
+                  },
+                  "includeHistory": {
+                    "type": "boolean"
                   }
                 },
                 "required": ["keepTurns"],
@@ -19075,6 +19078,9 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 100
+                  },
+                  "includeHistory": {
+                    "type": "boolean"
                   },
                   "token": {
                     "type": "string"

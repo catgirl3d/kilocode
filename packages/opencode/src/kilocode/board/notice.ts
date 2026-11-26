@@ -1,4 +1,6 @@
 import type { BoardStore } from "./store" // fork_change
+import type { SessionV1 } from "@opencode-ai/core/v1/session" // fork_change
+import * as KiloToolHistory from "@/kilocode/session/tool-history" // fork_change
 
 // fork_change start
 // Display order; satisfies keeps every BoardStore.Kind listed.
@@ -71,6 +73,7 @@ export namespace BoardNotice {
       if (message.info.role !== "assistant") continue
       for (const part of message.parts) {
         if (part.type !== "tool" || part.state?.status !== "completed") continue
+        if (KiloToolHistory.cleared(part as SessionV1.Part)) continue
         const seq = position(part.state.metadata?.[key])
         if (seq === undefined) continue
         latest = latest === undefined ? seq : Math.max(latest, seq)

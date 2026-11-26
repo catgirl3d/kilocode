@@ -71,24 +71,26 @@ export const sessionShakeHandlers = HttpApiBuilder.group(InstanceHttpApi, "kilo-
 
     const toolPreview = Effect.fn("KiloSessionHttpApi.toolClearPreview")(function* (ctx: {
       params: { sessionID: SessionID }
-      payload: { keepTurns: number }
+      payload: { keepTurns: number; includeHistory?: boolean }
     }) {
       yield* guard(ctx.params.sessionID, "tool output")
       return yield* ManualToolClear.preview({
         sessionID: ctx.params.sessionID,
         keepTurns: ctx.payload.keepTurns,
+        includeHistory: ctx.payload.includeHistory, // fork_change
         sessions: session,
       }).pipe(Effect.catchIf(StorageNotFoundError.isInstance, (error) => Effect.fail(notFound(error.message))))
     })
 
     const toolApply = Effect.fn("KiloSessionHttpApi.toolClear")(function* (ctx: {
       params: { sessionID: SessionID }
-      payload: { keepTurns: number; token: string }
+      payload: { keepTurns: number; includeHistory?: boolean; token: string }
     }) {
       yield* guard(ctx.params.sessionID, "tool output")
       return yield* ManualToolClear.apply({
         sessionID: ctx.params.sessionID,
         keepTurns: ctx.payload.keepTurns,
+        includeHistory: ctx.payload.includeHistory, // fork_change
         token: ctx.payload.token,
         sessions: session,
       }).pipe(Effect.catchIf(StorageNotFoundError.isInstance, (error) => Effect.fail(notFound(error.message))))
