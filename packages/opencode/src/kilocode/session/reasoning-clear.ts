@@ -49,7 +49,6 @@ type Input = {
 type Target = {
   turn: MessageID
   part: SessionV1.ReasoningPart
-  carrier: boolean
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -107,9 +106,7 @@ export const clear = Effect.fn("KiloReasoningClear.clear")(function* (input: {
 })
 
 function estimate(target: Target) {
-  const text = Token.estimate(target.part.text)
-  if (!target.carrier) return text
-  return text + Token.estimate(JSON.stringify(target.part.metadata ?? {}))
+  return Token.estimate(target.part.text)
 }
 
 function stats(targets: Target[]) {
@@ -141,7 +138,7 @@ const plan = Effect.fn("KiloReasoningClear.plan")(function* (input: Input) {
       }
       candidates++
       if (!input.includeCarriers) continue
-      targets.push({ turn, part, carrier: true })
+      targets.push({ turn, part })
       carriers++
       continue
     }
@@ -150,7 +147,7 @@ const plan = Effect.fn("KiloReasoningClear.plan")(function* (input: Input) {
       continue
     }
     if (!eligible(part)) continue
-    targets.push({ turn, part, carrier: false })
+    targets.push({ turn, part })
   }
 
   // The token pins the exact parts shown in the preview, including carrier metadata.
