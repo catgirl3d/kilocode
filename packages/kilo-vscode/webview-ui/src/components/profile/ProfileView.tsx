@@ -8,6 +8,7 @@ import { useVSCode } from "../../context/vscode"
 import { useLanguage } from "../../context/language"
 import DeviceAuthCard from "./DeviceAuthCard"
 import type { ProfileData, ProviderUsageData, DeviceAuthState } from "../../types/messages"
+import { showsKiloPass, visibleKiloPass } from "../../utils/kilo-pass" // fork_change
 import { ProviderUsageCards } from "./ProviderUsageCards"
 
 export type { ProfileData }
@@ -194,12 +195,10 @@ const ProfileView: Component<ProfileViewProps> = (props) => {
       error={props.providerUsageError}
       onRefresh={() => props.onRefreshProviderUsage?.()}
       onOpen={openExternal}
-      kiloPass={props.profileData?.kiloPass}
-      showKiloPass={
-        !!props.profileData &&
-        (props.profileData.currentOrgId ?? null) === null &&
-        props.profileData.profile.hasPersonalAccount !== false
-      }
+      /* fork_change start */
+      kiloPass={visibleKiloPass(props.profileData) ?? null}
+      showKiloPass={showsKiloPass(props.profileData)}
+      /* fork_change end */
       onGetKiloPass={handleGetPass}
     />
   )

@@ -145,6 +145,7 @@ function mount(
               isConnected: online,
               gitInstalled: () => false,
               workspaceDirectory: () => "/repo",
+              profileData: () => null,
               providerUsage: () => undefined,
               requestProviderUsage: () => {},
             } as never

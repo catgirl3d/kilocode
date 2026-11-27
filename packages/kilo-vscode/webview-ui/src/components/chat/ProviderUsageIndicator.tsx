@@ -1,13 +1,17 @@
 // fork_change - new file
-import { createEffect, createMemo, on, For, Show, type Accessor, type Component } from "solid-js"
+import { createEffect, createMemo, on, onCleanup, For, Show, type Accessor, type Component } from "solid-js"
 import { ProgressCircle } from "@kilocode/kilo-ui/progress-circle"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
 import { useServer } from "../../context/server"
 import { useSession } from "../../context/session"
 import { useLanguage } from "../../context/language"
+import { useVSCode } from "../../context/vscode"
 import { formatDateTime } from "@kilocode/kilo-gateway/provider-usage"
+import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
+import { visibleKiloPass } from "../../utils/kilo-pass"
 import { usageLabels } from "../profile/ProviderUsageCards"
 import {
+  kiloPassSnapshot,
   ringProgress,
   selectUsageSnapshot,
   usageTone,
@@ -17,14 +21,22 @@ import {
 
 const SIZE = 14
 const STROKE = 2
+const PASS_REFRESH_DELAY = 10_000
 
 export const ProviderUsageIndicator: Component<{ sessionID?: Accessor<string | undefined> }> = (props) => {
   const server = useServer()
   const session = useSession()
   const language = useLanguage()
+  const vscode = useVSCode()
 
   const selection = createMemo(() => session.selected(props.sessionID?.()))
-  const snapshot = createMemo(() => selectUsageSnapshot(server.providerUsage()?.items, selection()?.providerID))
+  const pass = createMemo(() => visibleKiloPass(server.profileData()))
+  const snapshot = createMemo(() => {
+    const selected = selection()
+    const item = selectUsageSnapshot(server.providerUsage()?.items, selected?.providerID)
+    if (item) return item
+    return selected?.providerID === KILO_PROVIDER_ID ? kiloPassSnapshot(pass()) : undefined
+  })
   const worst = createMemo(() => {
     const item = snapshot()
     return item ? worstUsageWindow(item, selection()?.modelID) : undefined
@@ -58,19 +70,32 @@ export const ProviderUsageIndicator: Component<{ sessionID?: Accessor<string | u
   // Cache-aware: the backend keeps usage for a minute, so none of these force a provider fetch.
   const request = () => server.requestProviderUsage()
 
+  let passTimer: ReturnType<typeof setTimeout> | undefined
+  const schedulePass = () => {
+    if (selection()?.providerID !== KILO_PROVIDER_ID || !pass()) return
+    clearTimeout(passTimer)
+    passTimer = setTimeout(() => vscode.postMessage({ type: "refreshProfile" }), PASS_REFRESH_DELAY)
+  }
+  onCleanup(() => clearTimeout(passTimer))
+
   createEffect(
     on(
       () => selection()?.providerID,
       (provider) => {
-        if (provider) request()
+        if (!provider) return
+        request()
+        schedulePass()
       },
     ),
   )
 
-  // A finished turn spends quota, so reload once the session settles.
+  // A finished turn spends quota, so reload once the session settles. Kilo Pass
+  // lives in the profile payload, so a Kilo turn or a switch to Kilo also reloads it.
   createEffect(
     on(session.status, (status, prev) => {
-      if (status === "idle" && (prev === "busy" || prev === "retry")) request()
+      if (status !== "idle" || (prev !== "busy" && prev !== "retry")) return
+      request()
+      schedulePass()
     }),
   )
 

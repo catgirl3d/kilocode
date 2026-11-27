@@ -2,7 +2,10 @@ import { describe, expect, it } from "bun:test"
 import { fixture } from "../fixtures/run"
 import { english } from "@kilocode/kilo-gateway/provider-usage"
 import type { ProviderUsageSnapshot, ProviderUsageWindow } from "@kilocode/sdk/v2/client"
+import type { KiloPassState, ProfileData } from "../../webview-ui/src/types/messages"
+import { showsKiloPass, visibleKiloPass } from "../../webview-ui/src/utils/kilo-pass"
 import {
+  kiloPassSnapshot,
   ringProgress,
   selectUsageSnapshot,
   usageTone,
@@ -59,6 +62,104 @@ describe("provider usage snapshot selection", () => {
   it("keeps a managed-only match", () => {
     const managed = snapshot({ id: "kilo-managed", sourceKind: "kilo_managed" })
     expect(selectUsageSnapshot([managed], "openai")).toBe(managed)
+  })
+})
+
+describe("kilo pass snapshot", () => {
+  const pass = (value: Partial<KiloPassState> = {}): KiloPassState => ({
+    currentPeriodBaseCreditsUsd: 199,
+    currentPeriodBonusCreditsUsd: 99.5,
+    currentPeriodUsageUsd: 73.27,
+    ...value,
+  })
+
+  const profile = (value: Partial<ProfileData> = {}): ProfileData => ({
+    profile: { email: "user@example.com" },
+    balance: null,
+    kiloPass: pass(),
+    currentOrgId: null,
+    ...value,
+  })
+
+  it("maps the pass onto a USD amount window using paid plus bonus credits", () => {
+    const item = kiloPassSnapshot(pass())
+    expect(item?.providerID).toBe("kilo")
+    expect(item?.planLabel).toBe("Kilo Pass")
+    expect(item?.windows).toHaveLength(1)
+    expect(item?.windows[0]).toMatchObject({
+      resource: "subscription",
+      unit: "USD",
+      orientation: "amount",
+      used: 73.27,
+      limit: 298.5,
+      state: "active",
+    })
+    expect(item?.windows[0]?.remaining).toBeUndefined()
+  })
+
+  it("drives the ring and tone from the pass spend", () => {
+    const item = kiloPassSnapshot(pass())
+    expect(item).toBeDefined()
+    if (!item) return
+    expect(ringProgress(worstUsageWindow(item))).toBeCloseTo(24.55, 2)
+    expect(usageTone(item, worstUsageWindow(item))).toBe("success")
+
+    const warning = kiloPassSnapshot(pass({ currentPeriodUsageUsd: 210 }))
+    expect(warning).toBeDefined()
+    if (!warning) return
+    expect(usageTone(warning, worstUsageWindow(warning))).toBe("warning")
+
+    const critical = kiloPassSnapshot(pass({ currentPeriodUsageUsd: 298.5 }))
+    expect(critical).toBeDefined()
+    if (!critical) return
+    expect(usageTone(critical, worstUsageWindow(critical))).toBe("critical")
+  })
+
+  it("shows the profile card's used and total dollars in the tooltip", () => {
+    const item = kiloPassSnapshot(pass())
+    expect(item).toBeDefined()
+    if (!item) return
+    expect(usageTooltipRows(item, english, (value) => `Resets ${value}`)).toEqual([
+      { title: "Quota", value: "$73.27 of $298.50 used", reset: undefined },
+    ])
+  })
+
+  it("marks a fully spent pass exhausted and hides a pass without credits", () => {
+    const spent = kiloPassSnapshot(pass({ currentPeriodUsageUsd: 298.5 }))
+    expect(spent?.windows[0]?.state).toBe("exhausted")
+    expect(spent).toBeDefined()
+    if (!spent) return
+    expect(ringProgress(worstUsageWindow(spent))).toBe(100)
+
+    const over = kiloPassSnapshot(pass({ currentPeriodUsageUsd: 400 }))
+    expect(over?.windows[0]?.state).toBe("exhausted")
+
+    expect(kiloPassSnapshot(undefined)).toBeUndefined()
+    expect(kiloPassSnapshot(pass({ currentPeriodBaseCreditsUsd: 0, currentPeriodBonusCreditsUsd: 0 }))).toBeUndefined()
+  })
+
+  it("clamps negative values and ignores non-finite credit totals", () => {
+    const item = kiloPassSnapshot(
+      pass({ currentPeriodUsageUsd: -5, currentPeriodBaseCreditsUsd: -10, currentPeriodBonusCreditsUsd: 100 }),
+    )
+    expect(item?.windows[0]).toMatchObject({ used: 0, limit: 100 })
+    expect(
+      kiloPassSnapshot(pass({ currentPeriodBaseCreditsUsd: Number.NaN, currentPeriodBonusCreditsUsd: 0 })),
+    ).toBeUndefined()
+  })
+
+  it("shares the profile card's visibility rule but hides the ring without a pass", () => {
+    expect(showsKiloPass(undefined)).toBe(false)
+    expect(visibleKiloPass(undefined)).toBeUndefined()
+    expect(showsKiloPass(profile())).toBe(true)
+    expect(visibleKiloPass(profile())).toEqual(pass())
+    expect(showsKiloPass(profile({ currentOrgId: "org-1" }))).toBe(false)
+    expect(visibleKiloPass(profile({ currentOrgId: "org-1" }))).toBeUndefined()
+    const personalOff = profile({ profile: { email: "user@example.com", hasPersonalAccount: false } })
+    expect(showsKiloPass(personalOff)).toBe(false)
+    expect(visibleKiloPass(personalOff)).toBeUndefined()
+    expect(showsKiloPass(profile({ kiloPass: null }))).toBe(true)
+    expect(visibleKiloPass(profile({ kiloPass: null }))).toBeUndefined()
   })
 })
 
