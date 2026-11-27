@@ -926,23 +926,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const canContinue = () => !goal.active() && speech.state() === "idle" && !hasInput() && session.canResume()
   const goalReady = () => !goal.pending() && (!goal.active() || (!enhancing() && !imageAttach.pending()))
   // fork_change start
+  const promptRecording = () => speechOwner() === "prompt" && speech.state() === "recording"
   const canSend = () =>
-    sendReady() && (speech.state() === "recording" || (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
+    sendReady() && (promptRecording() || (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
   // fork_change end
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
     if (holding()) return language.t("prompt.action.send.holding") // fork_change
-    if (speech.state() === "recording") return language.t("prompt.action.send.recording")
+    if (promptRecording()) return language.t("prompt.action.send.recording") // fork_change
     if (goal.active()) return language.t("prompt.goal.start")
     if (canSendContinue()) return language.t("prompt.action.continue")
     return language.t("prompt.action.send")
   }
   const showStop = () =>
-    !goal.active() &&
-    (isBusy() || session.currentSession()?.goal?.active) &&
-    !hasInput() &&
-    speech.state() !== "recording"
+    !goal.active() && (isBusy() || session.currentSession()?.goal?.active) && !hasInput() && !promptRecording() // fork_change
   // Stop only ends the main agent's turn. Say so while background agents run.
   const agents = useRunningAgents()
   const stopLabel = () => language.t(agents().length > 0 ? "prompt.action.stop.background" : "prompt.action.stop")
@@ -1772,7 +1770,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // fork_change start
   const submit = (afterTurn: boolean) => {
     // fork_change end
-    if (speech.state() !== "recording" || !canSend()) {
+    if (speech.active() && !promptRecording()) return // fork_change
+    // fork_change start
+    if (!promptRecording() || !canSend()) {
+      // fork_change end
       void handleSend(afterTurn) // fork_change
       return
     }

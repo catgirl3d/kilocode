@@ -306,6 +306,7 @@ export const dict = {
   "prompt.btw.disconnected": "Wait for the connection to come back, then ask your side question.",
   "prompt.btw.editing": "Finish editing the message first, then ask your side question.",
   "prompt.btw.goal": "Wait for the goal to start, then ask your side question.",
+  "prompt.btw.dictate": "for the side question",
   "prompt.btw.status.error": "Failed",
   "prompt.btw.status.cancelled": "Cancelled",
   "prompt.btw.status.interrupted": "Interrupted",

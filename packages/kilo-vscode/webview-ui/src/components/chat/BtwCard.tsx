@@ -83,9 +83,7 @@ export const BtwCard: Component<BtwCardProps> = (props) => {
           speech: props.speech,
           disabled: () => !props.speechEnabled?.() || busy(),
           start: startCardSpeech,
-          finish: (submit) => {
-            if (submit) props.speech?.stop()
-          },
+          finish: () => props.speech?.stop(),
         })
       : undefined
 
@@ -102,6 +100,16 @@ export const BtwCard: Component<BtwCardProps> = (props) => {
     !!props.speech &&
     !!props.startSpeech &&
     (props.speech.active() ? props.speechOwner?.() === "btw" : !!props.speechEnabled?.())
+
+  createEffect(
+    on(
+      () => `${props.sessionID}|${state().open}|${state().history}`,
+      () => {
+        if (props.speechOwner?.() === "btw" && props.speech?.active()) props.speech.cancel()
+      },
+      { defer: true },
+    ),
+  )
 
   createEffect(() => {
     if (state().open && state().compose) inputRef?.focus()
@@ -290,6 +298,7 @@ export const BtwCard: Component<BtwCardProps> = (props) => {
                   start={startCardSpeech}
                   label={language.t}
                   ownsSpeech={false}
+                  context={language.t("prompt.btw.dictate")}
                 />
               )}
             </Show>
