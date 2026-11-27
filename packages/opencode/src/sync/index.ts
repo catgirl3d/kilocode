@@ -8,6 +8,7 @@ import { GlobalBus } from "@/bus/global"
 import { Bus as ProjectBus } from "@/bus"
 import { BusEvent } from "@/bus/bus-event"
 import { EventSequenceTable, EventTable } from "@opencode-ai/core/event/sql" // kilocode_change - upstream moved the event tables to core
+import * as EventJournal from "@opencode-ai/core/kilocode/event-journal" // kilocode_change - [fork] local-only journal policy
 import { EventID } from "./schema"
 import { Context, Effect, Layer, Schema as EffectSchema } from "effect"
 import type { DeepMutable } from "@opencode-ai/core/schema"
@@ -346,15 +347,19 @@ function process<Def extends Definition>(
           set: { seq: event.seq },
         })
         .run()
-      tx.insert(EventTable)
-        .values({
-          id: EventV2.ID.make(event.id), // kilocode_change - core event table uses the branded EventV2 ID
-          seq: event.seq,
-          aggregate_id: event.aggregateID,
-          type: versionedType(def.type, def.version),
-          data: data as Record<string, unknown>, // kilocode_change
-        })
-        .run()
+      // kilocode_change start - [fork] local-only mode keeps the sequence but skips the journal row
+      if (EventJournal.enabled()) {
+        tx.insert(EventTable)
+          .values({
+            id: EventV2.ID.make(event.id),
+            seq: event.seq,
+            aggregate_id: event.aggregateID,
+            type: versionedType(def.type, def.version),
+            data: data as Record<string, unknown>,
+          })
+          .run()
+      }
+      // kilocode_change end
     }
 
     Database.effect(() => {
