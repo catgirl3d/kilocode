@@ -46,9 +46,11 @@ export function creditLabel(value: ReturnType<typeof scope>, masked = false) {
 
 const short = (value: number) => "$" + Math.round(value)
 
-// Pass credits are part of the personal balance, so we show this period's usage against the base allotment.
+// fork_change start - use the same paid plus bonus total as the profile card
+// Pass credits are part of the personal balance, so we show this period's usage against the full paid plus bonus allotment.
+// fork_change end
 export function passLine(pass: KiloPassState) {
-  return `${short(pass.currentPeriodUsageUsd)} / ${short(pass.currentPeriodBaseCreditsUsd)}`
+  return `${short(pass.currentPeriodUsageUsd)} / ${short(pass.currentPeriodBaseCreditsUsd + pass.currentPeriodBonusCreditsUsd)}` // fork_change
 }
 
 export function resetLabel(iso?: string | null) {
@@ -196,8 +198,10 @@ function View(props: { api: TuiPluginApi }) {
                   </box>
                   <Show when={pass().currentPeriodBonusCreditsUsd > 0}>
                     <box flexDirection="row" justifyContent="space-between" gap={1}>
-                      <text fg={theme().textMuted}>{"    Bonus"}</text>
-                      <text fg={theme().textMuted}>{"+" + format(pass().currentPeriodBonusCreditsUsd)}</text>
+                      {/* fork_change start */}
+                      <text fg={theme().textMuted}>{"    incl. bonus"}</text>
+                      <text fg={theme().textMuted}>{format(pass().currentPeriodBonusCreditsUsd)}</text>
+                      {/* fork_change end */}
                     </box>
                   </Show>
                   <Show when={resetLabel(pass().nextBillingAt)}>

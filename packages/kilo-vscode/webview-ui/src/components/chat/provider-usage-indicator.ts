@@ -1,6 +1,8 @@
 // fork_change - new file
 import { formatWindow, windowLabel, windowProgress, type UsageLabels } from "@kilocode/kilo-gateway/provider-usage"
 import type { ProviderUsageSnapshot, ProviderUsageWindow } from "@kilocode/sdk/v2/client"
+import { KILO_PROVIDER_ID } from "../../../../src/shared/provider-model"
+import type { KiloPassState } from "../../types/messages"
 
 export type UsageTone = "success" | "warning" | "critical" | "muted"
 
@@ -12,6 +14,10 @@ export interface UsageTooltipRow {
 
 const WARNING_AT = 70
 const CRITICAL_AT = 90
+const KILO_PASS_ID = "kilo-pass"
+const KILO_PASS_WINDOW_ID = "kilo-pass-period"
+
+const finite = (value: number) => (Number.isFinite(value) ? Math.max(0, value) : 0)
 
 export const selectUsageSnapshot = (
   items: ProviderUsageSnapshot[] | undefined,
@@ -20,6 +26,42 @@ export const selectUsageSnapshot = (
   if (!items || !providerID) return undefined
   const matches = items.filter((item) => item.providerID === providerID)
   return matches.find((item) => item.sourceKind === "direct") ?? matches.at(0)
+}
+
+/**
+ * Kilo Pass is personal billing rather than a provider quota, and it lives only
+ * in the profile payload. Map it onto the same snapshot shape the ring already
+ * reads so the profile card and the ring show one set of numbers.
+ */
+export const kiloPassSnapshot = (pass: KiloPassState | null | undefined): ProviderUsageSnapshot | undefined => {
+  if (!pass) return undefined
+  const used = finite(pass.currentPeriodUsageUsd)
+  const limit = finite(pass.currentPeriodBaseCreditsUsd) + finite(pass.currentPeriodBonusCreditsUsd)
+  if (limit <= 0) return undefined
+  const resetAt = pass.nextBillingAt && Number.isFinite(Date.parse(pass.nextBillingAt)) ? pass.nextBillingAt : undefined
+  return {
+    id: KILO_PASS_ID,
+    providerID: KILO_PROVIDER_ID,
+    sourceKind: "kilo_managed",
+    providerLabel: "Kilo",
+    planLabel: "Kilo Pass",
+    sourceLabel: "Kilo Gateway",
+    fetchState: "ready",
+    planState: "active",
+    routingState: "not_applicable",
+    windows: [
+      {
+        id: KILO_PASS_WINDOW_ID,
+        resource: "Kilo Pass",
+        unit: "USD",
+        orientation: "amount",
+        used,
+        limit,
+        ...(resetAt ? { resetAt } : {}),
+        state: used >= limit ? "exhausted" : "active",
+      },
+    ],
+  } satisfies ProviderUsageSnapshot
 }
 
 // MiniMax can flag a window exhausted without any numbers; it is still a full quota.

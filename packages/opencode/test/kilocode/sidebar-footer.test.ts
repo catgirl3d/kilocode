@@ -40,7 +40,7 @@ describe("Kilo sidebar footer", () => {
   })
 
   test("shows pass period usage and reset date", () => {
-    expect(passLine(kiloPass)).toBe("$73 / $199")
+    expect(passLine(kiloPass)).toBe("$73 / $299")
     expect(resetLabel(kiloPass.nextBillingAt)).toBe("Jul 1")
     expect(resetLabel(null)).toBeUndefined()
     expect(resetLabel("not-a-date")).toBeUndefined()
