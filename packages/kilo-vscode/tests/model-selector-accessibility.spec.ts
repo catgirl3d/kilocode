@@ -294,13 +294,10 @@ test("model selector segment is active for a model outside quick slots", async (
   const trigger = page.locator(".model-selector-quick-open")
   await expect(trigger).toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
   await trigger.click()
-  await page
-    .getByRole("treeitem", { name: "DeepSeek DeepSeek V3 Kilo" })
-    .and(page.locator('[data-key^="model:"]'))
-    .click()
-  await page.getByRole("button", { name: "Select: DeepSeek: DeepSeek V3" }).click()
+  await page.getByRole("treeitem", { name: "Meta Llama 4 Kilo" }).and(page.locator('[data-key^="model:"]')).click()
+  await page.getByRole("button", { name: "Select: Meta: Llama 4" }).click()
 
-  await expect(page.getByTestId("favorite-model-value")).toHaveText("deepseek/deepseek-v3")
+  await expect(page.getByTestId("favorite-model-value")).toHaveText("meta/llama-4")
   await expect
     .poll(() => trigger.evaluate((node) => getComputedStyle(node).backgroundColor))
     .not.toBe("rgba(0, 0, 0, 0)")
