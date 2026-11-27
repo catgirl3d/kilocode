@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { Database as SQLite } from "bun:sqlite"
+import { eq } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import path from "path"
 import { Database } from "@opencode-ai/core/database/database"
@@ -24,6 +25,11 @@ const entries = Array.from({ length: 201 }, (_, value) => ({
   definition: Durable,
   data: { id: value % 2 === 0 ? "one" : "two", value },
 }))
+const LocalBatch = EventV2.define({
+  type: "test.batch.local",
+  durable: { version: 1, aggregate: "id" },
+  schema: { id: Schema.String, value: Schema.Int },
+})
 
 test("commits every chunk before notifying and preserves per-aggregate sequences", async () => {
   await using tmp = await tmpdir()
@@ -58,6 +64,53 @@ test("commits every chunk before notifying and preserves per-aggregate sequences
     }).pipe(Effect.provide(layer(filename)), Effect.scoped),
   )
 })
+
+it.effect("keeps projection, sequence, and notification without journal rows in local-only mode", () =>
+  Effect.gen(function* () {
+    const previous = process.env.KILO_EVENT_JOURNAL
+    process.env.KILO_EVENT_JOURNAL = "off"
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (previous === undefined) delete process.env.KILO_EVENT_JOURNAL
+        else process.env.KILO_EVENT_JOURNAL = previous
+      }),
+    )
+
+    const events = yield* EventV2.Service
+    const { db } = yield* Database.Service
+    const received = new Array<EventV2.Payload>()
+    yield* db.run("CREATE TABLE local_batch_probe (value integer NOT NULL)")
+    yield* events.project(LocalBatch, (event) =>
+      db
+        .run(`INSERT INTO local_batch_probe (value) VALUES (${(event.data as { value: number }).value})`)
+        .pipe(Effect.orDie),
+    )
+    yield* events.listen((event) =>
+      Effect.sync(() => {
+        if (event.type === LocalBatch.type) received.push(event)
+      }),
+    )
+
+    yield* events.publishAll(
+      Array.from({ length: 3 }, (_, value) => ({ definition: LocalBatch, data: { id: "local", value } })),
+    )
+
+    const sequence = yield* db
+      .select()
+      .from(EventSequenceTable)
+      .where(eq(EventSequenceTable.aggregate_id, "local"))
+      .get()
+      .pipe(Effect.orDie)
+    expect(yield* db.select().from(EventTable).all()).toEqual([])
+    expect(sequence?.seq).toBe(2)
+    expect(yield* db.all("SELECT value FROM local_batch_probe ORDER BY value")).toEqual([
+      { value: 0 },
+      { value: 1 },
+      { value: 2 },
+    ])
+    expect(received.map((event) => (event.data as { value: number }).value)).toEqual([0, 1, 2])
+  }),
+)
 
 it.effect("rolls back all chunks and projections without notifying on failure", () =>
   Effect.gen(function* () {

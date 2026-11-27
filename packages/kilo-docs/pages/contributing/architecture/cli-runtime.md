@@ -212,6 +212,21 @@ SQLite is default structured store.
 
 Some JSON-backed storage remains. Session diffs still use storage path `session_diff`, and configuration, auth, and selected local state files retain their own owners. Snapshot storage is separate from SQLite and JSON storage.
 
+### Durable event journal
+
+`event` is the append-only durable journal for session events; `message`, `part`, and `session_message` are projections written by projectors in the same transaction. Normal chat history, reopening, and prompt continuation read the projections, while replay, v2 session history/events, and remote workspace sync read the journal.
+
+Set `KILO_EVENT_JOURNAL=off` to skip journal inserts while keeping projectors, `event_sequence`, and live subscribers. This keeps the local database from storing a second copy of session history. While it is off, journal-backed replay/sync and v2 history/events are unavailable; turning it back on does not backfill events skipped while it was off.
+
+Set the variable for the user and restart the editor so the spawned CLI inherits it:
+
+| Platform | Command |
+|---|---|
+| Windows (PowerShell) | `[Environment]::SetEnvironmentVariable("KILO_EVENT_JOURNAL", "off", "User")` |
+| macOS/Linux | Add `export KILO_EVENT_JOURNAL=off` to the shell profile that launches the editor |
+
+Remove the variable, or set it to any value other than `off`, `false`, `0`, or `no`, to restore journaling.
+
 ## Snapshot state boundary
 
 Snapshot baselines use separate git directory per project worktree:
