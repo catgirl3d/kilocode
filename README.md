@@ -1,10 +1,4 @@
-# Important: `main` is not accepting new features
-
-All new feature pull requests must target the `v2` branch. Bug fixes for the current release may still go to `main`.
-
-<p align="center">
-  English | <a href="translations/README.zh.md">简体中文</a> | <a href="translations/README.zht.md">繁體中文</a> | <a href="translations/README.ko.md">한국어</a> | <a href="translations/README.de.md">Deutsch</a> | <a href="translations/README.es.md">Español</a> | <a href="translations/README.fr.md">Français</a> | <a href="translations/README.it.md">Italiano</a> | <a href="translations/README.da.md">Dansk</a> | <a href="translations/README.ja.md">日本語</a> | <a href="translations/README.pl.md">Polski</a> | <a href="translations/README.ru.md">Русский</a> | <a href="translations/README.bs.md">Bosanski</a> | <a href="translations/README.ar.md">العربية</a> | <a href="translations/README.no.md">Norsk</a> | <a href="translations/README.br.md">Português (Brasil)</a> | <a href="translations/README.th.md">ไทย</a> | <a href="translations/README.tr.md">Türkçe</a> | <a href="translations/README.uk.md">Українська</a> | <a href="translations/README.bn.md">বাংলা</a> | <a href="translations/README.gr.md">Ελληνικά</a> | <a href="translations/README.vi.md">Tiếng Việt</a>
-</p>
+# Kilo Code — personal fork
 
 <p align="center">
   <a href="https://kilo.ai"><img width="250" alt="Kilo Code logo" src="https://github.com/user-attachments/assets/bdb0c174-b9fd-40ad-a47b-f3aab9b54e8d" /></a>
@@ -12,160 +6,81 @@ All new feature pull requests must target the `v2` branch. Bug fixes for the cur
 
 <p align="center">The open source coding agent for building with AI in VS Code, JetBrains, or the CLI.</p>
 
-<p align="center">
-  <a href="https://marketplace.visualstudio.com/items?itemName=kilocode.Kilo-Code"><img src="https://raster.shields.io/badge/VS_Code_Marketplace-007ACC?style=flat&logo=visualstudiocode&logoColor=white" alt="VS Code Marketplace" height="20"></a>
-  <a href="https://www.npmjs.com/package/@kilocode/cli"><img alt="npm" src="https://raster.shields.io/npm/v/@kilocode/cli?style=flat" height="20" /></a>
-  <a href="https://x.com/kilocode"><img src="https://raster.shields.io/badge/kilocode-000000?style=flat&logo=x&logoColor=white" alt="X (Twitter)" height="20"></a>
-  <a href="https://blog.kilo.ai"><img src="https://raster.shields.io/badge/Blog-555?style=flat&logo=substack&logoColor=white" alt="Blog" height="20"></a>
-  <a href="https://kilo.ai/discord"><img src="https://raster.shields.io/badge/Join%20Discord-5865F2?style=flat&logo=discord&logoColor=white" alt="Discord" height="20"></a>
-  <a href="https://www.reddit.com/r/kilocode/"><img src="https://raster.shields.io/badge/Join%20r%2Fkilocode-D84315?style=flat&logo=reddit&logoColor=white" alt="Reddit" height="20"></a>
-</p>
+This is a personal fork of [Kilo Code](https://github.com/Kilo-Org/kilocode), with the upstream core plus a set of features built for everyday agent work. It is not an official Kilo release.
 
-![Kilo-in-VS-Code-and-CLI](https://github.com/user-attachments/assets/0536ca59-ed81-4512-9e05-d186187a1b52)
+Every build is published as its own VS Code extension package (`.vsix`) with its own version (`<upstream version>-fork.<run number>`) and its own GitHub Release, so an installed build can always be matched to its source.
 
----
+## Fork features
 
-Kilo Code is an AI coding agent that meets you everywhere you work: [VS Code](https://kilo.ai/landing/vs-code), [JetBrains](https://kilo.ai/features/jetbrains-native), and the [CLI](https://kilo.ai/cli). It's open source with open pricing. You pick from 500+ models, switch between them mid-task, and pay the model provider's rate with zero markup. No API keys required to start.
+### Secrets are hidden before they reach a model
 
-### Installation
+Keys, tokens, passwords, and URL or Cookie credentials that can be recognized are replaced with `[redacted]` before text is sent to a model. Protection is on by default and covers chat, subagents, prompt enhancement, memory, autocomplete, model checks, and code copies sent for indexing. Your files and saved chat history stay unchanged. The chat marks messages and tool results that contained hidden secrets, and the prompt box warns you before you send one. It is not a guarantee: unlabelled, encoded, and unusual formats can still pass. The protection can be turned off globally in Settings → Experimental or from the CLI.
 
-Pick where you want to run Kilo.
+### Ask a side question with `/btw`
 
-<details open>
-<summary><strong>VS Code</strong></summary>
+Type `/btw <question>` in VS Code chat or the TUI while the agent keeps working. The answer streams into a card above the prompt in VS Code (a dialog in the TUI) and never enters the session history. The side question replays the session's last model request as a cache-warm prefix, supports follow-ups, history, cancel with Esc, and inserting the Q/A into your next message. Side-question spend is added to the session cost.
 
-<br>
+### Consult up to three advisors
 
-Install the [Kilo Code extension](vscode:extension/kilocode.kilo-code) directly, or grab it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=kilocode.Kilo-Code). Create an account and you'll have access to 500+ models including GPT-6 Astra, Claude Fable 5.1, Gemini 3.8 Flash, Grok 4.6, and DeepSeek V4.1 Flash, all at provider pricing.
+An on-demand `consult_advisor` tool lets an agent ask another model for a second opinion during planning, when it is stuck, or before finishing a complex task. Up to three named slots can be configured, each with its own model, reasoning variant, short description, and role prompt, with built-in templates for Critic, Security, Devil's advocate, and Plan review. Agents consult the default slot, selected slots, or all of them in parallel, and a role prompt is sent only to its own advisor. Advisors retry transient provider errors twice with short waits instead of hanging the run.
 
-</details>
+### Clear old context without losing the conversation
 
-<details open>
-<summary><strong>CLI</strong></summary>
+A previewed dialog removes heavy old context from the model's view while the chat keeps showing the originals. Choose how many recent turns to keep, review the affected turns, blocks, and estimated tokens, then apply one of three modes: clear old reasoning, clear old tool output, or clear old tool calls and results. The current turn, protected skills, provider-signed reasoning, and unfinished calls stay untouched. Each dialog remembers the number of turns from its last successful clear. The `/shake` command remains the quick one-step action.
 
-<br>
+### Agent Manager that respects your machine
 
-```bash
-# npm
-npm install -g @kilocode/cli
+The Agent Manager orchestrates parallel sessions in isolated git worktrees. In this fork it can put the computer to sleep or into hibernation once the agents finish, with a cancellable one-minute countdown and a separate plain timer. A "Changed files" mode copies the files changed in a worktree into the local branch as-is, even after the base branch was rebased or force-pushed, and asks before overwriting files that also changed locally. Sessions can be tagged, favorited, and color-marked; subagent inspectors show live status, retries, and errors; and opening or creating a local session no longer forces the sidebar open.
 
-# curl
-curl -fsSL https://kilo.ai/cli/install | bash
+### A model selector that follows the project
 
-# pnpm
-pnpm add -g @kilocode/cli
+The chat has a custom model picker with favorites, quick switching, and search across providers. Model choices can be scoped to a workspace: the "Workspace models" switch in Settings → Models copies the current default, small, subagent, advisor, compaction, and mode models into the workspace's `.kilo/kilo.jsonc`, and later edits save there; turning it off returns the workspace to the global models. A subagent model button next to the model selector sets the subagent model for that same scope and saves immediately, without the Settings save bar, while keeping a compatible reasoning effort. Favorite models can be reordered and switched quickly, their ranks stay gap-free, and explicitly selected models and reasoning variants are remembered for each mode when starting new tasks.
 
-# bun
-bun add -g @kilocode/cli
+### Rules with real controls
 
-# Homebrew (macOS / Linux)
-brew install Kilo-Org/tap/kilo
+Settings → Agent Behaviour → Rules keeps separate Global and Local rule lists instead of one flat list. Rules can be added with a file picker or by typing a path that is validated before saving, switched on and off individually, opened for editing, and removed. The Local list belongs to the workspace, so project rules stay with the repository instead of leaking into every session.
 
-# Arch Linux (AUR)
-paru -S kilo-bin
-```
+### Provider quotas at a glance
 
-Then run `kilo` in any project directory to start.
+A small quota ring in the chat model selector shows used and remaining limits with reset times for providers that report them, including OpenCode Go 5-hour, weekly, and monthly usage. Reset times use a day-first 24-hour format instead of the locale-dependent 12-hour one.
 
-</details>
+## Everything else in the fork
 
-<details>
-<summary><strong>JetBrains</strong></summary>
+- Defer a prompt until the current turn finishes by holding Send until its ring completes; cancel it or return it to the composer with Stop.
+- Revert to any answered agent question with "Revert to here"; files go back to a checkpoint taken when the question was asked.
+- Fork or copy a session, copy its ID, and convert a read-only subagent session into a regular session.
+- On-demand MCP servers that load only when the agent connects them.
+- Session tags and favorites, bulk selection and deletion, and grouping of recent sessions by date.
+- Attach the staged diff or a git commit from the `@` menu.
+- Choose the execution shell used by agent commands and Kilo terminals.
+- Groq Whisper voice input, with optional English translation.
+- A unified retry and error policy: transient provider errors wait indefinitely with a 60-second cap, while errors only a human or a code change can fix end the run with a clear error.
+- No sampling temperature is sent, so models that reject it keep working.
+- Telemetry is fully disabled in this fork.
+- Snapshot and session-log overhead is reduced: snapshots are captured once per response, streaming tool progress is bounded, oversized diff patches are not stored, and the SQLite WAL is capped.
+- Fork VSIX builds get stable `-fork.<run>` versions, and release notes list only the changes since the previous release.
 
-<br>
+See [CHANGELOG-FORK.md](CHANGELOG-FORK.md) for the complete list of fork changes and [FORK_REBASE.md](FORK_REBASE.md) for how the fork tracks upstream.
 
-Install the [Kilo Code plugin](https://plugins.jetbrains.com/plugin/28350-kilo-code) from the JetBrains Marketplace, or search "Kilo Code" in `Settings → Plugins` inside any JetBrains IDE.
+## Install
 
-</details>
+VS Code: download the latest `kilo-vscode-*.vsix` from the [Releases page](../../releases), then run **Extensions: Install from VSIX…** from the command palette. Installing a newer VSIX updates the extension.
 
-<details>
-<summary><strong>Cloud Agent</strong></summary>
-
-<br>
-
-Run Kilo from the web, no local machine needed, at [app.kilo.ai/cloud](https://app.kilo.ai/cloud).
-
-</details>
-
-<details>
-<summary><strong>Code Reviews</strong></summary>
-
-<br>
-
-Set up automated AI code reviews on your pull requests at [app.kilo.ai/code-reviews](https://app.kilo.ai/code-reviews).
-
-</details>
-
-<details>
-<summary>Install the CLI from GitHub Releases (binaries)</summary>
-
-Download the latest binary from the [Releases page](https://github.com/Kilo-Org/kilocode/releases).
-
-| Platform | Asset |
-|---|---|
-| Windows (most PCs) | `kilo-windows-x64.zip` |
-| macOS (Apple Silicon) | `kilo-darwin-arm64.zip` |
-| macOS (Intel) | `kilo-darwin-x64.zip` |
-| Linux x64 | `kilo-linux-x64.tar.gz` |
-| Linux ARM | `kilo-linux-arm64.tar.gz` |
-
-Notes: `x64-baseline` is a compatibility build for older CPUs without AVX. `musl` is the statically linked build for Alpine or minimal Docker images without glibc. `kilo-vscode-*.vsix` is the VS Code extension package, not the CLI. `Source code` archives are for building from source.
-
-</details>
-
-### Agents
-
-Kilo ships with specialized agents you switch between depending on the task. You can also build your own custom agents.
-
-- **Code** - The default. Implements and edits code from natural language.
-- **Plan** - Designs architecture and writes implementation plans before any code gets written.
-- **Ask** - Answers questions about your codebase without touching any files.
-- **Debug** - Troubleshoots and traces issues.
-
-Learn more about [agents and custom agents](https://kilo.ai/docs/code-with-ai/agents/using-agents).
-
-### What it does
-
-- **Code generation** from natural language, across multiple files.
-- **Inline autocomplete** with ghost-text suggestions and tab to accept.
-- **Self-checking** so the agent reviews and corrects its own work.
-- **Terminal and browser control** to run commands and automate the web.
-- **Kilo Marketplace** to install agents, skills, MCP servers, and plugins that extend what the agent can do.
-- **500+ models** with mid-task switching, so you can match latency, cost, and reasoning to the job.
-
-### Autonomous Mode (CI/CD)
-
-Run `kilo run` with `--auto` for fully autonomous operation with no prompts, built for CI/CD pipelines:
+From source:
 
 ```bash
-kilo run --auto "run tests and fix any failures"
+bun install
+bun run extension
 ```
 
-`--auto` auto-approves permission prompts unless a rule explicitly denies the action. Only use it in trusted environments.
+Run `bun run dev` for the CLI. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and checks.
 
-### Documentation
+## Upstream
 
-For configuration and everything else, [head over to the docs](https://kilo.ai/docs).
+This fork tracks [Kilo-Org/kilocode](https://github.com/Kilo-Org/kilocode) `main` and keeps fork changes annotated so upstream updates can be merged regularly. Kilo Code itself is a fork of [OpenCode](https://github.com/anomalyco/opencode). Configuration and behavior that are not listed above follow the [Kilo docs](https://kilo.ai/docs).
 
-### Contributing
+Issues and pull requests for this fork belong in this repository, not in the upstream project.
 
-Contributions are welcome from developers, writers, and everyone in between. Start with the [Contributing Guide](/CONTRIBUTING.md) for environment setup, coding standards, and how to open a pull request. See [RELEASING.md](RELEASING.md) for the VS Code extension and CLI release process, and [packages/kilo-jetbrains/RELEASING.md](packages/kilo-jetbrains/RELEASING.md) for the JetBrains plugin.
+## License
 
-Please review our [Code of Conduct](/CODE_OF_CONDUCT.md) before getting involved.
-
-### License
-
-MIT. You're free to use, modify, and distribute this code, including commercially, as long as you keep the attribution and license notices. See [License](/LICENSE).
-
-### FAQ
-
-<details>
-<summary>Where did Kilo CLI come from?</summary>
-
-Kilo CLI is a fork of [OpenCode](https://github.com/anomalyco/opencode), enhanced to work within the Kilo agentic engineering platform.
-
-</details>
-
----
-
-**Join the community** [Discord](https://kilo.ai/discord) | [X](https://x.com/kilocode) | [Reddit](https://www.reddit.com/r/kilocode/)
+MIT. See [LICENSE](LICENSE).
