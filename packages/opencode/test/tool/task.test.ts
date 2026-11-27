@@ -629,6 +629,57 @@ describe("tool.task", () => {
     }),
   )
 
+  it.instance("marks a cancelled task interrupted so its card survives the stop", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const ready = yield* Deferred.make<SessionID>()
+      const updates: Record<string, unknown>[] = []
+      const promptOps: TaskPromptOps = {
+        cancel: () => Effect.void,
+        resolvePromptParts: (template) => Effect.succeed([{ type: "text" as const, text: template }]),
+        prompt: (input) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(ready, input.sessionID)
+            return yield* Effect.never.pipe(Effect.as(reply(input, "child result")))
+          }),
+      }
+
+      const fiber = yield* def
+        .execute(
+          {
+            description: "inspect bug",
+            prompt: "look into cancellation",
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: (input) =>
+              Effect.sync(() => {
+                if (input.metadata) updates.push(input.metadata)
+              }),
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.forkChild)
+
+      const childID = yield* Deferred.await(ready)
+      yield* jobs.cancel(childID)
+      const exit = yield* Fiber.await(fiber)
+      const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
+
+      expect(error instanceof Error ? error.message : String(error)).toContain("Task cancelled by the user")
+      expect(updates.at(-1)).toMatchObject({ sessionId: childID, interrupted: true })
+    }),
+  )
+
   background.instance("cancels a running background task with permission and supports bypass", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

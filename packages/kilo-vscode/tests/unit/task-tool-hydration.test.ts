@@ -39,9 +39,17 @@ describe("completed task hydration", () => {
       "error",
     )
     expect(taskSessionStatus(undefined, "completed", "error")).toBe("error")
-    // Non-error close reasons fall through to the tool part marker.
+    // Non-error close reasons fall through to the tool part marker. A stale child close
+    // must not relabel an older completed card when a later child turn was stopped.
     expect(taskSessionStatus({ type: "idle" }, "completed", "completed")).toBe("completed")
     expect(taskSessionStatus({ type: "idle" }, "completed", "interrupted")).toBe("completed")
+    expect(taskSessionStatus({ type: "busy" }, "completed", "interrupted")).toBe("running")
+    // A stopped turn marks the still-running task part as interrupted.
+    expect(taskSessionStatus(undefined, "error", undefined, true)).toBe("cancelled")
+    expect(taskSessionStatus({ type: "busy" }, "error", undefined, true)).toBe("cancelled")
+    expect(taskSessionStatus({ type: "busy" }, "error", undefined, false)).toBe("running")
+    expect(taskSessionStatus({ type: "idle" }, "error", undefined, true)).toBe("cancelled")
+    expect(taskSessionStatus({ type: "idle" }, "error", undefined, false)).toBe("error")
     // Live child activity still outranks the parent tool part.
     expect(taskSessionStatus({ type: "retry", attempt: 1, message: "retry", next: 1 }, "error", undefined)).toBe(
       "retry",

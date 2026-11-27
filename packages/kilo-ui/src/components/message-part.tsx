@@ -1417,6 +1417,13 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     const errStr = typeof part.state.error === "string" ? part.state.error : ""
     return errStr.includes("dismissed this question")
   })
+  // fork_change start - an interrupted subagent keeps its card so its transcript stays visible
+  const isInterruptedTask = createMemo(() => {
+    if (part.tool !== "task" || !ToolRegistry.render("task")) return false
+    if (part.state.status !== "error" || !part.state.error) return false
+    return part.state.metadata?.interrupted === true
+  })
+  // fork_change end
 
   const emptyInput: Record<string, any> = {}
   const emptyMetadata: Record<string, any> = {}
@@ -1435,7 +1442,9 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
           <Match when={part.state.status === "error" && part.state.error}>
             {(error) => {
               const cleaned = error().replace("Error: ", "")
-              if (isDismissedQuestionError()) {
+              // fork_change start - [fork] render the task card for an interrupted subagent
+              if (isDismissedQuestionError() || isInterruptedTask()) {
+                // fork_change end
                 return (
                   <Dynamic
                     component={render()}
