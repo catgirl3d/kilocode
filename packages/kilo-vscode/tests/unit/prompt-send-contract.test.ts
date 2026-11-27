@@ -508,13 +508,19 @@ describe("PromptInput empty-chat continue contract", () => {
   const end = source.indexOf("\n  return (", start)
   const body = source.slice(start, end)
 
-  it("allows an empty prompt to be sent regardless of chat history", () => {
+  it("allows an empty prompt to be sent while the prompt owns the speech recording", () => {
     const sendStart = source.indexOf("const canSend = () =>")
     const sendEnd = source.indexOf("const canSendContinue", sendStart)
     const canSend = source.slice(sendStart, sendEnd)
-    expect(canSend).toContain('speech.state() === "recording"')
+    expect(canSend).toContain("promptRecording()")
     expect(canSend).toContain("!speech.active()")
     expect(canSend).toContain("goal.active() ? goal.ready(text()) : true")
+
+    const helperStart = source.indexOf("const promptRecording = () =>")
+    const helperEnd = source.indexOf("const canSend", helperStart)
+    const helper = source.slice(helperStart, helperEnd)
+    expect(helper).toContain('speechOwner() === "prompt"')
+    expect(helper).toContain('speech.state() === "recording"')
   })
 
   it("checks upstream resume before resolving the fork fallback", () => {

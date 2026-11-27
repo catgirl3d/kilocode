@@ -59,6 +59,8 @@ globalThis.acquireVsCodeApi = () => ({
 })
 
 const { render } = await import("solid-js/web")
+const { createSignal } = await import("solid-js")
+const { post } = await import("../../webview-ui/src/utils/webview-message")
 const { StoryProviders, mockSessionValue } = await import("../../webview-ui/src/stories/StoryProviders")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
 const { ServerContext } = await import("../../webview-ui/src/context/server")
@@ -120,19 +122,27 @@ function makeSession(withSession = true) {
 
 function mount(
   session: ReturnType<typeof makeSession>["session"],
-  opts: { box: string; connected?: boolean; blocked?: () => boolean },
+  opts: {
+    box: string
+    connected?: boolean | (() => boolean)
+    blocked?: () => boolean
+    pending?: string
+    edit?: { sessionID: string; messageID: string }
+    speech?: boolean
+  },
 ) {
   const connected = opts.connected ?? true
+  const online = () => (typeof connected === "function" ? connected() : connected)
   const root = document.createElement("div")
   document.body.append(root)
   const dispose = render(
     () => (
-      <StoryProviders noPadding>
+      <StoryProviders noPadding config={opts.speech ? {} : undefined} kiloAuth={opts.speech}>
         <ServerContext.Provider
           value={
             {
-              connectionState: () => (connected ? "connected" : "error"),
-              isConnected: () => connected,
+              connectionState: () => (online() ? "connected" : "error"),
+              isConnected: online,
               gitInstalled: () => false,
               workspaceDirectory: () => "/repo",
               providerUsage: () => undefined,
@@ -141,7 +151,7 @@ function mount(
           }
         >
           <SessionContext.Provider value={session as never}>
-            <PromptInput boxId={opts.box} blocked={opts.blocked} />
+            <PromptInput boxId={opts.box} pendingSessionID={opts.pending} blocked={opts.blocked} edit={opts.edit} />
           </SessionContext.Provider>
         </ServerContext.Provider>
       </StoryProviders>
@@ -163,14 +173,6 @@ function type(input: HTMLTextAreaElement, value: string) {
   input.dispatchEvent(new InputEvent("input", { bubbles: true, data: value, inputType: "insertText" }))
 }
 
-function typeAt(input: HTMLTextAreaElement, value: string) {
-  const start = input.selectionStart ?? input.value.length
-  const end = input.selectionEnd ?? start
-  input.value = input.value.slice(0, start) + value + input.value.slice(end)
-  input.setSelectionRange(start + value.length, start + value.length)
-  input.dispatchEvent(new InputEvent("input", { bubbles: true, data: value, inputType: "insertText" }))
-}
-
 function submit(input: HTMLTextAreaElement) {
   input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
 }
@@ -185,6 +187,10 @@ function button(root: HTMLElement, selector: string, label: string) {
 
 function click(target: HTMLElement) {
   target.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+}
+
+function host(data: Record<string, unknown>) {
+  post(data)
 }
 
 function start(btw: Btw, question: string) {
@@ -244,108 +250,203 @@ async function ask() {
   }
 }
 
-async function followEmpty() {
+async function followCard() {
   posts.length = 0
   const current = makeSession()
   seed(current.btw, "why?", "because.")
   posts.length = 0
-  const { root, dispose } = mount(current.session, { box: "follow-empty" })
+  const { root, dispose } = mount(current.session, { box: "follow-card" })
   try {
     await settle()
-    const input = textarea(root)
-    assert.equal(input.value, "", "a follow scenario starts with an empty draft")
-    assert.equal(current.btw.state("session").thread, THREAD, "a started side question opens its own thread")
-    assert.ok(root.querySelector(".prompt-btw-item"), "a started side question opens its own thread")
 
-    const follow = current.btw.follow
-    const order: string[] = []
-    current.btw.follow = (id) => {
-      order.push(input.value)
-      return follow(id)
-    }
+    const input = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(input, "the side-question card shows its own question input")
 
-    click(button(root, ".prompt-btw-actions button", "Follow up"))
-    await flush()
-    assert.equal(input.value, "/btw ", "Follow up puts the /btw prefix in the textarea")
-    assert.equal(input.selectionStart, 5, "Follow up puts the caret after the /btw prefix")
-    assert.equal(input.selectionEnd, 5, "Follow up puts the caret after the /btw prefix")
-    assert.equal(document.activeElement, input, "Follow up focuses the prompt input")
-    assert.deepEqual(order, ["/btw "], "Follow up stages the prompt before arming follow-up mode")
-    assert.equal(current.btw.state("session").follow, true, "Follow up arms follow-up mode")
-
-    typeAt(input, "why follow?")
-    assert.equal(input.value, "/btw why follow?", "typing continues at the caret after the prefix")
-    assert.equal(input.selectionStart, 16, "typing continues at the caret after the prefix")
-    submit(input)
+    input.value = "why follow?"
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "why follow?", inputType: "insertText" }))
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
     await settle()
+    assert.equal(textarea(root).value, "", "a card follow-up leaves the main composer unchanged")
 
     const sent = posts.find((message) => message.type === "btwAsk") as
       | { question?: string; sessionID?: string; threadID?: string }
       | undefined
-    assert.ok(sent, "a follow-up sends a /btw ask")
-    assert.equal(sent.question, "why follow?", "a follow-up keeps the typed question")
-    assert.equal(sent.sessionID, "session", "a follow-up asks in the current session")
-    assert.equal(sent.threadID, THREAD, "a follow-up asks inside the previous side-question thread")
-    assert.notEqual(sent.threadID, ENTRY, "a follow-up asks inside the previous side-question thread")
-    assert.deepEqual(current.sends, [], "a follow-up does not reach the agent as a chat message")
+    assert.ok(sent, "the card question input asks a follow-up")
+    assert.equal(sent.question, "why follow?", "the card follow-up keeps the typed question")
+    assert.equal(sent.sessionID, "session", "the card follow-up asks in the current session")
+    assert.equal(sent.threadID, THREAD, "the card follow-up stays in the open thread")
+    assert.notEqual(sent.threadID, ENTRY, "the card follow-up stays in the open thread")
+    assert.deepEqual(current.sends, [], "a card follow-up does not reach the agent as a chat message")
   } finally {
     dispose()
     root.remove()
   }
 }
 
-async function followDraft() {
+async function lineFollow() {
   posts.length = 0
   const current = makeSession()
   seed(current.btw, "why?", "because.")
   posts.length = 0
-  const { root, dispose } = mount(current.session, { box: "follow-draft" })
+  const { root, dispose } = mount(current.session, { box: "line-follow" })
   try {
     await settle()
     const input = textarea(root)
 
-    type(input, "draft text")
-    await flush()
-    click(button(root, ".prompt-btw-actions button", "Follow up"))
-    await flush()
-    assert.equal(input.value, "/btw draft text", "Follow up keeps the typed draft after the prefix")
-    assert.equal(input.selectionStart, 5, "Follow up puts the caret after the /btw prefix")
-    assert.equal(input.selectionEnd, 5, "Follow up puts the caret after the /btw prefix")
-    assert.equal(document.activeElement, input, "Follow up focuses the prompt input")
-    assert.equal(current.btw.state("session").follow, true, "Follow up arms follow-up mode")
-
+    type(input, "/btw more?")
     submit(input)
     await settle()
-    const sent = posts.find((message) => message.type === "btwAsk") as
-      | { question?: string; threadID?: string }
-      | undefined
-    assert.ok(sent, "a follow-up sends a /btw ask")
-    assert.equal(sent.question, "draft text", "a follow-up keeps the typed draft as its question")
-    assert.equal(sent.threadID, THREAD, "a follow-up asks inside the previous side-question thread")
-    assert.deepEqual(current.sends, [], "a follow-up does not reach the agent as a chat message")
+
+    const sent = posts.find((message) => message.type === "btwAsk") as { threadID?: string } | undefined
+    assert.ok(sent, "a typed /btw line asks a side question")
+    assert.equal(sent.threadID, THREAD, "a typed /btw line follows the thread open in the card")
+    assert.deepEqual(current.sends, [], "a typed /btw line does not reach the agent as a chat message")
   } finally {
     dispose()
     root.remove()
   }
 }
 
-async function followExisting() {
+async function lineClosed() {
   posts.length = 0
   const current = makeSession()
   seed(current.btw, "why?", "because.")
+  current.btw.close("session")
   posts.length = 0
-  const { root, dispose } = mount(current.session, { box: "follow-existing" })
+  const { root, dispose } = mount(current.session, { box: "line-closed" })
   try {
     await settle()
     const input = textarea(root)
 
-    type(input, "/btw keep me?")
+    type(input, "/btw fresh?")
+    submit(input)
+    await settle()
+
+    const sent = posts.find((message) => message.type === "btwAsk") as { threadID?: string } | undefined
+    assert.ok(sent, "a typed /btw line asks a side question")
+    assert.equal(sent.threadID, undefined, "a typed /btw line starts a new thread once the card is closed")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function lineHistory() {
+  posts.length = 0
+  const current = makeSession()
+  seed(current.btw, "why?", "because.")
+  current.btw.history("session")
+  posts.length = 0
+  const { root, dispose } = mount(current.session, { box: "line-history" })
+  try {
+    await settle()
+    const input = textarea(root)
+
+    type(input, "/btw fresh?")
+    submit(input)
+    await settle()
+
+    const sent = posts.find((message) => message.type === "btwAsk") as { threadID?: string } | undefined
+    assert.ok(sent, "a typed /btw line asks a side question")
+    assert.equal(sent.threadID, undefined, "a typed /btw line starts a new thread from history")
+    assert.equal(current.btw.state("session").history, false, "a typed /btw line leaves history mode")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function lineNew() {
+  posts.length = 0
+  const current = makeSession()
+  seed(current.btw, "why?", "because.")
+  current.btw.fresh("session")
+  posts.length = 0
+  const { root, dispose } = mount(current.session, { box: "line-new" })
+  try {
+    await settle()
+    const input = textarea(root)
+
+    type(input, "/btw fresh?")
+    submit(input)
+    await settle()
+
+    const sent = posts.find((message) => message.type === "btwAsk") as { threadID?: string } | undefined
+    assert.ok(sent, "a typed /btw line asks a side question")
+    assert.equal(sent.threadID, undefined, "a typed /btw line starts a new thread after New question")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function lineBusy() {
+  posts.length = 0
+  const current = makeSession()
+  const item = start(current.btw, "first?")
+  posts.length = 0
+  const { root, dispose } = mount(current.session, { box: "line-busy" })
+  try {
+    await settle()
+    const input = textarea(root)
+
+    type(input, "/btw")
+    submit(input)
     await flush()
-    click(button(root, ".prompt-btw-actions button", "Follow up"))
+    submit(input)
+    await settle()
+    assert.ok(
+      posts.some((message) => message.type === "btwHistory" && message.sessionID === "session"),
+      "a bare /btw still opens history while an answer runs",
+    )
+
+    type(input, "/btw second?")
+    submit(input)
     await flush()
-    assert.equal(input.value, "/btw keep me?", "Follow up keeps an existing /btw draft unchanged")
-    assert.equal(document.activeElement, input, "Follow up focuses the prompt input")
-    assert.equal(current.btw.state("session").follow, true, "Follow up arms follow-up mode")
+
+    assert.ok(!posts.some((message) => message.type === "btwAsk"), "a running side answer holds a typed /btw line")
+    assert.equal(input.value, "/btw second?", "a held /btw line keeps its draft")
+    assert.equal(
+      root.querySelector(".prompt-btw-hint")?.textContent?.trim(),
+      "Wait for the side answer to finish, then ask another side question.",
+      "a held /btw line explains that the side answer is still running",
+    )
+
+    current.btw.handleMessage({
+      type: "btwUpdated",
+      sessionID: "session",
+      item: { ...item, status: "done", answer: "a", time: { created: 1, completed: 2 } },
+    })
+    await settle()
+    assert.equal(root.querySelector(".prompt-btw-hint"), null, "the busy hint clears once the side answer finishes")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function lineRetry() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "line-retry" })
+  try {
+    await settle()
+    const input = textarea(root)
+
+    type(input, "/btw why?")
+    submit(input)
+    await settle()
+
+    const sent = posts.find((message) => message.type === "btwAsk") as { requestID?: string } | undefined
+    assert.ok(sent?.requestID, "a typed /btw line asks a side question")
+
+    current.btw.handleMessage({ type: "btwFailed", sessionID: "session", requestID: sent.requestID, error: "busy" })
+    await settle()
+
+    assert.equal(current.btw.state("session").open, true, "a refused /btw line keeps the side-question card open")
+    const card = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(card, "a refused /btw line shows the card question input")
+    assert.equal(card.value, "why?", "a refused /btw line returns its question to the card input")
   } finally {
     dispose()
     root.remove()
@@ -405,6 +506,130 @@ async function history() {
   }
 }
 
+async function compose() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "compose" })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    assert.equal(current.btw.state("session").open, true, "the prompt ask button opens the side-question card")
+    assert.equal(current.btw.state("session").focus, 1, "the prompt ask button asks the card to focus its input")
+    assert.ok(!posts.some((message) => message.type === "btwAsk"), "opening the card does not ask by itself")
+
+    const input = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(input, "the opened card shows its own question input")
+    assert.equal(document.activeElement, input, "the opened card focuses its question input")
+
+    input.value = "why now?"
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "why now?", inputType: "insertText" }))
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await settle()
+
+    const sent = posts.find((message) => message.type === "btwAsk") as
+      | { question?: string; sessionID?: string; threadID?: string }
+      | undefined
+    assert.ok(sent, "the card question input asks a side question")
+    assert.equal(sent.question, "why now?", "the card question input keeps the typed question")
+    assert.equal(sent.sessionID, "session", "the card question asks in the current session")
+    assert.equal(sent.threadID, undefined, "the card question asks a fresh side question")
+
+    textarea(root).focus()
+    click(ask)
+    await flush()
+    assert.equal(document.activeElement, input, "clicking the prompt ask button again refocuses the card input")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    await flush()
+    assert.equal(current.btw.state("session").open, false, "Escape in the card input closes the side-question card")
+    assert.equal(document.activeElement, textarea(root), "closing the card returns focus to the chat input")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function pending() {
+  posts.length = 0
+  const current = makeSession(false)
+  const { root, dispose } = mount(current.session, { box: "pending", pending: "pending_1" })
+  try {
+    await settle()
+    assert.ok(
+      !root.querySelector('[aria-label="Ask a side question"]'),
+      "the prompt ask button is absent in a pending session",
+    )
+    assert.equal(current.btw.state("pending_1").open, false, "a pending session does not open the card")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function closeFocus() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "close-focus" })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const close = root.querySelector<HTMLElement>('[aria-label="Close side question"]')
+    assert.ok(close, "missing element: Close side question")
+    click(close)
+    await flush()
+
+    assert.equal(current.btw.state("session").open, false, "the card header closes the side-question card")
+    assert.equal(document.activeElement, textarea(root), "closing the card returns focus to the chat input")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardGuard() {
+  posts.length = 0
+  const current = makeSession()
+  let blocked = false
+  const { root, dispose } = mount(current.session, { box: "card-guard", blocked: () => blocked })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    blocked = true
+    const input = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(input, "the opened card shows its own question input")
+    input.value = "blocked?"
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "blocked?", inputType: "insertText" }))
+
+    const send = root.querySelector<HTMLElement>('[aria-label="Send side question"]')
+    assert.ok(send, "missing element: Send side question")
+    click(send)
+    await flush()
+
+    assert.ok(!posts.some((message) => message.type === "btwAsk"), "a blocked card send does not start a side question")
+    assert.equal(
+      root.querySelector(".prompt-btw-hint")?.textContent?.trim(),
+      "Answer the pending request first, then ask your side question.",
+      "a blocked card send asks for the pending request to be answered first",
+    )
+    assert.equal(input.value, "blocked?", "a blocked card send keeps the card question draft")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
 async function noSession() {
   posts.length = 0
   const current = makeSession(false)
@@ -428,6 +653,10 @@ async function noSession() {
       !posts.some((message) => message.type === "btwAsk"),
       "a /btw without a session does not start a side question",
     )
+    assert.ok(
+      !root.querySelector('[aria-label="Ask a side question"]'),
+      "the prompt ask button is absent without a session",
+    )
     assert.deepEqual(current.sends, [], "a /btw without a session does not reach the agent as a chat message")
   } finally {
     dispose()
@@ -443,6 +672,17 @@ async function blocked() {
     await settle()
     const input = textarea(root)
     assert.equal(input.value, "", "a blocked scenario starts with an empty draft")
+
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+    assert.equal(current.btw.state("session").open, false, "a blocked ask button does not open the card")
+    assert.equal(
+      root.querySelector(".prompt-btw-hint")?.textContent?.trim(),
+      "Answer the pending request first, then ask your side question.",
+      "a blocked ask button asks for the pending request to be answered first",
+    )
 
     type(input, "/btw why?")
     submit(input)
@@ -475,6 +715,18 @@ async function disconnected() {
       "Connection failed. Check the output panel or restart the extension.",
       "a disconnected prompt explains the connection failure",
     )
+
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+    assert.equal(current.btw.state("session").open, false, "a disconnected ask button does not open the card")
+    assert.equal(
+      root.querySelector(".prompt-btw-hint")?.textContent?.trim(),
+      "Wait for the connection to come back, then ask your side question.",
+      "a disconnected ask button explains that the connection is down",
+    )
+
     type(input, "/btw why?")
     submit(input)
     await flush()
@@ -490,6 +742,492 @@ async function disconnected() {
       "a /btw while disconnected explains that the connection is down",
     )
     assert.deepEqual(current.sends, [], "a /btw while disconnected does not reach the agent as a chat message")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function editHint() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, {
+    box: "edit-hint",
+    edit: { sessionID: "session", messageID: "message" },
+  })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    assert.equal(
+      root.querySelector(".prompt-btw-hint")?.textContent?.trim(),
+      "Finish editing the message first, then ask your side question.",
+      "an edit-mode ask button explains that editing must finish first",
+    )
+    assert.equal(current.btw.state("session").open, false, "an edit-mode ask button does not open the card")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function staleHint() {
+  posts.length = 0
+  const current = makeSession()
+  const [online, setOnline] = createSignal(false)
+  const { root, dispose } = mount(current.session, { box: "stale-hint", connected: online })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+    assert.equal(
+      root.querySelector(".prompt-btw-hint")?.textContent?.trim(),
+      "Wait for the connection to come back, then ask your side question.",
+      "a disconnected ask button explains that the connection is down",
+    )
+
+    setOnline(true)
+    await settle()
+    assert.equal(
+      root.querySelector(".prompt-btw-hint"),
+      null,
+      "the disconnected hint clears once the connection returns",
+    )
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeech() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-speech", speech: true })
+  try {
+    await settle()
+    const input = textarea(root)
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const card = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(card, "the side-question card shows its own question input")
+    const mic = root.querySelector<HTMLElement>(
+      '.prompt-btw-ask [aria-label="Start voice input for the side question"]',
+    )
+    assert.ok(mic, "the side-question card shows its own voice input button")
+    const main = root.querySelector<HTMLElement>('.prompt-input-hint-pinned [aria-label="Start voice input"]')
+    assert.ok(main, "the main microphone keeps its own label while the card is idle")
+    assert.notEqual(
+      main.getAttribute("aria-label"),
+      mic.getAttribute("aria-label"),
+      "the main and card microphones have distinct labels",
+    )
+
+    card.value = "draft"
+    card.dispatchEvent(new InputEvent("input", { bubbles: true, data: "draft", inputType: "insertText" }))
+    click(mic)
+    await flush()
+    assert.equal(
+      root.querySelector(".prompt-input-hint-pinned .prompt-speech-button"),
+      null,
+      "the main microphone hides while the card records",
+    )
+
+    const send = root.querySelector<HTMLButtonElement>('[aria-label="Send side question"]')
+    assert.ok(send, "missing element: Send side question")
+    assert.equal(send.disabled, true, "the card send is disabled while speech starts")
+
+    card.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await flush()
+    assert.ok(!posts.some((message) => message.type === "btwAsk"), "card speech blocks a card ask")
+    assert.equal(card.value, "draft", "a blocked card ask keeps the speech draft")
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the card voice input starts a speech recording")
+    host({ type: "speechToTextStarted", requestId: start.requestId })
+    await flush()
+    host({ type: "speechToTextResult", requestId: start.requestId, text: "spoken question" })
+    await settle()
+
+    const question = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(question, "the card question input stays visible")
+    assert.ok(question.value.includes("spoken question"), "the card voice input fills the card question")
+    assert.ok(!posts.some((message) => message.type === "btwAsk"), "the card voice input does not send a side question")
+    assert.equal(input.value, "", "the card voice input leaves the main composer unchanged")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeechDisabled() {
+  posts.length = 0
+  const current = makeSession()
+  const [online, setOnline] = createSignal(true)
+  const { root, dispose } = mount(current.session, {
+    box: "card-speech-disabled",
+    speech: true,
+    connected: online,
+  })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    setOnline(false)
+    await flush()
+
+    const mic = root.querySelector<HTMLButtonElement>('.prompt-btw-ask [aria-label^="Start voice input"]')
+    assert.ok(mic, "the side-question card keeps its own voice input button")
+    assert.equal(mic.disabled, true, "the side-question card voice input is disabled without a connection")
+
+    const input = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(input, "missing element: card question input")
+    input.focus()
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))
+    await flush()
+
+    assert.ok(
+      !posts.some((message) => message.type === "speechToTextStart"),
+      "a disabled card voice input ignores its shortcut",
+    )
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeechHistory() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-speech-history", speech: true })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const mic = root.querySelector<HTMLElement>(
+      '.prompt-btw-ask [aria-label="Start voice input for the side question"]',
+    )
+    assert.ok(mic, "missing element: card voice input")
+    click(mic)
+    await flush()
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the card voice input starts a speech recording")
+    host({ type: "speechToTextStarted", requestId: start.requestId })
+    await flush()
+
+    const history = root.querySelector<HTMLElement>('[aria-label="Side question history"]')
+    assert.ok(history, "missing element: Side question history")
+    click(history)
+    await flush()
+
+    const cancel = posts.find((message) => message.type === "speechToTextCancel") as { requestId?: string } | undefined
+    assert.ok(cancel, "opening history cancels the card speech recording")
+    assert.equal(cancel.requestId, start.requestId, "opening history cancels the card speech recording")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeechExternalClose() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-speech-external-close", speech: true })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const mic = root.querySelector<HTMLElement>(
+      '.prompt-btw-ask [aria-label="Start voice input for the side question"]',
+    )
+    assert.ok(mic, "missing element: card voice input")
+    click(mic)
+    await flush()
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the card voice input starts a speech recording")
+    host({ type: "speechToTextStarted", requestId: start.requestId })
+    await flush()
+
+    const input = textarea(root)
+    input.focus()
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    await flush()
+
+    assert.equal(current.btw.state("session").open, false, "Escape in the main composer closes the side-question card")
+    const cancel = posts.find((message) => message.type === "speechToTextCancel") as { requestId?: string } | undefined
+    assert.ok(cancel, "closing the card from outside cancels its speech recording")
+    assert.equal(cancel.requestId, start.requestId, "closing the card from outside cancels its speech recording")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeechStartingClose() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-speech-starting-close", speech: true })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const mic = root.querySelector<HTMLElement>(
+      '.prompt-btw-ask [aria-label="Start voice input for the side question"]',
+    )
+    assert.ok(mic, "missing element: card voice input")
+    click(mic)
+    await flush()
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the card voice input starts a speech recording")
+    const close = root.querySelector<HTMLElement>('[aria-label="Close side question"]')
+    assert.ok(close, "missing element: Close side question")
+    click(close)
+    await flush()
+
+    const cancel = posts.find((message) => message.type === "speechToTextCancel") as { requestId?: string } | undefined
+    assert.ok(cancel, "closing the card cancels its starting speech recording")
+    assert.equal(cancel.requestId, start.requestId, "closing the card cancels its starting speech recording")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeechTranscribingClose() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-speech-transcribing-close", speech: true })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const mic = root.querySelector<HTMLElement>(
+      '.prompt-btw-ask [aria-label="Start voice input for the side question"]',
+    )
+    assert.ok(mic, "missing element: card voice input")
+    click(mic)
+    await flush()
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the card voice input starts a speech recording")
+    host({ type: "speechToTextStarted", requestId: start.requestId })
+    await flush()
+
+    const recording = root.querySelector<HTMLElement>('.prompt-btw-ask [aria-label="Recording. Click to stop."]')
+    assert.ok(recording, "the card voice input shows the recording state")
+    click(recording)
+    await flush()
+
+    const stop = posts.find((message) => message.type === "speechToTextStop") as { requestId?: string } | undefined
+    assert.ok(stop, "clicking the recording card microphone stops the recording")
+    assert.equal(stop.requestId, start.requestId, "clicking the recording card microphone stops the recording")
+
+    const close = root.querySelector<HTMLElement>('[aria-label="Close side question"]')
+    assert.ok(close, "missing element: Close side question")
+    click(close)
+    await flush()
+
+    const cancel = posts.find((message) => message.type === "speechToTextCancel") as { requestId?: string } | undefined
+    assert.ok(cancel, "closing the card cancels its transcribing speech")
+    assert.equal(cancel.requestId, start.requestId, "closing the card cancels its transcribing speech")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeechMainSend() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-speech-main-send", speech: true })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const mic = root.querySelector<HTMLElement>(
+      '.prompt-btw-ask [aria-label="Start voice input for the side question"]',
+    )
+    assert.ok(mic, "missing element: card voice input")
+    click(mic)
+    await flush()
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the card voice input starts a speech recording")
+    host({ type: "speechToTextStarted", requestId: start.requestId })
+    await flush()
+
+    const input = textarea(root)
+    type(input, "hello")
+    const send = root.querySelector<HTMLButtonElement>('[aria-label="Send"]')
+    assert.ok(send, "missing element: Send")
+    assert.equal(send.disabled, true, "the main send is disabled while the card records")
+
+    submit(input)
+    await flush()
+
+    assert.ok(
+      !posts.some((message) => message.type === "speechToTextStop"),
+      "the main send does not stop the card recording",
+    )
+    assert.ok(
+      !posts.some((message) => message.type === "speechToTextCancel"),
+      "the main send does not cancel the card recording",
+    )
+    assert.deepEqual(current.sends, [], "the main send does not send chat while the card records")
+    const recording = root.querySelector<HTMLElement>('.prompt-btw-ask [aria-label="Recording. Click to stop."]')
+    assert.ok(recording, "the card keeps recording after a blocked main send")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeechShortcut() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-speech-shortcut", speech: true })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const input = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(input, "missing element: card question input")
+    input.focus()
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))
+    await flush()
+    window.dispatchEvent(
+      new KeyboardEvent("keyup", { key: "k", bubbles: true }) as unknown as Parameters<typeof window.dispatchEvent>[0],
+    )
+    await flush()
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the card shortcut starts a speech recording")
+    host({ type: "speechToTextStarted", requestId: start.requestId })
+    await flush()
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }))
+    await flush()
+    window.dispatchEvent(
+      new KeyboardEvent("keyup", { key: "k", bubbles: true }) as unknown as Parameters<typeof window.dispatchEvent>[0],
+    )
+    await flush()
+
+    const stop = posts.find((message) => message.type === "speechToTextStop") as { requestId?: string } | undefined
+    assert.ok(stop, "the card shortcut stops a card speech recording")
+    assert.equal(stop.requestId, start.requestId, "the card shortcut stops a card speech recording")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardMainSpeech() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-main-speech", speech: true })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const main = root.querySelector<HTMLElement>('.prompt-input-hint-pinned [aria-label="Start voice input"]')
+    assert.ok(main, "the main microphone is available while the card is idle")
+    click(main)
+    await flush()
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the main microphone starts a speech recording")
+    host({ type: "speechToTextStarted", requestId: start.requestId })
+    await flush()
+
+    assert.ok(
+      !root.querySelector('.prompt-btw-ask [aria-label="Start voice input for the side question"]'),
+      "the card microphone hides while the main microphone records",
+    )
+
+    const close = root.querySelector<HTMLElement>('[aria-label="Close side question"]')
+    assert.ok(close, "missing element: Close side question")
+    click(close)
+    await flush()
+    assert.ok(
+      !posts.some((message) => message.type === "speechToTextCancel"),
+      "closing the card does not cancel main speech",
+    )
+
+    host({ type: "speechToTextResult", requestId: start.requestId, text: "main dictation" })
+    await settle()
+    assert.equal(textarea(root).value, "main dictation", "main speech fills the main composer")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function cardSpeechClose() {
+  posts.length = 0
+  const current = makeSession()
+  const { root, dispose } = mount(current.session, { box: "card-speech-close", speech: true })
+  try {
+    await settle()
+    const ask = root.querySelector<HTMLElement>('[aria-label="Ask a side question"]')
+    assert.ok(ask, "missing element: Ask a side question")
+    click(ask)
+    await flush()
+
+    const mic = root.querySelector<HTMLElement>(
+      '.prompt-btw-ask [aria-label="Start voice input for the side question"]',
+    )
+    assert.ok(mic, "the side-question card shows its own voice input button")
+    click(mic)
+    await flush()
+
+    const start = posts.find((message) => message.type === "speechToTextStart") as { requestId?: string } | undefined
+    assert.ok(start?.requestId, "the card voice input starts a speech recording")
+    host({ type: "speechToTextStarted", requestId: start.requestId })
+    await flush()
+
+    const close = root.querySelector<HTMLElement>('[aria-label="Close side question"]')
+    assert.ok(close, "missing element: Close side question")
+    click(close)
+    await flush()
+
+    const cancels = posts.filter((message) => message.type === "speechToTextCancel") as Array<{ requestId?: string }>
+    assert.equal(cancels.length, 1, "closing the card cancels its speech recording")
+    assert.equal(cancels[0]?.requestId, start.requestId, "closing the card cancels its speech recording")
+    assert.equal(current.btw.state("session").open, false, "the card header closes the side-question card")
   } finally {
     dispose()
     root.remove()
@@ -528,12 +1266,32 @@ async function escape() {
 }
 
 await ask()
-await followEmpty()
-await followDraft()
-await followExisting()
+await followCard()
+await lineFollow()
+await lineClosed()
+await lineHistory()
+await lineNew()
+await lineBusy()
+await lineRetry()
 await insert()
 await history()
+await pending()
+await compose()
+await closeFocus()
+await cardGuard()
 await noSession()
 await blocked()
 await disconnected()
 await escape()
+await editHint()
+await staleHint()
+await cardSpeech()
+await cardSpeechDisabled()
+await cardSpeechHistory()
+await cardSpeechExternalClose()
+await cardSpeechStartingClose()
+await cardSpeechTranscribingClose()
+await cardSpeechMainSend()
+await cardSpeechShortcut()
+await cardMainSpeech()
+await cardSpeechClose()

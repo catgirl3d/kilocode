@@ -108,11 +108,10 @@ describe("createSessionBtw", () => {
     btw.handleMessage(started(asked(posted).requestID, { threadID: "t1" }))
     btw.handleMessage(updated({ status: "done" }))
 
-    btw.follow("s")
-    btw.ask("s", "and then?")
+    btw.ask("s", "and then?", "t1")
 
     expect(asked(posted).threadID).toBe("t1")
-    expect(btw.state("s").follow).toBe(false)
+    expect(btw.state("s").thread).toBe("t1")
     dispose()
   })
 
@@ -131,14 +130,102 @@ describe("createSessionBtw", () => {
     dispose()
   })
 
-  it("leaves follow-up mode when a thread is opened from history", () => {
+  it("reports busy while a start is pending or an answer runs", () => {
+    const { btw, posted, dispose } = create()
+
+    btw.ask("s", "why?")
+    expect(btw.busy("s")).toBe(true)
+
+    btw.handleMessage(started(asked(posted).requestID))
+    expect(btw.busy("s")).toBe(true)
+
+    btw.handleMessage(updated({ status: "done" }))
+    expect(btw.busy("s")).toBe(false)
+    dispose()
+  })
+
+  it("offers a refused question back to the card", () => {
+    const { btw, posted, dispose } = create()
+    btw.ask("s", "why?")
+
+    btw.handleMessage({ type: "btwFailed", sessionID: "s", requestID: asked(posted).requestID, error: "busy" })
+    expect(btw.state("s").retry).toBe("why?")
+    expect(btw.state("s").asked).toBeUndefined()
+    expect(btw.state("s").request).toBeUndefined()
+
+    btw.ask("s", "again?")
+    expect(btw.state("s").retry).toBeUndefined()
+
+    btw.handleMessage({ type: "btwFailed", sessionID: "s", error: "history failed" })
+    expect(btw.state("s").retry).toBeUndefined()
+
+    btw.handleMessage({ type: "btwFailed", sessionID: "s", requestID: asked(posted).requestID, error: "busy" })
+    expect(btw.state("s").retry).toBe("again?")
+
+    btw.close("s")
+    expect(btw.state("s").retry).toBeUndefined()
+
+    btw.ask("s", "final?")
+    expect(btw.state("s").asked).toBe("final?")
+    btw.handleMessage(started(asked(posted).requestID))
+    expect(btw.state("s").asked).toBeUndefined()
+    dispose()
+  })
+
+  it("compose bumps the focus counter on every call", () => {
     const { btw, dispose } = create()
-    btw.follow("s")
 
-    btw.open("s", "t2")
+    btw.compose("s")
+    btw.compose("s")
+    expect(btw.state("s").focus).toBe(2)
+    expect(btw.state("s").open).toBe(true)
 
-    expect(btw.state("s").follow).toBe(false)
-    expect(btw.state("s").thread).toBe("t2")
+    btw.ask("s", "why?")
+    expect(btw.state("s").focus).toBe(0)
+
+    btw.close("s")
+    expect(btw.state("s").focus).toBe(0)
+    dispose()
+  })
+
+  it("shown returns the thread only while the card displays it", () => {
+    const { btw, posted, dispose } = create()
+    btw.ask("s", "why?")
+    btw.handleMessage(started(asked(posted).requestID))
+
+    expect(btw.shown("s")).toBe("t1")
+
+    btw.history("s")
+    expect(btw.shown("s")).toBeUndefined()
+
+    btw.open("s", "t1")
+    expect(btw.shown("s")).toBe("t1")
+
+    btw.close("s")
+    expect(btw.shown("s")).toBeUndefined()
+    dispose()
+  })
+
+  it("fresh leaves the shown thread without posting", () => {
+    const { btw, posted, dispose } = create()
+    btw.ask("s", "why?")
+    btw.handleMessage(started(asked(posted).requestID))
+    expect(btw.shown("s")).toBe("t1")
+
+    const before = posted.length
+    btw.fresh("s")
+
+    expect(btw.state("s").thread).toBeUndefined()
+    expect(btw.state("s").open).toBe(true)
+    expect(btw.state("s").history).toBe(false)
+    expect(btw.state("s").focus).toBe(1)
+    expect(posted.length).toBe(before)
+
+    btw.history("s")
+    btw.fresh("s")
+
+    expect(btw.state("s").history).toBe(false)
+    expect(btw.state("s").focus).toBe(1)
     dispose()
   })
 
@@ -279,50 +366,57 @@ describe("createSessionBtw", () => {
     dispose()
   })
 
-  it("ignores a start that arrives after the card closed", () => {
+  it("cancels a start that arrives after the card was closed", () => {
     const { btw, posted, dispose } = create()
     btw.ask("s", "why?")
     const requestID = asked(posted).requestID
     btw.close("s")
-    const count = posted.length
+    posted.length = 0
 
-    btw.handleMessage(started(requestID))
+    btw.handleMessage(started(requestID, { id: "late", threadID: "late" }))
 
-    expect(posted.length).toBe(count)
+    expect(posted).toEqual([{ type: "btwCancel", sessionID: "s", btwID: "late" }])
+    expect(btw.state("s").thread).toBeUndefined()
     expect(btw.state("s").items).toEqual([])
-    expect(btw.state("s").request).toBeUndefined()
+
+    btw.ask("other", "other?")
+    expect(btw.state("other").abandoned).toEqual([])
     dispose()
   })
 
-  it("ignores a start superseded by a newer ask and shows the newer one", () => {
+  it("cancels only the abandoned start, not a new side question", () => {
     const { btw, posted, dispose } = create()
     btw.ask("s", "first?")
     const first = asked(posted).requestID
     btw.close("s")
     btw.ask("s", "second?")
     const second = asked(posted).requestID
+    posted.length = 0
 
-    btw.handleMessage(started(first, { id: "first" }))
-    expect(posted.at(-1)?.type).toBe("btwAsk")
-    expect(btw.state("s").items).toEqual([])
+    btw.handleMessage(started(first, { id: "old", threadID: "old" }))
+    expect(posted).toEqual([{ type: "btwCancel", sessionID: "s", btwID: "old" }])
+    expect(btw.state("s").request).toBe(second)
 
-    btw.handleMessage(started(second, { id: "second" }))
-    expect(btw.state("s").items.map((entry) => entry.id)).toEqual(["second"])
+    btw.handleMessage(started(second, { id: "new", threadID: "new" }))
+    expect(posted).toEqual([{ type: "btwCancel", sessionID: "s", btwID: "old" }])
+    expect(btw.state("s").request).toBeUndefined()
+    expect(btw.state("s").thread).toBe("new")
+    expect(btw.state("s").items.map((entry) => entry.id)).toEqual(["new"])
     dispose()
   })
 
-  it("stops following a thread after unfollow", () => {
+  it("forgets an abandoned request that failed before it started", () => {
     const { btw, posted, dispose } = create()
     btw.ask("s", "why?")
-    btw.handleMessage(started(asked(posted).requestID, { threadID: "t1" }))
-    btw.handleMessage(updated({ status: "done" }))
-    btw.follow("s")
+    const requestID = asked(posted).requestID
+    btw.close("s")
+    posted.length = 0
 
-    btw.unfollow("s")
-    expect(btw.state("s").follow).toBe(false)
+    btw.handleMessage({ type: "btwFailed", sessionID: "s", requestID, error: "busy" })
+    expect(btw.state("s").abandoned).toEqual([])
 
-    btw.ask("s", "unrelated?")
-    expect(asked(posted).threadID).toBeUndefined()
+    btw.handleMessage(started(requestID, { id: "late" }))
+    expect(posted).toEqual([])
     dispose()
   })
 
