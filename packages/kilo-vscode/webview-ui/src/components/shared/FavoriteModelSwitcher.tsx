@@ -30,7 +30,7 @@ export const FavoriteModelSwitcher: Component<FavoriteModelSwitcherProps> = (pro
   )
 
   return (
-    <div class="favorite-model-switcher" aria-label="Favorite models">
+    <div class="favorite-model-switcher" role="group" aria-label="Favorite models">
       <For each={favorites()}>
         {(favorite) => {
           const name = sanitizeName(favorite.model.name)
