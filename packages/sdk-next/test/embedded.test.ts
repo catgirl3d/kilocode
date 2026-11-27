@@ -6,6 +6,8 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { Deferred, Effect, Latch, Option, Schema, Stream } from "effect"
 import type { OpenCodeEvent } from "../src"
 
+process.env["KILO_EVENT_JOURNAL"] = "on"
+
 // kilocode_change start - retry Windows SQLite locks until GC finalizers release them
 const cleanup = async (dir: string, retries = 30): Promise<void> => {
   try {

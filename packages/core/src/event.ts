@@ -8,6 +8,7 @@ import { Database } from "./database/database"
 import { EventSequenceTable, EventTable } from "./event/sql"
 import * as EventStorage from "./kilocode/event-storage" // kilocode_change - released tool content shapes
 import * as EventBatch from "./kilocode/event-batch" // kilocode_change
+import * as EventJournal from "./kilocode/event-journal" // kilocode_change - [fork] local-only journal policy
 import { Location } from "./location"
 import { makeGlobalNode } from "./effect/app-node"
 import { isDeepStrictEqual } from "node:util"
@@ -343,19 +344,23 @@ export const layerWith = (options?: LayerOptions) =>
                             })
                             .run()
                             .pipe(Effect.orDie)
-                          yield* db
-                            .insert(EventTable)
-                            .values([
-                              {
-                                id: event.id,
-                                aggregate_id: aggregateID,
-                                seq,
-                                type: versionedType(definition.type, durable.version),
-                                data: encoded,
-                              },
-                            ])
-                            .run()
-                            .pipe(Effect.orDie)
+                          // kilocode_change start - [fork] local-only mode keeps projections and sequence but skips the journal row
+                          if (EventJournal.enabled()) {
+                            yield* db
+                              .insert(EventTable)
+                              .values([
+                                {
+                                  id: event.id,
+                                  aggregate_id: aggregateID,
+                                  seq,
+                                  type: versionedType(definition.type, durable.version),
+                                  data: encoded,
+                                },
+                              ])
+                              .run()
+                              .pipe(Effect.orDie)
+                          }
+                          // kilocode_change end
                           return { aggregateID, seq }
                         }),
                       { behavior: "immediate" },

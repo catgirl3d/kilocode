@@ -1,7 +1,10 @@
 import { describe, expect } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { EventV2 } from "@opencode-ai/core/event"
+import { EventSequenceTable, EventTable } from "@opencode-ai/core/event/sql"
+import { Database } from "@opencode-ai/core/database/database"
 import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { eq } from "drizzle-orm"
 import { Deferred, Effect, Exit, Layer } from "effect"
 import { Session as SessionNs } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -24,6 +27,7 @@ const it = testEffect(
       SessionNs.node,
       EventV2Bridge.node,
       SessionProjector.node,
+      Database.node,
       CrossSpawnSpawner.node,
       InstanceStore.node,
     ]),
@@ -201,6 +205,69 @@ describe("step-finish token propagation via event", () => {
         expect(receivedPart).not.toBe(partInput)
 
         yield* session.remove(info.id)
+      }),
+    { timeout: 30000 },
+  )
+})
+
+describe("local-only journal", () => {
+  it.instance(
+    "projects part updates and keeps them readable without journal rows",
+    () =>
+      Effect.gen(function* () {
+        const previous = process.env.KILO_EVENT_JOURNAL
+        process.env.KILO_EVENT_JOURNAL = "off"
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            if (previous === undefined) delete process.env.KILO_EVENT_JOURNAL
+            else process.env.KILO_EVENT_JOURNAL = previous
+          }),
+        )
+
+        const session = yield* SessionNs.Service
+        const { db } = yield* Database.Service
+        const info = yield* session.create({})
+        yield* Effect.addFinalizer(() => session.remove(info.id).pipe(Effect.ignore))
+        const messageID = MessageID.ascending()
+        yield* session.updateMessage({
+          id: messageID,
+          sessionID: info.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "user",
+          model: { providerID: "test", modelID: "test" },
+          tools: {},
+          mode: "",
+        } as unknown as SessionV1.Info)
+
+        const partID = PartID.ascending()
+        yield* session.updatePart({
+          id: partID,
+          messageID,
+          sessionID: info.id,
+          type: "text",
+          text: "kept in the read model",
+        })
+
+        const messages = yield* session.messages({ sessionID: info.id })
+        const part = messages.at(-1)?.parts.find((item) => item.id === partID)
+        expect(part?.type).toBe("text")
+        expect(part?.type === "text" ? part.text : undefined).toBe("kept in the read model")
+
+        const events = yield* db
+          .select()
+          .from(EventTable)
+          .where(eq(EventTable.aggregate_id, info.id))
+          .all()
+          .pipe(Effect.orDie)
+        const sequence = yield* db
+          .select()
+          .from(EventSequenceTable)
+          .where(eq(EventSequenceTable.aggregate_id, info.id))
+          .all()
+          .pipe(Effect.orDie)
+        expect(events).toEqual([])
+        expect(sequence.at(0)?.seq ?? -1).toBeGreaterThanOrEqual(2)
       }),
     { timeout: 30000 },
   )

@@ -429,6 +429,56 @@ describe("EventV2", () => {
     }),
   )
 
+  it.effect("keeps projection, sequence, and live listeners without journal rows in local-only mode", () =>
+    Effect.gen(function* () {
+      const previous = process.env.KILO_EVENT_JOURNAL
+      process.env.KILO_EVENT_JOURNAL = "off"
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.KILO_EVENT_JOURNAL
+          else process.env.KILO_EVENT_JOURNAL = previous
+        }),
+      )
+
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = EventV2.ID.create()
+      const projected = new Array<string>()
+      const received = new Array<EventV2.Payload>()
+
+      yield* events.project(SyncMessage, (event) =>
+        Effect.sync(() => projected.push((event.data as { text: string }).text)),
+      )
+      yield* events.listen((event) =>
+        Effect.sync(() => {
+          if (event.type === SyncMessage.type) received.push(event)
+        }),
+      )
+
+      const first = yield* events.publish(SyncMessage, { id: aggregateID, text: "first" })
+      const second = yield* events.publish(SyncMessage, { id: aggregateID, text: "second" })
+      const rows = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, aggregateID))
+        .all()
+        .pipe(Effect.orDie)
+      const sequence = yield* db
+        .select()
+        .from(EventSequenceTable)
+        .where(eq(EventSequenceTable.aggregate_id, aggregateID))
+        .get()
+        .pipe(Effect.orDie)
+
+      expect(rows).toEqual([])
+      expect(sequence?.seq).toBe(1)
+      expect(first.durable?.seq).toBe(0)
+      expect(second.durable?.seq).toBe(1)
+      expect(projected).toEqual(["first", "second"])
+      expect(received.map((event) => (event.data as { text: string }).text)).toEqual(["first", "second"])
+    }),
+  )
+
   it.effect("replays durable aggregate events after a sequence and tails new events", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service

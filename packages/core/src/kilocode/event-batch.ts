@@ -6,6 +6,7 @@ import { InvalidDurableEventError, type Interface, type Subscriber } from "../ev
 import { EventSequenceTable, EventTable } from "../event/sql"
 import { Location } from "../location"
 import * as EventStorage from "./event-storage"
+import * as EventJournal from "./event-journal" // fork_change - local-only journal policy
 
 const record = (input: unknown): input is Record<string, unknown> =>
   typeof input === "object" && input !== null && !Array.isArray(input)
@@ -25,6 +26,7 @@ export function make(input: {
       const sequences = new Map<string, number>()
       const pending = new Array<Payload>()
       const rows = new Array<typeof EventTable.$inferInsert>()
+      const journal = EventJournal.enabled() // fork_change - local-only journal policy
 
       yield* input.db
         .transaction(
@@ -82,13 +84,17 @@ export function make(input: {
                 }
                 if (options?.commit) yield* options.commit(seq)
                 sequences.set(aggregate, seq)
-                rows.push({
-                  id: event.id,
-                  aggregate_id: aggregate,
-                  seq,
-                  type: Event.versionedType(event.type, durable.version),
-                  data: encoded,
-                })
+                // fork_change start - local-only mode skips the journal row
+                if (journal) {
+                  rows.push({
+                    id: event.id,
+                    aggregate_id: aggregate,
+                    seq,
+                    type: Event.versionedType(event.type, durable.version),
+                    data: encoded,
+                  })
+                }
+                // fork_change end
                 pending.push(committed)
               }
               for (const [aggregate, seq] of sequences) {
@@ -99,13 +105,17 @@ export function make(input: {
                   .run()
                   .pipe(Effect.orDie)
               }
-              for (let offset = 0; offset < rows.length; offset += 100) {
-                yield* input.db
-                  .insert(EventTable)
-                  .values(rows.slice(offset, offset + 100))
-                  .run()
-                  .pipe(Effect.orDie)
+              // fork_change start - local-only mode skips the journal insert
+              if (journal) {
+                for (let offset = 0; offset < rows.length; offset += 100) {
+                  yield* input.db
+                    .insert(EventTable)
+                    .values(rows.slice(offset, offset + 100))
+                    .run()
+                    .pipe(Effect.orDie)
+                }
               }
+              // fork_change end
             }),
           { behavior: "immediate" },
         )
