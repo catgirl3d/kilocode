@@ -53,6 +53,7 @@
 - Copy the current session ID from the chat header's More actions menu.
 - Fork the current session from the chat header's More actions menu; the action is disabled while the session is running.
 - Show live sub-agent status dots on task cards: green while running, gray when completed, and red on error.
+- Keep a running sub-agent's task card and transcript visible after Stop, marked as Cancelled, instead of replacing the card with a generic `Tool execution aborted` error.
 - Add an on-demand consult_advisor tool with in-progress assistant context and a proposal channel, so agents can request a second opinion from a configured advisor model and reasoning variant during planning, when stuck, or before completing complex tasks.
 - Let consult_advisor analyze caller-supplied materials and permission-checked excerpts from selected file lines.
 - Configure up to three named consult_advisor slots with their own model, reasoning variant, short description and role prompt (with Critic, Security, Devil's advocate and Plan review templates in VS Code settings); agents consult the default slot, selected slots, or all of them in parallel, and the role prompt is sent only to that advisor. Discarding settings removes unsaved model-less advisor drafts without resetting saved slots.

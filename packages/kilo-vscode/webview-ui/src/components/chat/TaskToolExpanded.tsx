@@ -73,9 +73,17 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
     ),
   )
   // fork_change start
+  const interrupted = createMemo(
+    () => props.status === "error" && (props.metadata as { interrupted?: unknown } | undefined)?.interrupted === true,
+  )
   const taskStatus = createMemo(() => {
     const id = childSessionId()
-    return taskSessionStatus(id ? session.allStatusMap()[id] : undefined, props.status, session.closeReasonFor(id))
+    return taskSessionStatus(
+      id ? session.allStatusMap()[id] : undefined,
+      props.status,
+      session.closeReasonFor(id),
+      interrupted(),
+    )
   })
   const jobLabel = createMemo(() => {
     const status = taskStatus()
@@ -92,6 +100,7 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
   // only gain the state metadata flag later.
   const backgroundTask = createMemo(() => taskBackground(props.input, props.partMetadata, props.metadata))
   const avatar = createMemo(() => {
+    if (interrupted()) return undefined // fork_change - [fork] a stopped subagent is no longer running
     const id = childSessionId()
     return taskAvatarStatus(id, props.status, session.allStatusMap())
   })
@@ -293,6 +302,11 @@ const TaskToolRenderer: Component<ToolProps> = (props) => {
             </Show>
           </span>
         </Show>
+        {/* fork_change start - [fork] mark a subagent stopped by Stop */}
+        <Show when={taskStatus() === "cancelled"}>
+          <span data-slot="task-agent-cancelled">{jobLabel()}</span>
+        </Show>
+        {/* fork_change end */}
       </div>
       <Show when={childSessionId()}>
         <Show when={stoppable()}>

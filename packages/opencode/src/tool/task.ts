@@ -572,7 +572,10 @@ export const TaskTool = Tool.define(
             if (result?.status === "error") return yield* Effect.fail(new Error(result.error ?? "Task failed"))
             // kilocode_change start - only an explicit stop/delete cancels a task its parent still awaits;
             // without that reason, models treat the result as a failure and start a new subagent right away
-            if (result?.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled by the user"))
+            if (result?.status === "cancelled") {
+              yield* ctx.metadata({ metadata: { ...metadata, interrupted: true } }) // [fork] keep the card after a user stop
+              return yield* Effect.fail(new Error("Task cancelled by the user"))
+            }
             // kilocode_change end
             return {
               title: description, // kilocode_change
