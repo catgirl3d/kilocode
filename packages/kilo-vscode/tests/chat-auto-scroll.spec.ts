@@ -94,6 +94,8 @@ test("transcript navigation does not scroll the outer webview host", async ({ pa
     .toBeLessThanOrEqual(1)
   expect(await host.evaluate((el) => el.scrollTop)).toBe(0)
 
+  await frame.locator(".auto-scroll-correction-controls").evaluate((el) => (el.style.display = "none"))
+
   await frame.locator('[data-slot="task-header-stats"]').getByRole("button", { name: "More actions" }).click()
   await frame.getByRole("menuitem", { name: "Search chat" }).click()
   const search = frame.locator('[data-slot="transcript-search-input"]')
