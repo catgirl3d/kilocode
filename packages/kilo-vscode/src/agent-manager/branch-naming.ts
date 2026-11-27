@@ -1,8 +1,9 @@
-import { semanticBranchName } from "./branch-name"
+import { sanitizeBranchName, semanticBranchName } from "./branch-name" // fork_change
 import { remoteRef, type WorktreeStateManager } from "./WorktreeStateManager"
 
 /** Maximum prompts considered for automatic naming before disarming. */
 const MAX_PROMPTS = 4
+const NULLISH = /^null(?:-?null)*$/ // fork_change
 
 interface Prompt {
   sessionID: string
@@ -179,6 +180,15 @@ export class BranchNamingController {
         { throwOnError: true, signal: request.signal },
       )
       if (!data.branch || request.signal.aborted) return
+      // fork_change start - reject null-only generated names
+      const flat = sanitizeBranchName(data.branch, data.branch.length)
+      const at = data.branch.indexOf("/")
+      if (
+        NULLISH.test(flat) ||
+        (at > 0 && NULLISH.test(sanitizeBranchName(data.branch.slice(at + 1), data.branch.length)))
+      )
+        return
+      // fork_change end
       // Hold the name: if busy, stash it as pending (the request slot frees
       // immediately, but prompt() refuses to dispatch while a rename is
       // pending); otherwise apply it now, keeping the slot occupied until it

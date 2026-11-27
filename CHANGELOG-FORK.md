@@ -74,6 +74,7 @@
 
 ### Fixes & Enhancements
 
+- Ignore null-only automatic branch name responses (`null`, `nullnull`, `null-null`) so an Agent Manager worktree is never renamed to a broken branch; the worktree stays armed for a later message.
 - Return a cancelled deferred prompt to the composer instead of dropping it: clicking the X on the "After this turn" row puts its text, images, review comments, browser references, and code contexts back into the input below any draft, and nothing is sent.
 - Stop hiding readable text as passwords when recognizable secrets are hidden before sending: search results and code lines with `::`, such as GitHub Actions `::error::` commands or `std::collections::HashMap`, and `-u` values of commands other than curl, such as `az rest -u https://…` or `docker run -u 1000:1000`. Real `.pgpass` rows and curl passwords are still masked.
 - Recognize `SERVICE_ROLE_KEY` and `SUPABASE_SERVICE_ROLE_KEY` with any prefix and in spellings such as `service-role-key` or `serviceRoleKey`, `SUPABASE_SERVICE_KEY`, and key-shaped values under any name ending in `SERVICE_KEY` when recognizable secrets are hidden before sending, and stop blocking edits to files that already contain `[redacted]` markers.
