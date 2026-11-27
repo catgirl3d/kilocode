@@ -70,6 +70,7 @@ Object.defineProperty(navigator, "clipboard", {
 })
 
 const { render } = await import("solid-js/web")
+const { createSignal } = await import("solid-js")
 const { StoryProviders, mockSessionValue } = await import("../../webview-ui/src/stories/StoryProviders")
 const { SessionContext } = await import("../../webview-ui/src/context/session")
 const { BtwCard } = await import("../../webview-ui/src/components/chat/BtwCard")
@@ -261,6 +262,86 @@ async function actions() {
   }
 }
 
+async function askFromCard() {
+  posts.length = 0
+  const current = makeSession()
+  current.btw.compose("session")
+  const { root, dispose } = mount(current, { insert: () => {}, follow: () => {} })
+  try {
+    await settle()
+    const input = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(input, "composing a side question shows its own question input")
+    assert.equal(document.activeElement, input, "composing a side question focuses its question input")
+    assert.ok(
+      !root.querySelector('.prompt-btw-ask [aria-label="Start voice input"]'),
+      "a card without speech props hides voice input",
+    )
+
+    input.value = "why now?"
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "why now?", inputType: "insertText" }))
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true }))
+    await flush()
+    assert.ok(!posts.some((message) => message.type === "btwAsk"), "Shift+Enter does not ask a side question")
+    assert.equal(input.value, "why now?", "Shift+Enter keeps the card question draft")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }))
+    await flush()
+    assert.ok(!posts.some((message) => message.type === "btwAsk"), "an IME Enter does not ask a side question")
+    assert.equal(input.value, "why now?", "an IME Enter keeps the card question draft")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true }))
+    await flush()
+    assert.equal(current.btw.state("session").open, true, "an IME Escape leaves the side-question card open")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await settle()
+
+    const sent = posts.find((message) => message.type === "btwAsk") as
+      | { question?: string; sessionID?: string; threadID?: string }
+      | undefined
+    assert.ok(sent, "the card question input asks a side question")
+    assert.equal(sent.question, "why now?", "the card question input keeps the typed question")
+    assert.equal(sent.sessionID, "session", "the card question asks in its session")
+    assert.equal(sent.threadID, undefined, "the card question asks a fresh side question")
+    assert.equal(input.value, "", "the card question input clears after asking")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+    await flush()
+    assert.equal(current.btw.state("session").open, false, "Escape in the card input closes the side-question card")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
+async function busyDraft() {
+  posts.length = 0
+  const current = makeSession()
+  start(current, { question: "first?" })
+  posts.length = 0
+  const { root, dispose } = mount(current, { insert: () => {}, follow: () => {} })
+  try {
+    await settle()
+    const input = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(input, "a running side question still shows the card question input")
+    const send = root.querySelector<HTMLButtonElement>('[aria-label="Send side question"]')
+    assert.ok(send, "missing element: Send side question")
+
+    input.value = "second?"
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "second?", inputType: "insertText" }))
+    assert.equal(send.disabled, true, "the card send is disabled while an answer runs")
+
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    await flush()
+    assert.ok(!posts.some((message) => message.type === "btwAsk"), "a running answer blocks a second card ask")
+    assert.equal(input.value, "second?", "a blocked second ask keeps the card draft")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
 async function headerHistory() {
   posts.length = 0
   const current = makeSession()
@@ -325,6 +406,7 @@ async function history() {
   const { root, dispose } = mount(current, { insert: () => {}, follow: () => {} })
   try {
     await settle()
+    assert.ok(!root.querySelector(".prompt-btw-ask"), "history mode hides the side-question input")
     const rows = root.querySelectorAll<HTMLButtonElement>(".prompt-btw-history-item")
     assert.equal(rows.length, 2, "history mode lists the stored side questions")
     click(rows[0]!)
@@ -432,11 +514,51 @@ async function copyCleanup() {
   }
 }
 
+async function switchSessionDraft() {
+  posts.length = 0
+  const current = makeSession()
+  current.btw.compose("session")
+  const [sid, setSid] = createSignal("session")
+  const root = document.createElement("div")
+  document.body.append(root)
+  const dispose = render(
+    () => (
+      <StoryProviders noPadding>
+        <SessionContext.Provider value={current.session as never}>
+          <BtwCard sessionID={sid()} onInsert={() => {}} onFollow={() => {}} />
+        </SessionContext.Provider>
+      </StoryProviders>
+    ),
+    root,
+  )
+  try {
+    await settle()
+    const input = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(input, "the card shows its own question input")
+    input.value = "session one draft"
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "session one draft", inputType: "insertText" }))
+
+    current.btw.compose("other")
+    setSid("other")
+    await settle()
+
+    const next = root.querySelector<HTMLInputElement>(".prompt-btw-ask input")
+    assert.ok(next, "the switched card shows its own question input")
+    assert.equal(next.value, "", "switching sessions clears the card question draft")
+  } finally {
+    dispose()
+    root.remove()
+  }
+}
+
 await cancel()
 await actions()
+await askFromCard()
+await busyDraft()
 await headerHistory()
 await close()
 await history()
 await failures()
 await topError()
 await copyCleanup()
+await switchSessionDraft()

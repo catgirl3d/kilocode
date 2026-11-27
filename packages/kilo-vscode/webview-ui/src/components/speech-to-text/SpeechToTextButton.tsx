@@ -9,6 +9,8 @@ type Props = {
   disabled?: boolean
   start: () => void
   label: (key: string) => string
+  ownsSpeech?: boolean // fork_change
+  context?: string // fork_change
 }
 
 export const SpeechToTextButton: Component<Props> = (props) => {
@@ -20,14 +22,14 @@ export const SpeechToTextButton: Component<Props> = (props) => {
     if (props.speech.state() === "recording") return props.label("speechToText.tooltip.stop")
     if (props.speech.state() === "transcribing") return props.label("speechToText.tooltip.transcribing")
     if (props.speech.state() === "error") return props.speech.error() || props.label("speechToText.tooltip.error")
-    return props.label("speechToText.tooltip.start")
+    return props.label("speechToText.tooltip.start") + (props.context ? ` ${props.context}` : "") // fork_change
   }
   const title = () => `${label()} ${props.label("speechToText.tooltip.shortcut")}`
 
   const click = () => toggleSpeech(props.speech, unavailable(), props.start)
 
   onCleanup(() => {
-    if (props.speech.active()) props.speech.cancel()
+    if (props.ownsSpeech !== false && props.speech.active()) props.speech.cancel() // fork_change
   })
 
   const button = () => (

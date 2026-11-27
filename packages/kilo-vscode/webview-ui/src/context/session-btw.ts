@@ -9,12 +9,22 @@ type BtwState = {
   thread?: string
   follow: boolean
   history: boolean
+  compose: boolean
   loaded: boolean
   request?: string
+  abandoned: string[]
   error?: string
 }
 
-const EMPTY: BtwState = { items: [], open: false, follow: false, history: false, loaded: false }
+const EMPTY: BtwState = {
+  items: [],
+  open: false,
+  follow: false,
+  history: false,
+  compose: false,
+  loaded: false,
+  abandoned: [],
+}
 
 function upsert(value: BtwState, item: BtwItem) {
   const index = value.items.findIndex((entry) => entry.id === item.id)
@@ -40,7 +50,7 @@ export function createSessionBtw(deps: {
   const patch = (sessionID: string, fn: (value: BtwState) => void) =>
     setStore(
       produce((all) => {
-        all[sessionID] ??= { ...EMPTY, items: [] }
+        all[sessionID] ??= { ...EMPTY, items: [], abandoned: [] }
         fn(all[sessionID])
       }),
     )
@@ -90,6 +100,7 @@ export function createSessionBtw(deps: {
         next.follow = false
         next.request = requestID
         next.error = undefined
+        next.compose = false
         // A fresh question drops the previous thread at once; the card shows the pending state until btwStarted.
         if (!threadID) next.thread = undefined
       })
@@ -103,6 +114,7 @@ export function createSessionBtw(deps: {
     follow(sessionID: string) {
       patch(sessionID, (next) => {
         next.follow = true
+        next.compose = false
       })
     },
     unfollow(sessionID: string) {
@@ -118,6 +130,7 @@ export function createSessionBtw(deps: {
         next.open = true
         next.follow = false
         next.error = undefined
+        next.compose = false
       })
     },
     history(sessionID: string) {
@@ -125,25 +138,47 @@ export function createSessionBtw(deps: {
         next.open = true
         next.history = true
         next.error = undefined
+        next.compose = false
       })
       deps.post({ type: "btwHistory", sessionID })
+    },
+    compose(sessionID: string) {
+      reconcile(sessionID)
+      patch(sessionID, (next) => {
+        next.open = true
+        next.history = false
+        next.follow = false
+        next.error = undefined
+        next.compose = true
+      })
     },
     close(sessionID: string) {
       cancel(sessionID)
       patch(sessionID, (next) => {
+        // A start can still arrive after this close; remember the request so the late answer gets cancelled.
+        if (next.request) next.abandoned.push(next.request)
         next.open = false
         next.history = false
         next.follow = false
         next.thread = undefined
         next.request = undefined
         next.error = undefined
+        next.compose = false
       })
     },
     handleMessage(message: ExtensionMessage): boolean {
       if (message.type === "btwStarted") {
         const item = message.item
+        const value = state(message.sessionID)
+        if (value.abandoned.includes(message.requestID)) {
+          deps.post({ type: "btwCancel", sessionID: message.sessionID, btwID: item.id })
+          patch(message.sessionID, (next) => {
+            next.abandoned = next.abandoned.filter((request) => request !== message.requestID)
+          })
+          return true
+        }
         // The card was closed before the start came back: leave it closed.
-        if (state(message.sessionID).request !== message.requestID) return true
+        if (value.request !== message.requestID) return true
         patch(message.sessionID, (next) => {
           next.request = undefined
           next.thread = item.threadID
@@ -153,9 +188,15 @@ export function createSessionBtw(deps: {
         return true
       }
       if (message.type === "btwFailed") {
-        if (message.requestID && message.requestID !== state(message.sessionID).request) return true
+        const requestID = message.requestID
+        if (requestID && state(message.sessionID).abandoned.includes(requestID)) {
+          patch(message.sessionID, (next) => {
+            next.abandoned = next.abandoned.filter((request) => request !== requestID)
+          })
+        }
+        if (requestID && requestID !== state(message.sessionID).request) return true
         patch(message.sessionID, (next) => {
-          if (message.requestID) next.request = undefined
+          if (requestID) next.request = undefined
           next.error = message.error
         })
         return true

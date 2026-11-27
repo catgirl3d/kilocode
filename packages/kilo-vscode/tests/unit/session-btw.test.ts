@@ -279,35 +279,57 @@ describe("createSessionBtw", () => {
     dispose()
   })
 
-  it("ignores a start that arrives after the card closed", () => {
+  it("cancels a start that arrives after the card was closed", () => {
     const { btw, posted, dispose } = create()
     btw.ask("s", "why?")
     const requestID = asked(posted).requestID
     btw.close("s")
-    const count = posted.length
+    posted.length = 0
 
-    btw.handleMessage(started(requestID))
+    btw.handleMessage(started(requestID, { id: "late", threadID: "late" }))
 
-    expect(posted.length).toBe(count)
+    expect(posted).toEqual([{ type: "btwCancel", sessionID: "s", btwID: "late" }])
+    expect(btw.state("s").thread).toBeUndefined()
     expect(btw.state("s").items).toEqual([])
-    expect(btw.state("s").request).toBeUndefined()
+
+    btw.ask("other", "other?")
+    expect(btw.state("other").abandoned).toEqual([])
     dispose()
   })
 
-  it("ignores a start superseded by a newer ask and shows the newer one", () => {
+  it("cancels only the abandoned start, not a new side question", () => {
     const { btw, posted, dispose } = create()
     btw.ask("s", "first?")
     const first = asked(posted).requestID
     btw.close("s")
     btw.ask("s", "second?")
     const second = asked(posted).requestID
+    posted.length = 0
 
-    btw.handleMessage(started(first, { id: "first" }))
-    expect(posted.at(-1)?.type).toBe("btwAsk")
-    expect(btw.state("s").items).toEqual([])
+    btw.handleMessage(started(first, { id: "old", threadID: "old" }))
+    expect(posted).toEqual([{ type: "btwCancel", sessionID: "s", btwID: "old" }])
+    expect(btw.state("s").request).toBe(second)
 
-    btw.handleMessage(started(second, { id: "second" }))
-    expect(btw.state("s").items.map((entry) => entry.id)).toEqual(["second"])
+    btw.handleMessage(started(second, { id: "new", threadID: "new" }))
+    expect(posted).toEqual([{ type: "btwCancel", sessionID: "s", btwID: "old" }])
+    expect(btw.state("s").request).toBeUndefined()
+    expect(btw.state("s").thread).toBe("new")
+    expect(btw.state("s").items.map((entry) => entry.id)).toEqual(["new"])
+    dispose()
+  })
+
+  it("forgets an abandoned request that failed before it started", () => {
+    const { btw, posted, dispose } = create()
+    btw.ask("s", "why?")
+    const requestID = asked(posted).requestID
+    btw.close("s")
+    posted.length = 0
+
+    btw.handleMessage({ type: "btwFailed", sessionID: "s", requestID, error: "busy" })
+    expect(btw.state("s").abandoned).toEqual([])
+
+    btw.handleMessage(started(requestID, { id: "late" }))
+    expect(posted).toEqual([])
     dispose()
   })
 

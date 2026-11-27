@@ -196,6 +196,17 @@ function readTerminalContext(read: (() => string | undefined) | undefined): stri
   return read?.()
 }
 
+// fork_change start
+const btwHintKeys = {
+  session: "prompt.btw.noSession",
+  disconnected: "prompt.btw.disconnected",
+  blocked: "prompt.btw.blocked",
+  editing: "prompt.btw.editing",
+  goal: "prompt.btw.goal",
+} as const
+type BtwReason = keyof typeof btwHintKeys
+// fork_change end
+
 interface PromptInputProps {
   blocked?: () => boolean
   edit?: { sessionID: string; messageID: string }
@@ -602,6 +613,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const ghost = useGhostText(vscode, text, () => server.isConnected())
   const speech = useSpeechToText(vscode, server, language)
+  const [speechOwner, setSpeechOwner] = createSignal<"prompt" | "btw">("prompt") // fork_change
   const speechModels = useSpeechToTextModels()
 
   const replaceReviewComments = (next: ReviewCommentEntry[]) => {
@@ -914,23 +926,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const canContinue = () => !goal.active() && speech.state() === "idle" && !hasInput() && session.canResume()
   const goalReady = () => !goal.pending() && (!goal.active() || (!enhancing() && !imageAttach.pending()))
   // fork_change start
+  const promptRecording = () => speechOwner() === "prompt" && speech.state() === "recording"
   const canSend = () =>
-    sendReady() && (speech.state() === "recording" || (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
+    sendReady() && (promptRecording() || (!speech.active() && (goal.active() ? goal.ready(text()) : true)))
   // fork_change end
   const canSendContinue = () => sendReady() && !speech.active() && canContinue()
   const sendLabel = () => {
     if (props.blocked?.()) return language.t("prompt.action.send.blocked")
     if (holding()) return language.t("prompt.action.send.holding") // fork_change
-    if (speech.state() === "recording") return language.t("prompt.action.send.recording")
+    if (promptRecording()) return language.t("prompt.action.send.recording") // fork_change
     if (goal.active()) return language.t("prompt.goal.start")
     if (canSendContinue()) return language.t("prompt.action.continue")
     return language.t("prompt.action.send")
   }
   const showStop = () =>
-    !goal.active() &&
-    (isBusy() || session.currentSession()?.goal?.active) &&
-    !hasInput() &&
-    speech.state() !== "recording"
+    !goal.active() && (isBusy() || session.currentSession()?.goal?.active) && !hasInput() && !promptRecording() // fork_change
   // Stop only ends the main agent's turn. Say so while background agents run.
   const agents = useRunningAgents()
   const stopLabel = () => language.t(agents().length > 0 ? "prompt.action.stop.background" : "prompt.action.stop")
@@ -1701,9 +1711,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     ghost.scheduleRequest(result.text, ref)
   }
 
-  const startSpeech = () => {
-    speech.start({ model: speechModel(), mode: speechMode(), insert: insertSpeechText }) // fork_change
+  // fork_change start
+  const startSpeech = (insert: (text: string) => void, owner: "prompt" | "btw") => {
+    setSpeechOwner(owner)
+    speech.start({ model: speechModel(), mode: speechMode(), insert })
   }
+  const startPromptSpeech = () => startSpeech(insertSpeechText, "prompt")
+  // fork_change end
 
   const transcribeAndSend = () => {
     const key = draftKey()
@@ -1729,7 +1743,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const shortcut = createSpeechShortcut({
     speech,
     disabled: () => !canUseSpeech() || isDisabled(),
-    start: startSpeech,
+    start: startPromptSpeech, // fork_change
     finish: (submit) => {
       if (submit) {
         transcribeAndSend()
@@ -1739,6 +1753,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
   })
   const speechDown = (e: KeyboardEvent): boolean => {
+    if (speech.active() && speechOwner() !== "prompt") return false // fork_change
     if (!shortcut.down(e)) return false
     e.preventDefault()
     e.stopPropagation()
@@ -1755,7 +1770,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // fork_change start
   const submit = (afterTurn: boolean) => {
     // fork_change end
-    if (speech.state() !== "recording" || !canSend()) {
+    if (speech.active() && !promptRecording()) return // fork_change
+    // fork_change start
+    if (!promptRecording() || !canSend()) {
+      // fork_change end
       void handleSend(afterTurn) // fork_change
       return
     }
@@ -1883,7 +1901,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   // fork_change start - /btw card and side-question send
-  const [btwHint, setBtwHint] = createSignal<"session" | "blocked" | "disconnected">()
+  const [btwHint, setBtwHint] = createSignal<BtwReason>()
   // Replaces the draft the way a restored draft does, rebasing the paste chips onto the new text.
   // The pickers belonged to the old text, so they close too.
   const btwDraft = (value: string, texts: readonly string[], caret = value.length) => {
@@ -1921,6 +1939,36 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       prefix.length,
     )
   }
+  // The card and the /btw line share the same refusal reasons, so both report through the one prompt hint.
+  const btwReason = (): BtwReason | undefined => {
+    if (!session.currentSessionID()) return "session"
+    if (!server.isConnected()) return "disconnected"
+    if (locked()) return "editing"
+    if (goal.pending()) return "goal"
+    if (props.blocked?.()) return "blocked"
+    return undefined
+  }
+  // The bottom action opens the card with its own question field instead of typing /btw into the draft.
+  const openBtw = () => {
+    const reason = btwReason()
+    if (reason) {
+      setBtwHint(reason)
+      return
+    }
+    setBtwHint(undefined)
+    session.btw.compose(session.currentSessionID()!)
+  }
+  // The card asks through this, so a refused send keeps the question and shows the same hint as /btw.
+  const askBtw = (value: string) => {
+    const reason = btwReason()
+    if (reason) {
+      setBtwHint(reason)
+      return false
+    }
+    setBtwHint(undefined)
+    session.btw.ask(session.currentSessionID()!, value)
+    return true
+  }
   // The reset a consumed memory command leaves behind. It lives outside send(), so the /btw branch added there
   // keeps send() within its complexity cap (eslint.config.mjs: refactor instead of raising caps).
   const consumeDraft = () => {
@@ -1944,20 +1992,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sideQuestion = (draft: string, objective: boolean) => {
     const btw = objective ? undefined : parseBtwCommand(draft)
     if (!btw) return false
-    const id = session.currentSessionID()
-    if (!id) {
-      setBtwHint("session")
-      return true
-    }
-    if (!server.isConnected()) {
-      setBtwHint("disconnected")
-      return true
-    }
-    if (isDisabled() || props.blocked?.()) {
-      setBtwHint("blocked")
+    const reason = btwReason()
+    if (reason) {
+      setBtwHint(reason)
       return true
     }
     setBtwHint(undefined)
+    const id = session.currentSessionID()!
     if (btw.kind === "ask") session.btw.ask(id, btw.question)
     if (btw.kind === "history") session.btw.history(id)
     history.append(draft)
@@ -1974,9 +2015,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const id = sid()
     if (id && session.btw.state(id).follow) session.btw.unfollow(id)
   })
-  // The no-session hint only explains a refused send, so it goes once a session exists.
+  // A refused hint goes as soon as its reason stops applying; it never switches reason on its own.
   createEffect(() => {
-    if (session.currentSessionID()) setBtwHint(undefined)
+    const shown = btwHint()
+    if (!shown) return
+    if (btwReason() !== shown) setBtwHint(undefined)
   })
   // fork_change end
 
@@ -2371,20 +2414,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         />
       </Show>
       {/* fork_change start */}
-      <Show when={sid()}>{(id) => <BtwCard sessionID={id()} onInsert={insertBtw} onFollow={followBtw} />}</Show>
-      <Show when={btwHint()}>
-        {(reason) => (
-          <div class="prompt-btw-hint">
-            {language.t(
-              reason() === "disconnected"
-                ? "prompt.btw.disconnected"
-                : reason() === "blocked"
-                  ? "prompt.btw.blocked"
-                  : "prompt.btw.noSession",
-            )}
-          </div>
+      <Show when={sid()}>
+        {(id) => (
+          <BtwCard
+            sessionID={id()}
+            onInsert={insertBtw}
+            onFollow={followBtw}
+            onAsk={askBtw}
+            onClose={() => textareaRef?.focus()}
+            speech={speech}
+            speechOwner={speechOwner}
+            speechEnabled={canUseSpeech}
+            startSpeech={(insert) => startSpeech(insert, "btw")}
+          />
         )}
       </Show>
+      <Show when={btwHint()}>{(reason) => <div class="prompt-btw-hint">{language.t(btwHintKeys[reason()])}</div>}</Show>
       {/* fork_change end */}
       {/* fork_change start */}
       <Show when={session.deferredMessages(sid()).length > 0}>
@@ -2859,6 +2904,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           </div>
           <div class="prompt-input-hint-pinned" ref={pinnedRef}>
             {/* fork_change start */}
+            <Show when={session.currentSessionID()}>
+              <Tooltip value={language.t("prompt.btw.ask")} placement="top" openDelay={0}>
+                <IconButton
+                  icon="speech-bubble"
+                  variant="ghost"
+                  size="small"
+                  onClick={openBtw}
+                  aria-label={language.t("prompt.btw.ask")}
+                />
+              </Tooltip>
+            </Show>
+            {/* fork_change end */}
+            {/* fork_change start */}
             <Show when={hasGit()}>
               <Tooltip value={language.t("prompt.action.stagedDiff")} placement="top" openDelay={0}>
                 <IconButton
@@ -2873,9 +2931,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               </Tooltip>
             </Show>
             {/* fork_change end */}
-            <Show when={canUseSpeech()}>
-              <SpeechToTextButton speech={speech} disabled={isDisabled()} start={startSpeech} label={language.t} />
+            {/* fork_change start */}
+            <Show when={speech.active() ? speechOwner() !== "btw" : canUseSpeech()}>
+              <SpeechToTextButton
+                speech={speech}
+                disabled={isDisabled()}
+                start={startPromptSpeech}
+                label={language.t}
+                ownsSpeech={false}
+              />
             </Show>
+            {/* fork_change end */}
             <Show
               when={showStop()}
               fallback={
