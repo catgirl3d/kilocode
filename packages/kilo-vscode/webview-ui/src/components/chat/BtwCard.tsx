@@ -1,11 +1,16 @@
 // fork_change - new file
-import { For, Show, createSignal, onCleanup, type Component } from "solid-js"
+import { For, Show, createEffect, createSignal, on, onCleanup, type Component } from "solid-js"
 import { Button } from "@kilocode/kilo-ui/button"
 import { IconButton } from "@kilocode/kilo-ui/icon-button"
 import { Markdown } from "@kilocode/kilo-ui/markdown"
 import { Spinner } from "@kilocode/kilo-ui/spinner"
 import { useLanguage } from "../../context/language"
 import { useSession } from "../../context/session"
+import { isEnterKeyCommitNotIme } from "../../utils/ime-enter"
+import { createSpeechShortcut } from "../speech-to-text/shortcut"
+import { SpeechToTextButton } from "../speech-to-text/SpeechToTextButton"
+import type { SpeechToText } from "../speech-to-text/useSpeechToText"
+import { insertSpacedText } from "./prompt-input-utils"
 import type { BtwItem } from "../../types/messages"
 import { quoteBtw } from "@opencode-ai/core/kilocode/btw/client"
 
@@ -13,6 +18,12 @@ interface BtwCardProps {
   sessionID: string
   onInsert: (text: string) => void
   onFollow: () => void
+  onAsk?: (question: string) => boolean
+  onClose?: () => void
+  speech?: SpeechToText
+  startSpeech?: (insert: (text: string) => void) => void
+  speechEnabled?: () => boolean
+  speechOwner?: () => "prompt" | "btw"
 }
 
 const failed = (status: BtwItem["status"]) => status !== "done" && status !== "running"
@@ -21,6 +32,8 @@ export const BtwCard: Component<BtwCardProps> = (props) => {
   const session = useSession()
   const language = useLanguage()
   const [copied, setCopied] = createSignal(false)
+  const [question, setQuestion] = createSignal("")
+  let inputRef: HTMLInputElement | undefined
   let reset: ReturnType<typeof setTimeout> | undefined
 
   const state = () => session.btw.state(props.sessionID)
@@ -29,6 +42,78 @@ export const BtwCard: Component<BtwCardProps> = (props) => {
     items()
       .filter((item) => item.status === "done")
       .at(-1)
+
+  const busy = () => !!state().request || session.btw.running(props.sessionID)
+
+  const ask = () => {
+    const value = question().trim()
+    if (!value || busy() || props.speech?.active()) return
+    if (props.onAsk) {
+      if (!props.onAsk(value)) return
+      setQuestion("")
+      return
+    }
+    session.btw.ask(props.sessionID, value)
+    setQuestion("")
+  }
+
+  const close = () => {
+    if (props.speechOwner?.() === "btw" && props.speech?.active()) props.speech.cancel()
+    session.btw.close(props.sessionID)
+    props.onClose?.()
+  }
+
+  const insertQuestionText = (value: string) => {
+    const ref = inputRef
+    if (!ref) return
+    const start = ref.selectionStart ?? question().length
+    const end = ref.selectionEnd ?? start
+    const result = insertSpacedText(question(), value, start, end)
+    setQuestion(result.text)
+    ref.value = result.text
+    ref.setSelectionRange(result.pos, result.pos)
+    ref.focus()
+  }
+
+  const startCardSpeech = () => props.startSpeech?.(insertQuestionText)
+
+  const shortcut =
+    props.speech && props.startSpeech
+      ? createSpeechShortcut({
+          speech: props.speech,
+          disabled: () => !props.speechEnabled?.() || busy(),
+          start: startCardSpeech,
+          finish: (submit) => {
+            if (submit) props.speech?.stop()
+          },
+        })
+      : undefined
+
+  const speechDown = (event: KeyboardEvent) => {
+    if (!shortcut) return false
+    if (props.speech?.active() && props.speechOwner?.() !== "btw") return false
+    if (!shortcut.down(event)) return false
+    event.preventDefault()
+    event.stopPropagation()
+    return true
+  }
+
+  const speechVisible = () =>
+    !!props.speech &&
+    !!props.startSpeech &&
+    (props.speech.active() ? props.speechOwner?.() === "btw" : !!props.speechEnabled?.())
+
+  createEffect(() => {
+    if (state().open && state().compose) inputRef?.focus()
+  })
+
+  createEffect(
+    on(
+      () => props.sessionID,
+      () => setQuestion(""),
+      { defer: true },
+    ),
+  )
 
   const copy = (item: BtwItem) => {
     void navigator.clipboard
@@ -43,6 +128,8 @@ export const BtwCard: Component<BtwCardProps> = (props) => {
 
   onCleanup(() => {
     if (reset) clearTimeout(reset)
+    shortcut?.reset()
+    if (props.speechOwner?.() === "btw" && props.speech?.active()) props.speech.cancel()
   })
 
   const thread = () => (
@@ -164,7 +251,7 @@ export const BtwCard: Component<BtwCardProps> = (props) => {
             size="small"
             aria-label={language.t("prompt.btw.close")}
             title={language.t("prompt.btw.close")}
-            onClick={() => session.btw.close(props.sessionID)}
+            onClick={close}
           />
         </div>
         <div class="prompt-btw-body">
@@ -173,6 +260,49 @@ export const BtwCard: Component<BtwCardProps> = (props) => {
           </Show>
           <Show when={state().error}>{(message) => <div class="prompt-btw-error">{message()}</div>}</Show>
         </div>
+        <Show when={!state().history}>
+          <div class="prompt-btw-ask">
+            <input
+              ref={inputRef}
+              value={question()}
+              placeholder={language.t("prompt.btw.placeholder")}
+              aria-label={language.t("prompt.btw.ask")}
+              onInput={(event) => setQuestion(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.isComposing || event.keyCode === 229) return
+                if (speechDown(event)) return
+                if (event.key === "Escape") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  close()
+                  return
+                }
+                if (!isEnterKeyCommitNotIme(event) || event.shiftKey) return
+                event.preventDefault()
+                ask()
+              }}
+            />
+            <Show when={speechVisible() ? props.speech : undefined}>
+              {(speech) => (
+                <SpeechToTextButton
+                  speech={speech()}
+                  disabled={busy()}
+                  start={startCardSpeech}
+                  label={language.t}
+                  ownsSpeech={false}
+                />
+              )}
+            </Show>
+            <IconButton
+              icon="send"
+              variant="ghost"
+              size="small"
+              aria-label={language.t("prompt.btw.send")}
+              disabled={busy() || !!props.speech?.active() || !question().trim()}
+              onClick={ask}
+            />
+          </div>
+        </Show>
       </div>
     </Show>
   )
