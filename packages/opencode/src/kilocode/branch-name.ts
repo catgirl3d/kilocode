@@ -14,6 +14,7 @@ const BRANCH_CHARS = 50
 
 // fork_change start - generate and validate conventional type/slug branch names
 const TYPES = new Set(["feat", "fix", "chore", "docs", "refactor", "test", "perf", "ci", "build", "style"])
+const NULLISH = /^null(?:-?null)*$/
 
 const PROMPT = `Generate a Git branch name for the coherent engineering workstream described by the user's messages.
 
@@ -86,7 +87,7 @@ export function parse(value: string) {
     ?.trim()
     .replace(/^['"`]|['"`]$/g, "")
     .toLowerCase()
-  if (!line || line === "null") return null
+  if (!line) return null // fork_change
 
   // fork_change start - reject a pasted link echoed instead of a branch name
   if (line.includes("://") || /^(?:https?|ftp)[-:]/.test(line) || /^[a-z0-9-]+(?:\.[a-z0-9-]+)+\//.test(line))
@@ -94,21 +95,26 @@ export function parse(value: string) {
   // fork_change end
 
   // fork_change start - keep one slash and convert legacy flat names
+  const flat = sanitize(line)
+  if (!flat || NULLISH.test(flat)) return null
+
   const at = line.indexOf("/")
   if (at > 0) {
     const type = sanitize(line.slice(0, at))
     if (TYPES.has(type)) {
       const slug = trim(sanitize(line.slice(at + 1)), BRANCH_CHARS - type.length - 1)
-      return slug ? `${type}/${slug}` : null
+      if (!slug || NULLISH.test(slug)) return null
+      return `${type}/${slug}`
     }
   }
 
-  const flat = sanitize(line)
-  if (!flat) return null
   const [type, ...rest] = flat.split("-")
-  if (!TYPES.has(type) || rest.length === 0) return trim(flat)
+  if (!TYPES.has(type) || rest.length === 0) {
+    const name = trim(flat)
+    return NULLISH.test(name) ? null : name
+  }
   const slug = trim(rest.join("-"), BRANCH_CHARS - type.length - 1)
-  return slug ? `${type}/${slug}` : null
+  return slug && !NULLISH.test(slug) ? `${type}/${slug}` : null
   // fork_change end
 }
 

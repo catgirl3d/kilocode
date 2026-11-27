@@ -26,6 +26,7 @@ function makeNaming(
     }) => Promise<{ data: { branch: string | null } }>
     rename?: (branch: string) => Promise<string>
     hasWork?: () => Promise<boolean>
+    prefix?: string
   } = {},
 ) {
   const renamed: string[] = []
@@ -50,7 +51,7 @@ function makeNaming(
         },
       },
     }),
-    settings: () => ({ enabled: true, prefix: "" }),
+    settings: () => ({ enabled: true, prefix: deps.prefix ?? "" }),
     push: () => {},
     log: () => {},
   })
@@ -146,6 +147,86 @@ describe("BranchNamingController", () => {
       branch: "quiet-river",
       autoNameSessionId: "session-1",
     })
+  })
+
+  it("does not rename from a null-only response even with a prefix", async () => {
+    const wt = armed(state)
+    const { naming, renamed, requests } = makeNaming(state, {
+      prefix: "team",
+      generate: async () => ({ data: { branch: "null" } }),
+    })
+
+    naming.prompt({ sessionID: "session-1", text: "hi" })
+    naming.prompt({ sessionID: "session-1", text: "проверь изменения" })
+    await settle()
+
+    expect(requests.value).toBe(1)
+    expect(renamed).toEqual([])
+    expect(state.getWorktree(wt.id)).toMatchObject({
+      branch: "quiet-river",
+      autoNameSessionId: "session-1",
+    })
+  })
+
+  it("does not rename from a null-token variant even with a prefix", async () => {
+    const wt = armed(state)
+    const { naming, renamed, requests } = makeNaming(state, {
+      prefix: "team",
+      generate: async () => ({ data: { branch: "null-null" } }),
+    })
+
+    naming.prompt({ sessionID: "session-1", text: "hi" })
+    naming.prompt({ sessionID: "session-1", text: "проверь изменения" })
+    await settle()
+
+    expect(requests.value).toBe(1)
+    expect(renamed).toEqual([])
+    expect(state.getWorktree(wt.id)).toMatchObject({
+      branch: "quiet-river",
+      autoNameSessionId: "session-1",
+    })
+  })
+
+  it("does not rename from a typed null-token variant", async () => {
+    const wt = armed(state)
+    const { naming, renamed, requests } = makeNaming(state, {
+      prefix: "team",
+      generate: async () => ({ data: { branch: "fix/null-null" } }),
+    })
+
+    naming.prompt({ sessionID: "session-1", text: "hi" })
+    naming.prompt({ sessionID: "session-1", text: "проверь изменения" })
+    await settle()
+
+    expect(requests.value).toBe(1)
+    expect(renamed).toEqual([])
+    expect(state.getWorktree(wt.id)).toMatchObject({
+      branch: "quiet-river",
+      autoNameSessionId: "session-1",
+    })
+  })
+
+  it("does not hold a null-only name as pending while busy", async () => {
+    const wt = armed(state)
+    const replies = ["nullnull", "fix/real-work"]
+    const { naming, renamed, requests } = makeNaming(state, {
+      generate: async () => ({ data: { branch: replies.shift() ?? null } }),
+    })
+
+    naming.busy("session-1")
+    naming.prompt({ sessionID: "session-1", text: "hi" })
+    naming.prompt({ sessionID: "session-1", text: "проверь" })
+    await settle()
+
+    expect(requests.value).toBe(1)
+    expect(renamed).toEqual([])
+
+    naming.idle("session-1")
+    naming.prompt({ sessionID: "session-1", text: "Fix the real work" })
+    await settle()
+
+    expect(requests.value).toBe(2)
+    expect(renamed).toEqual(["fix/real-work"])
   })
 
   it("does not rename to a lone type", async () => {

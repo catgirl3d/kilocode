@@ -59,6 +59,30 @@ describe("branch name generation helpers", () => {
     expect(parse("!!!")).toBeNull()
   })
 
+  test("rejects repeated null sentinels", () => {
+    expect(parse("null")).toBeNull()
+    expect(parse("nullnull")).toBeNull()
+    expect(parse("NULL null")).toBeNull()
+    expect(parse(" nullnull ")).toBeNull()
+    expect(parse("null-null")).toBeNull()
+    expect(parse("null, null")).toBeNull()
+    expect(parse("null/null")).toBeNull()
+    expect(parse("nullnull.")).toBeNull()
+    expect(parse('" nullnull "')).toBeNull()
+    expect(parse("fix/null-null")).toBeNull()
+    expect(parse("fix-null")).toBeNull()
+    expect(parse("fix null")).toBeNull()
+    expect(parse("fix-null-null")).toBeNull()
+    expect(parse("feat null null")).toBeNull()
+    expect(parse(`null-${"a".repeat(60)}`)).toBeNull()
+  })
+
+  test("keeps null-like words inside real names", () => {
+    expect(parse("null-pointer")).toBe("null-pointer")
+    expect(parse("fix/null-pointer")).toBe("fix/null-pointer")
+    expect(parse("fix-null-pointer")).toBe("fix/null-pointer")
+  })
+
   test("accepts a link reference as a typed name", () => {
     expect(parse("chore/issue-120")).toBe("chore/issue-120")
   })
