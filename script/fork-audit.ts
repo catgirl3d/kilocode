@@ -23,15 +23,17 @@
  *      - MUST use `// kilocode_change` (or `// kilocode_change - new file` on Line 1 of new files)
  *      - Optional: use `// kilocode_change start - [fork] <reason>` to distinguish fork additions
  *      - NEVER use `// fork_change`
- *   3. Kilo Backend (packages/opencode/src/kilocode, packages/kilo-gateway, packages/kilo-memory):
- *      - Both `fork_change` and historical `kilocode_change` are permitted.
- *      - New files use `// fork_change - new file` (or `// kilocode_change - new file`).
+ *   3. Kilo Backend (any path part starting with `kilo-` or containing `kilocode`, outside kilo-vscode/kilo-ui):
+ *      - Markers the fork adds MUST use `fork_change`; new fork files start with `// fork_change - new file`.
+ *      - `kilocode_change` markers present at the merge-base (historical upstream Kilo) stay as they are, also when moved.
+ *      - A fork-added `kilocode_change` is a fatal `[FAMILY]` finding.
  *   4. Tests (test/, tests/, *.test.ts, *.spec.ts) & Docs/Configs:
  *      - Completely exempt from all markers (no headers, no inner markers per AGENTS.md: Exempt Files).
  *
  * Findings:
  * - `[MISSING]`, redundant fork markers, `fork_change` diagnostics, and
  *   mixed-family diagnostics are fatal and exit 1.
+ * - `[FAMILY]`: fork-added `kilocode_change` in a Kilo-owned path; fatal.
  * - `[OVERWRAP]`: a `fork_change` block that captures upstream lines a
  *   narrower legal region would leave outside is reported as a warning; the
  *   message lists the minimal regions to mark instead. A `fork_change`
@@ -393,19 +395,9 @@ export function renderedMarkerLines(lines: string[], zone?: FileZone): number[] 
 export function newFileHeaderError(lines: string[], zone: FileZone): string | null {
   const i = lines.findIndex((line) => line.trim() && !line.startsWith("#!")),
     line = mask(lines[i] ?? "")
-  const ok =
-    zone === "shared_opencode"
-      ? KILO_NEW
-      : zone === "kilo_exclusive"
-        ? FORK_NEW
-        : new RegExp(`${FORK_NEW.source}|${KILO_NEW.source}`)
+  const ok = zone === "shared_opencode" ? KILO_NEW : FORK_NEW
   if (ok.test(line)) return null
-  const expected =
-    zone === "shared_opencode"
-      ? "kilocode_change"
-      : zone === "kilo_exclusive"
-        ? "fork_change"
-        : "fork_change or kilocode_change"
+  const expected = zone === "shared_opencode" ? "kilocode_change" : "fork_change"
   return `Line ${i + 1}: new file requires '${expected} - new file' on its first non-shebang line`
 }
 
@@ -954,7 +946,13 @@ function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: 
     add = (message: string, families: MarkerFamily[] = []) => addDiagnostic(errors, diagnostics, message, families)
   if (isNew) {
     const e = newFileHeaderError(lines, zone)
-    if (e) add(e, familiesIn(lines[lines.findIndex((line) => line.trim() && !line.startsWith("#!"))] ?? ""))
+    if (e)
+      add(
+        e,
+        zone === "kilo_backend"
+          ? []
+          : familiesIn(lines[lines.findIndex((line) => line.trim() && !line.startsWith("#!"))] ?? ""),
+      )
   } else if (parsed.wholeFileMarkerLine !== -1) {
     const historical =
       parsed.markers.every((marker) => marker.type !== "whole_file" || marker.markerType === "kilo") &&
@@ -1097,6 +1095,26 @@ function auditFile(cfg: { worktree: boolean; base: string; ref: string }, file: 
     // Diff cannot distinguish an intentional move from an unrelated identical delete/add.
     // The normalized one-to-one fallback deliberately treats both as a move.
     churn = new Set([...churn, ...takeChurnMatches(candidates, removed)])
+  }
+  // Kilo-owned paths: a marker the fork adds must be fork_change; kilocode_change stays only where upstream Kilo put it.
+  if (zone === "kilo_backend") {
+    const quoted = comments(lines, zone).inside,
+      moved = new Map<string, number>()
+    for (const target of hunks)
+      for (const item of target.removed)
+        if (familiesIn(item).includes("kilo")) moved.set(item.trim(), (moved.get(item.trim()) ?? 0) + 1)
+    for (const m of parsed.markers) {
+      if (m.markerType !== "kilo" || m.type === "whole_file" || quoted.has(m.startLine) || inherited(m)) continue
+      const key = (lines[m.startLine - 1] ?? "").trim(),
+        count = moved.get(key) ?? 0
+      if (count) {
+        moved.set(key, count - 1)
+        continue
+      }
+      add(
+        `[FAMILY] L${m.startLine}${m.endLine === m.startLine ? "" : `-L${m.endLine}`}: fork-added 'kilocode_change' in a Kilo-owned path; use 'fork_change'`,
+      )
+    }
   }
   const real = added.filter(
     (n) => !churn.has(n) && !toolingDirective(lines[n - 1] ?? "") && stripMarkerComments(lines[n - 1] ?? ""),

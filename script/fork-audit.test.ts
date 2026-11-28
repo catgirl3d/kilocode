@@ -91,7 +91,7 @@ afterEach(() => {
 })
 
 describe("read-only contract", () => {
-  it("audits the restored kilo-gateway handler as 57/57", () => {
+  it("audits the restored kilo-gateway handler as 73/73", () => {
     const file = "packages/opencode/src/kilocode/server/httpapi/handlers/kilo-gateway.ts"
     const before = createHash("sha256")
       .update(readFileSync(path.join(root, file)))
@@ -105,7 +105,7 @@ describe("read-only contract", () => {
     })
     const output = `${Buffer.from(result.stdout).toString()}\n${Buffer.from(result.stderr).toString()}`
     expect(result.exitCode).toBe(0)
-    expect(output).toContain("57/57 lines covered")
+    expect(output).toContain("73/73 lines covered")
     expect(output).not.toContain("[MISSING]")
     expect(output).not.toContain("[ERROR]")
     expect(output).not.toContain("[NESTED]")
@@ -1097,7 +1097,7 @@ describe("read-only diagnostics", () => {
     expect(unbalanced.out).toContain("unclosed 'fork_change start'")
   })
 
-  it("focused audit: historical backend Kilo redundancy is non-hard", () => {
+  it("focused audit: fork-added backend Kilo markers are fatal without becoming redundant", () => {
     const dir = fixture()
     const file = "packages/opencode/src/kilocode/history.ts"
     mkdirSync(path.join(dir, "packages/opencode/src/kilocode"), { recursive: true })
@@ -1111,7 +1111,8 @@ describe("read-only diagnostics", () => {
     git(dir, ["update-ref", "refs/remotes/upstream/main", "HEAD"])
     git(dir, ["branch", "-f", "upstream", "HEAD"])
     const result = run(dir, ["--worktree", "--base=upstream", file])
-    expect(result.code).toBe(0)
+    expect(result.code).toBe(1)
+    expect(result.out).toContain("[FAMILY] L1-L3:")
     expect(result.out).not.toContain("[REDUNDANT]")
   })
 
@@ -1169,7 +1170,7 @@ describe("read-only diagnostics", () => {
     git(dir, ["commit", "-qm", "historical kilo file"])
     git(dir, ["update-ref", "refs/remotes/upstream/main", "HEAD"])
     git(dir, ["branch", "-f", "upstream", "HEAD"])
-    writeFileSync(path.join(dir, file), "// kilocode_change - new file\nexport const provider = 2 // kilocode_change\n")
+    writeFileSync(path.join(dir, file), "// kilocode_change - new file\nexport const provider = 2 // fork_change\n")
     const result = run(dir, ["--worktree", "--base=upstream", file])
     expect(result.code).toBe(0)
     expect(result.out).not.toContain("whole-file '- new file' marker used on an existing file")
@@ -1272,6 +1273,94 @@ describe("read-only diagnostics", () => {
     const result = run(dir, ["--worktree", "--base=upstream", file])
     expect(result.code).toBe(1)
     expect(result.out).toContain("unclosed 'fork_change start'")
+  })
+
+  it("focused audit: fork-added kilocode_change fails in Kilo-owned paths", () => {
+    const base = "export const a = 1\nexport const b = 1\n",
+      current =
+        "export const a = 2 // kilocode_change\n// kilocode_change start\nexport const b = 2\n// kilocode_change end\n"
+    for (const file of ["packages/opencode/src/kilocode/family.ts", "packages/kilo-gateway/src/family.ts"]) {
+      const dir = fixture({ [file]: base })
+      writeFileSync(path.join(dir, file), current)
+      const result = run(dir, ["--worktree", "--base=upstream", file])
+      expect(result.code).toBe(1)
+      expect(result.out).toContain("[FAMILY] L1:")
+      expect(result.out).toContain("[FAMILY] L2-L4:")
+    }
+  }, 30_000)
+
+  it("focused audit: fork_change at the same positions passes", () => {
+    const base = "export const a = 1\nexport const b = 1\n",
+      current = "export const a = 2 // fork_change\n// fork_change start\nexport const b = 2\n// fork_change end\n"
+    for (const file of ["packages/opencode/src/kilocode/family.ts", "packages/kilo-gateway/src/family.ts"]) {
+      const dir = fixture({ [file]: base })
+      writeFileSync(path.join(dir, file), current)
+      const result = run(dir, ["--worktree", "--base=upstream", file])
+      expect(result.code).toBe(0)
+      expect(result.out).not.toContain("[FAMILY]")
+    }
+  }, 30_000)
+
+  it("focused audit: an inherited Kilo block stays quiet", () => {
+    const file = "packages/opencode/src/kilocode/inherited-family.ts",
+      dir = fixture({
+        [file]: "// kilocode_change start\nexport const a = 1\n// kilocode_change end\nexport const b = 1\n",
+      })
+    writeFileSync(
+      path.join(dir, file),
+      "// kilocode_change start\nexport const a = 2\n// kilocode_change end\nexport const b = 2 // fork_change\n",
+    )
+    const result = run(dir, ["--worktree", "--base=upstream", file])
+    expect(result.code).toBe(0)
+    expect(result.out).not.toContain("[FAMILY]")
+  })
+
+  it("focused audit: a moved historical marker stays quiet", () => {
+    const file = "packages/opencode/src/kilocode/moved-family.ts",
+      dir = fixture({ [file]: "export const a = 1 // kilocode_change\nexport const b = 1\nexport const c = 1\n" })
+    writeFileSync(
+      path.join(dir, file),
+      "export const b = 1\nexport const c = 1\nexport const a = 1 // kilocode_change\n",
+    )
+    const result = run(dir, ["--worktree", "--base=upstream", file])
+    expect(result.out).not.toContain("[FAMILY]")
+  })
+
+  it("focused audit: one removed historical marker excuses only one moved copy", () => {
+    const file = "packages/opencode/src/kilocode/moved-twice.ts",
+      dir = fixture({ [file]: "export const a = 1 // kilocode_change\nexport const b = 1\nexport const c = 1\n" })
+    writeFileSync(
+      path.join(dir, file),
+      "export const b = 1\nexport const c = 1\nexport const a = 1 // kilocode_change\nexport const a = 1 // kilocode_change\n",
+    )
+    const result = run(dir, ["--worktree", "--base=upstream", file])
+    expect(result.code).toBe(1)
+    expect(result.out).toContain("[FAMILY] L4:")
+    expect(result.out).not.toContain("[FAMILY] L3:")
+  })
+
+  it("focused audit: a new Kilo-owned file needs a fork_change header", () => {
+    const file = "packages/opencode/src/kilocode/created-family.ts",
+      rejectedDir = fixture()
+    mkdirSync(path.join(rejectedDir, "packages/opencode/src/kilocode"), { recursive: true })
+    writeFileSync(path.join(rejectedDir, file), "// kilocode_change - new file\nexport const created = 1\n")
+    const rejected = run(rejectedDir, ["--worktree", "--base=upstream", file])
+    expect(rejected.code).toBe(1)
+    expect(rejected.out).toContain("new file requires 'fork_change - new file'")
+    const acceptedDir = fixture()
+    mkdirSync(path.join(acceptedDir, "packages/opencode/src/kilocode"), { recursive: true })
+    writeFileSync(path.join(acceptedDir, file), "// fork_change - new file\nexport const created = 1\n")
+    const accepted = run(acceptedDir, ["--worktree", "--base=upstream", file])
+    expect(accepted.code).toBe(0)
+  })
+
+  it("focused audit: shared OpenCode is untouched by the family rule", () => {
+    const file = "packages/opencode/src/shared-family.ts",
+      dir = fixture({ [file]: "export const a = 1\n" })
+    writeFileSync(path.join(dir, file), "export const a = 2 // kilocode_change\n")
+    const result = run(dir, ["--worktree", "--base=upstream", file])
+    expect(result.code).toBe(0)
+    expect(result.out).not.toContain("[FAMILY]")
   })
 
   it("focused audit: structure split is hard on the actual audit path", () => {
@@ -1556,12 +1645,16 @@ describe("severity policy", () => {
         base: "export const value = 1\n",
         current: "export const value = 1 // kilocode_change // fork_change\n",
         text: "forbidden 'fork_change'",
+        findings: 1,
+        family: false,
       },
       {
         file: "packages/opencode/src/kilocode/mixed-placement-severity.ts",
         base: "export const value = 1 === 1\n",
         current: "export const value = 1 /* kilocode_change */ /* fork_change */ === 1\n",
         text: "marker has code after it",
+        findings: 2,
+        family: true,
       },
     ]
     for (const item of cases) {
@@ -1572,7 +1665,8 @@ describe("severity policy", () => {
       expect(result.out).toContain(item.text)
       expect(result.out).toContain("markers: kilocode_change, fork_change")
       expect(result.out).not.toContain("kilo_change")
-      expect(result.out).toContain("findings 1")
+      expect(result.out).toContain(`findings ${item.findings}`)
+      if (item.family) expect(result.out).toContain("[FAMILY] L1:")
     }
   })
 
@@ -1644,7 +1738,7 @@ describe("severity policy", () => {
         text: "forbidden 'fork_change'",
       },
       {
-        file: "packages/opencode/src/kilocode/placement-kilo.ts",
+        file: "packages/opencode/src/placement-kilo.ts",
         base: "export const value = 1 === 1\n",
         current: "export const value = 1 /* kilocode_change */ === 1\n",
         code: 0,
