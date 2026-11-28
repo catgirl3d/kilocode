@@ -1,3 +1,4 @@
+// fork_change start
 /**
  * ContextProgress — three-segment progress bar showing context window usage.
  *
@@ -6,8 +7,9 @@
  *   2. Reserved for output (medium gray)
  *   3. Available (transparent / background)
  *
- * Token counts flanking the bar: used on left, total on right.
+ * Labels flanking the bar: percentage used on left, total limit on right.
  */
+// fork_change end
 
 import { Component, createMemo, Show } from "solid-js"
 import { Tooltip } from "@kilocode/kilo-ui/tooltip"
@@ -41,7 +43,7 @@ export const ContextProgress: Component = () => {
     const pctReserved = (reserved / max) * 100
     const pctAvail = (available / max) * 100
 
-    return { used, reserved, available, limit: max, pctUsed, pctReserved, pctAvail, output }
+    return { used, reserved, available, limit: max, pctUsed, pctReserved, pctAvail, output, actual: usage.tokens } // fork_change
   })
 
   // The skeleton is a loading state, so it shows only while a turn is running
@@ -53,7 +55,7 @@ export const ContextProgress: Component = () => {
   const tip = createMemo(() => {
     const d = data()
     if (!d) return ""
-    const lines = [`${fmt(d.used)} / ${fmt(d.limit)} tokens used`]
+    const lines = [`${fmt(d.actual)} / ${fmt(d.limit)} tokens used`] // fork_change
     if (d.output > 0) lines.push(`${fmt(d.output)} reserved for output`)
     if (d.available > 0) lines.push(`${fmt(d.available)} available`)
     return lines.join("\n")
@@ -74,7 +76,9 @@ export const ContextProgress: Component = () => {
     >
       {(d) => (
         <div class="context-progress">
-          <span class="context-progress-count">{fmt(d().used)}</span>
+          {/* fork_change start */}
+          <span class="context-progress-count">{Math.round(d().pctUsed)}%</span>
+          {/* fork_change end */}
           <Tooltip value={tip()} placement="top">
             <div class="context-progress-bar">
               <div

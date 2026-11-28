@@ -2,7 +2,7 @@ import type { Message, Provider, SessionModelUsage } from "../types/messages"
 
 const DATE_SUFFIX = /(?:-(?:20\d{6}|20\d{2}-\d{2}-\d{2}))(?:-v\d+(?::\d+)?)?$/i
 
-export type TokenSummary = { input: number; output: number; cached: number }
+export type TokenSummary = { input: number; output: number; cached: number; cacheWrite: number } // fork_change
 
 export function isSameSessionTree(
   current: string,
@@ -43,6 +43,7 @@ export function tokenSummary(usage: SessionModelUsage): TokenSummary {
     input: usage.totals.tokens.input,
     output: usage.totals.tokens.output,
     cached: usage.totals.tokens.cache.read,
+    cacheWrite: usage.totals.tokens.cache.write, // fork_change
   }
 }
 
@@ -58,10 +59,17 @@ export function sessionModel(messages: Message[]) {
   return undefined
 }
 
-export function cacheRate(model: SessionModelUsage["models"][number]) {
-  const total = model.tokens.input + model.tokens.cache.read + model.tokens.cache.write
+// fork_change start
+/** Cache read share of all input tokens, including cache writes. */
+export function cacheHit(tokens: { input: number; cache: { read: number; write: number } }) {
+  const total = tokens.input + tokens.cache.read + tokens.cache.write
   if (total === 0) return "-"
-  return `${((model.tokens.cache.read / total) * 100).toFixed(1)}%`
+  return `${((tokens.cache.read / total) * 100).toFixed(1)}%`
+}
+// fork_change end
+
+export function cacheRate(model: SessionModelUsage["models"][number]) {
+  return cacheHit(model.tokens) // fork_change
 }
 
 export function groupModelUsage(models: SessionModelUsage["models"], providers: Record<string, Provider>) {

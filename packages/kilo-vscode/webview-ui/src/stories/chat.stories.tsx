@@ -1722,6 +1722,7 @@ const usageStory = (open: boolean) => () => (
             input: usageData.totals.tokens.input,
             output: usageData.totals.tokens.output,
             cached: usageData.totals.tokens.cache.read,
+            cacheWrite: usageData.totals.tokens.cache.write,
           }}
         />
       </div>
