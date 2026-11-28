@@ -248,23 +248,23 @@ describe("calcContextUsage", () => {
 })
 
 describe("calcTokenUsage", () => {
-  it("sums assistant message input, output, and cache read tokens", () => {
+  it("sums assistant message input, output, cache read, and cache write tokens", () => {
     const result = calcTokenUsage([
       { role: "assistant", tokens: { input: 100, output: 40, reasoning: 8, cache: { read: 10, write: 5 } } },
       { role: "assistant", tokens: { input: 25, output: 15, cache: { read: 7, write: 3 } } },
     ])
 
-    expect(result).toEqual({ input: 125, output: 55, cached: 17 })
+    expect(result).toEqual({ input: 125, output: 55, cached: 17, cacheWrite: 8 })
   })
 
-  it("ignores user messages, missing tokens, reasoning tokens, and cache writes", () => {
+  it("ignores user messages, missing tokens, and reasoning tokens", () => {
     const result = calcTokenUsage([
       { role: "user", tokens: { input: 999, output: 999, cache: { read: 999, write: 999 } } },
       { role: "assistant" },
       { role: "assistant", tokens: { input: 10, output: 4, reasoning: 30, cache: { read: 2, write: 20 } } },
     ])
 
-    expect(result).toEqual({ input: 10, output: 4, cached: 2 })
+    expect(result).toEqual({ input: 10, output: 4, cached: 2, cacheWrite: 20 })
   })
 
   it("returns undefined when there are no displayed token counts", () => {

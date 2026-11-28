@@ -312,7 +312,8 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
     if (!usage) return undefined
     const tokens = usage.tokens.toLocaleString(language.locale())
     const pct = usage.percentage !== null ? `${usage.percentage}%` : undefined
-    return { tokens, pct }
+    const label = usage.percentage !== null ? `${Math.min(100, usage.percentage)}%` : undefined // fork_change
+    return { tokens, pct, label } // fork_change
   })
 
   const tokens = createMemo(() => {
@@ -563,7 +564,9 @@ export const TaskHeader: Component<TaskHeaderProps> = (props) => {
                 value={ctx().pct ? `${ctx().tokens} tokens (${ctx().pct} of context)` : `${ctx().tokens} tokens`}
                 placement="bottom"
               >
-                <span>{ctx().pct ?? ctx().tokens}</span>
+                {/* fork_change start */}
+                <span>{ctx().label ?? ctx().tokens}</span>
+                {/* fork_change end */}
               </Tooltip>
             )}
           </Show>

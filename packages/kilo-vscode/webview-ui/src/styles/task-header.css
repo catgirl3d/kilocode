@@ -209,6 +209,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* fork_change start - the tooltip trigger wraps the bar; let it span the row between the labels */
+.context-progress > [data-component="tooltip-trigger"] {
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+/* fork_change end */
+
 .context-progress-bar {
   flex: 1;
   display: flex;
@@ -426,6 +434,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  white-space: nowrap; /* fork_change */
 }
 
 .task-header-usage-trigger {

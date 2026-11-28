@@ -409,9 +409,11 @@ export type TokenUsageMessage = {
   }
 }
 
+// fork_change start
 export function calcTokenUsage(
   messages: TokenUsageMessage[],
-): { input: number; output: number; cached: number } | undefined {
+): { input: number; output: number; cached: number; cacheWrite: number } | undefined {
+  // fork_change end
   const total = messages.reduce(
     (sum, m) => {
       if (m.role !== "assistant" || !m.tokens) return sum
@@ -419,9 +421,10 @@ export function calcTokenUsage(
         input: sum.input + m.tokens.input,
         output: sum.output + m.tokens.output,
         cached: sum.cached + (m.tokens.cache?.read ?? 0),
+        cacheWrite: sum.cacheWrite + (m.tokens.cache?.write ?? 0), // fork_change
       }
     },
-    { input: 0, output: 0, cached: 0 },
+    { input: 0, output: 0, cached: 0, cacheWrite: 0 }, // fork_change
   )
 
   if (total.input > 0 || total.output > 0 || total.cached > 0) return total
