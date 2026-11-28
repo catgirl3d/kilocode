@@ -48,11 +48,12 @@ import {
   WRITING_TITLE,
   COMPLETED_TITLE,
   brief,
+  type AdvisorProgress,
 } from "@/kilocode/tool/advisor-core"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
-import { Cause, Effect, Exit, Option, Schema } from "effect"
+import { Cause, Effect, Exit, Option, Schema, Semaphore } from "effect"
 import * as Stream from "effect/Stream"
 import path from "node:path"
 import DESCRIPTION from "./consult-advisor.txt"
@@ -62,6 +63,8 @@ export { acquire, release }
 type Resolved =
   | { slot: AdvisorSlots.Slot; reason: string; model?: undefined; variant?: undefined }
   | { slot: AdvisorSlots.Slot; reason?: undefined; model: Provider.Model; variant?: string }
+
+type AdvisorMetadata = { truncated?: boolean; advisors?: AdvisorProgress[]; warnings?: string[] }
 
 function abort(ctx: Tool.Context) {
   return Effect.callback<never, Error>((resume) => {
@@ -250,7 +253,7 @@ function prepare(params: Params, ctx: Tool.Context, config: Config.Info) {
 
 export const ConsultAdvisorTool = Tool.define<
   typeof Params,
-  { truncated?: boolean },
+  AdvisorMetadata,
   Config.Service | Provider.Service | LLM.Service | Session.Service,
   "consult_advisor"
 >(
@@ -303,10 +306,42 @@ export const ConsultAdvisorTool = Tool.define<
           }
           return yield* Effect.gen(function* () {
             const phase = { title: undefined as string | undefined }
+            const progress: AdvisorProgress[] = []
+            const warnings: string[] = []
+            const gate = Semaphore.makeUnsafe(1)
+            const snapshot = () => progress.map((item) => ({ ...item }))
+            const meta = (truncated?: boolean): AdvisorMetadata => ({
+              ...(truncated === undefined ? {} : { truncated }),
+              advisors: snapshot(),
+              warnings: warnings.length ? warnings : undefined,
+            })
+            const publish = (title?: string | (() => string)) =>
+              gate.withPermit(
+                Effect.suspend(() => {
+                  if (title !== undefined) phase.title = typeof title === "function" ? title() : title
+                  return ctx.metadata({ title: phase.title, metadata: meta() })
+                }),
+              )
             const setTitle = (title: string) => {
               if (phase.title === title) return Effect.void
-              phase.title = title
-              return ctx.metadata({ title })
+              return publish(title)
+            }
+            const mutate = (name: string, change: Partial<AdvisorProgress>) => {
+              const item = progress.find((entry) => entry.name === name)
+              if (!item) return false
+              if (
+                (change.status === undefined || change.status === item.status) &&
+                (change.text === undefined || change.text === item.text) &&
+                (change.error === undefined || change.error === item.error)
+              ) {
+                return false
+              }
+              Object.assign(item, change)
+              return true
+            }
+            const update = (name: string, change: Partial<AdvisorProgress>, title?: string) => {
+              if (!mutate(name, change) && (title === undefined || title === phase.title)) return Effect.void
+              return publish(title)
             }
             yield* setTitle(PREPARING_TITLE)
 
@@ -330,14 +365,25 @@ export const ConsultAdvisorTool = Tool.define<
             const resolved = yield* Effect.forEach(selection.slots, resolve)
             const single = resolved.length === 1
             const first = resolved.at(0)
+            for (const item of resolved) {
+              progress.push({
+                name: item.slot.name,
+                model: item.slot.model,
+                variant: item.slot.variant,
+                status: item.model ? "waiting" : "unavailable",
+                reason: item.reason,
+              })
+            }
             if (single && first?.reason) {
-              return { title: UNAVAILABLE_TITLE, output: first.reason, metadata: {} }
+              yield* publish(UNAVAILABLE_TITLE)
+              return { title: UNAVAILABLE_TITLE, output: first.reason, metadata: meta() }
             }
             if (resolved.every((item) => item.reason)) {
+              yield* publish(UNAVAILABLE_TITLE)
               return {
                 title: UNAVAILABLE_TITLE,
                 output: resolved.map((item) => `${heading(item.slot)}\n\nUnavailable: ${item.reason}`).join("\n\n"),
-                metadata: {},
+                metadata: meta(),
               }
             }
 
@@ -386,6 +432,7 @@ export const ConsultAdvisorTool = Tool.define<
               }
             }
             const supplied = prepared.value
+            warnings.push(...(supplied?.warnings ?? []))
             const notice = supplied?.warnings.length
               ? `Context warnings:\n${supplied.warnings.map((item) => `- ${item}`).join("\n")}`
               : undefined
@@ -401,7 +448,8 @@ export const ConsultAdvisorTool = Tool.define<
             const consult = (
               input: { slot: AdvisorSlots.Slot; model: Provider.Model; variant?: string },
               id: SessionID,
-              track: boolean,
+              onPhase: (kind: "reasoning" | "writing") => Effect.Effect<void>,
+              onRetry: () => Effect.Effect<void>,
             ) =>
               Effect.retry(
                 Effect.suspend(() =>
@@ -420,12 +468,11 @@ export const ConsultAdvisorTool = Tool.define<
                       })
                       .pipe(
                         Stream.tap((event) => {
-                          if (!track) return Effect.void
                           if (event.type === "reasoning-start" || event.type === "reasoning-delta") {
-                            return setTitle(REASONING_TITLE)
+                            return onPhase("reasoning")
                           }
                           if (event.type === "text-start" || event.type === "text-delta") {
-                            return setTitle(WRITING_TITLE)
+                            return onPhase("writing")
                           }
                           return Effect.void
                         }),
@@ -444,17 +491,19 @@ export const ConsultAdvisorTool = Tool.define<
                     return wait > PATIENCE ? KiloErrorPolicy.blockRetry(parsed) : parsed
                   },
                   limit: RETRIES,
-                  set: () => (track ? setTitle(RETRYING_TITLE) : Effect.void),
+                  set: onRetry,
                 }),
               )
 
             if (single && first?.model) {
-              yield* setTitle(WAITING_TITLE)
+              yield* publish(WAITING_TITLE)
               const exit = yield* Effect.raceFirst(
                 consult(
                   { slot: first.slot, model: first.model, variant: first.variant },
                   SessionID.make(`${ctx.sessionID}-advisor`),
-                  true,
+                  (kind) =>
+                    update(first.slot.name, { status: kind }, kind === "reasoning" ? REASONING_TITLE : WRITING_TITLE),
+                  () => update(first.slot.name, { status: "retrying" }, RETRYING_TITLE),
                 ),
                 abort(ctx),
               ).pipe(Effect.exit)
@@ -463,26 +512,26 @@ export const ConsultAdvisorTool = Tool.define<
                 return yield* Effect.interrupt
               }
               if (Exit.isFailure(exit)) {
-                yield* setTitle(FAILED_TITLE)
                 const failure = `Advisor consultation failed: ${detail(Cause.squash(exit.cause))}`
+                yield* update(first.slot.name, { status: "failed", error: failure }, FAILED_TITLE)
                 return {
                   title: FAILED_TITLE,
                   output: notice ? `${notice}\n\n${failure}` : failure,
-                  metadata: {},
+                  metadata: meta(),
                 }
               }
               const output = exit.value.trim() || "The advisor returned no guidance."
-              yield* setTitle(COMPLETED_TITLE)
+              yield* update(first.slot.name, { status: "done", text: output }, COMPLETED_TITLE)
               return {
                 title: COMPLETED_TITLE,
                 output: notice ? `${notice}\n\n${output}` : output,
-                metadata: { truncated: false },
+                metadata: meta(false),
               }
             }
 
             const total = resolved.filter((item) => item.model).length
             const done = { count: 0 }
-            yield* setTitle(`Consulting ${total} ${plural(total)}`)
+            yield* publish(`Consulting ${total} ${plural(total)}`)
             const runs = yield* Effect.raceFirst(
               Effect.forEach(
                 resolved,
@@ -493,15 +542,23 @@ export const ConsultAdvisorTool = Tool.define<
                   return consult(
                     { slot: item.slot, model: item.model, variant: item.variant },
                     SessionID.make(`${ctx.sessionID}-advisor-${item.slot.name}`),
-                    false,
+                    (kind) => update(item.slot.name, { status: kind }),
+                    () => update(item.slot.name, { status: "retrying" }),
                   ).pipe(
                     Effect.exit,
                     Effect.flatMap((exit) => {
                       done.count++
+                      const failure = Exit.isFailure(exit)
+                        ? detail(Cause.squash(exit.cause)) || "unknown error"
+                        : undefined
                       const text = Exit.isSuccess(exit)
                         ? exit.value.trim() || "The advisor returned no guidance."
-                        : `Failed: ${detail(Cause.squash(exit.cause))}`
-                      return setTitle(`${done.count} of ${total} ${plural(total)} responded`).pipe(
+                        : `Failed: ${failure}`
+                      mutate(
+                        item.slot.name,
+                        failure === undefined ? { status: "done", text } : { status: "failed", error: failure },
+                      )
+                      return publish(() => `${done.count} of ${total} ${plural(total)} responded`).pipe(
                         Effect.as({ ok: Exit.isSuccess(exit), text: `${heading(item.slot)}\n\n${text}` }),
                       )
                     }),
@@ -516,22 +573,26 @@ export const ConsultAdvisorTool = Tool.define<
               return yield* Effect.interrupt
             }
             if (Exit.isFailure(runs)) {
-              yield* setTitle(FAILED_TITLE)
               const failure = `Advisor consultation failed: ${detail(Cause.squash(runs.cause))}`
+              for (const item of progress) {
+                if (item.status === "done" || item.status === "failed" || item.status === "unavailable") continue
+                Object.assign(item, { status: "failed", error: failure })
+              }
+              yield* publish(FAILED_TITLE)
               return {
                 title: FAILED_TITLE,
                 output: notice ? `${notice}\n\n${failure}` : failure,
-                metadata: {},
+                metadata: meta(),
               }
             }
             const ok = runs.value.some((item) => item.ok)
             const title = ok ? COMPLETED_TITLE : FAILED_TITLE
-            yield* setTitle(title)
+            yield* publish(title)
             const output = runs.value.map((item) => item.text).join("\n\n")
             return {
               title,
               output: notice ? `${notice}\n\n${output}` : output,
-              metadata: ok ? { truncated: false } : {},
+              metadata: ok ? meta(false) : meta(),
             }
           }).pipe(Effect.ensuring(Effect.sync(() => release(ctx.sessionID))))
         }),

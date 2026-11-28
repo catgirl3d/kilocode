@@ -145,7 +145,16 @@ itBlocked.effect("reports an unavailable configured variant without contacting t
     expect(result.output).toContain("The configured advisor variant is unavailable: bogus")
     expect(result.output).toContain("Available variants: low, high")
     expect(blocked).toEqual([])
-    expect(titles).toEqual([{ title: "Preparing advisor context" }])
+    expect(titles.map((item) => item.title)).toEqual(["Preparing advisor context", "Advisor unavailable"])
+    expect(titles.at(-1)?.metadata?.advisors).toEqual([
+      expect.objectContaining({
+        name: "advisor",
+        model: "prov/model",
+        variant: "bogus",
+        status: "unavailable",
+        reason: expect.stringContaining("The configured advisor variant is unavailable: bogus"),
+      }),
+    ])
 
     const retry = yield* tool.execute({ question: "retry" }, context("ses_blocked"))
     expect(retry.title).toBe("Advisor unavailable")
@@ -227,12 +236,25 @@ itStreams.effect("streams one guidance consultation with the resolved variant", 
 
     expect(result.title).toBe("Advisor completed")
     expect(result.output).toBe("guidance")
-    expect(titles).toEqual([
-      { title: "Preparing advisor context" },
-      { title: "Waiting for first response" },
-      { title: "Advisor is reasoning" },
-      { title: "Advisor is writing" },
-      { title: "Advisor completed" },
+    expect(titles.map((item) => item.title)).toEqual([
+      "Preparing advisor context",
+      "Waiting for first response",
+      "Advisor is reasoning",
+      "Advisor is writing",
+      "Advisor completed",
+    ])
+    const advisor = (title: string) => titles.find((item) => item.title === title)?.metadata?.advisors?.[0]
+    expect(advisor("Waiting for first response")).toEqual(expect.objectContaining({ status: "waiting" }))
+    expect(advisor("Advisor is reasoning")?.status).toBe("reasoning")
+    expect(advisor("Advisor is writing")?.status).toBe("writing")
+    expect(titles.at(-1)?.metadata?.advisors).toEqual([
+      expect.objectContaining({
+        name: "advisor",
+        model: "prov/model",
+        variant: "high",
+        status: "done",
+        text: "guidance",
+      }),
     ])
     const content = requested[0]?.messages[0]?.content
     expect(content).toContain("Focus: general")
@@ -267,11 +289,14 @@ itFailed.effect("reports a failed status when the advisor stream fails", () =>
 
     expect(result.title).toBe("Advisor failed")
     expect(result.output).toContain("Advisor consultation failed: plain failure")
-    expect(titles).toEqual([
-      { title: "Preparing advisor context" },
-      { title: "Waiting for first response" },
-      { title: "Advisor failed" },
+    expect(titles.map((item) => item.title)).toEqual([
+      "Preparing advisor context",
+      "Waiting for first response",
+      "Advisor failed",
     ])
+    expect(titles.at(-1)?.metadata?.advisors?.[0]).toEqual(
+      expect.objectContaining({ status: "failed", error: expect.stringContaining("plain failure") }),
+    )
 
     const retry = yield* tool.execute({ question: "retry" }, context("ses_failed"))
     expect(retry.title).toBe("Advisor failed")
@@ -315,7 +340,11 @@ itRetried.live("retries repeated rate limits with fresh streams and returns only
     expect(result.title).toBe("Advisor completed")
     expect(result.output).toBe("guidance from the final attempt")
     expect(result.output).not.toContain("Advisor consultation failed")
-    expect(titles).toContainEqual({ title: "Advisor retrying" })
+    expect(titles.some((item) => item.title === "Advisor retrying")).toBe(true)
+    expect(titles.find((item) => item.title === "Advisor retrying")?.metadata?.advisors?.[0]?.status).toBe("retrying")
+    expect(titles.at(-1)?.metadata?.advisors?.[0]).toEqual(
+      expect.objectContaining({ status: "done", text: "guidance from the final attempt" }),
+    )
   }),
 )
 
@@ -445,8 +474,10 @@ itWaiting.effect("interrupts during an advisor retry wait without another stream
     if (Exit.isSuccess(exit)) throw new Error("expected advisor cancellation")
     expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
     expect(waiting).toHaveLength(1)
-    expect(titles).toContainEqual({ title: "Advisor retrying" })
-    expect(titles.at(-1)).toEqual({ title: "Advisor cancelled" })
+    expect(titles.some((item) => item.title === "Advisor retrying")).toBe(true)
+    expect(titles.at(-1)?.title).toBe("Advisor cancelled")
+    expect(titles.at(-1)?.metadata?.advisors).toHaveLength(1)
+    expect(titles.at(-1)?.metadata?.advisors?.[0]?.status).toBe("retrying")
   }),
 )
 
@@ -463,7 +494,8 @@ itExhausted.live("gives up after two retries and returns the failure to the agen
     expect(exhausted).toHaveLength(3)
     expect(result.title).toBe("Advisor failed")
     expect(result.output).toContain("Advisor consultation failed: 429 usage limit")
-    expect(titles).toContainEqual({ title: "Advisor retrying" })
+    expect(titles.some((item) => item.title === "Advisor retrying")).toBe(true)
+    expect(titles.at(-1)?.metadata?.advisors?.[0]?.status).toBe("failed")
   }),
 )
 
@@ -488,7 +520,7 @@ itLingering.effect("does not wait on a provider hint longer than the advisor wil
     expect(lingering).toHaveLength(1)
     expect(result.title).toBe("Advisor failed")
     expect(result.output).toContain("Advisor consultation failed: 429 usage limit")
-    expect(titles).not.toContainEqual({ title: "Advisor retrying" })
+    expect(titles.some((item) => item.title === "Advisor retrying")).toBe(false)
   }),
 )
 
@@ -533,7 +565,8 @@ itBlocked.effect("reports preparation before an unavailable consultation", () =>
     const result = yield* tool.execute({ question: "review" }, context("ses_blocked_status", undefined, titles))
 
     expect(result.title).toBe("Advisor unavailable")
-    expect(titles).toEqual([{ title: "Preparing advisor context" }])
+    expect(titles.map((item) => item.title)).toEqual(["Preparing advisor context", "Advisor unavailable"])
+    expect(titles.at(-1)?.metadata?.advisors?.[0]?.status).toBe("unavailable")
   }),
 )
 
@@ -722,6 +755,7 @@ itFiles.live("clamps a requested end past EOF and reports the adjustment to the 
     expect(content).toContain("2: two")
     expect(result.output).toMatch(/^Context warnings:\n- [^\n]+\n\nguidance$/)
     expect(result.output).toContain("requested lines 1-3; supplied 1-2")
+    expect(result.metadata.warnings).toEqual([expect.stringContaining("requested lines 1-3; supplied 1-2")])
   }),
 )
 
@@ -1343,11 +1377,20 @@ itSlots.effect("prefers configured slots over the legacy advisor and answers wit
 
     expect(result.title).toBe("Advisor completed")
     expect(result.output).toBe("guidance from sec")
-    expect(titles).toEqual([
-      { title: "Preparing advisor context" },
-      { title: "Waiting for first response" },
-      { title: "Advisor is writing" },
-      { title: "Advisor completed" },
+    expect(titles.map((item) => item.title)).toEqual([
+      "Preparing advisor context",
+      "Waiting for first response",
+      "Advisor is writing",
+      "Advisor completed",
+    ])
+    expect(titles.at(-1)?.metadata?.advisors).toEqual([
+      expect.objectContaining({
+        name: "security",
+        model: "prov/sec",
+        variant: "high",
+        status: "done",
+        text: "guidance from sec",
+      }),
     ])
     expect(slotStreams).toHaveLength(1)
     expect(slotStreams[0]).toEqual(
@@ -1434,13 +1477,24 @@ itSlots.live("consults every advisor in parallel with its own model and role pro
         "## deep (prov/deep)\n\nguidance from deep",
       ].join("\n\n"),
     )
-    expect(titles).toEqual([
-      { title: "Preparing advisor context" },
-      { title: "Consulting 3 advisors" },
-      { title: "1 of 3 advisors responded" },
-      { title: "2 of 3 advisors responded" },
-      { title: "3 of 3 advisors responded" },
-      { title: "Advisor completed" },
+    expect([...new Set(titles.map((item) => item.title))]).toEqual([
+      "Preparing advisor context",
+      "Consulting 3 advisors",
+      "1 of 3 advisors responded",
+      "2 of 3 advisors responded",
+      "3 of 3 advisors responded",
+      "Advisor completed",
+    ])
+    const counts = titles.flatMap((item) => {
+      const match = item.title?.match(/^(\d+) of 3 advisors responded$/)
+      return match ? [Number(match[1])] : []
+    })
+    expect(counts).toEqual([...counts].sort((a, b) => a - b))
+    expect(new Set(counts)).toEqual(new Set([1, 2, 3]))
+    expect(titles.at(-1)?.metadata?.advisors).toEqual([
+      expect.objectContaining({ name: "security", status: "done", text: "guidance from sec" }),
+      expect.objectContaining({ name: "fast", status: "done", text: "guidance from fast" }),
+      expect.objectContaining({ name: "deep", status: "done", text: "guidance from deep" }),
     ])
     expect(slotStreams).toHaveLength(3)
     expect(byModel("sec")).toEqual(
@@ -1467,6 +1521,80 @@ itSlots.live("consults every advisor in parallel with its own model and role pro
     expect(content[0]).toContain("Question: review")
     expect(content[0]).not.toContain(ROLE)
     expect(JSON.stringify({ result, titles })).not.toContain(ROLE)
+  }),
+)
+
+itSlots.live("publishes finished advisors while another is still reasoning", () =>
+  Effect.gen(function* () {
+    const release = yield* Deferred.make<void>()
+    const reasoning = yield* Deferred.make<void>()
+    const ready = yield* Deferred.make<void>()
+    configure({ advisors: trio }, (input) =>
+      input.model.id === "deep"
+        ? Stream.concat(
+            Stream.make(
+              LLMEvent.reasoningStart({ id: "reasoning" }),
+              LLMEvent.reasoningDelta({ id: "reasoning", text: "thinking deeply" }),
+            ),
+            Stream.unwrap(
+              Deferred.await(release).pipe(
+                Effect.as(
+                  Stream.make(
+                    LLMEvent.textStart({ id: "text" }),
+                    LLMEvent.textDelta({ id: "text", text: "guidance from deep" }),
+                    LLMEvent.textEnd({ id: "text" }),
+                  ),
+                ),
+              ),
+            ),
+          )
+        : Stream.unwrap(Deferred.await(reasoning).pipe(Effect.as(reply(`guidance from ${input.model.id}`)))),
+    )
+    const titles: { title?: string; metadata?: Record<string, any> }[] = []
+    const ctx = context("ses_slot_live", undefined)
+    ctx.metadata = (input) =>
+      Effect.sync(() => {
+        titles.push(input)
+        const advisors = input.metadata?.advisors as { name?: string; status?: string }[] | undefined
+        if (advisors?.some((item) => item.name === "deep" && item.status === "reasoning")) {
+          Deferred.doneUnsafe(reasoning, Effect.void)
+        }
+        const done = advisors?.filter((item) => item.status === "done").length ?? 0
+        if (done === 2 && advisors?.some((item) => item.name === "deep" && item.status === "reasoning")) {
+          Deferred.doneUnsafe(ready, Effect.void)
+        }
+      })
+    const tool = yield* Tool.init(yield* ConsultAdvisorTool)
+    const call = yield* tool.execute({ advisors: "all", question: "review" }, ctx).pipe(Effect.forkChild)
+
+    yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"))
+    const live = titles.find((item) => {
+      const advisors = item.metadata?.advisors as { name?: string; status?: string }[] | undefined
+      return (
+        advisors?.filter((entry) => entry.status === "done").length === 2 &&
+        advisors.some((entry) => entry.name === "deep" && entry.status === "reasoning")
+      )
+    })
+    expect(live?.metadata?.advisors).toEqual([
+      expect.objectContaining({ name: "security", status: "done", text: "guidance from sec" }),
+      expect.objectContaining({ name: "fast", status: "done", text: "guidance from fast" }),
+      expect.objectContaining({ name: "deep", status: "reasoning" }),
+    ])
+
+    yield* Deferred.succeed(release, undefined)
+    const result = yield* Fiber.join(call)
+    expect(result.title).toBe("Advisor completed")
+    expect(
+      titles.some((item) => {
+        const advisors = item.metadata?.advisors as { name?: string; status?: string }[] | undefined
+        return advisors?.some((entry) => entry.name === "deep" && entry.status === "writing")
+      }),
+    ).toBe(true)
+    expect(titles.at(-1)?.metadata?.advisors).toEqual([
+      expect.objectContaining({ name: "security", status: "done", text: "guidance from sec" }),
+      expect.objectContaining({ name: "fast", status: "done", text: "guidance from fast" }),
+      expect.objectContaining({ name: "deep", status: "done", text: "guidance from deep" }),
+    ])
   }),
 )
 
@@ -1525,11 +1653,12 @@ itSlots.effect("keeps parallel advisor retries isolated and preserves only fresh
       ),
     )
 
+    const titles: { title?: string; metadata?: Record<string, any> }[] = []
     const tool = yield* Tool.init(yield* ConsultAdvisorTool)
     const call = yield* tool
       .execute(
         { advisors: ["deep", "fast", "security"], question: "retry isolation", materials: "stable material" },
-        context("ses_slot_retry_isolation"),
+        context("ses_slot_retry_isolation", undefined, titles),
       )
       .pipe(Effect.forkChild)
     yield* awaitWithTimeout(Deferred.await(started), "parallel advisor streams did not all start")
@@ -1550,6 +1679,13 @@ itSlots.effect("keeps parallel advisor retries isolated and preserves only fresh
     expect(attempts.get("sec")).toBe(1)
     expect(attempts.get("fast")).toBe(2)
     expect(attempts.get("deep")).toBe(3)
+    const retrying = new Set(
+      titles.flatMap((item) => {
+        const advisors = item.metadata?.advisors as { name?: string; status?: string }[] | undefined
+        return advisors?.filter((entry) => entry.status === "retrying").map((entry) => entry.name) ?? []
+      }),
+    )
+    expect([...retrying].sort()).toEqual(["deep", "fast"])
 
     const security = slotStreams.filter((input) => String(input.model.id) === "sec")
     const fast = slotStreams.filter((input) => String(input.model.id) === "fast")
@@ -1598,7 +1734,11 @@ itSlots.effect("reports per-advisor failures without hiding successful guidance"
     expect(failed.output).toBe(
       "## security (prov/sec, high)\n\nFailed: sec exploded\n\n## fast (prov/fast)\n\nFailed: fast exploded",
     )
-    expect(titles.at(-1)).toEqual({ title: "Advisor failed" })
+    expect(titles.at(-1)?.title).toBe("Advisor failed")
+    expect(titles.at(-1)?.metadata?.advisors).toEqual([
+      expect.objectContaining({ name: "security", status: "failed", error: "sec exploded" }),
+      expect.objectContaining({ name: "fast", status: "failed", error: "fast exploded" }),
+    ])
   }),
 )
 
@@ -1641,11 +1781,15 @@ itSlots.effect("reports an oversized role prompt as unavailable instead of trunc
       "## long (prov/long)\n\nUnavailable: The configured advisor prompt exceeds 20000 characters.\n\n## fast (prov/fast)\n\nguidance from fast",
     )
     expect(slotStreams.map((item) => String(item.model.id))).toEqual(["fast"])
-    expect(titles).toEqual([
-      { title: "Preparing advisor context" },
-      { title: "Consulting 1 advisor" },
-      { title: "1 of 1 advisor responded" },
-      { title: "Advisor completed" },
+    expect([...new Set(titles.map((item) => item.title))]).toEqual([
+      "Preparing advisor context",
+      "Consulting 1 advisor",
+      "1 of 1 advisor responded",
+      "Advisor completed",
+    ])
+    expect(titles.at(-1)?.metadata?.advisors).toEqual([
+      expect.objectContaining({ name: "long", status: "unavailable" }),
+      expect.objectContaining({ name: "fast", status: "done", text: "guidance from fast" }),
     ])
 
     configure({ advisors: [{ ...long, prompt: "y".repeat(20_000) }] })
@@ -1670,6 +1814,11 @@ itSlots.effect("returns combined reasons without preparing files when every sele
       { advisors: "all", files: [{ path: "missing.txt", start: 1, end: 1 }] },
       context("ses_slot_none", undefined, undefined, undefined, undefined, ask),
     )
+
+    expect(result.metadata.advisors).toEqual([
+      expect.objectContaining({ name: "long", status: "unavailable", reason: expect.stringContaining("20000") }),
+      expect.objectContaining({ name: "odd", status: "unavailable", reason: expect.stringContaining("bogus") }),
+    ])
 
     expect(result.title).toBe("Advisor unavailable")
     expect(result.output).toBe(
@@ -1708,7 +1857,10 @@ itSlots.effect("cancels every running advisor together and releases the guard", 
     const exit = yield* Fiber.await(call)
     if (Exit.isSuccess(exit)) throw new Error("expected advisor cancellation")
     expect(Cause.hasInterruptsOnly(exit.cause)).toBe(true)
-    expect(titles.at(-1)).toEqual({ title: "Advisor cancelled" })
+    expect(titles.at(-1)?.title).toBe("Advisor cancelled")
+    const advisors = titles.at(-1)?.metadata?.advisors as { status?: string }[] | undefined
+    expect(advisors).toHaveLength(3)
+    expect(advisors?.every((item) => item.status === "waiting")).toBe(true)
 
     configure({ advisors: trio })
     expect((yield* tool.execute({}, context("ses_slot_cancel"))).title).toBe("Advisor completed")
@@ -1791,6 +1943,11 @@ itSlotFiles.live("reports one EOF clamp warning with mixed advisor success and f
     expect(result.output).toContain("## fast (prov/fast)\n\nFailed: fast clamped failure")
     expect(result.output).toContain("## deep (prov/deep)\n\ndeep clamped guidance")
     expect(result.output).not.toContain("Advisor context preparation failed")
+    expect(result.metadata.warnings).toEqual([expect.stringContaining("requested lines 2-3; supplied 2-2")])
+    expect(result.metadata.advisors).toEqual([
+      expect.objectContaining({ name: "fast", status: "failed", error: "fast clamped failure" }),
+      expect.objectContaining({ name: "deep", status: "done", text: "deep clamped guidance" }),
+    ])
     expect(slotStreams).toHaveLength(2)
     const content = slotStreams.map((item) => item.messages[0]?.content)
     expect(new Set(content).size).toBe(1)

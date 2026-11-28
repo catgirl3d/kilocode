@@ -350,7 +350,8 @@ describe("mapSSEEventToWebviewMessage", () => {
     }
   })
 
-  it("preserves streamed tool-state titles in partUpdated", () => {
+  it("preserves streamed tool-state titles and advisor metadata in partUpdated", () => {
+    const advisors = [{ name: "advisor", model: "prov/model", status: "reasoning" }]
     const part = {
       id: "p-advisor",
       sessionID: "sess-1",
@@ -362,7 +363,7 @@ describe("mapSSEEventToWebviewMessage", () => {
         status: "running",
         input: {},
         title: "Advisor is reasoning",
-        metadata: {},
+        metadata: { advisors },
         time: { start: 1700000000000 },
       },
     } satisfies ToolPart
@@ -381,8 +382,9 @@ describe("mapSSEEventToWebviewMessage", () => {
 
     const msg = mapSSEEventToWebviewMessage(event, "sess-1")
     expect(msg).toMatchObject({ type: "partUpdated", sessionID: "sess-1", messageID: "m1" })
-    if (msg?.type === "partUpdated" && msg.part.type === "tool") {
+    if (msg?.type === "partUpdated" && msg.part.type === "tool" && msg.part.state.status === "running") {
       expect(msg.part.state.title).toBe("Advisor is reasoning")
+      expect(msg.part.state.metadata?.advisors).toEqual(advisors)
     }
 
     const completed: ToolPart = {
@@ -392,7 +394,7 @@ describe("mapSSEEventToWebviewMessage", () => {
         input: {},
         output: "guidance",
         title: "Advisor completed",
-        metadata: {},
+        metadata: { advisors: [{ ...advisors[0], status: "done", text: "guidance" }] },
         time: { start: 1700000000000, end: 1700000001000 },
       },
     }
@@ -403,6 +405,7 @@ describe("mapSSEEventToWebviewMessage", () => {
     expect(next).toMatchObject({ type: "partUpdated", sessionID: "sess-1", messageID: "m1" })
     if (next?.type === "partUpdated" && next.part.type === "tool" && next.part.state.status === "completed") {
       expect(next.part.state.title).toBe("Advisor completed")
+      expect(next.part.state.metadata?.advisors).toEqual([{ ...advisors[0], status: "done", text: "guidance" }])
     }
   })
 

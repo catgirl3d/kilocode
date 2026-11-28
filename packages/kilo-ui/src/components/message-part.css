@@ -406,6 +406,85 @@ body.vscode-high-contrast-light [data-component="user-message"] [data-slot="user
   margin-bottom: 0px;
 }
 
+/* fork_change start - consult_advisor live cards */
+[data-component="advisor-cards"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+[data-slot="advisor-warnings"] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-normal);
+}
+
+[data-slot="advisor-card"] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-sm);
+  background: var(--surface-tool-output-base);
+}
+
+[data-slot="advisor-card"][data-status="failed"] {
+  border-color: var(--border-critical-base);
+}
+
+[data-slot="advisor-card-header"] {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+[data-slot="advisor-card-name"],
+[data-slot="advisor-card-model"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+[data-slot="advisor-card-name"] {
+  font-weight: var(--font-weight-medium);
+}
+
+[data-slot="advisor-card-model"] {
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+}
+
+[data-slot="advisor-card-actions"] {
+  flex: none;
+  margin-left: auto;
+}
+
+[data-slot="advisor-card-body"] {
+  min-width: 0;
+  color: var(--text-base);
+}
+
+[data-slot="advisor-card-body"] > :first-child {
+  margin-top: 0;
+}
+
+[data-slot="advisor-card-body"] > :last-child {
+  margin-bottom: 0;
+}
+
+[data-slot="advisor-card-detail"] {
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-normal);
+}
+/* fork_change end */
+
 [data-slot="tool-read-images"] {
   display: flex;
   flex-wrap: wrap;

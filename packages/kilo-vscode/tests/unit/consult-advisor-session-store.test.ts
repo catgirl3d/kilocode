@@ -1,4 +1,4 @@
-import { unlinkSync } from "node:fs"
+import { readFileSync, unlinkSync } from "node:fs"
 import path from "node:path"
 import { build } from "esbuild"
 import { solidPlugin } from "esbuild-plugin-solid"
@@ -53,6 +53,34 @@ describe("consult advisor session store", () => {
             }))
           },
         },
+        {
+          name: "worktree-kilo-ui",
+          setup(ctx) {
+            const base = path.join(root, "..", "kilo-ui")
+            const pkg = JSON.parse(readFileSync(path.join(base, "package.json"), "utf8")) as {
+              exports: Record<string, string>
+            }
+            const target = (sub: string) => {
+              const exact = pkg.exports[sub]
+              if (typeof exact === "string") return exact
+              for (const [key, value] of Object.entries(pkg.exports)) {
+                const star = key.indexOf("*")
+                if (star < 0 || typeof value !== "string") continue
+                const prefix = key.slice(0, star)
+                const suffix = key.slice(star + 1)
+                if (!sub.startsWith(prefix) || !sub.endsWith(suffix)) continue
+                return value.replace("*", sub.slice(prefix.length, sub.length - suffix.length))
+              }
+            }
+            ctx.onResolve({ filter: /^@kilocode\/kilo-ui(\/.*)?$/ }, (args) => {
+              if (args.path === "@kilocode/kilo-ui") return
+              const sub = `.${args.path.slice("@kilocode/kilo-ui".length)}`
+              const resolved = target(sub)
+              if (!resolved) throw new Error(`@kilocode/kilo-ui export not found in the worktree: ${sub}`)
+              return { path: path.join(base, resolved) }
+            })
+          },
+        },
         solidPlugin(),
       ],
       target: "es2022",
@@ -61,10 +89,15 @@ describe("consult advisor session store", () => {
     const file = path.join(root, `.consult-advisor-session-store-${crypto.randomUUID()}.mjs`)
     await Bun.write(file, result.outputFiles[0]!.contents)
     try {
-      const child = Bun.spawnSync([process.execPath, file], { cwd: webview, stdout: "pipe", stderr: "pipe" })
+      const child = Bun.spawnSync([process.execPath, file], {
+        cwd: webview,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 120_000,
+      })
       expect(child.exitCode, child.stdout.toString() + child.stderr.toString()).toBe(0)
     } finally {
       unlinkSync(file)
     }
-  }, 30_000)
+  }, 120_000)
 })

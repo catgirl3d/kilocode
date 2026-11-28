@@ -5,6 +5,7 @@ import {
   createSignal,
   createUniqueId,
   For,
+  Index, // fork_change
   Match,
   onCleanup,
   onMount,
@@ -1407,6 +1408,150 @@ function McpTool(props: ToolProps) {
   )
 }
 
+// fork_change start - live per-advisor cards for consult_advisor
+type AdvisorStatus = "waiting" | "retrying" | "reasoning" | "writing" | "done" | "failed" | "unavailable"
+
+type AdvisorEntry = {
+  name: string
+  model: string
+  variant?: string
+  status: AdvisorStatus
+  text?: string
+  error?: string
+  reason?: string
+}
+
+const ADVISOR_STATUSES = new Set<AdvisorStatus>([
+  "waiting",
+  "retrying",
+  "reasoning",
+  "writing",
+  "done",
+  "failed",
+  "unavailable",
+])
+
+function advisorEntry(value: unknown): AdvisorEntry | undefined {
+  if (!value || typeof value !== "object") return
+  const item = value as Record<string, unknown>
+  if (typeof item.name !== "string" || !item.name) return
+  if (typeof item.model !== "string" || !item.model) return
+  if (typeof item.status !== "string" || !ADVISOR_STATUSES.has(item.status as AdvisorStatus)) return
+  return {
+    name: item.name,
+    model: item.model,
+    variant: typeof item.variant === "string" ? item.variant : undefined,
+    status: item.status as AdvisorStatus,
+    text: typeof item.text === "string" ? item.text : undefined,
+    error: typeof item.error === "string" ? item.error : undefined,
+    reason: typeof item.reason === "string" ? item.reason : undefined,
+  }
+}
+
+function advisorEntries(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => advisorEntry(item) ?? [])
+}
+
+function advisorActive(status: AdvisorStatus) {
+  return status === "waiting" || status === "retrying" || status === "reasoning" || status === "writing"
+}
+
+function advisorLabel(status: AdvisorStatus) {
+  if (status === "waiting") return "Waiting for first response"
+  if (status === "retrying") return "Advisor retrying"
+  if (status === "reasoning") return "Advisor is reasoning"
+  if (status === "writing") return "Advisor is writing"
+  return undefined
+}
+
+function AdvisorCard(props: { entry: AdvisorEntry; live: boolean }) {
+  const i18n = useI18n()
+  const detail = createMemo(() => props.entry.error ?? props.entry.reason)
+  const label = createMemo(() => advisorLabel(props.entry.status))
+  const model = createMemo(() => [props.entry.model, props.entry.variant].filter(Boolean).join(", "))
+  const active = createMemo(() => props.live && advisorActive(props.entry.status))
+  const showStatus = createMemo(() => props.entry.status !== "done" || !props.entry.text)
+
+  return (
+    <div data-slot="advisor-card" data-status={props.entry.status}>
+      <div data-slot="advisor-card-header">
+        <span data-slot="advisor-card-name">{props.entry.name}</span>
+        <span data-slot="advisor-card-model">({model()})</span>
+        <span data-slot="advisor-card-actions">
+          <Show when={props.entry.text}>
+            <CopyButton value={() => props.entry.text ?? ""} label={i18n.t("ui.message.copy")} />
+          </Show>
+        </span>
+      </div>
+      <Show when={props.entry.text}>
+        {(text) => (
+          <div data-slot="advisor-card-body">
+            <Markdown text={text()} />
+          </div>
+        )}
+      </Show>
+      <Show when={showStatus()}>
+        <Show when={active()} fallback={<span data-slot="advisor-card-detail">{detail() ?? label()}</span>}>
+          <TextShimmer text={label() ?? ""} active />
+        </Show>
+      </Show>
+    </div>
+  )
+}
+
+function ConsultAdvisorTool(props: ToolProps) {
+  const i18n = useI18n()
+  const entries = createMemo(() => advisorEntries(props.metadata.advisors))
+  const warnings = createMemo(() => {
+    const value = props.metadata.warnings
+    if (!Array.isArray(value)) return []
+    return value.filter((item): item is string => typeof item === "string" && !!item.trim())
+  })
+  const formatted = createMemo(() => {
+    if (!props.input || Object.keys(props.input).length === 0) return ""
+    return "```json\n" + JSON.stringify(props.input, null, 2) + "\n```"
+  })
+  const pending = createMemo(() => busy(props.status))
+
+  return (
+    <Show when={entries().length > 0} fallback={<McpTool {...props} />}>
+      <BasicTool
+        icon="layers"
+        status={props.status}
+        tool={props.tool}
+        partID={props.partID}
+        callID={props.callID}
+        defaultOpen={pending() || props.status === "error" || props.defaultOpen}
+        hideDetails={props.hideDetails}
+        locked={props.locked}
+        trigger={<ToolTriggerRow title="consult_advisor" pending={pending()} subtitle={props.stateTitle} />}
+      >
+        <Show when={formatted()}>
+          {(text) => (
+            <>
+              <div data-slot="mcp-section-label">{i18n.t("ui.messagePart.mcp.input")}</div>
+              <div data-component="tool-output" data-scrollable>
+                <Markdown text={text()} />
+              </div>
+              <div data-slot="mcp-tool-divider" />
+            </>
+          )}
+        </Show>
+        <div data-component="advisor-cards">
+          <Show when={warnings().length > 0}>
+            <div data-slot="advisor-warnings">
+              <For each={warnings()}>{(warning) => <div data-slot="advisor-warning">{warning}</div>}</For>
+            </div>
+          </Show>
+          <Index each={entries()}>{(entry) => <AdvisorCard entry={entry()} live={pending()} />}</Index>
+        </div>
+      </BasicTool>
+    </Show>
+  )
+}
+// fork_change end
+
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const i18n = useI18n()
   const part = props.part as ToolPart
@@ -1417,11 +1562,16 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     const errStr = typeof part.state.error === "string" ? part.state.error : ""
     return errStr.includes("dismissed this question")
   })
-  // fork_change start - an interrupted subagent keeps its card so its transcript stays visible
+  // fork_change start - an interrupted subagent or advisor keeps its card so its transcript stays visible
   const isInterruptedTask = createMemo(() => {
     if (part.tool !== "task" || !ToolRegistry.render("task")) return false
     if (part.state.status !== "error" || !part.state.error) return false
     return part.state.metadata?.interrupted === true
+  })
+  const isInterruptedAdvisor = createMemo(() => {
+    if (part.tool !== "consult_advisor" || !ToolRegistry.render("consult_advisor")) return false
+    if (part.state.status !== "error" || !part.state.error) return false
+    return Array.isArray(part.state.metadata?.advisors) && part.state.metadata.advisors.length > 0
   })
   // fork_change end
 
@@ -1442,8 +1592,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
           <Match when={part.state.status === "error" && part.state.error}>
             {(error) => {
               const cleaned = error().replace("Error: ", "")
-              // fork_change start - [fork] render the task card for an interrupted subagent
-              if (isDismissedQuestionError() || isInterruptedTask()) {
+              // fork_change start - [fork] render the task or advisor card after an interrupted/error state
+              if (isDismissedQuestionError() || isInterruptedTask() || isInterruptedAdvisor()) {
                 // fork_change end
                 return (
                   <Dynamic
@@ -1457,6 +1607,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                     // @ts-expect-error
                     output={part.state.output}
                     status={part.state.status}
+                    // fork_change start
+                    // @ts-expect-error
+                    stateTitle={part.state.title}
+                    // fork_change end
                     hideDetails={props.hideDetails}
                     defaultOpen={props.defaultOpen}
                     animate
@@ -3692,6 +3846,13 @@ ToolRegistry.register({
     )
   },
 })
+
+// fork_change start - dedicated consult_advisor card
+ToolRegistry.register({
+  name: "consult_advisor",
+  render: ConsultAdvisorTool,
+})
+// fork_change end
 
 import { ChartTool } from "./chart"
 ToolRegistry.register({

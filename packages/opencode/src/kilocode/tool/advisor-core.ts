@@ -27,6 +27,19 @@ export const Params = Schema.Struct({
 export type Params = Schema.Schema.Type<typeof Params>
 export type FileRange = Schema.Schema.Type<typeof FileRange>
 
+export type AdvisorStatus = "waiting" | "retrying" | "reasoning" | "writing" | "done" | "failed" | "unavailable"
+
+/** One advisor's progress, streamed to clients through the tool's metadata. */
+export type AdvisorProgress = {
+  name: string
+  model: string
+  variant?: string
+  status: AdvisorStatus
+  text?: string
+  error?: string
+  reason?: string
+}
+
 export const ATTACHMENT_LIMIT = 100_000
 export const FILE_LIMIT = 4 * 1024 * 1024
 export const SAMPLE_BYTES = 4 * 1024
